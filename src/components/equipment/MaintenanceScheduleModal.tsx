@@ -28,7 +28,8 @@ const maintenanceSchema = z.object({
 type MaintenanceFormData = z.infer<typeof maintenanceSchema>
 
 interface MaintenanceScheduleModalProps {
-  equipment: any
+  farmId: string,
+  equipment: any[]
   isOpen: boolean
   onClose: () => void
   onMaintenanceScheduled: (maintenance: any) => void
@@ -43,6 +44,7 @@ export function MaintenanceScheduleModal({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [maintenanceHistory, setMaintenanceHistory] = useState([])
+  const [selectedEquipment, setSelectedEquipment] = useState<any>(null)
   
   const form = useForm<MaintenanceFormData>({
     resolver: zodResolver(maintenanceSchema),
@@ -60,6 +62,11 @@ export function MaintenanceScheduleModal({
   })
   
   const handleSubmit = async (data: MaintenanceFormData) => {
+    if (!selectedEquipment) {
+      setError('Please select equipment first')
+      return
+    }
+    
     setLoading(true)
     setError(null)
     
@@ -71,7 +78,7 @@ export function MaintenanceScheduleModal({
         },
         body: JSON.stringify({
           ...data,
-          equipment_id: equipment.id,
+          equipment_id: selectedEquipment.id,
           cost: data.cost || null,
           labor_hours: data.labor_hours || null,
           next_maintenance_date: data.next_maintenance_date || null,
@@ -84,8 +91,9 @@ export function MaintenanceScheduleModal({
         throw new Error(result.error || 'Failed to schedule maintenance')
       }
       
-      onMaintenanceScheduled(result.maintenance)
+      onMaintenanceScheduled?.(result.maintenance)
       form.reset()
+      setSelectedEquipment(null)
       
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unknown error occurred')
@@ -109,15 +117,12 @@ export function MaintenanceScheduleModal({
         <div className="flex items-start justify-between mb-6">
           <div>
             <h3 className="text-lg font-medium text-gray-900">
-              Schedule Maintenance
+              Maintenance Schedule
             </h3>
             <p className="text-sm text-gray-600 mt-1">
-              {equipment.name} - {equipment.equipment_type.replace('_', ' ')}
+              Schedule maintenance for your equipment
             </p>
           </div>
-          <Badge className={`${equipment.status === 'operational' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-            {equipment.status.replace('_', ' ')}
-          </Badge>
         </div>
         
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -127,7 +132,7 @@ export function MaintenanceScheduleModal({
               <CardHeader>
                 <CardTitle className="text-base">New Maintenance Record</CardTitle>
                 <CardDescription>
-                  Schedule or record maintenance for this equipment
+                  Schedule or record maintenance for equipment
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -138,6 +143,27 @@ export function MaintenanceScheduleModal({
                 )}
                 
                 <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+                  {/* Equipment Selection */}
+                  <div>
+                    <Label htmlFor="equipment_select">Select Equipment *</Label>
+                    <select
+                      id="equipment_select"
+                      value={selectedEquipment?.id || ''}
+                      onChange={(e) => {
+                        const selected = equipment.find(eq => eq.id === e.target.value)
+                        setSelectedEquipment(selected || null)
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+                    >
+                      <option value="">Choose equipment...</option>
+                      {equipment.map(eq => (
+                        <option key={eq.id} value={eq.id}>
+                          {eq.name} - {eq.equipment_type.replace('_', ' ')}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  
                   <div>
                     <Label htmlFor="maintenance_type">Maintenance Type *</Label>
                     <select
@@ -246,7 +272,7 @@ export function MaintenanceScheduleModal({
                     </Button>
                     <Button
                       type="submit"
-                      disabled={loading}
+                      disabled={loading || !selectedEquipment}
                     >
                       {loading ? <LoadingSpinner size="sm" /> : 'Schedule Maintenance'}
                     </Button>
@@ -258,107 +284,123 @@ export function MaintenanceScheduleModal({
           
           {/* Equipment Info & Maintenance History */}
           <div className="space-y-6">
-            {/* Equipment Summary */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Equipment Details</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-gray-600">Brand:</span>
-                    <span className="ml-2 font-medium">{equipment.brand || 'N/A'}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-600">Model:</span>
-                    <span className="ml-2 font-medium">{equipment.model || 'N/A'}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-600">Serial:</span>
-                    <span className="ml-2 font-medium">{equipment.serial_number || 'N/A'}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-600">Location:</span>
-                    <span className="ml-2 font-medium">{equipment.location || 'N/A'}</span>
-                  </div>
-                </div>
-                
-                {equipment.purchase_date && (
-                  <div className="flex items-center text-sm">
-                    <Calendar className="w-4 h-4 mr-2 text-gray-400" />
-                    <span className="text-gray-600">Purchased:</span>
-                    <span className="ml-2 font-medium">
-                      {new Date(equipment.purchase_date).toLocaleDateString()}
-                    </span>
-                  </div>
-                )}
-                
-                {equipment.warranty_expiry && (
-                  <div className="flex items-center text-sm">
-                    <Clock className="w-4 h-4 mr-2 text-gray-400" />
-                    <span className="text-gray-600">Warranty Expires:</span>
-                    <span className="ml-2 font-medium">
-                      {new Date(equipment.warranty_expiry).toLocaleDateString()}
-                    </span>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-            
-            {/* Recent Maintenance History */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Recent Maintenance</CardTitle>
-                <CardDescription>
-                  Last 5 maintenance records
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {maintenanceHistory.length === 0 ? (
-                  <div className="text-center py-6">
-                    <Wrench className="mx-auto h-8 w-8 text-gray-400" />
-                    <p className="mt-2 text-sm text-gray-500">
-                      No maintenance history
-                    </p>
-                    <p className="text-xs text-gray-400">
-                      This will be the first maintenance record
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {maintenanceHistory.slice(0, 5).map((maintenance: any) => (
-                      <div key={maintenance.id} className="flex items-start justify-between p-3 bg-gray-50 rounded-lg">
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-2 mb-1">
-                            <Badge className={getMaintenanceTypeColor(maintenance.maintenance_type)}>
-                              {maintenance.maintenance_type}
-                            </Badge>
-                            <span className="text-sm text-gray-600">
-                              {new Date(maintenance.maintenance_date).toLocaleDateString()}
-                            </span>
-                          </div>
-                          <p className="text-sm font-medium text-gray-900">
-                            {maintenance.description}
-                          </p>
-                          {maintenance.performed_by && (
-                            <div className="flex items-center text-xs text-gray-500 mt-1">
-                              <User className="w-3 h-3 mr-1" />
-                              {maintenance.performed_by}
-                            </div>
-                          )}
-                        </div>
-                        {maintenance.cost && (
-                          <div className="flex items-center text-sm font-medium text-gray-900">
-                            <DollarSign className="w-4 h-4 mr-1" />
-                            ${maintenance.cost.toFixed(2)}
-                          </div>
-                        )}
+            {selectedEquipment ? (
+              <>
+                {/* Equipment Summary */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Equipment Details</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="text-gray-600">Brand:</span>
+                        <span className="ml-2 font-medium">{selectedEquipment.brand || 'N/A'}</span>
                       </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                      <div>
+                        <span className="text-gray-600">Model:</span>
+                        <span className="ml-2 font-medium">{selectedEquipment.model || 'N/A'}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Serial:</span>
+                        <span className="ml-2 font-medium">{selectedEquipment.serial_number || 'N/A'}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Location:</span>
+                        <span className="ml-2 font-medium">{selectedEquipment.location || 'N/A'}</span>
+                      </div>
+                    </div>
+                    
+                    {selectedEquipment.purchase_date && (
+                      <div className="flex items-center text-sm">
+                        <Calendar className="w-4 h-4 mr-2 text-gray-400" />
+                        <span className="text-gray-600">Purchased:</span>
+                        <span className="ml-2 font-medium">
+                          {new Date(selectedEquipment.purchase_date).toLocaleDateString()}
+                        </span>
+                      </div>
+                    )}
+                    
+                    {selectedEquipment.warranty_expiry && (
+                      <div className="flex items-center text-sm">
+                        <Clock className="w-4 h-4 mr-2 text-gray-400" />
+                        <span className="text-gray-600">Warranty Expires:</span>
+                        <span className="ml-2 font-medium">
+                          {new Date(selectedEquipment.warranty_expiry).toLocaleDateString()}
+                        </span>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+                
+                {/* Recent Maintenance History */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Recent Maintenance</CardTitle>
+                    <CardDescription>
+                      Last 5 maintenance records
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {maintenanceHistory.length === 0 ? (
+                      <div className="text-center py-6">
+                        <Wrench className="mx-auto h-8 w-8 text-gray-400" />
+                        <p className="mt-2 text-sm text-gray-500">
+                          No maintenance history
+                        </p>
+                        <p className="text-xs text-gray-400">
+                          This will be the first maintenance record
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {maintenanceHistory.slice(0, 5).map((maintenance: any) => (
+                          <div key={maintenance.id} className="flex items-start justify-between p-3 bg-gray-50 rounded-lg">
+                            <div className="flex-1">
+                              <div className="flex items-center space-x-2 mb-1">
+                                <Badge className={getMaintenanceTypeColor(maintenance.maintenance_type)}>
+                                  {maintenance.maintenance_type}
+                                </Badge>
+                                <span className="text-sm text-gray-600">
+                                  {new Date(maintenance.maintenance_date).toLocaleDateString()}
+                                </span>
+                              </div>
+                              <p className="text-sm font-medium text-gray-900">
+                                {maintenance.description}
+                              </p>
+                              {maintenance.performed_by && (
+                                <div className="flex items-center text-xs text-gray-500 mt-1">
+                                  <User className="w-3 h-3 mr-1" />
+                                  {maintenance.performed_by}
+                                </div>
+                              )}
+                            </div>
+                            {maintenance.cost && (
+                              <div className="flex items-center text-sm font-medium text-gray-900">
+                                <DollarSign className="w-4 h-4 mr-1" />
+                                ${maintenance.cost.toFixed(2)}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </>
+            ) : (
+              <Card>
+                <CardContent className="text-center py-12">
+                  <Wrench className="mx-auto h-12 w-12 text-gray-400" />
+                  <h3 className="mt-2 text-sm font-medium text-gray-900">
+                    Select Equipment
+                  </h3>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Choose equipment from the dropdown to view details and schedule maintenance.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
           </div>
         </div>
       </div>

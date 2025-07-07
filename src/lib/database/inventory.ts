@@ -53,15 +53,35 @@ export async function getInventoryAlerts(farmId: string) {
   return data || []
 }
 
-export async function createInventoryItem(farmId: string, itemData: Partial<InventoryItem>) {
+export async function createInventoryItem(
+  farmId: string, 
+  itemData: Omit<Partial<InventoryItem>, 'id' | 'farm_id' | 'created_at' | 'updated_at'>
+) {
   const supabase = await createServerSupabaseClient()
+  
+  // Ensure required fields are present
+  const insertData = {
+    farm_id: farmId,
+    name: itemData.name!,
+    category: itemData.category!,
+    unit_of_measure: itemData.unit_of_measure!,
+    current_stock: itemData.current_stock ?? 0,
+    minimum_stock: itemData.minimum_stock ?? 0,
+    // Optional fields
+    description: itemData.description || null,
+    sku: itemData.sku || null,
+    maximum_stock: itemData.maximum_stock || null,
+    unit_cost: itemData.unit_cost || null,
+    supplier_id: itemData.supplier_id || null,
+    storage_location: itemData.storage_location || null,
+    expiry_date: itemData.expiry_date || null,
+    notes: itemData.notes || null,
+    status: itemData.status || 'active',
+  }
   
   const { data, error } = await supabase
     .from('inventory_items')
-    .insert({
-      ...itemData,
-      farm_id: farmId,
-    })
+    .insert(insertData)
     .select()
     .single()
   

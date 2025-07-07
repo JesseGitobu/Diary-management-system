@@ -27,10 +27,18 @@ import {
 interface EquipmentCardProps {
   equipment: any
   canManage: boolean
+  onEquipmentUpdated?: (updatedEquipment: any) => void
+  onEquipmentRemoved?: (equipmentId: string) => void
   onMaintenanceSchedule?: (equipmentId: string) => void
 }
 
-export function EquipmentCard({ equipment, canManage, onMaintenanceSchedule }: EquipmentCardProps) {
+export function EquipmentCard({ 
+  equipment, 
+  canManage, 
+  onMaintenanceSchedule,
+  onEquipmentUpdated,
+  onEquipmentRemoved
+}: EquipmentCardProps) {
   const [showMaintenance, setShowMaintenance] = useState(false)
   
   type EquipmentStatus = 'operational' | 'maintenance_due' | 'in_maintenance' | 'broken' | 'retired';
@@ -53,6 +61,43 @@ export function EquipmentCard({ equipment, canManage, onMaintenanceSchedule }: E
       case 'in_maintenance': return <Wrench className="w-4 h-4" />
       case 'broken': return <XCircle className="w-4 h-4" />
       default: return <Settings className="w-4 h-4" />
+    }
+  }
+
+  const handleStatusUpdate = async (newStatus: string) => {
+    try {
+      const response = await fetch(`/api/equipment/${equipment.id}/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status: newStatus }),
+      })
+      
+      if (response.ok) {
+        const updatedEquipment = { ...equipment, status: newStatus }
+        onEquipmentUpdated?.(updatedEquipment)
+      }
+    } catch (error) {
+      console.error('Error updating equipment status:', error)
+    }
+  }
+  
+  const handleRemove = async () => {
+    if (!confirm('Are you sure you want to remove this equipment?')) {
+      return
+    }
+    
+    try {
+      const response = await fetch(`/api/equipment/${equipment.id}`, {
+        method: 'DELETE',
+      })
+      
+      if (response.ok) {
+        onEquipmentRemoved?.(equipment.id)
+      }
+    } catch (error) {
+      console.error('Error removing equipment:', error)
     }
   }
   

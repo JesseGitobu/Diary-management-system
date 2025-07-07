@@ -25,70 +25,42 @@ export async function getEquipment(farmId: string) {
   return data || []
 }
 
-export async function createEquipment(farmId: string, equipmentData: Partial<Equipment>) {
+export async function createEquipment(
+  farmId: string, 
+  equipmentData: Omit<Partial<Equipment>, 'id' | 'farm_id' | 'created_at' | 'updated_at'>
+) {
   const supabase = await createServerSupabaseClient()
-
-  // Remove properties not in the DB schema (like supplier) and ensure required fields are present
-  const {
-    name,
-    description,
-    equipment_type,
-    brand,
-    model,
-    serial_number,
-    purchase_date,
-    warranty_expiry,
-    status,
-    location,
-    notes,
-    supplier_id,
-    id,
-    created_at,
-    updated_at
-  } = equipmentData;
-
-  if (!equipment_type) {
-    return { success: false, error: 'equipment_type is required' };
-  }
-  if (!name) {
-    return { success: false, error: 'name is required' };
-  }
-
+  
+  // Ensure required fields are present
   const insertData = {
-    name,
-    description,
-    equipment_type,
-    brand,
-    model,
-    serial_number,
-    purchase_date,
-    warranty_expiry,
-    status,
-    location,
-    notes,
-    supplier_id,
     farm_id: farmId,
-    id,
-    created_at,
-    updated_at
-  };
-
-  // Remove undefined fields
-  Object.keys(insertData).forEach(
-    key => insertData[key as keyof typeof insertData] === undefined && delete insertData[key as keyof typeof insertData]
-  );
-
+    name: equipmentData.name!,
+    equipment_type: equipmentData.equipment_type!,
+    // Optional fields
+    description: equipmentData.description || null,
+    brand: equipmentData.brand || null,
+    model: equipmentData.model || null,
+    serial_number: equipmentData.serial_number || null,
+    purchase_date: equipmentData.purchase_date || null,
+    purchase_cost: equipmentData.purchase_cost || null,
+    supplier_id: equipmentData.supplier_id || null,
+    warranty_expiry: equipmentData.warranty_expiry || null,
+    status: equipmentData.status || 'operational',
+    location: equipmentData.location || null,
+    notes: equipmentData.notes || null,
+  }
+  
   const { data, error } = await supabase
     .from('equipment')
     .insert(insertData)
     .select()
     .single()
-
+  
   if (error) {
     console.error('Error creating equipment:', error)
     return { success: false, error: error.message }
   }
-
+  
   return { success: true, data }
 }
 
@@ -178,12 +150,31 @@ export async function getEquipmentMaintenance(equipmentId: string) {
   return data || []
 }
 
-export async function addEquipmentMaintenance(maintenanceData: Partial<EquipmentMaintenance>) {
+export async function addEquipmentMaintenance(
+  maintenanceData: Omit<Partial<EquipmentMaintenance>, 'id' | 'created_at'>
+) {
   const supabase = await createServerSupabaseClient()
+  
+  // Ensure required fields are present
+  const insertData = {
+    equipment_id: maintenanceData.equipment_id!,
+    maintenance_type: maintenanceData.maintenance_type!,
+    description: maintenanceData.description!,
+    maintenance_date: maintenanceData.maintenance_date!,
+    // Optional fields
+    next_maintenance_date: maintenanceData.next_maintenance_date || null,
+    cost: maintenanceData.cost || null,
+    performed_by: maintenanceData.performed_by || null,
+    supplier_id: maintenanceData.supplier_id || null,
+    parts_used: maintenanceData.parts_used || null,
+    labor_hours: maintenanceData.labor_hours || null,
+    notes: maintenanceData.notes || null,
+    status: maintenanceData.status || 'completed',
+  }
   
   const { data, error } = await supabase
     .from('equipment_maintenance')
-    .insert(maintenanceData)
+    .insert(insertData)
     .select()
     .single()
   

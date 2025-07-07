@@ -28,6 +28,7 @@ interface EquipmentManagementProps {
   canManage: boolean
 }
 
+
 export function EquipmentManagement({ 
   farmId, 
   equipment: initialEquipment, 
@@ -391,6 +392,10 @@ export function EquipmentManagement({
           equipment={equipment}
           isOpen={showMaintenanceModal}
           onClose={() => setShowMaintenanceModal(false)}
+          onMaintenanceScheduled={(maintenance: any) => {
+            // Optionally update equipment state or show a notification here
+            setShowMaintenanceModal(false)
+          }}
         />
       )}
     </div>
