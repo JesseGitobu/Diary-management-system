@@ -10,19 +10,23 @@
     --card-foreground: 222.2 84% 4.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
-    --primary: 142 76% 36%;
-    --primary-foreground: 355.7 100% 97.3%;
-    --secondary: 210 40% 96%;
+    --primary: 217 91% 60%;
+    /* Blue 500 - #3b82f6 */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 14% 96%;
+    /* Light gray background */
     --secondary-foreground: 222.2 84% 4.9%;
-    --muted: 210 40% 96%;
+    --muted: 220 14% 96%;
     --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96%;
-    --accent-foreground: 222.2 84% 4.9%;
+    --accent: 217 91% 60%;
+    /* Blue accent */
+    --accent-foreground: 0 0% 100%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 142 76% 36%;
+    --ring: 217 91% 60%;
+    /* Blue focus ring */
     --radius: 0.5rem;
   }
 
@@ -33,19 +37,22 @@
     --card-foreground: 210 40% 98%;
     --popover: 222.2 84% 4.9%;
     --popover-foreground: 210 40% 98%;
-    --primary: 142 76% 36%;
-    --primary-foreground: 355.7 100% 97.3%;
+    --primary: 217 91% 60%;
+    /* Blue 500 - works well in dark mode */
+    --primary-foreground: 222.2 84% 4.9%;
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
     --muted: 217.2 32.6% 17.5%;
     --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 217 91% 60%;
+    /* Blue accent for dark mode */
+    --accent-foreground: 222.2 84% 4.9%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
-    --ring: 142 76% 36%;
+    --ring: 217 91% 60%;
+    /* Blue focus ring for dark mode */
   }
 }
 
@@ -53,25 +60,1116 @@
   * {
     @apply border-border;
   }
+
   body {
     @apply bg-background text-foreground;
   }
 }
 
 @layer components {
-  .btn-primary {
-    @apply bg-farm-green text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors;
+
+  /* Updated component classes using new blue theme */
+  /* ====================================================================
+   LANDING PAGE 
+   ============================================================================ */
+  .background {
+    @apply bg-gray-100;
+    @apply min-h-screen;
   }
-  
+
+  /* ======== LANDING PAGE HEADER ======== */
+  .header {
+    @apply fixed top-0 left-0 w-full bg-gray-100 shadow-md z-50;
+    @apply transition-all duration-300 ease-in-out;
+  }
+
+  /* ----- Container ----- */
+  .header-container {
+    @apply flex justify-between items-center py-4 px-8 flex-wrap relative;
+  }
+
+  /*----- Logo -----*/
+  .logo {
+    @apply text-3xl font-extrabold -tracking-wider bg-gradient-to-br from-dairy-primary to-dairy-secondary bg-clip-text text-transparent no-underline transition-all duration-300 cursor-pointer hover:scale-105 hover:brightness-110 md:ml-0;
+  }
+
+  /* -----Hamburger Icon (Visible only on mobile) ----- */
+  .hamburger-menu {
+    @apply text-4xl text-gray-800 ml-auto cursor-pointer block md:hidden;
+    @apply hover:bg-gray-100 hover:text-blue-500 hover:scale-110;
+    @apply active:scale-95 transition-all duration-300 p-2 rounded z-[1001];
+  }
+
+  /* ----- Navigation Container ----- */
+  .landing-nav-container {
+    @apply w-full mt-4 flex items-center flex-col md:w-auto md:mt-0 md:flex-row md:flex;
+    @apply transition-transform duration-300 ease-in-out;
+  }
+
+  .landing-nav-container-closed {
+    @apply fixed top-[50px] left-0 right-0 bg-white backdrop-blur-md;
+    @apply transform -translate-x-full pt-20 overflow-y-auto z-[1000];
+    @apply md:static md:bg-transparent md:backdrop-blur-none md:transform-none md:pt-0;
+  }
+
+  .landing-nav-container-open {
+    @apply fixed top-[50px] left-0 right-0 bg-white backdrop-blur-md;
+    @apply transform translate-x-0 pt-20 overflow-y-auto z-[1000];
+    @apply md:static md:bg-transparent md:backdrop-blur-none md:transform-none md:pt-0;
+  }
+
+  /* ----- Navigation List ----- */
+  .landing-nav-list {
+    @apply flex flex-col md:flex-row w-full md:w-auto items-start md:items-center;
+    @apply pl-0 m-0 gap-2 md:gap-0 list-none p-8 md:p-0;
+    @apply max-w-sm md:max-w-none mx-auto md:mx-0;
+  }
+
+  .landing-nav-item {
+    @apply mb-3 mr-0 md:mr-16 md:mb-0 relative w-full md:w-auto;
+    @apply border-b border-gray-200 md:border-none;
+  }
+
+  /* ----- Last Navigation Item (Button container) ----- */
+  .landing-nav-item-last {
+    @apply ml-0 mt-4 md:ml-4 md:mt-0 pt-4 md:pt-0 border-t-0 md:border-t-0;
+    @apply border-b-0;
+    /* Remove bottom border for button item */
+  }
+
+  /* ----- Navigation Link ----- */
+  .landing-nav-link {
+    @apply block text-gray-600 font-medium text-lg py-3 relative;
+    @apply transition-all duration-300 no-underline;
+    @apply hover:text-blue-500;
+    /* Mobile hover effects */
+    @apply hover:bg-slate-50 hover:pl-4;
+    /* Desktop hover effects */
+    @apply md:hover:bg-transparent md:hover:pl-0 md:hover:-translate-y-0.5;
+  }
+
+  /* ----- Navigation Link Underline Effect ----- */
+  .landing-nav-link::after {
+    @apply content-[''] absolute bottom-0 left-0 w-0 h-0.5;
+    @apply bg-gradient-to-r from-blue-500 to-blue-700;
+    @apply transition-all duration-300;
+    /* Hide underline on mobile */
+    @apply hidden md:block;
+  }
+
+  .landing-nav-link:hover::after {
+    @apply w-full;
+  }
+
+  .landing-nav-link-mobile {
+    @apply block text-gray-800 font-medium text-lg py-4 relative;
+    @apply transition-all duration-300 no-underline;
+    @apply hover:text-blue-500 hover:bg-slate-50 hover:pl-4;
+    @apply md:hidden;
+  }
+
+  .landing-nav-link-desktop {
+    @apply hidden md:block text-gray-600 font-medium text-lg py-3 relative;
+    @apply transition-all duration-300 no-underline;
+    @apply hover:text-blue-500 hover:-translate-y-0.5;
+  }
+
+  .landing-nav-link-desktop::after {
+    @apply content-[''] absolute bottom-0 left-0 w-0 h-0.5;
+    @apply bg-gradient-to-r from-blue-500 to-blue-700;
+    @apply transition-all duration-300;
+  }
+
+  .landing-nav-link-desktop:hover::after {
+    @apply w-full;
+  }
+
+  /* ======== HERO SECTION WITH BACKGROUND TEXT ======== */
+  /* ----- Hero Section ----- */
+  /* Hero Container */
+  .hero {
+    background-image: linear-gradient(rgb(197, 211, 248), rgb(255, 255, 255));
+    @apply h-[90vh];
+  }
+
+  /* Alternative hero with Tailwind gradient (if you prefer utility classes) */
+  .hero-gradient {
+    @apply h-[90vh] bg-gradient-to-b from-blue-200 to-white;
+  }
+
+  /* Hero Content Section */
+  .hero-section {
+    @apply text-center max-w-4xl mx-auto;
+    padding: 150px 20px;
+  }
+
+  /* Responsive Hero Section */
+  .hero-section-responsive {
+    @apply text-center max-w-4xl mx-auto px-5;
+    @apply pt-36 pb-20 md:pt-44 md:pb-28;
+  }
+
+  /* Hero Heading */
+  .hero-heading {
+    @apply text-6xl leading-tight font-extrabold text-gray-700;
+    @apply mt-[15vh] mb-5;
+  }
+
+  /* Responsive Hero Heading */
+  .hero-heading-responsive {
+    @apply text-4xl md:text-6xl leading-tight font-extrabold text-gray-700;
+    @apply mt-12 md:mt-[15vh] mb-5;
+  }
+
+  /* Hero Heading Span (Gradient Text) */
+  .hero-heading-gradient {
+    @apply bg-gradient-to-r from-blue-500 to-blue-700 bg-clip-text text-transparent;
+  }
+
+  /* Hero Paragraph */
+  .hero-paragraph {
+    @apply text-2xl text-gray-600 mb-8 leading-relaxed;
+  }
+
+  /* Responsive Hero Paragraph */
+  .hero-paragraph-responsive {
+    @apply text-lg md:text-2xl text-gray-600 mb-8 leading-relaxed;
+  }
+
+  /* Hero Button Container */
+  .hero-button-container {
+    @apply flex justify-center mt-8;
+  }
+
+  /*= ======== FEATURES SECTION ======== */
+  /* Features Section Container */
+  .features-section {
+    @apply text-center py-10 px-5 max-w-6xl mx-auto;
+  }
+
+  /* Features Section Heading */
+  .features-heading {
+    @apply text-4xl font-extrabold mb-12 mt-[5vh];
+    @apply bg-gradient-to-r from-blue-500 to-blue-700 bg-clip-text text-transparent;
+  }
+
+  /* Responsive Features Heading */
+  .features-heading-responsive {
+    @apply text-4xl md:text-4xl font-extrabold mb-12 mt-[5vh];
+    @apply bg-gradient-to-r from-blue-500 to-blue-700 bg-clip-text text-transparent;
+    @apply max-md:text-3xl;
+  }
+
+  /* Card Grid Container */
+  .features-card-grid {
+    @apply flex justify-center gap-5 px-2 flex-wrap max-w-6xl mx-auto;
+  }
+
+  /* Alternative Grid Layout */
+  .features-grid-layout {
+    @apply grid grid-cols-[repeat(auto-fit, minmax(300px, 1fr))] gap-5 px-5 max-w-6xl mx-auto;
+  }
+
+  /* Responsive Card Grid */
+  .features-card-grid-responsive {
+    @apply flex justify-center gap-5 px-2 flex-wrap max-w-6xl mx-auto;
+    @apply max-md:px-2.5;
+  }
+
+  /* Mobile specific adjustments */
+  @media (max-width: 768px) {
+    .features-heading-mobile {
+      @apply text-3xl;
+    }
+
+    .features-card-grid-mobile {
+      @apply px-2.5;
+    }
+  }
+
+  /* ========= RESULT SECTION ======== */
+  /*---- Result Card ----*/
+
+  .result-card {
+    @apply w-[300px] border-0 bg-blue-100 rounded-lg transition-all duration-300 ease-in-out hover:-translate-y-1 hover:shadow-lg py-8 px-5 md:py-8 md:px-4;
+    box-shadow: 0 4px 12px rgba(0, 123, 255, 0.15);
+  }
+
+  @media (max-width: 768px) {
+    .result-card {
+      @apply w-full;
+    }
+  }
+
+  .result-card-title {
+    @apply text-5xl md:text-4xl font-bold mb-2 bg-gradient-to-r from-blue-500 to-blue-700 bg-clip-text text-transparent;
+  }
+
+  .result-card-description {
+    @apply text-lg font-semibold text-gray-600 leading-snug m-0;
+  }
+
+  .results-section-responsive {
+    @apply text-center py-10 px-5 max-w-6xl mx-auto;
+  }
+
+  .results-section-heading-responsive {
+    @apply mt-12 mb-8 text-3xl md:text-4xl font-extrabold;
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .result-card-grid-responsive {
+
+    @apply flex justify-center gap-5 px-2 flex-wrap md:flex-row flex-col items-center;
+  }
+
+  .result-card-grid {
+    @apply flex justify-center gap-5 px-2 flex-wrap;
+  }
+
+  /* ======== BENEFITS SECTION ======== */
+  /* Main Benefit Sections Container */
+  .benefit-sections {
+    @apply w-full flex;
+  }
+
+  /* Benefits Section Inner Container */
+  .benefit-section-container {
+    @apply flex flex-wrap gap-5 mt-8 py-10 px-5 font-sans max-w-6xl mx-auto mr-2;
+  }
+
+  /* Responsive Benefit Sections */
+  .benefit-sections-responsive {
+    @apply w-full flex md:flex-row flex-col md:gap-0 gap-4 md:p-0 py-5 px-2 md:mr-0 mr-0;
+  }
+
+  .benefit-section-container-responsive {
+    @apply flex md:flex-wrap flex-col gap-5 md:gap-5 mt-8 md:py-10 py-5 md:px-5 px-2 font-sans max-w-6xl mx-auto md:items-stretch items-center w-full;
+  }
+
+  /* Mobile Responsive Overrides */
+  @media (max-width: 768px) {
+    .benefit-sections {
+      @apply flex-col w-full gap-4 py-5 px-2 mr-0;
+    }
+
+    .benefit-section-container {
+      @apply flex-col items-center w-full;
+    }
+
+    .benefits-container {
+      @apply flex-col items-center;
+    }
+
+    .benefits-standard .benefits-grid,
+    .benefits-compact .benefits-grid,
+    .benefits-full-width .benefits-grid,
+    .benefits-centered .benefits-grid {
+      @apply flex-col items-center gap-4 px-4;
+    }
+  }
+
+  /* ======== PRICING SECTION ======== */
+  /* Main Pricing Section */
+  .pricing-section {
+    @apply py-20 relative overflow-hidden;
+    background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  }
+
+  /* Animated Background */
+  .pricing-section::before {
+    @apply content-[''] absolute w-[200%] h-[200%];
+    top: -50%;
+    left: -50%;
+    background: radial-gradient(circle, rgba(102, 126, 234, 0.05) 0%, transparent 70%);
+    animation: float 20s ease-in-out infinite;
+  }
+
+  @keyframes float {
+
+    0%,
+    100% {
+      transform: translateY(0px) rotate(0deg);
+    }
+
+    50% {
+      transform: translateY(-20px) rotate(2deg);
+    }
+  }
+
+  /* Section Container */
+  .pricing-container {
+    @apply max-w-6xl mx-auto px-5 relative z-10 flex flex-col;
+  }
+
+  /* Section Header */
+  .pricing-section-header {
+    @apply text-center mb-16 relative z-10;
+  }
+
+  .pricing-section-title {
+    @apply text-4xl font-extrabold text-gray-900 mb-4 leading-tight;
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .pricing-section-subtitle {
+    @apply text-lg text-slate-600 max-w-2xl mx-auto leading-relaxed;
+  }
+
+  /* Pricing Grid */
+  .pricing-grid {
+    @apply flex justify-center gap-5 px-2 mb-12 relative z-10;
+  }
+
+  /* Payment Methods Section */
+  .payment-methods {
+    @apply text-center mb-8 p-6 bg-white rounded-xl shadow-sm relative z-10;
+  }
+
+  .payment-text {
+    @apply text-sm text-slate-600 mb-4 font-medium;
+  }
+
+  .payment-icons {
+    @apply flex justify-center gap-6 flex-wrap;
+  }
+
+  .payment-method {
+    @apply py-2 px-4 bg-slate-50 border border-slate-200 rounded-lg;
+    @apply text-sm font-medium text-gray-700 transition-all duration-200 cursor-pointer;
+    @apply hover:text-white hover:-translate-y-px;
+  }
+
+  .payment-method:hover {
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+    border: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  }
+
+  /* Guarantee Section */
+  .guarantee {
+    @apply text-center p-6 rounded-xl text-white relative mt-5 z-10;
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  }
+
+  .guarantee-text {
+    @apply m-0 text-base font-medium leading-relaxed;
+    @apply flex items-center justify-center gap-3 flex-wrap;
+  }
+
+  .guarantee-text svg {
+    @apply w-5 h-5 align-middle flex-shrink-0;
+  }
+
+  .guarantee-text>* {
+    @apply flex items-center gap-1.5 whitespace-nowrap;
+  }
+
+  /* Mobile Responsive Overrides */
+  @media (max-width: 1024px) {
+    .pricing-grid {
+      @apply gap-6;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .pricing-section {
+      @apply py-12;
+    }
+
+    .pricing-section-header {
+      @apply mb-10;
+    }
+
+    .pricing-section-title {
+      @apply text-3xl;
+    }
+
+    .pricing-section-subtitle {
+      @apply text-base;
+    }
+
+    .pricing-grid {
+      @apply flex-col items-center gap-6;
+    }
+
+    .payment-icons {
+      @apply gap-4;
+    }
+
+    .payment-method {
+      @apply text-xs py-1.5 px-3;
+    }
+
+    .guarantee-text {
+      @apply text-sm gap-2;
+    }
+
+    .guarantee-text svg {
+      @apply w-4 h-4;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .pricing-section-title {
+      @apply text-2xl leading-tight;
+    }
+
+    .guarantee {
+      @apply p-4;
+    }
+
+    .guarantee-text {
+      @apply text-sm flex-col gap-3;
+    }
+  }
+
+  /* ======== TESTIMONIAL SECTION ======== */
+
+  .testimonial-section {
+    @apply flex justify-center py-12 px-5 font-sans;
+  }
+
+  @media (max-width: 768px) {
+    .testimonial-section {
+      @apply py-8 px-4;
+    }
+
+    .testimonials-standard,
+    .testimonials-compact,
+    .testimonials-full-width,
+    .testimonials-centered {
+      @apply py-8 px-4;
+    }
+  }
+
+  /* ======== GET IN TOUCH SECTION ======== */
+  /* Main Get In Touch Section */
+  .get-in-touch-section {
+    @apply max-w-6xl mx-auto my-10 px-5 font-sans flex flex-col items-center py-12;
+    @apply lg:py-12 lg:px-5 md:py-8 md:px-4;
+  }
+
+  /* Section Heading */
+  .get-in-touch-heading {
+    @apply text-center text-4xl font-extrabold mb-2 mt-0;
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-size: 2.5em;
+    margin-bottom: 10px;
+  }
+
+  /* Section Subheading */
+  .get-in-touch-subheading {
+    @apply text-center text-lg mb-6 mt-0 text-gray-600;
+    font-size: 1.2rem;
+    margin-bottom: 25px;
+  }
+
+  /* Contact Container */
+  .contact-container {
+    @apply flex w-full max-w-5xl justify-between gap-8;
+    @apply lg:flex-row flex-col;
+  }
+
+  /* Contact Info Side Container */
+  .contact-side {
+    @apply p-5 rounded-lg;
+    @apply lg:w-2/5 w-full;
+  }
+
+  /* Individual Contact Info Boxes */
+  .contact-info-box {
+    @apply bg-gray-50 p-5 rounded-lg w-full mb-5;
+  }
+
+  .contact-info-heading {
+    @apply text-xl font-bold mb-2 mt-0 text-gray-800;
+    font-size: 1.4em;
+    margin-bottom: 10px;
+  }
+
+  .contact-info-text {
+    @apply mb-2 mt-0 text-gray-600 text-left;
+    @apply lg:text-left text-center;
+  }
+
+  /* Business Hours */
+  .business-hours-box {
+    @apply bg-gray-50 p-5 rounded-lg w-full mb-5;
+  }
+
+  .business-hours-heading {
+    @apply text-xl font-bold mb-2 mt-0 text-gray-800;
+  }
+
+  .business-hours-text {
+    @apply mb-2 mt-0 text-gray-600 text-left;
+    @apply lg:text-left text-center;
+  }
+
+  /* Connect With Us */
+  .connect-with-us-box {
+    @apply bg-gray-50 p-5 rounded-lg w-full;
+    @apply lg:max-w-none max-w-2xl lg:text-left text-center;
+  }
+
+  .connect-with-us-heading {
+    @apply text-xl font-bold mb-2 mt-0 text-gray-800;
+  }
+
+  .contact-info-item {
+    @apply flex items-center gap-3 text-blue-500 hover:text-blue-700 transition-colors p-2 rounded-md hover:bg-blue-50;
+  }
+
+  .contact-info-icon {
+    @apply text-blue-500 w-5 h-5 flex-shrink-0;
+  }
+
+  .contact-info-text {
+    @apply text-gray-600 m-0 hover:text-gray-800 transition-colors;
+  }
+
+  /* Social Icons */
+  .social-icons {
+    @apply flex gap-4 justify-center;
+  }
+
+  .social-icon {
+    @apply text-blue-500 text-xl p-2 rounded-full hover:text-blue-700 hover:-translate-y-0.5 hover:bg-blue-50 transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2;
+    font-size: 1.3em;
+    transition: color 0.2s ease, transform 0.2s ease;
+  }
+
+  .social-icon:hover {
+    background-color: rgba(82, 113, 255, 0.1);
+  }
+
+  /* Large tablets and small desktops */
+  @media (max-width: 1024px) {
+    .get-in-touch-section {
+      @apply px-4 py-10;
+    }
+
+    .get-in-touch-heading {
+      font-size: 2.2em;
+    }
+
+    .contact-container {
+      @apply gap-6;
+    }
+
+    .contact-side {
+      @apply w-full lg:w-2/5;
+    }
+  }
+
+  /* Tablets */
+  @media (max-width: 960px) {
+    .get-in-touch-section {
+      @apply py-8 px-4;
+      padding: 30px 15px;
+    }
+
+    .get-in-touch-heading {
+      font-size: 2.0em;
+    }
+
+    .contact-container {
+      @apply flex-col items-center gap-6;
+    }
+
+    .contact-side {
+      @apply p-5 rounded-lg w-full;
+    }
+
+    .contact-info-box,
+    .business-hours-box,
+    .connect-with-us-box {
+      @apply w-full max-w-2xl;
+    }
+
+    .contact-info-text,
+    .business-hours-text {
+      @apply text-center;
+    }
+
+    .connect-with-us-box {
+      @apply text-center;
+    }
+
+    .social-icons {
+      @apply justify-center;
+    }
+  }
+
+  /* Small tablets and large phones */
+  @media (max-width: 768px) {
+    .get-in-touch-section {
+      @apply py-6 px-3;
+    }
+
+    .get-in-touch-heading {
+      @apply text-3xl;
+      font-size: 1.8rem;
+    }
+
+    .get-in-touch-subheading {
+      @apply text-base px-2;
+      font-size: 1.1rem;
+      padding: 0 10px;
+    }
+
+    .contact-container {
+      @apply gap-5;
+    }
+
+    .contact-side {
+      @apply p-3;
+      padding: 10px;
+    }
+
+    .contact-info-box,
+    .business-hours-box,
+    .connect-with-us-box {
+      @apply p-4 w-full;
+      padding: 15px;
+    }
+
+    .contact-info-heading,
+    .business-hours-heading,
+    .connect-with-us-heading {
+      @apply text-lg;
+    }
+
+    .contact-info-text,
+    .business-hours-text {
+      @apply text-sm text-center;
+    }
+
+    .social-icon {
+      @apply text-lg p-2;
+    }
+  }
+
+  /* Small phones */
+  @media (max-width: 640px) {
+    .get-in-touch-section {
+      @apply py-6 px-2;
+    }
+
+    .get-in-touch-heading {
+      @apply text-2xl;
+      font-size: 1.75rem;
+    }
+
+    .get-in-touch-subheading {
+      @apply text-sm px-3;
+      font-size: 1rem;
+    }
+
+    .contact-container {
+      @apply gap-4;
+    }
+
+    .contact-side {
+      @apply p-2;
+    }
+
+    .contact-info-box,
+    .business-hours-box,
+    .connect-with-us-box {
+      @apply p-3;
+      padding: 12px;
+    }
+
+    .contact-info-heading,
+    .business-hours-heading,
+    .connect-with-us-heading {
+      @apply text-base font-semibold;
+    }
+
+    .contact-info-text,
+    .business-hours-text {
+      @apply text-xs leading-relaxed;
+    }
+
+    .social-icons {
+      @apply gap-3;
+    }
+
+    .social-icon {
+      @apply text-base p-1.5;
+    }
+  }
+
+  /* Extra small phones */
+  @media (max-width: 480px) {
+    .get-in-touch-section {
+      @apply py-4 px-2;
+    }
+
+    .get-in-touch-heading {
+      @apply text-xl leading-tight;
+      font-size: 1.5rem;
+    }
+
+    .get-in-touch-subheading {
+      @apply text-sm px-2 leading-snug;
+    }
+
+    .contact-container {
+      @apply gap-3;
+    }
+
+    .contact-info-box,
+    .business-hours-box,
+    .connect-with-us-box {
+      @apply p-3 rounded-md;
+    }
+
+    .contact-info-heading,
+    .business-hours-heading,
+    .connect-with-us-heading {
+      @apply text-sm font-medium mb-2;
+    }
+
+    .contact-info-text,
+    .business-hours-text {
+      @apply text-xs;
+    }
+
+    .social-icons {
+      @apply gap-2 flex-wrap;
+    }
+
+    .social-icon {
+      @apply text-sm p-1;
+    }
+  }
+
+  /* ======== FOOTER SECTION ======== */
+  /* Footer Container */
+  .footer {
+    @apply bg-blue-500 text-white font-sans flex justify-center items-center;
+    background-color: #5271ff;
+    padding: 50px 20px;
+  }
+
+  /* Footer Inner Container */
+  .footer-container {
+    @apply flex justify-between items-center max-w-6xl w-full px-5;
+  }
+
+  /* Footer Paragraph */
+  .footer-text {
+    @apply text-2xl leading-snug whitespace-pre-line m-0;
+    font-size: 1.5em;
+    line-height: 1.4;
+  }
+
+  /* Ready Text Styling */
+  .footer-ready {
+    @apply text-3xl font-extrabold;
+    font-size: 1.6em;
+  }
+
+  /* Start Text Styling */
+  .footer-start {
+    @apply text-3xl font-extrabold;
+    font-size: 1.6em;
+    color: #f0f0f0b0;
+  }
+
+  /* Primary Button */
+  .footer-button {
+    @apply bg-white text-blue-500 py-4 px-8 border-none rounded-lg cursor-pointer text-lg font-semibold transition-all duration-300 shadow-sm hover:bg-gray-100 hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-white focus:ring-opacity-50 focus:ring-offset-2 active:translate-y-0 active:shadow-sm;
+    color: #5271ff;
+    font-size: 1.2rem;
+    padding: 15px 30px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  .footer-button:hover {
+    background-color: #f0f0f0;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  }
+
+  .footer-button:focus {
+    outline: 2px solid rgba(255, 255, 255, 0.5);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.3);
+  }
+
+  .footer-button:active {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  }
+
+
+  /* Large tablets (max-width: 1024px) */
+  @media (max-width: 1024px) {
+    .footer .footer-container {
+      @apply max-w-4xl;
+      max-width: 900px;
+    }
+  }
+
+  /* Medium tablets (max-width: 768px) */
+  @media (max-width: 768px) {
+    .footer {
+      @apply py-10 px-4;
+      padding: 40px 16px;
+    }
+
+    .footer .footer-container {
+      @apply flex-col items-center text-center gap-6;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 24px;
+    }
+
+    .footer .footer-text {
+      @apply text-xl;
+      font-size: 1.25em;
+    }
+
+    .footer .footer-ready,
+    .footer .footer-start {
+      @apply text-2xl;
+      font-size: 1.5em;
+    }
+
+    .footer .footer-button {
+      @apply text-lg py-3 px-6 self-center mt-4;
+      font-size: 1.125rem;
+      padding: 12px 24px;
+      align-self: center;
+      margin-top: 16px;
+    }
+  }
+
+  /* Small tablets and large phones (max-width: 640px) */
+  @media (max-width: 640px) {
+    .footer {
+      @apply py-8 px-3;
+      padding: 32px 12px;
+    }
+
+    .footer .footer-text {
+      @apply text-lg;
+      font-size: 1.125em;
+    }
+
+    .footer .footer-ready,
+    .footer .footer-start {
+      @apply text-xl;
+      font-size: 1.25em;
+    }
+  }
+
+  /* Mobile phones (max-width: 480px) */
+  @media (max-width: 480px) {
+    .footer {
+      @apply py-8 px-4;
+      padding: 30px 15px;
+    }
+
+    .footer .footer-container {
+      @apply gap-4;
+      padding: 0 10px;
+      gap: 15px;
+    }
+
+    .footer .footer-text {
+      @apply text-base;
+      font-size: 1.1em;
+    }
+
+    .footer .footer-ready,
+    .footer .footer-start {
+      @apply text-lg;
+      font-size: 1.2em;
+    }
+
+    .footer .footer-button {
+      @apply text-base py-2.5 px-5 w-full mt-5 text-center;
+      font-size: 1rem;
+      padding: 10px 20px;
+      width: 100%;
+      margin-top: 20px;
+      text-align: center;
+    }
+  }
+
+  /* Very small phones (max-width: 360px) */
+  @media (max-width: 360px) {
+    .footer {
+      @apply py-6 px-3;
+      padding: 24px 12px;
+    }
+
+    .footer .footer-text {
+      @apply text-sm;
+      font-size: 0.95em;
+    }
+
+    .footer .footer-ready,
+    .footer .footer-start {
+      @apply text-base;
+      font-size: 1.1em;
+    }
+
+    .footer .footer-button {
+      @apply text-sm py-2 px-4;
+      font-size: 0.875rem;
+      padding: 8px 16px;
+    }
+  }
+
+  /* Landscape orientation on mobile */
+  @media (max-width: 768px) and (orientation: landscape) {
+    .footer {
+      @apply py-6;
+      padding: 24px 20px;
+    }
+
+    .footer .footer-container {
+      @apply flex-row gap-8;
+      flex-direction: row;
+      gap: 32px;
+    }
+
+    .footer .footer-text {
+      @apply text-left;
+      text-align: left;
+    }
+
+    .footer .footer-button {
+      @apply w-auto mt-0;
+      width: auto;
+      margin-top: 0;
+    }
+  }
+
+  /* ====================================================================
+   AUTHENTICATION PAGE 
+   ============================================================================ */
+  .auth-container {
+    @apply flex flex-col justify-center items-center min-h-screen bg-[#f9f9f9];
+    font-family: sans-serif;
+  }
+
+  .auth-card {
+    @apply bg-white  w-[400px] flex flex-col mt-2.5 p-[30px] rounded-[10px];
+    box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+  }
+
+
+
+
   .card {
-    @apply bg-white rounded-lg shadow-md p-6 border;
+    @apply bg-white rounded-lg shadow-md p-6 border border-gray-200 hover:shadow-lg transition-shadow;
   }
-  
+
+  .card-header {
+    @apply border-b border-gray-200 pb-4 mb-4;
+  }
+
   .form-field {
     @apply space-y-2;
   }
-  
+
+  .form-input {
+    @apply w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-dairy-primary focus:border-transparent;
+  }
+
+  .form-label {
+    @apply block text-sm font-medium text-gray-700 mb-1;
+  }
+
   .dashboard-container {
     @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
+
+  .page-header {
+    @apply border-b border-gray-200 pb-4 mb-6;
+  }
+
+  .page-title {
+    @apply text-2xl font-bold text-gray-900 bg-gradient-to-r from-dairy-primary to-dairy-secondary bg-clip-text text-transparent;
+  }
+
+  .section-title {
+    @apply text-lg font-semibold text-gray-800 mb-4;
+  }
+
+  /* Navigation styles */
+  .nav-link {
+    @apply text-gray-600 hover:text-dairy-primary transition-colors px-3 py-2 rounded-md hover:bg-dairy-light;
+  }
+
+  .nav-link-active {
+    @apply text-dairy-primary bg-dairy-light font-medium;
+  }
+
+  /* Status badges */
+  .badge-success {
+    @apply bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-medium;
+  }
+
+  .badge-warning {
+    @apply bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full text-xs font-medium;
+  }
+
+  .badge-error {
+    @apply bg-red-100 text-red-800 px-2 py-1 rounded-full text-xs font-medium;
+  }
+
+  .badge-info {
+    @apply bg-dairy-light text-dairy-primary px-2 py-1 rounded-full text-xs font-medium;
+  }
+
+  /* Table styles */
+  .table-header {
+    @apply bg-gray-50 border-b border-gray-200;
+  }
+
+  .table-cell {
+    @apply px-6 py-4 whitespace-nowrap text-sm text-gray-900;
+  }
+
+  .table-header-cell {
+    @apply px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider;
+  }
+
+  /* Modal styles */
+  .modal-overlay {
+    @apply fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50;
+  }
+
+  .modal-content {
+    @apply bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6;
+  }
+
+  /* Loading states */
+  .loading-spinner {
+    @apply animate-spin rounded-full h-8 w-8 border-b-2 border-dairy-primary;
+  }
+
+  /* Gradient backgrounds */
+  .gradient-primary {
+    @apply bg-gradient-to-r from-dairy-primary to-dairy-secondary;
+  }
+
+  .gradient-light {
+    @apply bg-gradient-to-br from-dairy-light to-white;
   }
 }

@@ -21,7 +21,7 @@ export function OnboardingProgress({ currentStep, totalSteps, steps }: Onboardin
       {/* Progress Bar */}
       <div className="w-full bg-gray-200 rounded-full h-2 mb-6">
         <div 
-          className="bg-farm-green h-2 rounded-full transition-all duration-300"
+          className="bg-dairy-primary h-2 rounded-full transition-all duration-300"
           style={{ width: `${(currentStep / totalSteps) * 100}%` }}
         />
       </div>
@@ -38,8 +38,8 @@ export function OnboardingProgress({ currentStep, totalSteps, steps }: Onboardin
               <div
                 className={cn(
                   "w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium mb-2",
-                  isCompleted && "bg-farm-green text-white",
-                  isCurrent && "bg-farm-green text-white ring-2 ring-farm-green ring-offset-2",
+                  isCompleted && "bg-dairy-primary text-white",
+                  isCurrent && "bg-dairy-primary text-white ring-2 ring-dairy-primary ring-offset-2",
                   !isCompleted && !isCurrent && "bg-gray-200 text-gray-600"
                 )}
               >

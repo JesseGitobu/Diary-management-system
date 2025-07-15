@@ -19,7 +19,11 @@ const herdFeatures = [
   { id: 'health_records', label: 'Health Records', description: 'Keep track of vaccinations, treatments, and vet visits' },
   { id: 'breeding_records', label: 'Breeding Management', description: 'Track breeding cycles, pregnancies, and births' },
   { id: 'feed_tracking', label: 'Feed Management', description: 'Monitor feed consumption and costs' },
-  { id: 'weight_tracking', label: 'Weight Monitoring', description: 'Track animal weight and growth' },
+  { id: 'finance_tracking', label: 'Finance Tracking', description: 'Track expenses, income, and profitability' },
+  { id: 'task_team_management', label: 'Task & Team Management', description: 'Manage tasks and team members for your farm' },
+  { id: 'inventory_equipment', label: 'Inventory & Equipment Management', description: 'Manage inventory and equipment for your farm' },
+  { id: 'performance_analysis_reporting_tools', label: 'Performance Analysis & Reporting Tools', description: 'Analyze herd performance metrics and generate reports' },
+
 ]
 
 export function HerdInfoForm({ userId, initialData }: HerdInfoFormProps) {
@@ -29,18 +33,18 @@ export function HerdInfoForm({ userId, initialData }: HerdInfoFormProps) {
     'health_records'
   ])
   const router = useRouter()
-  
+
   const toggleFeature = (featureId: string) => {
-    setSelectedFeatures(prev => 
-      prev.includes(featureId) 
+    setSelectedFeatures(prev =>
+      prev.includes(featureId)
         ? prev.filter(id => id !== featureId)
         : [...prev, featureId]
     )
   }
-  
+
   const handleSubmit = async () => {
     setLoading(true)
-    
+
     try {
       const response = await fetch('/api/onboarding', {
         method: 'POST',
@@ -55,33 +59,33 @@ export function HerdInfoForm({ userId, initialData }: HerdInfoFormProps) {
           },
         }),
       })
-      
+
       if (!response.ok) {
         throw new Error('Failed to save herd info')
       }
-      
-      router.push('/onboarding/steps/summary')
+
+      router.push('/onboarding/steps/tracking')
     } catch (err) {
       console.error('Error saving herd info:', err)
     } finally {
       setLoading(false)
     }
   }
-  
+
   return (
     <div className="space-y-8">
       <OnboardingProgress currentStep={2} totalSteps={5} steps={steps} />
-      
-      <Card>
+
+      <Card className='h-[60vh] flex flex-col'>
         <CardHeader>
           <CardTitle>Herd Management Features</CardTitle>
           <CardDescription>
-            Choose which features you'd like to use for managing your herd. 
+            Choose which features you'd like to use for managing your herd.
             You can always enable more features later.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
+        <CardContent className="flex-1 overflow-y-auto">
+          <div className="space-y-4 ">
             {herdFeatures.map((feature) => (
               <div
                 key={feature.id}
@@ -102,30 +106,31 @@ export function HerdInfoForm({ userId, initialData }: HerdInfoFormProps) {
               </div>
             ))}
           </div>
-          
-          <div className="flex justify-between pt-6">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => router.push('/onboarding/steps/farm-basics')}
-            >
-              Back
-            </Button>
-            
-            <div className="flex space-x-3">
+
+          <div >
+            <div className="flex justify-between pt-6">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => router.push('/dashboard')}
+                onClick={() => router.push('/onboarding/steps/farm-basics')}
               >
-                Save & Exit
+                Back
               </Button>
-              <Button
-                onClick={handleSubmit}
-                disabled={loading}
-              >
-                Continue
-              </Button>
+              <div className="flex space-x-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => router.push('/dashboard')}
+                >
+                  Save & Exit
+                </Button>
+                <Button
+                  onClick={handleSubmit}
+                  disabled={loading}
+                >
+                  Continue
+                </Button>
+              </div>
             </div>
           </div>
         </CardContent>

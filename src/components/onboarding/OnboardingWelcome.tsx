@@ -3,6 +3,7 @@
 import { Button } from '@/components/ui/Button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { useRouter } from 'next/navigation'
+import { GiCow } from "react-icons/gi";
 import { Dog, Users, BarChart3, Settings } from 'lucide-react'
 
 interface OnboardingWelcomeProps {
@@ -25,10 +26,10 @@ export function OnboardingWelcome({ userName, onboardingData }: OnboardingWelcom
     <div className="space-y-8">
       <div className="text-center">
         <h1 className="text-3xl font-bold text-gray-900 mb-4">
-          Welcome to FarmTrack Pro, {userName}!
+          Welcome to DairyTrack Pro, {userName}!
         </h1>
         <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-          Let's get your farm set up so you can start tracking your animals, 
+          Let's get your dairy farm set up so you can start tracking your animals, 
           managing your team, and growing your operation.
         </p>
       </div>
@@ -44,19 +45,19 @@ export function OnboardingWelcome({ userName, onboardingData }: OnboardingWelcom
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <div className="flex items-center space-x-3">
-              <Dog className="w-5 h-5 text-farm-green" />
+              <GiCow className="w-5 h-5 text-dairy-secondary" />
               <span className="text-sm">Farm information</span>
             </div>
             <div className="flex items-center space-x-3">
-              <Users className="w-5 h-5 text-farm-green" />
+              <Users className="w-5 h-5 text-dairy-secondary" />
               <span className="text-sm">Herd details</span>
             </div>
             <div className="flex items-center space-x-3">
-              <BarChart3 className="w-5 h-5 text-farm-green" />
+              <BarChart3 className="w-5 h-5 text-dairy-secondary" />
               <span className="text-sm">Tracking preferences</span>
             </div>
             <div className="flex items-center space-x-3">
-              <Settings className="w-5 h-5 text-farm-green" />
+              <Settings className="w-5 h-5 text-dairy-secondary" />
               <span className="text-sm">Basic settings</span>
             </div>
           </div>

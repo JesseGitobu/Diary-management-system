@@ -1,121 +1,251 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { FarmProfileUpdate, FarmUpdate } from '@/lib/supabase/types'
 
-export async function getOnboardingData(userId: string) {
-  const supabase = await createServerSupabaseClient()
-  
-  const { data, error } = await supabase
-    .from('farm_profiles')
-    .select(`
-      *,
-      farms (
-        id,
-        name,
-        location,
-        farm_type
-      )
-    `)
-    .eq('user_id', userId)
-    .single()
-  
-  if (error) {
-    console.error('Error getting onboarding data:', error)
-    return null
-  }
-  
-  return data
-}
-
 export async function saveOnboardingStep(userId: string, stepData: any) {
   const supabase = await createServerSupabaseClient()
-  
+
   try {
-    // Get current profile to find farm_id
+    // Get current profile
     const { data: profile, error: profileError } = await supabase
       .from('farm_profiles')
-      .select('farm_id')
+      .select('*')
       .eq('user_id', userId)
       .single()
     
-    if (profileError) {
-      console.error('Error getting farm profile:', profileError)
-      throw profileError
-    }
-
-    if (!profile.farm_id) {
-      throw new Error('No farm associated with user')
+    if (profileError) throw profileError
+    
+    // Prepare profile update object
+    const profileUpdate: FarmProfileUpdate = {
+      updated_at: new Date().toISOString()
     }
     
-    // Separate farm data from profile data
-    const farmData: FarmUpdate = {}
-    const profileData: FarmProfileUpdate = {}
-    
-    // Map fields to correct tables
-    if (stepData.farm_name) {
-      farmData.name = stepData.farm_name
-      profileData.farm_name = stepData.farm_name
+    // Handle different step types
+    switch (stepData.step || 'unknown') {
+      case 'farm-basics':
+        // Farm basics data
+        if (stepData.farm_name) profileUpdate.farm_name = stepData.farm_name
+        if (stepData.location) profileUpdate.location = stepData.location
+        if (stepData.herd_size) profileUpdate.herd_size = stepData.herd_size
+        
+        // Update farm table for farm-specific data
+        if (stepData.farm_name || stepData.location || stepData.farm_type) {
+          const farmUpdate: FarmUpdate = {}
+          
+          if (stepData.farm_name) farmUpdate.name = stepData.farm_name
+          if (stepData.location) farmUpdate.location = stepData.location
+          if (stepData.farm_type) farmUpdate.farm_type = stepData.farm_type
+          
+          const { error: farmUpdateError } = await supabase
+            .from('farms')
+            .update(farmUpdate)
+            .eq('id', profile.farm_id ?? '')
+          
+          if (farmUpdateError) throw farmUpdateError
+        }
+        break
+        
+      case 'herd-info':
+        // Store herd management features as JSON
+        if (stepData.tracking_features) {
+          profileUpdate.tracking_features = stepData.tracking_features
+        }
+        break
+        
+      case 'tracking-setup':
+        // Store tracking preferences and schedule
+        if (stepData.tracking_preferences) {
+          profileUpdate.tracking_preferences = stepData.tracking_preferences
+        }
+        if (stepData.preferred_schedule) {
+          profileUpdate.preferred_schedule = stepData.preferred_schedule
+        }
+        if (stepData.reminder_time) {
+          profileUpdate.reminder_time = stepData.reminder_time
+        }
+        if (stepData.enable_reminders !== undefined) {
+          profileUpdate.enable_reminders = stepData.enable_reminders
+        }
+        break
+        
+      case 'goals':
+        // Store goals and objectives
+        if (stepData.primary_goal) {
+          profileUpdate.primary_goal = stepData.primary_goal
+        }
+        if (stepData.milk_production_target) {
+          profileUpdate.milk_production_target = stepData.milk_production_target
+        }
+        if (stepData.herd_growth_target) {
+          profileUpdate.herd_growth_target = stepData.herd_growth_target
+        }
+        if (stepData.revenue_target) {
+          profileUpdate.revenue_target = stepData.revenue_target
+        }
+        if (stepData.timeline) {
+          profileUpdate.goal_timeline = stepData.timeline
+        }
+        if (stepData.specific_challenges) {
+          profileUpdate.specific_challenges = stepData.specific_challenges
+        }
+        if (stepData.success_metrics) {
+          profileUpdate.success_metrics = stepData.success_metrics
+        }
+        break
+        
+      default:
+        // Handle legacy data or unknown steps
+        // Merge any additional fields that match the profile schema
+        Object.keys(stepData).forEach(key => {
+          if (
+            key !== 'step' &&
+            stepData[key] !== undefined &&
+            key in profileUpdate
+          ) {
+            (profileUpdate as any)[key] = stepData[key]
+          }
+        })
+        break
     }
     
-    if (stepData.location) {
-      farmData.location = stepData.location
-      profileData.location = stepData.location
-    }
+    // Update farm profile with the prepared data
+    const { error: updateError } = await supabase
+      .from('farm_profiles')
+      .update(profileUpdate)
+      .eq('user_id', userId)
     
-    if (stepData.farm_type) {
-      farmData.farm_type = stepData.farm_type
-      // Don't add farm_type to profileData - it doesn't exist in farm_profiles
-    }
-    
-    if (stepData.herd_size) {
-      profileData.herd_size = stepData.herd_size
-    }
-    
-    // Add any other profile-specific fields
-    // if (stepData.tracking_features) {
-    //   // We can store this as JSON in a notes field or create a separate table later
-    //   profileData.notes = JSON.stringify({ tracking_features: stepData.tracking_features })
-    // }
-    
-    // Update farm table if we have farm data
-    if (Object.keys(farmData).length > 0) {
-      farmData.updated_at = new Date().toISOString()
-      
-      const { error: farmUpdateError } = await supabase
-        .from('farms')
-        .update(farmData)
-        .eq('id', profile.farm_id)
-      
-      if (farmUpdateError) {
-        console.error('Error updating farm:', farmUpdateError)
-        throw farmUpdateError
-      }
-    }
-    
-    // Update farm profile if we have profile data
-    if (Object.keys(profileData).length > 0) {
-      profileData.updated_at = new Date().toISOString()
-      
-      const { error: profileUpdateError } = await supabase
-        .from('farm_profiles')
-        .update(profileData)
-        .eq('user_id', userId)
-      
-      if (profileUpdateError) {
-        console.error('Error updating farm profile:', profileUpdateError)
-        throw profileUpdateError
-      }
-    }
+    if (updateError) throw updateError
     
     return { success: true }
   } catch (error) {
     console.error('Error saving onboarding step:', error)
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : String(error) 
-    }
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
   }
 }
 
+// Updated calculateProgress function to handle all steps
+export async function calculateProgress(userId: string) {
+  const data = await getOnboardingData(userId)
+  if (!data) return 0
+  
+  let completedSteps = 0
+  const totalSteps = 5
+  
+  // Step 1: Farm basics (farm_name, location, herd_size)
+  if (data.farm_name && data.location && data.herd_size) {
+    completedSteps++
+  }
+  
+  // Step 2: Herd info (tracking_preferences selected)
+  if (
+    'tracking_preferences' in data &&
+    Array.isArray((data as any).tracking_preferences) &&
+    (data as any).tracking_preferences.length > 0
+  ) {
+    completedSteps++
+  }
+  
+  // Step 3: Tracking setup (preferred_schedule set)
+  if ('preferred_schedule' in data && (data as any).preferred_schedule) {
+    completedSteps++
+  }
+  
+  // Step 4: Goals (primary_goal selected)
+  if (data && 'primary_goal' in data && (data as any).primary_goal) {
+    completedSteps++
+  }
+  
+  // Step 5: Review (auto-complete when they reach summary or mark as completed)
+  if (data.onboarding_completed || completedSteps === 4) {
+    completedSteps = 5
+  }
+  
+  const percentage = Math.round((completedSteps / totalSteps) * 100)
+  
+  // Update the percentage in database
+  const supabase = await createServerSupabaseClient()
+  await supabase
+    .from('farm_profiles')
+    .update({ completion_percentage: percentage })
+    .eq('user_id', userId)
+  
+  return percentage
+}
+
+// Helper function to get onboarding data with farm information
+export async function getOnboardingData(userId: string) {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    // First, try to get existing farm profile
+    const { data, error } = await supabase
+      .from('farm_profiles')
+      .select(`
+        *,
+        farms (
+          id,
+          name,
+          location,
+          farm_type
+        )
+      `)
+      .eq('user_id', userId)
+      .maybeSingle() // Use maybeSingle instead of single
+    
+    if (error && error.code !== 'PGRST116') {
+      // Only throw if it's not a "no rows" error
+      console.error('Error getting onboarding data:', error)
+      throw error
+    }
+    
+    if (data) {
+      console.log('✅ Found existing onboarding data:', data)
+      return data
+    }
+    
+    // 🎯 NEW: No farm profile exists yet, check user role
+    console.log('🔍 No farm profile found, checking user role for:', userId)
+    
+    const { data: userRole, error: roleError } = await supabase
+      .from('user_roles')
+      .select('role_type, status, farm_id')
+      .eq('user_id', userId)
+      .single()
+    
+    if (roleError) {
+      console.error('Error getting user role:', roleError)
+      return null
+    }
+    
+    console.log('🔍 User role found:', userRole)
+    
+    // Return minimal data structure for pending setup users
+    if (userRole.role_type === 'farm_owner' && userRole.status === 'pending_setup') {
+      return {
+        user_id: userId,
+        farm_id: userRole.farm_id,
+        farm_name: null,
+        location: null,
+        herd_size: null,
+        onboarding_completed: false,
+        completion_percentage: 0,
+        farms: userRole.farm_id ? {
+          id: userRole.farm_id,
+          name: null,
+          location: null,
+          farm_type: null
+        } : null
+      }
+    }
+    
+    return null
+    
+  } catch (error) {
+    console.error('Exception in getOnboardingData:', error)
+    return null
+  }
+}
+
+// Function to update completion status
 export async function updateCompletionStatus(userId: string, completed: boolean) {
   const supabase = await createServerSupabaseClient()
   
@@ -134,44 +264,4 @@ export async function updateCompletionStatus(userId: string, completed: boolean)
   }
   
   return true
-}
-
-export async function calculateProgress(userId: string) {
-  const data = await getOnboardingData(userId)
-  if (!data) return 0
-  
-  let completedSteps = 0
-  const totalSteps = 4 // Reduced to 4 since we simplified the flow
-  
-  // Step 1: Farm basics (farm name and location)
-  if (data.farm_name && data.location) completedSteps++
-  
-  // Step 2: Farm type
-  if (data.farms?.farm_type) completedSteps++
-  
-  // Step 3: Herd size
-  if (data.herd_size && data.herd_size > 0) completedSteps++
-  
-  // Step 4: Tracking features (if notes contain tracking_features)
-  // if (data.notes) {
-  //   try {
-  //     const parsedNotes = JSON.parse(data.notes)
-  //     if (parsedNotes.tracking_features && parsedNotes.tracking_features.length > 0) {
-  //       completedSteps++
-  //     }
-  //   } catch {
-  //     // If notes is not JSON, that's ok
-  //   }
-  // }
-  
-  const percentage = Math.round((completedSteps / totalSteps) * 100)
-  
-  // Update the percentage in database
-  const supabase = await createServerSupabaseClient()
-  await supabase
-    .from('farm_profiles')
-    .update({ completion_percentage: percentage })
-    .eq('user_id', userId)
-  
-  return percentage
 }

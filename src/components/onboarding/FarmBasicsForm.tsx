@@ -15,7 +15,7 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 const farmBasicsSchema = z.object({
   farm_name: z.string().min(2, 'Farm name must be at least 2 characters'),
   location: z.string().min(2, 'Location must be at least 2 characters'),
-  farm_type: z.enum(['dairy', 'beef', 'mixed', 'other']),
+  farm_type: z.enum(['Dairy Cattle', 'Dairy Goat', 'Mixed Dairy']),
   herd_size: z.number().min(1, 'Herd size must be at least 1').max(10000, 'Herd size seems too large'),
 })
 
@@ -43,30 +43,32 @@ export function FarmBasicsForm({ userId, initialData }: FarmBasicsFormProps) {
     },
   })
   
-  const handleSubmit = async (data: FarmBasicsFormData) => {
-    setLoading(true)
-    setError(null)
+  // UPDATE the handleSubmit function:
+const handleSubmit = async (data: FarmBasicsFormData) => {
+  setLoading(true)
+  setError(null)
+  
+  try {
+    // 🎯 NEW: Call new API to create farm and update role
+    const response = await fetch('/api/onboarding/setup-farm', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        userId,
+        step: 'farm-basics',
+        data,
+      }),
+    })
     
-    try {
-      const response = await fetch('/api/onboarding', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          userId,
-          step: 'farm-basics',
-          data,
-        }),
-      })
-      
-      if (!response.ok) {
-        throw new Error('Failed to save farm basics')
-      }
-      
-      // Continue to next step
-      router.push('/onboarding/steps/herd-info')
-    } catch (err) {
+    if (!response.ok) {
+      throw new Error('Failed to save farm basics')
+    }
+    
+    // Continue to next step
+    router.push('/onboarding/steps/herd-info')
+  } catch (err) {
       if (err instanceof Error) {
         setError(err.message)
       } else {
@@ -75,7 +77,7 @@ export function FarmBasicsForm({ userId, initialData }: FarmBasicsFormProps) {
     } finally {
       setLoading(false)
     }
-  }
+}
   
   const handleSaveAndExit = async () => {
     const data = form.getValues()
@@ -87,14 +89,14 @@ export function FarmBasicsForm({ userId, initialData }: FarmBasicsFormProps) {
     <div className="space-y-8">
       <OnboardingProgress currentStep={1} totalSteps={5} steps={steps} />
       
-      <Card>
+      <Card className="h-[60vh] flex flex-col">
         <CardHeader>
           <CardTitle>Farm Basics</CardTitle>
           <CardDescription>
             Tell us about your farm so we can customize your experience.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex-1 overflow-y-auto">
           {error && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">
               {error}
@@ -127,12 +129,12 @@ export function FarmBasicsForm({ userId, initialData }: FarmBasicsFormProps) {
               <select
                 id="farm_type"
                 {...form.register('farm_type')}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-dairy-primary focus:border-transparent"
               >
-                <option value="dairy">Dairy</option>
-                <option value="beef">Beef</option>
-                <option value="mixed">Mixed (Dairy & Beef)</option>
-                <option value="other">Other</option>
+                <option value="Dairy Cattle">Dairy Cattle</option>
+                <option value="Dairy Goat">Dairy Goat</option>
+                <option value="Mixed Dairy">Mixed Dairy</option>
+                
               </select>
               {form.formState.errors.farm_type && (
                 <p className="text-sm text-red-600 mt-1">

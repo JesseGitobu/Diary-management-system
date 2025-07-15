@@ -18,8 +18,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
     
+    // Add step information to the data for proper handling
+    const stepDataWithType = {
+      ...data,
+      step: step // This helps the saveOnboardingStep function know which step is being saved
+    }
+    
     // Save the onboarding step
-    const result = await saveOnboardingStep(userId, data)
+    const result = await saveOnboardingStep(userId, stepDataWithType)
     
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 })
@@ -31,7 +37,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ 
       success: true, 
       progress,
-      message: 'Onboarding step saved successfully'
+      step: step,
+      message: `${step} step saved successfully`
     })
     
   } catch (error) {

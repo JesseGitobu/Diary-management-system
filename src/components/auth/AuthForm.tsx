@@ -140,8 +140,9 @@ export function AuthForm({ mode = 'signin' }: AuthFormProps) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <Card className="w-full max-w-md">
+    <div className="auth-container">
+      <div className={"logo"}>DairyTrack Pro</div>
+      <Card className="auth-card">
         {/* Invitation Banner */}
         {invitationData && (
           <div className="bg-farm-green/10 border-farm-green/20 border rounded-t-lg p-4">
@@ -163,7 +164,7 @@ export function AuthForm({ mode = 'signin' }: AuthFormProps) {
           <CardTitle className="text-2xl text-center">
             {invitationData ? 'Complete Your Registration' : (authMode === 'signin' ? 'Welcome Back' : 'Create Account')}
           </CardTitle>
-          <CardDescription className="text-center">
+          <CardDescription className="text-center mb-5">
             {invitationData 
               ? 'Create your account to join the farm team'
               : (authMode === 'signin' 
@@ -187,6 +188,7 @@ export function AuthForm({ mode = 'signin' }: AuthFormProps) {
                 <Input
                   id="email"
                   type="email"
+                  placeholder="Enter your email"
                   {...signInForm.register('email')}
                   error={signInForm.formState.errors.email?.message}
                 />
@@ -196,6 +198,7 @@ export function AuthForm({ mode = 'signin' }: AuthFormProps) {
                 <Input
                   id="password"
                   type="password"
+                  placeholder="Enter your password"
                   {...signInForm.register('password')}
                   error={signInForm.formState.errors.password?.message}
                 />
@@ -204,6 +207,7 @@ export function AuthForm({ mode = 'signin' }: AuthFormProps) {
                 type="submit"
                 className="w-full"
                 disabled={loading}
+                primary={true}
               >
                 {loading ? <LoadingSpinner size="sm" /> : 'Sign In'}
               </Button>
@@ -215,6 +219,7 @@ export function AuthForm({ mode = 'signin' }: AuthFormProps) {
                 <Input
                   id="fullName"
                   type="text"
+                  placeholder="Enter your full name"
                   {...signUpForm.register('fullName')}
                   error={signUpForm.formState.errors.fullName?.message}
                 />
@@ -224,6 +229,7 @@ export function AuthForm({ mode = 'signin' }: AuthFormProps) {
                 <Input
                   id="email"
                   type="email"
+                  placeholder="Enter your email"
                   {...signUpForm.register('email')}
                   error={signUpForm.formState.errors.email?.message}
                   disabled={!!invitationData} // Disable if pre-filled from invitation
@@ -234,6 +240,7 @@ export function AuthForm({ mode = 'signin' }: AuthFormProps) {
                 <Input
                   id="password"
                   type="password"
+                  placeholder="Enter your password"
                   {...signUpForm.register('password')}
                   error={signUpForm.formState.errors.password?.message}
                 />
@@ -243,12 +250,14 @@ export function AuthForm({ mode = 'signin' }: AuthFormProps) {
                 <Input
                   id="confirmPassword"
                   type="password"
+                  placeholder="Confirm your password"
                   {...signUpForm.register('confirmPassword')}
                   error={signUpForm.formState.errors.confirmPassword?.message}
                 />
               </div>
               <Button
                 type="submit"
+                primary={true}
                 className="w-full"
                 disabled={loading}
               >
@@ -263,7 +272,7 @@ export function AuthForm({ mode = 'signin' }: AuthFormProps) {
               <button
                 type="button"
                 onClick={toggleMode}
-                className="text-sm text-farm-green hover:text-farm-green/80"
+                className="text-sm text-dairy-gray hover:text-dairy-primary"
               >
                 {authMode === 'signin' 
                   ? "Don't have an account? Sign up" 

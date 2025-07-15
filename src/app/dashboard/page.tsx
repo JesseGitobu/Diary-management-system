@@ -19,6 +19,16 @@ export default async function DashboardPage() {
     redirect('/auth')
   }
   
+  // 🎯 NEW: Handle pending setup status
+  if (userRole.status === 'pending_setup') {
+    redirect('/onboarding')
+  }
+  
+  if (!userRole.farm_id) {
+    // User has role but no farm - shouldn't happen, but handle gracefully
+    redirect('/onboarding')
+  }
+  
   return (
     <div className="dashboard-container">
       <div className="mb-8">

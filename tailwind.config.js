@@ -50,7 +50,19 @@ module.exports = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
-        // Dairy farm specific colors
+        // Updated dairy farm specific colors - blue theme
+        dairy: {
+          default: "#007bff",
+          primary: "#3b82f6",      // Blue 500 - main brand color
+          secondary: "#1d4ed8",    // Blue 700 - darker blue for gradients
+          tertiary: "#1e40af",     // Blue 800 - even darker blue for accents
+          light: "#dbeafe",        // Blue 100 - light backgrounds
+          accent: "#60a5fa",       // Blue 400 - accent elements
+          cream: "#fef3c7",        // Keep cream for contrast
+          brown: "#92400e",        // Keep brown for earthy elements
+          gray: "#64748b",         // Slate 500 - neutral text
+        },
+        // Deprecated - keeping for backward compatibility
         farm: {
           green: "#16a34a",
           cream: "#fef3c7",
