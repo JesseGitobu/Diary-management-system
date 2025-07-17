@@ -8,6 +8,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
 import { AnimalBasicInfo } from '@/components/animals/AnimalBasicInfo'
 import { AnimalHealthRecords } from '@/components/animals/AnimalHealthRecords'
 import { AnimalProductionRecords } from '@/components/animals/AnimalProductionRecords'
+import { EditAnimalModal } from '@/components/animals/EditAnimalModal'
+import { ReleaseAnimalModal } from '@/components/animals/ReleaseAnimalModal'
 import { 
   ArrowLeft, 
   Edit, 
@@ -17,7 +19,8 @@ import {
   Heart,
   Milk,
   FileText,
-  Camera
+  Camera,
+  AlertTriangle
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -30,10 +33,14 @@ interface AnimalProfileProps {
 
 export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) {
   const [activeTab, setActiveTab] = useState('overview')
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [showReleaseModal, setShowReleaseModal] = useState(false)
+  const [animalData, setAnimalData] = useState(animal)
   const router = useRouter()
   
   const canEdit = ['farm_owner', 'farm_manager'].includes(userRole)
   const canAddRecords = ['farm_owner', 'farm_manager', 'worker'].includes(userRole)
+  const canRelease = ['farm_owner', 'farm_manager'].includes(userRole)
   
   const getStatusBadgeColor = (status: string) => {
     switch (status) {
@@ -65,6 +72,16 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
     }
   }
   
+  const handleAnimalUpdated = (updatedAnimal: any) => {
+    setAnimalData(updatedAnimal)
+    setShowEditModal(false)
+  }
+  
+  const handleAnimalReleased = () => {
+    setShowReleaseModal(false)
+    router.push('/dashboard/animals')
+  }
+  
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -79,28 +96,44 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
           
           <div>
             <h1 className="text-3xl font-bold text-gray-900">
-              {animal.name || `Animal ${animal.tag_number}`}
+              {animalData.name || `Animal ${animalData.tag_number}`}
             </h1>
             <p className="text-gray-600">
-              Tag: {animal.tag_number} • {animal.breed || 'Unknown breed'}
+              Tag: {animalData.tag_number} • {animalData.breed || 'Unknown breed'}
             </p>
           </div>
         </div>
         
-        {canEdit && (
-          <div className="flex space-x-2">
-            <Button variant="outline" size="sm">
-              <Camera className="mr-2 h-4 w-4" />
-              Add Photo
+        <div className="flex space-x-2">
+          <Button variant="outline" size="sm">
+            <Camera className="mr-2 h-4 w-4" />
+            Add Photo
+          </Button>
+          
+          {canEdit && (
+            <Button 
+            
+              size="sm"
+              onClick={() => setShowEditModal(true)}
+              className="hover:bg-blue-50 hover:text-blue-600 hover:border-blue-600"
+            >
+              <Edit className="mr-2 h-4 w-4" />
+              Edit Animal
             </Button>
-            <Button asChild size="sm">
-              <Link href={`/dashboard/animals/${animal.id}/edit`}>
-                <Edit className="mr-2 h-4 w-4" />
-                Edit Animal
-              </Link>
+          )}
+          
+          {canRelease && (
+            <Button 
+              variant="outline"
+              size="sm"
+              onClick={() => setShowReleaseModal(true)}
+              className="text-red-600 border-red-300 hover:bg-red-500 hover:text-white hover:border-red-600"
+            >
+              <AlertTriangle className="mr-2 h-4 w-4" />
+              Release Animal
             </Button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
       
       {/* Quick Stats */}
@@ -113,7 +146,7 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
               </div>
               <div>
                 <p className="text-sm text-gray-600">Age</p>
-                <p className="font-medium">{calculateAge(animal.birth_date)}</p>
+                <p className="font-medium">{calculateAge(animalData.birth_date)}</p>
               </div>
             </div>
           </CardContent>
@@ -127,7 +160,7 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
               </div>
               <div>
                 <p className="text-sm text-gray-600">Weight</p>
-                <p className="font-medium">{animal.weight ? `${animal.weight} kg` : 'Not recorded'}</p>
+                <p className="font-medium">{animalData.weight ? `${animalData.weight} kg` : 'Not recorded'}</p>
               </div>
             </div>
           </CardContent>
@@ -141,8 +174,8 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
               </div>
               <div>
                 <p className="text-sm text-gray-600">Status</p>
-                <Badge className={getStatusBadgeColor(animal.status)}>
-                  {animal.status}
+                <Badge className={getStatusBadgeColor(animalData.status)}>
+                  {animalData.status}
                 </Badge>
               </div>
             </div>
@@ -157,7 +190,7 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
               </div>
               <div>
                 <p className="text-sm text-gray-600">Gender</p>
-                <p className="font-medium capitalize">{animal.gender}</p>
+                <p className="font-medium capitalize">{animalData.gender}</p>
               </div>
             </div>
           </CardContent>
@@ -175,21 +208,22 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
         
         <TabsContent value="overview" className="space-y-6">
           <AnimalBasicInfo 
-            animal={animal} 
+            animal={animalData} 
             canEdit={canEdit}
+            onEditClick={() => setShowEditModal(true)}
           />
         </TabsContent>
         
         <TabsContent value="health" className="space-y-6">
           <AnimalHealthRecords 
-            animalId={animal.id}
+            animalId={animalData.id}
             canAddRecords={canAddRecords}
           />
         </TabsContent>
         
         <TabsContent value="production" className="space-y-6">
           <AnimalProductionRecords 
-            animalId={animal.id}
+            animalId={animalData.id}
             canAddRecords={canAddRecords}
           />
         </TabsContent>
@@ -203,8 +237,8 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {animal.notes ? (
-                <p className="text-gray-700 whitespace-pre-wrap">{animal.notes}</p>
+              {animalData.notes ? (
+                <p className="text-gray-700 whitespace-pre-wrap">{animalData.notes}</p>
               ) : (
                 <p className="text-gray-500 italic">No notes recorded yet.</p>
               )}
@@ -212,6 +246,27 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
           </Card>
         </TabsContent>
       </Tabs>
+      
+      {/* Edit Animal Modal */}
+      {showEditModal && (
+        <EditAnimalModal
+          animal={animalData}
+          farmId={farmId}
+          isOpen={showEditModal}
+          onClose={() => setShowEditModal(false)}
+          onAnimalUpdated={handleAnimalUpdated}
+        />
+      )}
+      
+      {/* Release Animal Modal */}
+      {showReleaseModal && (
+        <ReleaseAnimalModal
+          animal={animalData}
+          isOpen={showReleaseModal}
+          onClose={() => setShowReleaseModal(false)}
+          onAnimalReleased={handleAnimalReleased}
+        />
+      )}
     </div>
   )
 }

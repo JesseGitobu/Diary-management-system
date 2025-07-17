@@ -112,6 +112,34 @@ export interface AvailableMother {
   production_status: string | null
   birth_date: string | null
 }
+
+// Add to your types/database.ts file
+export interface ReleaseRecord {
+  id: string
+  animal_id: string
+  farm_id: string
+  released_by: string
+  release_reason: 'sold' | 'died' | 'transferred' | 'culled' | 'other'
+  release_date: string
+  sale_price?: number
+  buyer_info?: string
+  death_cause?: string
+  transfer_location?: string
+  notes: string
+  animal_data: any // Complete animal data at time of release
+  created_at: string
+}
+
+export interface ReleaseFormData {
+  release_reason: 'sold' | 'died' | 'transferred' | 'culled' | 'other'
+  release_date: string
+  sale_price?: number
+  buyer_info?: string
+  death_cause?: string
+  transfer_location?: string
+  notes: string
+}
+
 // Farm interfaces
 export interface Farm {
   id: string

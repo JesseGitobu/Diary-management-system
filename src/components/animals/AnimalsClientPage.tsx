@@ -47,6 +47,8 @@ export function AnimalsClientPage({
   const [showAddModal, setShowAddModal] = useState(false)
   const [loading, setLoading] = useState(false)
 
+  const canAddAnimals = ['farm_owner', 'farm_manager', 'worker'].includes(userRole)
+
   const handleAnimalAdded = (newAnimal: Animal) => {
     // Update local state with new animal
     setAnimals(prev => [newAnimal, ...prev])
@@ -122,6 +124,52 @@ export function AnimalsClientPage({
       console.error('Export failed:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleAnimalUpdated = (updatedAnimal: Animal) => {
+    setAnimals(prev =>
+      prev.map(animal =>
+        animal.id === updatedAnimal.id ? updatedAnimal : animal
+      )
+    )
+
+    // Recalculate stats
+    const originalAnimal = animals.find(a => a.id === updatedAnimal.id)
+    if (originalAnimal) {
+      setStats(prev => {
+        let newStats = { ...prev }
+
+        // Update total count
+        newStats.total = animals.length
+
+        // Update gender breakdown
+        newStats.female = animals.filter(a => a.gender === 'female').length
+        newStats.male = animals.filter(a => a.gender === 'male').length
+
+        // Update source breakdown
+        newStats.bySource = {
+          newborn_calves: animals.filter(a => a.animal_source === 'newborn_calf').length,
+          purchased: animals.filter(a => a.animal_source === 'purchased_animal').length,
+        }
+
+        // Update production status breakdown
+        newStats.byProduction = {
+          calves: animals.filter(a => a.production_status === 'calf').length,
+          heifers: animals.filter(a => a.production_status === 'heifer').length,
+          served: animals.filter(a => a.production_status === 'served').length,
+          lactating: animals.filter(a => a.production_status === 'lactating').length,
+          dry: animals.filter(a => a.production_status === 'dry').length,
+        }
+
+        // Update health status breakdown
+        newStats.byHealth = {
+          healthy: animals.filter(a => a.health_status === 'healthy').length,
+          needsAttention: animals.filter(a => a.health_status !== 'healthy').length,
+        }
+
+        return newStats
+      })
     }
   }
 
@@ -278,7 +326,12 @@ export function AnimalsClientPage({
       )}
       
       {/* Animals List */}
-      <AnimalsList animals={animals} />
+      <AnimalsList 
+        animals={animals}
+        farmId={farmId}
+        userRole={userRole}
+        onAnimalUpdated={handleAnimalUpdated}
+      />
       
       {/* Add Animal Modal */}
       <AddAnimalModal

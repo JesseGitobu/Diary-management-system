@@ -6,6 +6,8 @@ import {
   AnimalUpdate, 
   AnimalStats, 
   AvailableMother,
+  ReleaseRecord,        // Add this
+  ReleaseFormData,
   NewbornCalfFormData,
   PurchasedAnimalFormData 
 } from '@/types/database'
@@ -135,6 +137,43 @@ export async function getAnimalById(animalId: string) {
   return data
 }
 
+/**
+ * Check if tag number exists (excluding current animal for updates)
+ */
+export async function getAnimalByTagNumber(
+  tagNumber: string, 
+  farmId: string, 
+  excludeAnimalId?: string
+) {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    let query = supabase
+      .from('animals')
+      .select('id, tag_number')
+      .eq('farm_id', farmId)
+      .eq('tag_number', tagNumber)
+      .neq('status', 'inactive') // Don't check against deleted animals
+    
+    // Exclude current animal for updates
+    if (excludeAnimalId) {
+      query = query.neq('id', excludeAnimalId)
+    }
+    
+    const { data, error } = await query.single()
+    
+    if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+      console.error('Error checking tag number:', error)
+      return null
+    }
+    
+    return data
+  } catch (error) {
+    console.error('Error in getAnimalByTagNumber:', error)
+    return null
+  }
+}
+
 // Get available mothers for newborn calf selection
 export async function getAvailableMothers(farmId: string): Promise<AvailableMother[]> {
   const supabase = await createServerSupabaseClient()
@@ -150,6 +189,37 @@ export async function getAvailableMothers(farmId: string): Promise<AvailableMoth
   
   if (error) {
     console.error('Error fetching available mothers:', error)
+    return []
+  }
+  
+  return data || []
+}
+
+// Get available mothers excluding specific animal (for editing)
+export async function getAvailableMothersForEdit(
+  farmId: string, 
+  excludeAnimalId?: string
+): Promise<AvailableMother[]> {
+  const supabase = await createServerSupabaseClient()
+  
+  let query = supabase
+    .from('animals')
+    .select('id, tag_number, name, breed, production_status, birth_date')
+    .eq('farm_id', farmId)
+    .eq('gender', 'female')
+    .eq('status', 'active')
+    .in('production_status', ['lactating', 'dry', 'served'])
+    .order('tag_number', { ascending: true })
+  
+  // Exclude specific animal (useful when editing to prevent circular references)
+  if (excludeAnimalId) {
+    query = query.neq('id', excludeAnimalId)
+  }
+  
+  const { data, error } = await query
+  
+  if (error) {
+    console.error('Error fetching available mothers for edit:', error)
     return []
   }
   
@@ -321,46 +391,84 @@ export async function createAnimal(
 }
 
 // Update an existing animal
-export async function updateAnimal(
-  animalId: string, 
-  animalData: AnimalUpdate
-): Promise<{ success: boolean; data?: any; error?: string }> {
+export async function updateAnimal(animalId: string, farmId: string, animalData: any) {
   const supabase = await createServerSupabaseClient()
   
   try {
-    // Check if animal exists
-    const { data: existingAnimal, error: fetchError } = await supabase
-      .from('animals')
-      .select('id, farm_id, tag_number')
-      .eq('id', animalId)
-      .single()
+    // Verify animal belongs to the farm
+    const existingAnimal = await getAnimalById(animalId)
     
-    if (fetchError || !existingAnimal) {
-      return { success: false, error: 'Animal not found' }
+    if (!existingAnimal) {
+      return { success: false, error: 'Animal not found or access denied' }
     }
     
-    // Check for duplicate tag number (if tag_number is being updated)
-    if (animalData.tag_number && animalData.tag_number !== existingAnimal.tag_number) {
-      const { data: duplicateAnimal } = await supabase
-        .from('animals')
-        .select('id')
-        .eq('farm_id', existingAnimal.farm_id)
-        .eq('tag_number', animalData.tag_number)
-        .neq('id', animalId)
-        .single()
-      
-      if (duplicateAnimal) {
-        return { success: false, error: 'Tag number already exists' }
+    // Prepare update data
+    const updateData = {
+      ...animalData,
+      updated_at: new Date().toISOString(),
+    }
+    
+    // Remove undefined/null values
+    Object.keys(updateData).forEach(key => {
+      if (updateData[key] === undefined || updateData[key] === '') {
+        delete updateData[key]
       }
-    }
+    })
     
+    // Update the animal
     const { data, error } = await supabase
       .from('animals')
-      .update({
-        ...animalData,
-        updated_at: new Date().toISOString()
-      })
+      .update(updateData)
       .eq('id', animalId)
+      .eq('farm_id', farmId) // Double-check farm ownership
+      .select(`
+        *,
+        mother:mother_id (
+          id,
+          tag_number,
+          name
+        ),
+        father:father_id (
+          id,
+          tag_number,
+          name
+        )
+      `)
+      .single()
+    
+    if (error) {
+      console.error('Error updating animal:', error)
+      return { success: false, error: error.message }
+    }
+    
+    return { success: true, data }
+  } catch (error) {
+    console.error('Error in updateAnimal:', error)
+    return { success: false, error: 'Failed to update animal' }
+  }
+}
+
+// Release an animal with proper audit trail
+export async function releaseAnimal(
+  animalId: string,
+  farmId: string,
+  releaseData: {
+    release_reason: 'sold' | 'died' | 'transferred' | 'culled' | 'other';
+    release_date: string;
+    sale_price?: number;
+    buyer_info?: string;
+    death_cause?: string;
+    transfer_location?: string;
+    notes: string;
+  },
+  userId: string
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    // Verify animal belongs to the farm and get complete data
+    const { data: existingAnimal, error: fetchError } = await supabase
+      .from('animals')
       .select(`
         *,
         mother:mother_id (
@@ -376,19 +484,144 @@ export async function updateAnimal(
           breed
         )
       `)
+      .eq('id', animalId)
+      .eq('farm_id', farmId)
+      .single()
+    
+    if (fetchError || !existingAnimal) {
+      return { success: false, error: 'Animal not found or access denied' }
+    }
+    
+    // Create release record for audit trail
+    const { error: releaseRecordError } = await supabase
+      .from('animal_releases')
+      .insert({
+        animal_id: animalId,
+        farm_id: farmId,
+        released_by: userId,
+        release_reason: releaseData.release_reason,
+        release_date: releaseData.release_date,
+        sale_price: releaseData.sale_price || null,
+        buyer_info: releaseData.buyer_info || null,
+        death_cause: releaseData.death_cause || null,
+        transfer_location: releaseData.transfer_location || null,
+        notes: releaseData.notes,
+        animal_data: existingAnimal, // Store complete animal data for records
+      })
+    
+    if (releaseRecordError) {
+      console.error('Error creating release record:', releaseRecordError)
+      return { success: false, error: 'Failed to create release record' }
+    }
+    
+    // Update animal status to released
+    const { error: updateError } = await supabase
+      .from('animals')
+      .update({
+        status: 'released',
+        release_date: releaseData.release_date,
+        release_reason: releaseData.release_reason,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', animalId)
+    
+    if (updateError) {
+      console.error('Error updating animal status:', updateError)
+      return { success: false, error: 'Failed to update animal status' }
+    }
+    
+    return { success: true }
+  } catch (error) {
+    console.error('Error in releaseAnimal:', error)
+    return { success: false, error: 'Failed to release animal' }
+  }
+}
+
+/**
+ * Get release information for an animal
+ */
+export async function getAnimalReleaseInfo(animalId: string, farmId: string) {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    const { data, error } = await supabase
+      .from('animal_releases')
+      .select(`
+        *,
+        released_by_user:released_by (
+          user_metadata
+        )
+      `)
+      .eq('animal_id', animalId)
+      .eq('farm_id', farmId)
       .single()
     
     if (error) {
-      console.error('Error updating animal:', error)
-      return { success: false, error: error.message }
+      console.error('Error fetching release info:', error)
+      return null
     }
     
-    return { success: true, data }
-    
+    return data
   } catch (error) {
-    console.error('Error in updateAnimal:', error)
-    return { success: false, error: 'Failed to update animal' }
+    console.error('Error in getAnimalReleaseInfo:', error)
+    return null
   }
+}
+
+// Get released animals with release information
+export async function getReleasedAnimals(
+  farmId: string,
+  options: {
+    limit?: number;
+    offset?: number;
+    releaseReason?: string;
+    dateFrom?: string;
+    dateTo?: string;
+  } = {}
+): Promise<any[]> {
+  const supabase = await createServerSupabaseClient()
+  
+  let query = supabase
+    .from('animal_releases')
+    .select(`
+      *,
+      released_by_user:released_by (
+        user_metadata
+      )
+    `)
+    .eq('farm_id', farmId)
+    .order('release_date', { ascending: false })
+  
+  // Apply filters
+  if (options.releaseReason) {
+    query = query.eq('release_reason', options.releaseReason)
+  }
+  
+  if (options.dateFrom) {
+    query = query.gte('release_date', options.dateFrom)
+  }
+  
+  if (options.dateTo) {
+    query = query.lte('release_date', options.dateTo)
+  }
+  
+  // Apply pagination
+  if (options.limit) {
+    query = query.limit(options.limit)
+  }
+  
+  if (options.offset) {
+    query = query.range(options.offset, options.offset + (options.limit || 50) - 1)
+  }
+  
+  const { data, error } = await query
+  
+  if (error) {
+    console.error('Error fetching released animals:', error)
+    return []
+  }
+  
+  return data || []
 }
 
 // Delete an animal (soft delete by changing status)
@@ -835,4 +1068,63 @@ export async function getAnimalsApproachingCalving(
     father_info: item.father_info ?? null,
     updated_at: item.updated_at ?? null,
   })) as Animal[]
+}
+
+// Get release statistics for dashboard
+export async function getReleaseStats(farmId: string): Promise<{
+  totalReleased: number;
+  byReason: Record<string, number>;
+  thisMonth: number;
+  thisYear: number;
+  totalRevenue: number;
+}> {
+  const supabase = await createServerSupabaseClient()
+  
+  const { data: releases, error } = await supabase
+    .from('animal_releases')
+    .select('release_reason, release_date, sale_price')
+    .eq('farm_id', farmId)
+  
+  if (error || !releases) {
+    return {
+      totalReleased: 0,
+      byReason: {},
+      thisMonth: 0,
+      thisYear: 0,
+      totalRevenue: 0
+    }
+  }
+  
+  const now = new Date()
+  const thisMonth = now.getMonth()
+  const thisYear = now.getFullYear()
+  
+  const stats = {
+    totalReleased: releases.length,
+    byReason: {} as Record<string, number>,
+    thisMonth: 0,
+    thisYear: 0,
+    totalRevenue: 0
+  }
+  
+  releases.forEach(release => {
+    // Count by reason
+    stats.byReason[release.release_reason] = (stats.byReason[release.release_reason] || 0) + 1
+    
+    // Count this month and year
+    const releaseDate = new Date(release.release_date)
+    if (releaseDate.getFullYear() === thisYear) {
+      stats.thisYear++
+      if (releaseDate.getMonth() === thisMonth) {
+        stats.thisMonth++
+      }
+    }
+    
+    // Sum revenue from sales
+    if (release.release_reason === 'sold' && release.sale_price) {
+      stats.totalRevenue += release.sale_price
+    }
+  })
+  
+  return stats
 }
