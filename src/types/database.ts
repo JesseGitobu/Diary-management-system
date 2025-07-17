@@ -1,26 +1,117 @@
 // src/types/database.ts - Complete Type Definitions
-
 export type UserRole = 'farm_owner' | 'farm_manager' | 'worker' | 'super_admin'
 export type InvitationStatus = 'pending' | 'accepted' | 'declined' | 'expired'
 export type AnimalStatus = 'active' | 'sold' | 'deceased' | 'dry'
 export type AnimalGender = 'male' | 'female'
+export type AnimalSource = 'newborn_calf' | 'purchased_animal'
+export type ProductionStatus = 'calf' | 'heifer' | 'served' | 'lactating' | 'dry'
+export type HealthStatus = 'healthy' | 'sick' | 'requires_attention' | 'quarantined'
+export type ServiceMethod = 'artificial_insemination' | 'natural_breeding'
 
-// Base Animal interface
+// Base Animal interface - Updated to match Supabase null types
 export interface Animal {
   id: string
   farm_id: string
   tag_number: string
-  name?: string
-  breed?: string
+  name: string | null  // Changed from string | undefined to string | null
+  breed: string | null // Changed from string | undefined to string | null
   gender: AnimalGender
-  birth_date?: string
-  weight?: number
+  birth_date: string | null // Changed from string | undefined to string | null
+  weight: number | null // Changed from number | undefined to number | null
   status: AnimalStatus
-  notes?: string
+  notes: string | null // Changed from string | undefined to string | null
   created_at: string
   updated_at: string
+  animal_source: AnimalSource
+  mother_id: string | null // Changed from string | undefined to string | null
+  father_id: string | null // Changed from string | undefined to string | null
+  purchase_date: string | null // Changed from string | undefined to string | null
+  health_status: HealthStatus | null // Changed from HealthStatus | undefined to HealthStatus | null
+  production_status: ProductionStatus | null // Changed from ProductionStatus | undefined to ProductionStatus | null
+  service_date: string | null // Changed from string | undefined to string | null
+  service_method: ServiceMethod | null // Changed from ServiceMethod | undefined to ServiceMethod | null
+  expected_calving_date: string | null // Changed from string | undefined to string | null
+  current_daily_production: number | null // Changed from number | undefined to number | null
+  days_in_milk: number | null // Changed from number | undefined to number | null
+  lactation_number: number | null // Changed from number | undefined to number | null
+  mother_production_info: {
+    daily_production?: number
+    lactation_number?: number
+    peak_production?: number
+  } | null // Changed from undefined to null
+  
+  // Purchase-specific fields
+  purchase_price: number | null // Changed from number | undefined to number | null
+  seller_info: string | null // Changed from string | undefined to string | null
+  
+  // Birth-specific fields
+  father_info: string | null // Changed from string | undefined to string | null
+  birth_weight: number | null // Changed from number | undefined to number | null
+  
+  // Relations (for joined queries)
+  mother?: {
+    id: string
+    tag_number: string
+    name: string | null // Changed from string | undefined to string | null
+    breed: string | null // Added breed field
+  }
+  father?: {
+    id: string
+    tag_number: string
+    name: string | null // Changed from string | undefined to string | null
+    breed: string | null // Added breed field
+  }
 }
 
+// Form data types for the new animal forms
+export interface NewbornCalfFormData {
+  tag_number: string
+  name?: string
+  breed: string
+  gender: AnimalGender
+  birth_date: string
+  mother_id: string
+  father_info?: string
+  health_status: HealthStatus
+  birth_weight?: number
+  notes?: string
+}
+
+export interface PurchasedAnimalFormData {
+  tag_number: string
+  name?: string
+  breed: string
+  gender: AnimalGender
+  birth_date?: string
+  purchase_date: string
+  health_status: HealthStatus
+  production_status: ProductionStatus
+  purchase_weight?: number
+  purchase_price?: number
+  seller_info?: string
+  notes?: string
+  
+  // Conditional fields based on production status
+  mother_daily_production?: number
+  mother_lactation_number?: number
+  mother_peak_production?: number
+  service_date?: string
+  service_method?: string
+  expected_calving_date?: string
+  current_daily_production?: number
+  days_in_milk?: number
+  lactation_number?: number
+}
+
+// Available mother type for form selection
+export interface AvailableMother {
+  id: string
+  tag_number: string
+  name: string | null
+  breed: string | null
+  production_status: string | null
+  birth_date: string | null
+}
 // Farm interfaces
 export interface Farm {
   id: string
@@ -188,7 +279,7 @@ export interface AnimalWithBreeding extends Animal {
   breeding_status: 'open' | 'bred' | 'confirmed_pregnant' | 'dry' | 'calved'
   days_since_calving?: number
   days_pregnant?: number
-  expected_calving_date?: string
+  
 }
 
 // Extended Animal type with health info
@@ -215,14 +306,14 @@ export interface AnimalComplete extends Animal {
   breeding_status: 'open' | 'bred' | 'confirmed_pregnant' | 'dry' | 'calved'
   days_since_calving?: number
   days_pregnant?: number
-  expected_calving_date?: string
   
+
   // Health info
   recent_health_records?: HealthRecord[]
   last_checkup?: HealthRecord
   vaccination_status?: 'up_to_date' | 'due' | 'overdue'
   health_alerts?: string[]
-  
+
   // Production info
   recent_production?: ProductionRecord[]
   average_daily_production?: number
@@ -346,9 +437,24 @@ export interface AnimalStats {
   total: number
   female: number
   male: number
-  pregnant?: number
-  lactating?: number
-  dry?: number
+  bySource: {
+    newborn_calves: number
+    purchased: number
+  }
+  byProduction: {
+    calves: number
+    heifers: number
+    served: number
+    lactating: number
+    dry: number
+  }
+  byHealth: {
+    healthy: number
+    needsAttention: number
+  }
+  averageAge?: number
+  averageProduction?: number
+
 }
 
 export interface TeamStats {
@@ -457,7 +563,7 @@ export interface PaginationConfig {
 }
 
 // Permission types
-export type Permission = 
+export type Permission =
   | 'manage_farm'
   | 'manage_team'
   | 'manage_animals'
