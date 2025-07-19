@@ -7,6 +7,7 @@ import { GiCow } from 'react-icons/gi'
 import { Home, LogOut, Users, Settings, BarChart3, Warehouse, Tractor, Heart, Droplets, Wheat, Coins, CalendarFold } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { useAuth } from '@/lib/hooks/useAuth'
+import { useRouter } from 'next/navigation'
 
 // Main navigation items (will stay at the top)
 const mainNavigation = [
@@ -31,6 +32,17 @@ const bottomNavigation = [
 export function DashboardSidebar() {
   const { user, signOut } = useAuth()
   const pathname = usePathname()
+  const router = useRouter()
+  
+  const handleSignOut = async () => {
+    try {
+      await signOut()
+      // Router push as backup (signOut should handle redirect)
+      router.push('/')
+    } catch (error) {
+      console.error('Sign out error:', error)
+    }
+  }
   
   const renderNavItem = (item: typeof mainNavigation[0]) => {
     const isActive = pathname === item.href
@@ -75,7 +87,7 @@ export function DashboardSidebar() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => signOut()}
+            onClick={handleSignOut}
             className="w-full flex items-center justify-center space-x-2 mt-4"
           >
             <LogOut className="w-4 h-4" />

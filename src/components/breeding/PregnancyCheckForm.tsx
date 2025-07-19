@@ -1,303 +1,272 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
-import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
-import { Baby, Calendar, CheckCircle, X, FileText } from 'lucide-react'
+import { Badge } from '@/components/ui/Badge'
+import { getAnimalsForPregnancyCheck, createBreedingEvent, type PregnancyCheckEvent } from '@/lib/database/breeding'
+import { CheckCircle, XCircle, HelpCircle } from 'lucide-react'
+
+const pregnancyCheckSchema = z.object({
+  animal_id: z.string().min(1, 'Please select an animal'),
+  event_date: z.string().min(1, 'Examination date is required'),
+  pregnancy_result: z.enum(['pregnant', 'not_pregnant', 'uncertain']),
+  examination_method: z.string().optional(),
+  veterinarian_name: z.string().optional(),
+  estimated_due_date: z.string().optional(),
+  notes: z.string().optional(),
+})
+
+type PregnancyCheckFormData = z.infer<typeof pregnancyCheckSchema>
 
 interface PregnancyCheckFormProps {
   farmId: string
+  onEventCreated: () => void
+  onCancel: () => void
 }
 
-export function PregnancyCheckForm({ farmId }: PregnancyCheckFormProps) {
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [pendingBreedings, setPendingBreedings] = useState<any[]>([])
-  const [selectedBreeding, setSelectedBreeding] = useState<any>(null)
-  type PregnancyStatus = 'suspected' | 'confirmed' | 'false' | 'aborted'
-  type ConfirmationMethod = 'ultrasound' | 'blood_test' | 'rectal_palpation' | 'visual'
+const examinationMethods = [
+  'Rectal palpation',
+  'Ultrasound',
+  'Blood test',
+  'Milk test',
+  'Visual observation'
+]
 
-  const [pregnancyData, setPregnancyData] = useState<{
-    pregnancy_status: PregnancyStatus
-    confirmed_date: string
-    confirmation_method: ConfirmationMethod
-    expected_calving_date: string
-    pregnancy_notes: string
-    veterinarian: string
-  }>({
-    pregnancy_status: 'suspected',
-    confirmed_date: '',
-    confirmation_method: 'ultrasound',
-    expected_calving_date: '',
-    pregnancy_notes: '',
-    veterinarian: '',
+export function PregnancyCheckForm({ farmId, onEventCreated, onCancel }: PregnancyCheckFormProps) {
+  const [loading, setLoading] = useState(false)
+  const [animals, setAnimals] = useState<any[]>([])
+  const [error, setError] = useState<string | null>(null)
+  
+  const form = useForm<PregnancyCheckFormData>({
+    resolver: zodResolver(pregnancyCheckSchema),
+    defaultValues: {
+      animal_id: '',
+      event_date: new Date().toISOString().split('T')[0],
+      pregnancy_result: 'uncertain',
+      examination_method: '',
+      veterinarian_name: '',
+      estimated_due_date: '',
+      notes: '',
+    },
   })
-  const router = useRouter()
   
   useEffect(() => {
-    fetchPendingBreedings()
+    loadEligibleAnimals()
   }, [farmId])
   
-  const fetchPendingBreedings = async () => {
+  const loadEligibleAnimals = async () => {
     try {
-      const response = await fetch(`/api/breeding/pending?farmId=${farmId}`)
-      if (response.ok) {
-        const data = await response.json()
-        setPendingBreedings(data.breedings || [])
-      }
+      const eligibleAnimals = await getAnimalsForPregnancyCheck(farmId)
+      setAnimals(eligibleAnimals)
     } catch (error) {
-      console.error('Error fetching pending breedings:', error)
+      console.error('Error loading animals:', error)
+      setError('Failed to load animals')
     }
   }
   
-  const calculateExpectedCalvingDate = (breedingDate: string) => {
-    // Average gestation period for cattle is 283 days
-    const breeding = new Date(breedingDate)
-    const expected = new Date(breeding.getTime() + (283 * 24 * 60 * 60 * 1000))
-    return expected.toISOString().split('T')[0]
-  }
-  
-  const handleBreedingSelect = (breeding: any) => {
-    setSelectedBreeding(breeding)
-    setPregnancyData({
-      ...pregnancyData,
-      expected_calving_date: calculateExpectedCalvingDate(breeding.breeding_date)
-    })
-  }
-  
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = async (data: PregnancyCheckFormData) => {
     setLoading(true)
     setError(null)
     
     try {
-      const response = await fetch('/api/breeding/pregnancy-status', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          breeding_record_id: selectedBreeding.id,
-          animal_id: selectedBreeding.animal_id,
-          farm_id: farmId,
-          ...pregnancyData,
-        }),
-      })
-      
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to update pregnancy status')
+      const eventData: PregnancyCheckEvent = {
+        ...data,
+        farm_id: farmId,
+        event_type: 'pregnancy_check',
+        estimated_due_date: data.estimated_due_date || undefined,
+        created_by: 'system', // TODO: Replace with actual user ID if available
       }
       
-      router.push('/dashboard/breeding?success=pregnancy_updated')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unexpected error occurred')
+      const result = await createBreedingEvent(eventData)
+      
+      if (result.success) {
+        onEventCreated()
+      } else {
+        setError(result.error || 'Failed to create pregnancy check event')
+      }
+    } catch (error) {
+      setError('An unexpected error occurred')
     } finally {
       setLoading(false)
     }
   }
   
+  const pregnancyResult = form.watch('pregnancy_result')
+  const examinationDate = form.watch('event_date')
+  
+  // Calculate estimated due date (283 days from examination for positive result)
+  useEffect(() => {
+    if (pregnancyResult === 'pregnant' && examinationDate) {
+      const examDate = new Date(examinationDate)
+      const dueDate = new Date(examDate.getTime() + (283 * 24 * 60 * 60 * 1000))
+      form.setValue('estimated_due_date', dueDate.toISOString().split('T')[0])
+    }
+  }, [pregnancyResult, examinationDate, form])
+  
+  const getResultIcon = (result: string) => {
+    switch (result) {
+      case 'pregnant': return <CheckCircle className="w-4 h-4 text-green-600" />
+      case 'not_pregnant': return <XCircle className="w-4 h-4 text-red-600" />
+      case 'uncertain': return <HelpCircle className="w-4 h-4 text-yellow-600" />
+      default: return null
+    }
+  }
+  
+  const getResultColor = (result: string) => {
+    switch (result) {
+      case 'pregnant': return 'bg-green-100 text-green-800'
+      case 'not_pregnant': return 'bg-red-100 text-red-800'
+      case 'uncertain': return 'bg-yellow-100 text-yellow-800'
+      default: return 'bg-gray-100 text-gray-800'
+    }
+  }
+  
   return (
     <div className="space-y-6">
-      {/* Pending Breedings */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Baby className="h-5 w-5" />
-            <span>Select Breeding to Check</span>
-          </CardTitle>
-          <CardDescription>
-            Choose a recent breeding to update pregnancy status
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {pendingBreedings.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-gray-500">
-                No recent breedings found. Animals need to be bred before pregnancy checks can be performed.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {pendingBreedings.map((breeding) => (
-                <div
-                  key={breeding.id}
-                  className={`p-4 border rounded-lg cursor-pointer transition-colors ${
-                    selectedBreeding?.id === breeding.id
-                      ? 'border-farm-green bg-farm-green/5'
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                  onClick={() => handleBreedingSelect(breeding)}
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-medium">
-                        {breeding.animals?.name || `Animal ${breeding.animals?.tag_number}`}
-                      </h4>
-                      <div className="text-sm text-gray-600 mt-1">
-                        <p>Bred: {new Date(breeding.breeding_date).toLocaleDateString()}</p>
-                        <p>Method: {breeding.breeding_type.replace('_', ' ')}</p>
-                        {breeding.sire_name && <p>Sire: {breeding.sire_name}</p>}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <Badge variant="outline">
-                        {breeding.animals?.tag_number}
-                      </Badge>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {Math.floor((new Date().getTime() - new Date(breeding.breeding_date).getTime()) / (1000 * 60 * 60 * 24))} days ago
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-      
-      {/* Pregnancy Status Form */}
-      {selectedBreeding && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center space-x-2">
-              <CheckCircle className="h-5 w-5" />
-              <span>Update Pregnancy Status</span>
-            </CardTitle>
-            <CardDescription>
-              Record pregnancy check results for {selectedBreeding.animals?.name || selectedBreeding.animals?.tag_number}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {error && (
-              <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">
-                {error}
-              </div>
-            )}
-            
-            <form onSubmit={handleSubmit} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="pregnancy_status">Pregnancy Status</Label>
-                  <select
-                    id="pregnancy_status"
-                    value={pregnancyData.pregnancy_status}
-                    onChange={(e) => setPregnancyData({
-                      ...pregnancyData,
-                      pregnancy_status: e.target.value as any
-                    })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
-                  >
-                    <option value="suspected">Suspected Pregnant</option>
-                    <option value="confirmed">Confirmed Pregnant</option>
-                    <option value="false">Not Pregnant</option>
-                    <option value="aborted">Pregnancy Lost</option>
-                  </select>
-                </div>
-                
-                <div>
-                  <Label htmlFor="confirmed_date">Check Date</Label>
-                  <Input
-                    id="confirmed_date"
-                    type="date"
-                    value={pregnancyData.confirmed_date}
-                    onChange={(e) => setPregnancyData({
-                      ...pregnancyData,
-                      confirmed_date: e.target.value
-                    })}
-                  />
-                </div>
-              </div>
-              
-              {pregnancyData.pregnancy_status === 'confirmed' && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="confirmation_method">Confirmation Method</Label>
-                      <select
-                        id="confirmation_method"
-                        value={pregnancyData.confirmation_method}
-                        onChange={(e) => setPregnancyData({
-                          ...pregnancyData,
-                          confirmation_method: e.target.value as any
-                        })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
-                      >
-                        <option value="ultrasound">Ultrasound</option>
-                        <option value="blood_test">Blood Test</option>
-                        <option value="rectal_palpation">Rectal Palpation</option>
-                        <option value="visual">Visual Observation</option>
-                      </select>
-                    </div>
-                    
-                    <div>
-                      <Label htmlFor="expected_calving_date">Expected Calving Date</Label>
-                      <Input
-                        id="expected_calving_date"
-                        type="date"
-                        value={pregnancyData.expected_calving_date}
-                        onChange={(e) => setPregnancyData({
-                          ...pregnancyData,
-                          expected_calving_date: e.target.value
-                        })}
-                      />
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <Label htmlFor="veterinarian">Veterinarian</Label>
-                    <Input
-                      id="veterinarian"
-                      value={pregnancyData.veterinarian}
-                      onChange={(e) => setPregnancyData({
-                        ...pregnancyData,
-                        veterinarian: e.target.value
-                      })}
-                      placeholder="Veterinarian name"
-                    />
-                  </div>
-                </div>
-              )}
-              
-              <div>
-                <Label htmlFor="pregnancy_notes">Notes</Label>
-                <textarea
-                  id="pregnancy_notes"
-                  value={pregnancyData.pregnancy_notes}
-                  onChange={(e) => setPregnancyData({
-                    ...pregnancyData,
-                    pregnancy_notes: e.target.value
-                  })}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
-                  placeholder="Pregnancy check notes, observations, or recommendations..."
-                />
-              </div>
-              
-              <div className="flex justify-end space-x-4 pt-6">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => router.push('/dashboard/breeding')}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={loading}
-                >
-                  {loading ? <LoadingSpinner size="sm" /> : 'Update Status'}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
+      {error && (
+        <div className="p-4 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">
+          {error}
+        </div>
       )}
+      
+      {animals.length === 0 && (
+        <div className="p-4 bg-blue-50 border border-blue-200 rounded-md text-blue-700 text-sm">
+          No animals are currently eligible for pregnancy check. Animals become eligible after insemination.
+        </div>
+      )}
+      
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+        {/* Animal Selection */}
+        <div>
+          <Label htmlFor="animal_id">Select Animal *</Label>
+          <select
+            id="animal_id"
+            {...form.register('animal_id')}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+            disabled={animals.length === 0}
+          >
+            <option value="">Choose an animal...</option>
+            {animals.map((animal) => (
+              <option key={animal.id} value={animal.id}>
+                {animal.tag_number} - {animal.name || 'Unnamed'}
+              </option>
+            ))}
+          </select>
+          {form.formState.errors.animal_id && (
+            <p className="text-sm text-red-600 mt-1">
+              {form.formState.errors.animal_id.message}
+            </p>
+          )}
+        </div>
+        
+        {/* Examination Date */}
+        <div>
+          <Label htmlFor="event_date">Examination Date *</Label>
+          <Input
+            id="event_date"
+            type="date"
+            {...form.register('event_date')}
+            error={form.formState.errors.event_date?.message}
+          />
+        </div>
+        
+        {/* Pregnancy Result */}
+        <div>
+          <Label>Examination Result *</Label>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-2">
+            {['pregnant', 'not_pregnant', 'uncertain'].map((result) => (
+              <button
+                key={result}
+                type="button"
+                onClick={() => form.setValue('pregnancy_result', result as any)}
+                className={`flex items-center justify-center space-x-2 p-4 border rounded-lg transition-colors ${
+                  pregnancyResult === result
+                    ? 'border-farm-green bg-green-50'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                {getResultIcon(result)}
+                <span className="font-medium capitalize">
+                  {result.replace('_', ' ')}
+                </span>
+                {pregnancyResult === result && (
+                  <Badge className={getResultColor(result)}>Selected</Badge>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+        
+        {/* Examination Method */}
+        <div>
+          <Label htmlFor="examination_method">Examination Method</Label>
+          <select
+            id="examination_method"
+            {...form.register('examination_method')}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+          >
+            <option value="">Select method...</option>
+            {examinationMethods.map((method) => (
+              <option key={method} value={method}>
+                {method}
+              </option>
+            ))}
+          </select>
+        </div>
+        
+        {/* Veterinarian */}
+        <div>
+          <Label htmlFor="veterinarian_name">Veterinarian</Label>
+          <Input
+            id="veterinarian_name"
+            {...form.register('veterinarian_name')}
+            placeholder="Name of examining veterinarian"
+          />
+        </div>
+        
+        {/* Estimated Due Date */}
+        {pregnancyResult === 'pregnant' && (
+          <div>
+            <Label htmlFor="estimated_due_date">Estimated Due Date</Label>
+            <Input
+              id="estimated_due_date"
+              type="date"
+              {...form.register('estimated_due_date')}
+            />
+            <p className="text-sm text-gray-600 mt-1">
+              Automatically calculated as 283 days from examination date
+            </p>
+          </div>
+        )}
+        
+        {/* Notes */}
+        <div>
+          <Label htmlFor="notes">Additional Notes</Label>
+          <textarea
+            id="notes"
+            {...form.register('notes')}
+            rows={3}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+            placeholder="Any additional observations or comments..."
+          />
+        </div>
+        
+        {/* Actions */}
+        <div className="flex justify-end space-x-3 pt-4">
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={loading || animals.length === 0}>
+            {loading ? <LoadingSpinner size="sm" /> : 'Record Pregnancy Check'}
+          </Button>
+        </div>
+      </form>
     </div>
   )
 }

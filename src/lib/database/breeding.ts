@@ -1,263 +1,531 @@
+import { createClient } from '@/lib/supabase/client'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
-import { BreedingRecord, PregnancyRecord, CalvingRecord, PregnancyRecordInsert } from '@/types/database'
+import { addDays, subDays } from 'date-fns'
 
-export async function getAnimalBreedingHistory(animalId: string) {
-  const supabase = await createServerSupabaseClient()
+export type BreedingEventType = 'heat_detection' | 'insemination' | 'pregnancy_check' | 'calving'
+export type InseminationMethod = 'artificial_insemination' | 'natural_breeding'
+export type PregnancyResult = 'pregnant' | 'not_pregnant' | 'uncertain'
+export type CalvingOutcome = 'normal' | 'assisted' | 'difficult' | 'caesarean'
 
-  const { data, error } = await supabase
-    .from('breeding_records')
-    .select(`
-      *,
-      pregnancy_records (
-        *,
-        calving_records (*)
-      )
-    `)
-    .eq('animal_id', animalId)
-    .order('breeding_date', { ascending: false })
+export interface BreedingEventBase {
+  id?: string
+  farm_id: string
+  animal_id: string
+  event_type: BreedingEventType
+  event_date: string
+  notes?: string
+  created_by: string
+}
+
+export interface HeatDetectionEvent extends BreedingEventBase {
+  event_type: 'heat_detection'
+  heat_signs: string[]
+  heat_action_taken?: string
+}
+
+export interface InseminationEvent extends BreedingEventBase {
+  event_type: 'insemination'
+  insemination_method: InseminationMethod
+  semen_bull_code?: string
+  technician_name?: string
+}
+
+export interface PregnancyCheckEvent extends BreedingEventBase {
+  event_type: 'pregnancy_check'
+  pregnancy_result: PregnancyResult
+  examination_method?: string
+  veterinarian_name?: string
+  estimated_due_date?: string
+}
+
+export interface CalvingEvent extends BreedingEventBase {
+  event_type: 'calving'
+  calving_outcome: CalvingOutcome
+  calf_gender?: string
+  calf_weight?: number
+  calf_tag_number?: string
+  calf_health_status?: string
+}
+
+export type BreedingEvent = HeatDetectionEvent | InseminationEvent | PregnancyCheckEvent | CalvingEvent
+
+// Get eligible animals for each event type
+export async function getEligibleAnimals(farmId: string, eventType: BreedingEventType) {
+  const supabase = createClient()
+  
+  let query = supabase
+    .from('animals')
+    .select('id, tag_number, name, gender, birth_date')
+    .eq('farm_id', farmId)
+    .eq('status', 'active')
+  
+  // Filter based on event type
+  switch (eventType) {
+    case 'heat_detection':
+    case 'insemination':
+      // Only female animals of breeding age
+      query = query.eq('gender', 'female')
+      break
+    case 'pregnancy_check':
+      // Only female animals that have been inseminated
+      query = query.eq('gender', 'female')
+      break
+    case 'calving':
+      // Only pregnant females near due date
+      query = query.eq('gender', 'female')
+      break
+  }
+  
+  const { data, error } = await query.order('tag_number')
   
   if (error) {
-    console.error('Error fetching breeding history:', error)
+    console.error('Error fetching eligible animals:', error)
     return []
   }
   
   return data || []
 }
 
-export async function createBreedingRecord(farmId: string, breedingData: Omit<BreedingRecord, 'id' | 'farm_id' | 'created_at' | 'updated_at'>) {
-  const supabase = await createServerSupabaseClient()
+// Get animals eligible for pregnancy check (recently inseminated)
+export async function getAnimalsForPregnancyCheck(farmId: string) {
+  const supabase = createClient()
   
-  // Clean the data to handle empty UUID fields
-  const cleanedData = {
-    ...breedingData,
+  // Get animals inseminated in the last 90 days without recent pregnancy check
+  const { data, error } = await supabase
+    .from('animals')
+    .select(`
+      id, tag_number, name,
+      breeding_events!inner (
+        event_type,
+        event_date
+      )
+    `)
+    .eq('farm_id', farmId)
+    .eq('status', 'active')
+    .eq('gender', 'female')
+    .eq('breeding_events.event_type', 'insemination')
+    .gte('breeding_events.event_date', new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString())
+  
+  if (error) {
+    console.error('Error fetching animals for pregnancy check:', error)
+    return []
+  }
+  
+  return data || []
+}
+
+// Get pregnant animals near calving date
+export async function getAnimalsForCalving(farmId: string) {
+  const supabase = createClient()
+  
+  // Get pregnant animals within 30 days of due date
+  const { data, error } = await supabase
+    .from('animals')
+    .select(`
+      id, tag_number, name,
+      breeding_events!inner (
+        event_type,
+        pregnancy_result,
+        estimated_due_date
+      )
+    `)
+    .eq('farm_id', farmId)
+    .eq('status', 'active')
+    .eq('gender', 'female')
+    .eq('breeding_events.event_type', 'pregnancy_check')
+    .eq('breeding_events.pregnancy_result', 'pregnant')
+    .lte('breeding_events.estimated_due_date', new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString())
+  
+  if (error) {
+    console.error('Error fetching animals for calving:', error)
+    return []
+  }
+  
+  return data || []
+}
+
+// CLIENT-SIDE: This should call the API, not database directly
+export async function createBreedingEvent(eventData: BreedingEvent) {
+  try {
+    const response = await fetch('/api/breeding-events', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ eventData }),
+    })
+    
+    const result = await response.json()
+    
+    if (!response.ok) {
+      return { success: false, error: result.error || 'Failed to create breeding event' }
+    }
+    
+    return { success: true, data: result.event }
+  } catch (error) {
+    console.error('Error creating breeding event:', error)
+    return { success: false, error: 'Network error occurred' }
+  }
+}
+
+
+// Create calf from calving event
+export async function createCalfFromEvent(calvingEvent: CalvingEvent, farmId: string) {
+  if (!calvingEvent.calf_tag_number) {
+    return { success: false, error: 'Calf tag number is required' }
+  }
+  
+  const supabase = createClient()
+  
+  const calfData = {
     farm_id: farmId,
-    // Convert empty strings to null for UUID fields
-    sire_id: breedingData.sire_id === '' ? null : breedingData.sire_id,
-    // Convert empty strings to null for optional string fields if they exist
-    sire_name: breedingData.sire_name === '' ? null : breedingData.sire_name,
-    sire_breed: breedingData.sire_breed === '' ? null : breedingData.sire_breed,
-    sire_registration_number: breedingData.sire_registration_number === '' ? null : breedingData.sire_registration_number,
-    technician_name: breedingData.technician_name === '' ? null : breedingData.technician_name,
-    notes: breedingData.notes === '' ? null : breedingData.notes,
-    // Handle numeric fields
-    cost: breedingData.cost === undefined || breedingData.cost === 0 ? null : breedingData.cost,
-    success_rate: breedingData.success_rate === undefined || breedingData.success_rate === 0 ? null : breedingData.success_rate,
+    tag_number: calvingEvent.calf_tag_number,
+    name: `Calf ${calvingEvent.calf_tag_number}`,
+    gender: calvingEvent.calf_gender || 'female',
+    birth_date: calvingEvent.event_date,
+    weight: calvingEvent.calf_weight,
+    status: 'active',
+    notes: `Born from animal ID: ${calvingEvent.animal_id}. Health status: ${calvingEvent.calf_health_status || 'Good'}`,
+    animal_source: 'calving' // or another appropriate value if required by your schema
   }
   
   const { data, error } = await supabase
-    .from('breeding_records')
-    .insert(cleanedData)
+    .from('animals')
+    .insert(calfData)
     .select()
     .single()
   
   if (error) {
-    console.error('Error creating breeding record:', error)
+    console.error('Error creating calf:', error)
     return { success: false, error: error.message }
   }
   
   return { success: true, data }
 }
 
-export async function updatePregnancyStatus(
-  breedingRecordId: string, 
-  animalId: string,
-  farmId: string,
-  pregnancyData: Partial<Omit<PregnancyRecord, 'id' | 'breeding_record_id' | 'animal_id' | 'farm_id' | 'created_at' | 'updated_at'>>
-) {
-  const supabase = await createServerSupabaseClient()
-  
-  // Check if pregnancy record exists
-  const { data: existing } = await supabase
-    .from('pregnancy_records')
-    .select('id')
-    .eq('breeding_record_id', breedingRecordId)
-    .single()
-  
-  if (existing) {
-    // Update existing record
-    const { data, error } = await supabase
-      .from('pregnancy_records')
-      .update(pregnancyData)
-      .eq('id', existing.id)
-      .select()
-      .single()
-    
-    if (error) {
-      return { success: false, error: error.message }
-    }
-    
-    return { success: true, data }
-  } else {
-    // Create new pregnancy record with required fields
-    const newPregnancyRecord: PregnancyRecordInsert = {
-      breeding_record_id: breedingRecordId,
-      animal_id: animalId,
-      farm_id: farmId,
-      ...pregnancyData,
-      pregnancy_status: pregnancyData.pregnancy_status ?? 'suspected',
-    }
-    
-    const { data, error } = await supabase
-      .from('pregnancy_records')
-      .insert(newPregnancyRecord)
-      .select()
-      .single()
-    
-    if (error) {
-      return { success: false, error: error.message }
-    }
-    
-    return { success: true, data }
-  }
-}
-
-export async function recordCalving(calvingData: Omit<CalvingRecord, 'id' | 'created_at' | 'updated_at'>) {
-  const supabase = await createServerSupabaseClient()
-  
-  try {
-    // Start transaction
-    const { data: calvingRecord, error: calvingError } = await supabase
-      .from('calving_records')
-      .insert(calvingData)
-      .select()
-      .single()
-    
-    if (calvingError) throw calvingError
-    
-    // Update pregnancy status to completed
-    const { error: pregnancyError } = await supabase
-      .from('pregnancy_records')
-      .update({ 
-        pregnancy_status: 'completed',
-        actual_calving_date: calvingData.calving_date 
-      })
-      .eq('id', calvingData.pregnancy_record_id)
-    
-    if (pregnancyError) throw pregnancyError
-    
-    return { success: true, data: calvingRecord }
-  } catch (error) {
-    console.error('Error recording calving:', error)
-    return { success: false, error: error instanceof Error ? error.message : String(error) }
-  }
-}
-
-export async function getBreedingCalendar(farmId: string, startDate: string, endDate: string) {
-  const supabase = await createServerSupabaseClient()
+// Get breeding events for an animal
+export async function getAnimalBreedingEvents(animalId: string) {
+  const supabase = createClient()
   
   const { data, error } = await supabase
-    .from('breeding_calendar')
-    .select(`
-      *,
-      animals (
-        tag_number,
-        name
-      )
-    `)
-    .eq('farm_id', farmId)
-    .gte('scheduled_date', startDate)
-    .lte('scheduled_date', endDate)
-    .order('scheduled_date', { ascending: true })
+    .from('breeding_events')
+    .select('*')
+    .eq('animal_id', animalId)
+    .order('event_date', { ascending: false })
   
   if (error) {
-    console.error('Error fetching breeding calendar:', error)
+    console.error('Error fetching breeding events:', error)
     return []
   }
   
   return data || []
 }
 
-export async function getBreedingStats(farmId: string) {
-  const supabase = await createServerSupabaseClient()
+// Get recent breeding events for farm
+export async function getRecentBreedingEvents(farmId: string, limit: number = 10) {
+  const supabase = createClient()
   
-  try {
-    // Get breeding statistics
-    const { count: totalBreedings } = await supabase
-      .from('breeding_records')
-      .select('*', { count: 'exact', head: true })
-      .eq('farm_id', farmId)
-    
-    const { count: currentPregnant } = await supabase
-      .from('pregnancy_records')
-      .select('*', { count: 'exact', head: true })
-      .eq('farm_id', farmId)
-      .eq('pregnancy_status', 'confirmed')
-    
-    const { count: expectedCalvings } = await supabase
-      .from('pregnancy_records')
-      .select('*', { count: 'exact', head: true })
-      .eq('farm_id', farmId)
-      .eq('pregnancy_status', 'confirmed')
-      .gte('expected_calving_date', new Date().toISOString().split('T')[0])
-      .lte('expected_calving_date', new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
-    
-    // Calculate conception rate (pregnancies confirmed / total breedings)
-    const { data: conceptionData } = await supabase
-      .from('breeding_records')
-      .select(`
-        id,
-        pregnancy_records!inner (pregnancy_status)
-      `)
-      .eq('farm_id', farmId)
-    
-    const confirmedPregnancies = conceptionData?.filter(
-      b => b.pregnancy_records[0]?.pregnancy_status === 'confirmed'
-    ).length || 0
-    
-    const totalBreedingsNumber = totalBreedings ?? 0
-    const conceptionRate = totalBreedingsNumber > 0 ? (confirmedPregnancies / totalBreedingsNumber) * 100 : 0
-    
-    return {
-      totalBreedings: totalBreedings || 0,
-      currentPregnant: currentPregnant || 0,
-      expectedCalvingsThisMonth: expectedCalvings || 0,
-      conceptionRate: Math.round(conceptionRate),
-    }
-  } catch (error) {
-    console.error('Error getting breeding stats:', error)
-    return {
-      totalBreedings: 0,
-      currentPregnant: 0,
-      expectedCalvingsThisMonth: 0,
-      conceptionRate: 0,
-    }
+  const { data, error } = await supabase
+    .from('breeding_events')
+    .select(`
+      *,
+      animals (tag_number, name)
+    `)
+    .eq('farm_id', farmId)
+    .order('event_date', { ascending: false })
+    .limit(limit)
+  
+  if (error) {
+    console.error('Error fetching recent breeding events:', error)
+    return []
   }
+  
+  return data || []
 }
 
+// NEW FUNCTION: Get animals suitable for breeding (general breeding, not event-specific)
 export async function getAnimalsForBreeding(farmId: string) {
-  const supabase = await createServerSupabaseClient()
-  
-  // Get female animals that are:
-  // 1. Active
-  // 2. Of breeding age (usually 15+ months)
-  // 3. Not currently pregnant
-  // 4. Not recently calved (unless past voluntary waiting period)
+  const supabase = createClient()
   
   const { data, error } = await supabase
     .from('animals')
-    .select(`
-      *,
-      pregnancy_records!left (
-        pregnancy_status,
-        expected_calving_date
-      )
-    `)
+    .select('id, tag_number, name, gender, birth_date, status')
     .eq('farm_id', farmId)
     .eq('status', 'active')
-    .eq('gender', 'female')
+    .eq('gender', 'female') // Only female animals for breeding
+    .order('tag_number')
   
   if (error) {
     console.error('Error fetching animals for breeding:', error)
     return []
   }
   
-  // Filter out currently pregnant animals
-  const breedableAnimals = data?.filter(animal => {
-    const hasActivePregnancy = animal.pregnancy_records?.some(
-      (p: any) => ['suspected', 'confirmed'].includes(p.pregnancy_status)
-    )
-    return !hasActivePregnancy
-  }) || []
+  return data || []
+}
+
+// NEW FUNCTION: Get breeding statistics for dashboard
+export async function getBreedingStats(farmId: string) {
+  const supabase = createClient()
   
-  return breedableAnimals
+  try {
+    // Get total breeding events in last 12 months
+    const twelveMonthsAgo = subDays(new Date(), 365)
+    
+    const { data: allEvents } = await supabase
+      .from('breeding_events')
+      .select('event_type, event_date, pregnancy_result')
+      .eq('farm_id', farmId)
+      .gte('event_date', twelveMonthsAgo.toISOString())
+    
+    if (!allEvents) return getDefaultBreedingStats()
+    
+    // Calculate statistics
+    const heatDetections = allEvents.filter(e => e.event_type === 'heat_detection').length
+    const inseminations = allEvents.filter(e => e.event_type === 'insemination').length
+    const pregnancyChecks = allEvents.filter(e => e.event_type === 'pregnancy_check').length
+    const calvings = allEvents.filter(e => e.event_type === 'calving').length
+    
+    // Calculate pregnancy rate
+    const pregnantResults = allEvents.filter(e => 
+      e.event_type === 'pregnancy_check' && e.pregnancy_result === 'pregnant'
+    ).length
+    const pregnancyRate = pregnancyChecks > 0 ? Math.round((pregnantResults / pregnancyChecks) * 100) : 0
+    
+    // Get animals currently pregnant
+    const { data: pregnantAnimals } = await supabase
+      .from('breeding_events')
+      .select('animal_id')
+      .eq('farm_id', farmId)
+      .eq('event_type', 'pregnancy_check')
+      .eq('pregnancy_result', 'pregnant')
+      .order('event_date', { ascending: false })
+    
+    const currentlyPregnant = pregnantAnimals ? new Set(pregnantAnimals.map(a => a.animal_id)).size : 0
+    
+    // Get animals due for calving in next 30 days
+    const thirtyDaysFromNow = addDays(new Date(), 30)
+    const { data: dueAnimals } = await supabase
+      .from('breeding_events')
+      .select('animal_id')
+      .eq('farm_id', farmId)
+      .eq('event_type', 'pregnancy_check')
+      .eq('pregnancy_result', 'pregnant')
+      .lte('estimated_due_date', thirtyDaysFromNow.toISOString())
+      .gte('estimated_due_date', new Date().toISOString())
+    
+    const dueForCalving = dueAnimals ? new Set(dueAnimals.map(a => a.animal_id)).size : 0
+    
+    return {
+      totalEvents: allEvents.length,
+      heatDetections,
+      inseminations,
+      pregnancyChecks,
+      calvings,
+      pregnancyRate,
+      currentlyPregnant,
+      dueForCalving,
+      // Recent trends (last 30 days vs previous 30 days)
+      recentTrends: await calculateRecentTrends(farmId)
+    }
+  } catch (error) {
+    console.error('Error getting breeding stats:', error)
+    return getDefaultBreedingStats()
+  }
+}
+
+// NEW FUNCTION: Get breeding calendar events
+export async function getBreedingCalendar(farmId: string, startDate: string, endDate: string) {
+  const supabase = createClient()
+  
+  try {
+    // Get breeding events in date range
+    const { data: events, error } = await supabase
+      .from('breeding_events')
+      .select(`
+        *,
+        animals (tag_number, name)
+      `)
+      .eq('farm_id', farmId)
+      .gte('event_date', startDate)
+      .lte('event_date', endDate)
+      .order('event_date', { ascending: true })
+    
+    if (error) {
+      console.error('Error fetching calendar events:', error)
+      return []
+    }
+    
+    // Also get upcoming due dates
+    const { data: dueDates } = await supabase
+      .from('breeding_events')
+      .select(`
+        estimated_due_date,
+        animals (tag_number, name)
+      `)
+      .eq('farm_id', farmId)
+      .eq('event_type', 'pregnancy_check')
+      .eq('pregnancy_result', 'pregnant')
+      .gte('estimated_due_date', startDate)
+      .lte('estimated_due_date', endDate)
+      .not('estimated_due_date', 'is', null)
+    
+    // Format events for calendar
+    interface CalendarAnimal {
+      tag_number?: string
+      name?: string | null
+    }
+
+    interface BreedingCalendarEvent {
+      id: string
+      type: 'breeding_event'
+      eventType: BreedingEventType
+      date: string
+      title: string
+      animal: CalendarAnimal
+      details: any
+    }
+
+    interface DueDateCalendarEvent {
+      id: string
+      type: 'due_date'
+      eventType: 'calving_due'
+      date: string
+      title: string
+      animal: CalendarAnimal
+      details: any
+    }
+
+    type CalendarEvent = BreedingCalendarEvent | DueDateCalendarEvent
+
+    const calendarEvents: CalendarEvent[] = []
+    
+    // Add breeding events
+    if (events) {
+      events.forEach(event => {
+        calendarEvents.push({
+          id: event.id,
+          type: 'breeding_event',
+          eventType: event.event_type,
+          date: event.event_date,
+          title: getEventTitle(event),
+          animal: event.animals,
+          details: event
+        })
+      })
+    }
+    
+    // Add due dates
+    if (dueDates) {
+      dueDates.forEach(due => {
+        calendarEvents.push({
+          id: `due-${due.animals?.tag_number}-${due.estimated_due_date}`,
+          type: 'due_date',
+          eventType: 'calving_due',
+          date: due.estimated_due_date ?? '',
+          title: `${due.animals?.tag_number || 'Animal'} Due for Calving`,
+          animal: due.animals,
+          details: due
+        })
+      })
+    }
+    
+    // Sort by date
+    return calendarEvents.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    
+  } catch (error) {
+    console.error('Error getting breeding calendar:', error)
+    return []
+  }
+}
+
+// Helper function to get default stats when there's an error
+function getDefaultBreedingStats() {
+  return {
+    totalEvents: 0,
+    heatDetections: 0,
+    inseminations: 0,
+    pregnancyChecks: 0,
+    calvings: 0,
+    pregnancyRate: 0,
+    currentlyPregnant: 0,
+    dueForCalving: 0,
+    recentTrends: {
+      heatDetectionTrend: 0,
+      inseminationTrend: 0,
+      calvingTrend: 0
+    }
+  }
+}
+
+// Helper function to calculate recent trends
+async function calculateRecentTrends(farmId: string) {
+  const supabase = createClient()
+  
+  try {
+    const now = new Date()
+    const thirtyDaysAgo = subDays(now, 30)
+    const sixtyDaysAgo = subDays(now, 60)
+    
+    // Get recent 30 days
+    const { data: recent } = await supabase
+      .from('breeding_events')
+      .select('event_type')
+      .eq('farm_id', farmId)
+      .gte('event_date', thirtyDaysAgo.toISOString())
+      .lte('event_date', now.toISOString())
+    
+    // Get previous 30 days
+    const { data: previous } = await supabase
+      .from('breeding_events')
+      .select('event_type')
+      .eq('farm_id', farmId)
+      .gte('event_date', sixtyDaysAgo.toISOString())
+      .lt('event_date', thirtyDaysAgo.toISOString())
+    
+    const recentHeat = recent?.filter(e => e.event_type === 'heat_detection').length || 0
+    const previousHeat = previous?.filter(e => e.event_type === 'heat_detection').length || 0
+    
+    const recentInsemination = recent?.filter(e => e.event_type === 'insemination').length || 0
+    const previousInsemination = previous?.filter(e => e.event_type === 'insemination').length || 0
+    
+    const recentCalving = recent?.filter(e => e.event_type === 'calving').length || 0
+    const previousCalving = previous?.filter(e => e.event_type === 'calving').length || 0
+    
+    return {
+      heatDetectionTrend: calculateTrendPercentage(recentHeat, previousHeat),
+      inseminationTrend: calculateTrendPercentage(recentInsemination, previousInsemination),
+      calvingTrend: calculateTrendPercentage(recentCalving, previousCalving)
+    }
+  } catch (error) {
+    console.error('Error calculating trends:', error)
+    return {
+      heatDetectionTrend: 0,
+      inseminationTrend: 0,
+      calvingTrend: 0
+    }
+  }
+}
+
+// Helper function to calculate trend percentage
+function calculateTrendPercentage(current: number, previous: number): number {
+  if (previous === 0) return current > 0 ? 100 : 0
+  return Math.round(((current - previous) / previous) * 100)
+}
+
+// Helper function to get event title for calendar
+function getEventTitle(event: any): string {
+  const animalName = event.animals?.tag_number || 'Animal'
+  
+  switch (event.event_type) {
+    case 'heat_detection':
+      return `${animalName} - Heat Detected`
+    case 'insemination':
+      return `${animalName} - Inseminated`
+    case 'pregnancy_check':
+      return `${animalName} - Pregnancy Check (${event.pregnancy_result || 'Unknown'})`
+    case 'calving':
+      return `${animalName} - Calving (${event.calving_outcome || 'Unknown'})`
+    default:
+      return `${animalName} - Breeding Event`
+  }
 }

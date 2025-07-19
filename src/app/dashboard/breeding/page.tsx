@@ -1,9 +1,8 @@
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
-import { getBreedingStats, getBreedingCalendar } from '@/lib/database/breeding'
+import { getBreedingStats, getUpcomingBreedingEvents, getBreedingAlerts } from '@/lib/database/breeding-stats'
 import { redirect } from 'next/navigation'
 import { BreedingDashboard } from '@/components/breeding/BreedingDashboard'
-import { addDays, format } from 'date-fns'
 
 export default async function BreedingPage() {
   const user = await getCurrentUser()
@@ -18,17 +17,24 @@ export default async function BreedingPage() {
     redirect('/dashboard')
   }
   
-  // Get breeding data
-  const breedingStats = await getBreedingStats(userRole.farm_id)
+  // Load all breeding data
+  const [breedingStats, upcomingEvents, breedingAlerts] = await Promise.all([
+    getBreedingStats(userRole.farm_id),
+    getUpcomingBreedingEvents(userRole.farm_id),
+    getBreedingAlerts(userRole.farm_id)
+  ])
   
-  // Get calendar events for next 30 days
-  const today = new Date()
-  const thirtyDaysFromNow = addDays(today, 30)
-  const calendarEvents = await getBreedingCalendar(
-    userRole.farm_id,
-    format(today, 'yyyy-MM-dd'),
-    format(thirtyDaysFromNow, 'yyyy-MM-dd')
-  )
+  // Transform upcoming events to calendar format
+  const calendarEvents = upcomingEvents.map(event => ({
+    id: event.id,
+    event_type: event.event_type,
+    scheduled_date: event.scheduled_date,
+    status: event.status,
+    animals: {
+      tag_number: event.animal_tag,
+      name: event.animal_name
+    }
+  }))
   
   return (
     <div className="dashboard-container">
@@ -37,6 +43,7 @@ export default async function BreedingPage() {
         farmId={userRole.farm_id}
         breedingStats={breedingStats}
         calendarEvents={calendarEvents}
+        breedingAlerts={breedingAlerts}
       />
     </div>
   )
