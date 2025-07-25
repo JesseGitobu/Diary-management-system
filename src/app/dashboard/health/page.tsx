@@ -1,11 +1,14 @@
+// Health Records Main Page
+// src/app/dashboard/health/page.tsx
 
-// src/app/dashboard/health/page.tsx (Fixed - Server Component)
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
+import { getFarmAnimals } from '@/lib/database/animals'
+import { getAnimalHealthRecords, getHealthStats, getUpcomingHealthTasks } from '@/lib/database/health'
 import { redirect } from 'next/navigation'
-import { HealthDashboardWrapper } from '@/components/health/HealthDashboardWrapper'
+import { HealthRecordsContent } from '@/components/health/HealthDashboard'
 
-export default async function HealthPage() {
+export default async function HealthRecordsPage() {
   const user = await getCurrentUser()
   
   if (!user) {
@@ -18,11 +21,23 @@ export default async function HealthPage() {
     redirect('/dashboard')
   }
   
+  // Get all necessary data
+  const [animals, healthRecords, healthStats, upcomingTasks] = await Promise.all([
+    getFarmAnimals(userRole.farm_id),
+    getAnimalHealthRecords(userRole.farm_id, { limit: 100 }),
+    getHealthStats(userRole.farm_id),
+    getUpcomingHealthTasks(userRole.farm_id, 30)
+  ])
+  
   return (
     <div className="dashboard-container">
-      <HealthDashboardWrapper 
-        farmId={userRole.farm_id}
-        userRole={userRole.role_type}
+      <HealthRecordsContent
+        user={user}
+        userRole={userRole}
+        animals={animals}
+        healthRecords={healthRecords}
+        healthStats={healthStats}
+        upcomingTasks={upcomingTasks}
       />
     </div>
   )

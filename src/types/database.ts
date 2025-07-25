@@ -758,3 +758,520 @@ export interface PurchaseOrderItem {
   created_at: string
   inventory_item?: InventoryItem
 }
+
+
+
+// Health-specific types
+export type HealthRecordType = 'vaccination' | 'treatment' | 'checkup' | 'injury' | 'illness'
+export type VaccineType = 'core' | 'risk_based' | 'elective'
+export type AdministrationRoute = 'intramuscular' | 'subcutaneous' | 'intranasal' | 'oral'
+export type VisitType = 'routine_checkup' | 'vaccination' | 'emergency' | 'consultation' | 'breeding' | 'other'
+export type PriorityLevel = 'low' | 'medium' | 'high' | 'urgent'
+export type VisitStatus = 'scheduled' | 'completed' | 'cancelled' | 'rescheduled'
+export type SeverityLevel = 'low' | 'medium' | 'high' | 'critical'
+export type OutbreakStatus = 'active' | 'contained' | 'resolved'
+export type ProtocolType = 'vaccination' | 'treatment' | 'checkup' | 'breeding' | 'nutrition'
+export type FrequencyType = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'one_time'
+export type TargetAnimals = 'all' | 'group' | 'individual'
+export type AnimalHealthStatus = 'infected' | 'recovered' | 'deceased'
+
+
+// Updated to include new health record types
+export interface AnimalHealthRecord {
+  id: string
+  animal_id: string
+  record_date: string
+  record_type: HealthRecordType
+  description: string
+  veterinarian?: string
+  cost?: number
+  notes?: string
+  created_at: string
+  // Navigation properties
+  animals?: Animal
+}
+
+export interface AnimalProductionRecord {
+  id: string
+  animal_id: string
+  record_date: string
+  milk_volume?: number
+  fat_content?: number
+  protein_content?: number
+  somatic_cell_count?: number
+  notes?: string
+  created_at: string
+  // Navigation properties
+  animals?: Animal
+}
+
+// ============================================================================
+// NEW HEALTH MANAGEMENT TABLES
+// ============================================================================
+
+export interface VeterinaryVisit {
+  id: string
+  farm_id: string
+  visit_type: VisitType
+  visit_purpose: string
+  scheduled_datetime: string
+  duration_hours?: number
+  veterinarian_name: string
+  veterinarian_clinic?: string
+  veterinarian_phone?: string
+  veterinarian_email?: string
+  priority_level: PriorityLevel
+  location_details?: string
+  special_instructions?: string
+  estimated_cost?: number
+  actual_cost?: number
+  status: VisitStatus
+  preparation_notes?: string
+  visit_notes?: string
+  follow_up_required: boolean
+  follow_up_date?: string
+  send_reminder: boolean
+  reminder_days_before: number
+  created_at: string
+  updated_at: string
+  // Navigation properties
+  visit_animals?: VisitAnimal[]
+  animals_treated?: Animal[]
+  veterinarian?: Veterinarian
+}
+export interface VisitAnimal {
+  id: string
+  visit_id: string
+  animal_id: string
+  // Navigation properties
+  veterinary_visits?: VeterinaryVisit
+  animals?: Animal
+}
+
+export interface Vaccination {
+  id: string
+  farm_id: string
+  vaccine_name: string
+  vaccine_type: VaccineType
+  manufacturer?: string
+  batch_number?: string
+  vaccination_date: string
+  next_due_date?: string
+  route_of_administration: AdministrationRoute
+  dosage: string
+  vaccination_site?: string
+  veterinarian?: string
+  cost_per_dose?: number
+  total_cost?: number
+  side_effects?: string
+  notes?: string
+  create_reminder: boolean
+  created_at: string
+  updated_at: string
+  // Navigation properties
+  vaccination_animals?: VaccinationAnimal[]
+  animals_vaccinated?: Animal[]
+}
+
+export interface VaccinationAnimal {
+  id: string
+  vaccination_id: string
+  animal_id: string
+  // Navigation properties
+  vaccinations?: Vaccination
+  animals?: Animal
+}
+
+export interface DiseaseOutbreak {
+  id: string
+  farm_id: string
+  outbreak_name: string
+  disease_type: string
+  severity_level: SeverityLevel
+  first_detected_date: string
+  description: string
+  symptoms: string
+  quarantine_required: boolean
+  quarantine_area?: string
+  treatment_protocol?: string
+  veterinarian?: string
+  estimated_duration?: number
+  actual_duration?: number
+  preventive_measures?: string
+  status: OutbreakStatus
+  resolved_date?: string
+  notes?: string
+  created_at: string
+  updated_at: string
+  // Navigation properties
+  outbreak_animals?: OutbreakAnimal[]
+  affected_animals?: Animal[]
+}
+
+export interface OutbreakAnimal {
+  id: string
+  outbreak_id: string
+  animal_id: string
+  infection_date?: string
+  recovery_date?: string
+  status: AnimalHealthStatus
+  // Navigation properties
+  disease_outbreaks?: DiseaseOutbreak
+  animals?: Animal
+}
+export interface HealthProtocol {
+  id: string
+  farm_id: string
+  protocol_name: string
+  protocol_type: ProtocolType
+  description: string
+  frequency_type: FrequencyType
+  frequency_value: number
+  start_date: string
+  end_date?: string
+  target_animals: TargetAnimals
+  veterinarian?: string
+  estimated_cost?: number
+  notes?: string
+  auto_create_records: boolean
+  is_active: boolean
+  created_at: string
+  updated_at: string
+  // Navigation properties
+  protocol_animals?: ProtocolAnimal[]
+  target_animal_list?: Animal[]
+}
+
+export interface ProtocolAnimal {
+  id: string
+  protocol_id: string
+  animal_id: string
+  // Navigation properties
+  health_protocols?: HealthProtocol
+  animals?: Animal
+}
+
+export interface Veterinarian {
+  id: string
+  farm_id: string
+  name: string
+  practice_name?: string
+  phone?: string
+  email?: string
+  address?: string
+  specialization?: string
+  license_number?: string
+  is_primary: boolean
+  created_at: string
+  // Navigation properties
+  veterinary_visits?: VeterinaryVisit[]
+}
+
+// ============================================================================
+// INSERT TYPES (for creating new records)
+// ============================================================================
+
+export interface VeterinaryVisitInsert {
+  farm_id: string
+  visit_type: VisitType
+  visit_purpose: string
+  scheduled_datetime: string
+  duration_hours?: number
+  veterinarian_name: string
+  veterinarian_clinic?: string
+  veterinarian_phone?: string
+  veterinarian_email?: string
+  priority_level: PriorityLevel
+  location_details?: string
+  special_instructions?: string
+  estimated_cost?: number
+  preparation_notes?: string
+  send_reminder?: boolean
+  reminder_days_before?: number
+}
+
+export interface VaccinationInsert {
+  farm_id: string
+  vaccine_name: string
+  vaccine_type: VaccineType
+  manufacturer?: string
+  batch_number?: string
+  vaccination_date: string
+  next_due_date?: string
+  route_of_administration: AdministrationRoute
+  dosage: string
+  vaccination_site?: string
+  veterinarian?: string
+  cost_per_dose?: number
+  total_cost?: number
+  side_effects?: string
+  notes?: string
+  create_reminder?: boolean
+}
+
+export interface DiseaseOutbreakInsert {
+  farm_id: string
+  outbreak_name: string
+  disease_type: string
+  severity_level: SeverityLevel
+  first_detected_date: string
+  description: string
+  symptoms: string
+  quarantine_required?: boolean
+  quarantine_area?: string
+  treatment_protocol?: string
+  veterinarian?: string
+  estimated_duration?: number
+  preventive_measures?: string
+  notes?: string
+}
+
+export interface HealthProtocolInsert {
+  farm_id: string
+  protocol_name: string
+  protocol_type: ProtocolType
+  description: string
+  frequency_type: FrequencyType
+  frequency_value: number
+  start_date: string
+  end_date?: string
+  target_animals: TargetAnimals
+  veterinarian?: string
+  estimated_cost?: number
+  notes?: string
+  auto_create_records?: boolean
+}
+
+export interface VeterinarianInsert {
+  farm_id: string
+  name: string
+  practice_name?: string
+  phone?: string
+  email?: string
+  address?: string
+  specialization?: string
+  license_number?: string
+  is_primary?: boolean
+}
+
+// ============================================================================
+// UPDATE TYPES (for updating existing records)
+// ============================================================================
+
+export interface VeterinaryVisitUpdate {
+  visit_type?: VisitType
+  visit_purpose?: string
+  scheduled_datetime?: string
+  duration_hours?: number
+  veterinarian_name?: string
+  veterinarian_clinic?: string
+  veterinarian_phone?: string
+  veterinarian_email?: string
+  priority_level?: PriorityLevel
+  location_details?: string
+  special_instructions?: string
+  estimated_cost?: number
+  actual_cost?: number
+  status?: VisitStatus
+  preparation_notes?: string
+  visit_notes?: string
+  follow_up_required?: boolean
+  follow_up_date?: string
+  send_reminder?: boolean
+  reminder_days_before?: number
+}
+
+export interface VaccinationUpdate {
+  vaccine_name?: string
+  vaccine_type?: VaccineType
+  manufacturer?: string
+  batch_number?: string
+  vaccination_date?: string
+  next_due_date?: string
+  route_of_administration?: AdministrationRoute
+  dosage?: string
+  vaccination_site?: string
+  veterinarian?: string
+  cost_per_dose?: number
+  total_cost?: number
+  side_effects?: string
+  notes?: string
+  create_reminder?: boolean
+}
+
+export interface DiseaseOutbreakUpdate {
+  outbreak_name?: string
+  disease_type?: string
+  severity_level?: SeverityLevel
+  description?: string
+  symptoms?: string
+  quarantine_required?: boolean
+  quarantine_area?: string
+  treatment_protocol?: string
+  veterinarian?: string
+  estimated_duration?: number
+  actual_duration?: number
+  preventive_measures?: string
+  status?: OutbreakStatus
+  resolved_date?: string
+  notes?: string
+}
+
+export interface HealthProtocolUpdate {
+  protocol_name?: string
+  protocol_type?: ProtocolType
+  description?: string
+  frequency_type?: FrequencyType
+  frequency_value?: number
+  start_date?: string
+  end_date?: string
+  target_animals?: TargetAnimals
+  veterinarian?: string
+  estimated_cost?: number
+  notes?: string
+  auto_create_records?: boolean
+  is_active?: boolean
+}
+
+// ============================================================================
+// COMPLEX TYPES FOR API RESPONSES
+// ============================================================================
+
+export interface VeterinaryVisitWithAnimals extends VeterinaryVisit {
+  animals_involved: Animal[]
+  veterinarian_info?: Veterinarian
+}
+
+export interface VaccinationWithAnimals extends Vaccination {
+  vaccinated_animals: Animal[]
+}
+
+export interface OutbreakWithAnimals extends DiseaseOutbreak {
+  affected_animals: (Animal & { 
+    infection_date?: string
+    recovery_date?: string
+    outbreak_status: AnimalHealthStatus
+  })[]
+}
+
+export interface ProtocolWithAnimals extends HealthProtocol {
+  target_animal_list: Animal[]
+}
+
+// ============================================================================
+// HEALTH DASHBOARD TYPES
+// ============================================================================
+
+export interface HealthStats {
+  totalRecords: number
+  upcomingTasks: number
+  overdueCount: number
+  recentRecords: number
+  vaccinationsDue: number
+  activeOutbreaks: number
+  scheduledVisits: number
+  activeProtocols: number
+}
+
+export interface UpcomingTask {
+  id: string
+  type: 'vaccination' | 'visit' | 'protocol' | 'followup'
+  title: string
+  description: string
+  due_date: string
+  priority: PriorityLevel
+  animal_id?: string
+  animal_name?: string
+  animal_tag?: string
+  is_overdue: boolean
+  days_until_due: number
+}
+
+export interface HealthSummary {
+  animal_id: string
+  animal_name?: string
+  animal_tag: string
+  last_checkup?: string
+  last_vaccination?: string
+  health_score: 'excellent' | 'good' | 'fair' | 'poor'
+  active_treatments: number
+  upcoming_tasks: number
+  overdue_items: number
+}
+
+// ============================================================================
+// FORM DATA TYPES (for your modals)
+// ============================================================================
+
+export interface ScheduleVisitFormData {
+  visit_type: VisitType
+  visit_purpose: string
+  scheduled_date: string
+  scheduled_time: string
+  duration_hours: number
+  veterinarian_name: string
+  veterinarian_clinic?: string
+  veterinarian_phone?: string
+  veterinarian_email?: string
+  priority_level: PriorityLevel
+  animals_involved?: string[]
+  location_details?: string
+  special_instructions?: string
+  estimated_cost?: number
+  preparation_notes?: string
+  send_reminder: boolean
+  reminder_days_before: number
+}
+
+export interface VaccinationFormData {
+  vaccine_name: string
+  vaccine_type: VaccineType
+  manufacturer?: string
+  batch_number?: string
+  vaccination_date: string
+  next_due_date?: string
+  route_of_administration: AdministrationRoute
+  dosage: string
+  vaccination_site?: string
+  selected_animals: string[]
+  veterinarian?: string
+  cost_per_dose?: number
+  total_cost?: number
+  side_effects?: string
+  notes?: string
+  create_reminder: boolean
+}
+
+export interface OutbreakFormData {
+  outbreak_name: string
+  disease_type: string
+  severity_level: SeverityLevel
+  first_detected_date: string
+  description: string
+  symptoms: string
+  affected_animals: string[]
+  quarantine_required: boolean
+  quarantine_area?: string
+  treatment_protocol?: string
+  veterinarian?: string
+  estimated_duration?: number
+  preventive_measures?: string
+  notes?: string
+}
+
+export interface ProtocolFormData {
+  protocol_name: string
+  protocol_type: ProtocolType
+  description: string
+  frequency_type: FrequencyType
+  frequency_value: number
+  start_date: string
+  end_date?: string
+  target_animals: TargetAnimals
+  animal_groups?: string[]
+  individual_animals?: string[]
+  veterinarian?: string
+  estimated_cost?: number
+  notes?: string
+  auto_create_records: boolean
+}

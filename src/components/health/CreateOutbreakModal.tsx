@@ -1,7 +1,8 @@
 // src/components/health/CreateOutbreakModal.tsx
+
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -11,14 +12,22 @@ import { Label } from '@/components/ui/Label'
 import { Modal } from '@/components/ui/Modal'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Badge } from '@/components/ui/Badge'
-import { AlertTriangle, Search } from 'lucide-react'
+import { AlertTriangle, X, Shield, Users } from 'lucide-react'
 
 const outbreakSchema = z.object({
-  disease_id: z.string().min(1, 'Please select a disease'),
-  outbreak_date: z.string().min(1, 'Outbreak date is required'),
-  affected_animals: z.array(z.string()).optional(),
-  suspected_animals: z.array(z.string()).optional(),
+  outbreak_name: z.string().min(2, 'Outbreak name is required'),
+  disease_type: z.string().min(2, 'Disease type is required'),
+  severity_level: z.enum(['low', 'medium', 'high', 'critical']),
+  first_detected_date: z.string().min(1, 'Detection date is required'),
+  description: z.string().min(10, 'Description must be at least 10 characters'),
+  symptoms: z.string().min(5, 'Symptoms description is required'),
+  affected_animals: z.array(z.string()).min(1, 'At least one animal must be affected'),
+  quarantine_required: z.boolean(),
   quarantine_area: z.string().optional(),
+  treatment_protocol: z.string().optional(),
+  veterinarian: z.string().optional(),
+  estimated_duration: z.number().min(1).optional(),
+  preventive_measures: z.string().optional(),
   notes: z.string().optional(),
 })
 
@@ -26,7 +35,7 @@ type OutbreakFormData = z.infer<typeof outbreakSchema>
 
 interface CreateOutbreakModalProps {
   farmId: string
-  diseases: any[]
+  animals: any[]
   isOpen: boolean
   onClose: () => void
   onOutbreakCreated: (outbreak: any) => void
@@ -34,249 +43,320 @@ interface CreateOutbreakModalProps {
 
 export function CreateOutbreakModal({ 
   farmId, 
-  diseases, 
+  animals, 
   isOpen, 
   onClose, 
   onOutbreakCreated 
 }: CreateOutbreakModalProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [animals, setAnimals] = useState<any[]>([])
   const [selectedAnimals, setSelectedAnimals] = useState<string[]>([])
-  const [animalSearchTerm, setAnimalSearchTerm] = useState('')
   
   const form = useForm<OutbreakFormData>({
     resolver: zodResolver(outbreakSchema),
     defaultValues: {
-      outbreak_date: new Date().toISOString().split('T')[0],
+      severity_level: 'medium',
+      first_detected_date: new Date().toISOString().split('T')[0],
+      quarantine_required: false,
       affected_animals: [],
-      suspected_animals: [],
     },
   })
   
-  // Load animals when modal opens - FIXED: Changed from useState to useEffect
-  useEffect(() => {
-    if (isOpen) {
-      loadFarmAnimals()
-    }
-  }, [isOpen, farmId])
+  const watchedSeverity = form.watch('severity_level')
+  const watchedQuarantine = form.watch('quarantine_required')
+   
+  // Update the handleSubmit function in CreateOutbreakModal.tsx
+const handleSubmit = async (data: OutbreakFormData) => {
+  setLoading(true)
+  setError(null)
   
-  const loadFarmAnimals = async () => {
-    try {
-      const response = await fetch(`/api/animals?farmId=${farmId}`)
-      if (response.ok) {
-        const data = await response.json()
-        setAnimals(data.animals || [])
-      }
-    } catch (error) {
-      console.error('Error loading animals:', error)
+  try {
+    const response = await fetch('/api/health/outbreaks', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        ...data,
+        farm_id: farmId,
+        affected_animals: selectedAnimals,
+        status: 'active',
+      }),
+    })
+    
+    const result = await response.json()
+    
+    if (!response.ok) {
+      throw new Error(result.error || 'Failed to create outbreak record')
     }
+    
+    // Success! Pass the outbreak data back
+    onOutbreakCreated(result.outbreak)
+    
+    // Reset form and close modal
+    form.reset()
+    setSelectedAnimals([])
+    
+  } catch (err) {
+    setError(err instanceof Error ? err.message : 'An unexpected error occurred')
+  } finally {
+    setLoading(false)
   }
+}
   
   const toggleAnimalSelection = (animalId: string) => {
-    setSelectedAnimals(prev => 
-      prev.includes(animalId) 
+    setSelectedAnimals(prev => {
+      const updated = prev.includes(animalId) 
         ? prev.filter(id => id !== animalId)
         : [...prev, animalId]
-    )
+      form.setValue('affected_animals', updated)
+      return updated
+    })
   }
   
-  const filteredAnimals = animals.filter(animal => 
-    animal.name?.toLowerCase().includes(animalSearchTerm.toLowerCase()) ||
-    animal.tag_number.toLowerCase().includes(animalSearchTerm.toLowerCase())
-  )
-  
-  const selectedDisease = diseases.find(d => d.id === form.watch('disease_id'))
-  
-  const handleSubmit = async (data: OutbreakFormData) => {
-    setLoading(true)
-    setError(null)
-    
-    try {
-      const response = await fetch('/api/health/outbreaks', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...data,
-          farm_id: farmId,
-          affected_animals: selectedAnimals,
-          total_affected: selectedAnimals.length,
-        }),
-      })
-      
-      const result = await response.json()
-      
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to create outbreak report')
-      }
-      
-      onOutbreakCreated(result.outbreak)
-      form.reset()
-      setSelectedAnimals([])
-      onClose()
-      
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred')
-    } finally {
-      setLoading(false)
+  const getSeverityColor = (severity: string) => {
+    switch (severity) {
+      case 'low': return 'bg-green-100 text-green-800'
+      case 'medium': return 'bg-yellow-100 text-yellow-800'
+      case 'high': return 'bg-orange-100 text-orange-800'
+      case 'critical': return 'bg-red-100 text-red-800'
+      default: return 'bg-gray-100 text-gray-800'
     }
   }
   
   return (
-    <Modal isOpen={isOpen} onClose={onClose} className="max-w-3xl">
+    <Modal isOpen={isOpen} onClose={onClose} className="max-w-4xl max-h-[90vh] overflow-y-auto">
       <div className="p-6">
-        <h3 className="text-lg font-medium text-gray-900 mb-6 flex items-center">
-          <AlertTriangle className="mr-2 h-5 w-5 text-red-600" />
-          Report Disease Outbreak
-        </h3>
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-xl font-semibold text-gray-900 flex items-center space-x-2">
+            <AlertTriangle className="w-6 h-6 text-red-600" />
+            <span>Report Disease Outbreak</span>
+          </h3>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            <X className="w-5 h-5" />
+          </Button>
+        </div>
         
         {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
             {error}
           </div>
         )}
         
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+          {/* Basic Outbreak Information */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="disease_id">Disease/Condition</Label>
-              <select
-                id="disease_id"
-                {...form.register('disease_id')}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
-              >
-                <option value="">Select a disease...</option>
-                {diseases.map((disease) => (
-                  <option key={disease.id} value={disease.id}>
-                    {disease.name} ({disease.category})
-                  </option>
-                ))}
-              </select>
-              {form.formState.errors.disease_id && (
-                <p className="text-sm text-red-600 mt-1">
-                  {form.formState.errors.disease_id.message}
-                </p>
-              )}
+              <Label htmlFor="outbreak_name">Outbreak Name</Label>
+              <Input
+                id="outbreak_name"
+                {...form.register('outbreak_name')}
+                error={form.formState.errors.outbreak_name?.message}
+                placeholder="e.g., Respiratory Infection Outbreak"
+              />
             </div>
             
             <div>
-              <Label htmlFor="outbreak_date">Outbreak Date</Label>
+              <Label htmlFor="disease_type">Disease/Condition</Label>
               <Input
-                id="outbreak_date"
-                type="date"
-                {...form.register('outbreak_date')}
-                error={form.formState.errors.outbreak_date?.message}
+                id="disease_type"
+                {...form.register('disease_type')}
+                error={form.formState.errors.disease_type?.message}
+                placeholder="e.g., Bovine Respiratory Disease"
               />
             </div>
           </div>
           
-          {selectedDisease && (
-            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <div className="flex items-center space-x-2 mb-2">
-                <Badge variant={selectedDisease.is_contagious ? "destructive" : "secondary"}>
-                  {selectedDisease.is_contagious ? 'Contagious' : 'Non-contagious'}
-                </Badge>
-                <Badge variant="outline">{selectedDisease.category}</Badge>
-              </div>
-              {selectedDisease.description && (
-                <p className="text-sm text-gray-600 mb-2">{selectedDisease.description}</p>
-              )}
-              {selectedDisease.symptoms && (
-                <div>
-                  <p className="text-sm font-medium text-gray-700">Common symptoms:</p>
-                  <p className="text-sm text-gray-600">{selectedDisease.symptoms.join(', ')}</p>
-                </div>
-              )}
-              {selectedDisease.quarantine_days > 0 && (
-                <p className="text-sm font-medium text-red-600 mt-2">
-                  Recommended quarantine: {selectedDisease.quarantine_days} days
-                </p>
-              )}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="severity_level">Severity Level</Label>
+              <select
+                id="severity_level"
+                {...form.register('severity_level')}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+              >
+                <option value="low">🟢 Low - Minor concern</option>
+                <option value="medium">🟡 Medium - Moderate attention</option>
+                <option value="high">🟠 High - Serious concern</option>
+                <option value="critical">🔴 Critical - Emergency</option>
+              </select>
+              <Badge className={`mt-2 ${getSeverityColor(watchedSeverity)}`}>
+                {watchedSeverity.toUpperCase()} SEVERITY
+              </Badge>
             </div>
-          )}
-          
-          <div>
-            <Label htmlFor="quarantine_area">Quarantine Area (Optional)</Label>
-            <Input
-              id="quarantine_area"
-              {...form.register('quarantine_area')}
-              placeholder="e.g., Barn 2, Isolation Pen A"
-            />
+            
+            <div>
+              <Label htmlFor="first_detected_date">First Detected Date</Label>
+              <Input
+                id="first_detected_date"
+                type="date"
+                {...form.register('first_detected_date')}
+                error={form.formState.errors.first_detected_date?.message}
+                max={new Date().toISOString().split('T')[0]}
+              />
+            </div>
           </div>
           
           <div>
-            <Label>Affected Animals</Label>
-            <div className="border border-gray-300 rounded-lg p-4 max-h-60 overflow-y-auto">
-              <div className="mb-3">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Label htmlFor="description">Description</Label>
+            <textarea
+              id="description"
+              {...form.register('description')}
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+              placeholder="Describe the outbreak, how it was discovered, and current situation..."
+            />
+            {form.formState.errors.description && (
+              <p className="text-sm text-red-600 mt-1">
+                {form.formState.errors.description.message}
+              </p>
+            )}
+          </div>
+          
+          <div>
+            <Label htmlFor="symptoms">Observed Symptoms</Label>
+            <textarea
+              id="symptoms"
+              {...form.register('symptoms')}
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+              placeholder="List all observed symptoms, behavioral changes, and clinical signs..."
+            />
+            {form.formState.errors.symptoms && (
+              <p className="text-sm text-red-600 mt-1">
+                {form.formState.errors.symptoms.message}
+              </p>
+            )}
+          </div>
+          
+          {/* Affected Animals Selection */}
+          <div className="bg-red-50 p-4 rounded-lg border border-red-200">
+            <h4 className="font-medium text-red-900 mb-4 flex items-center space-x-2">
+              <Users className="w-5 h-5" />
+              <span>Affected Animals ({selectedAnimals.length} selected)</span>
+            </h4>
+            
+            <div className="max-h-48 overflow-y-auto border border-red-200 rounded-md p-3 bg-white">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {animals.map(animal => (
+                  <label
+                    key={animal.id}
+                    className="flex items-center space-x-2 p-2 hover:bg-red-50 rounded cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedAnimals.includes(animal.id)}
+                      onChange={() => toggleAnimalSelection(animal.id)}
+                      className="text-red-600 focus:ring-red-500"
+                    />
+                    <span className="text-sm">
+                      {animal.name || `Animal ${animal.tag_number}`} (#{animal.tag_number})
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            
+            {form.formState.errors.affected_animals && (
+              <p className="text-sm text-red-600 mt-2">
+                {form.formState.errors.affected_animals.message}
+              </p>
+            )}
+          </div>
+          
+          {/* Quarantine Information */}
+          <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
+            <h4 className="font-medium text-yellow-900 mb-4 flex items-center space-x-2">
+              <Shield className="w-5 h-5" />
+              <span>Quarantine & Containment</span>
+            </h4>
+            
+            <div className="space-y-4">
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="quarantine_required"
+                  {...form.register('quarantine_required')}
+                  className="text-yellow-600 focus:ring-yellow-500"
+                />
+                <Label htmlFor="quarantine_required" className="cursor-pointer">
+                  Quarantine measures required
+                </Label>
+              </div>
+              
+              {watchedQuarantine && (
+                <div>
+                  <Label htmlFor="quarantine_area">Quarantine Area/Location</Label>
                   <Input
-                    type="text"
-                    placeholder="Search animals by name or tag..."
-                    className="pl-10"
-                    value={animalSearchTerm}
-                    onChange={(e) => setAnimalSearchTerm(e.target.value)}
+                    id="quarantine_area"
+                    {...form.register('quarantine_area')}
+                    placeholder="e.g., Isolation barn, Paddock 3"
                   />
                 </div>
-              </div>
-              
-              {filteredAnimals.length === 0 ? (
-                <p className="text-gray-500 text-sm">No animals found</p>
-              ) : (
-                <div className="space-y-2 max-h-40 overflow-y-auto">
-                  {filteredAnimals.map((animal) => (
-                    <div
-                      key={animal.id}
-                      className={`flex items-center p-2 rounded cursor-pointer ${
-                        selectedAnimals.includes(animal.id)
-                          ? 'bg-farm-green/10 border border-farm-green'
-                          : 'hover:bg-gray-50'
-                      }`}
-                      onClick={() => toggleAnimalSelection(animal.id)}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedAnimals.includes(animal.id)}
-                        onChange={() => toggleAnimalSelection(animal.id)}
-                        className="mr-3"
-                      />
-                      <div>
-                        <p className="font-medium text-sm">
-                          {animal.name || `Animal ${animal.tag_number}`}
-                        </p>
-                        <p className="text-xs text-gray-600">
-                          Tag: {animal.tag_number} • {animal.breed || 'Unknown breed'}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              
-              {selectedAnimals.length > 0 && (
-                <div className="mt-3 pt-3 border-t">
-                  <p className="text-sm text-gray-600">
-                    {selectedAnimals.length} animal(s) selected
-                  </p>
-                </div>
               )}
             </div>
           </div>
           
+          {/* Treatment and Management */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="treatment_protocol">Treatment Protocol</Label>
+              <textarea
+                id="treatment_protocol"
+                {...form.register('treatment_protocol')}
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+                placeholder="Describe treatment plan, medications, and procedures..."
+              />
+            </div>
+            
+            <div>
+              <Label htmlFor="preventive_measures">Preventive Measures</Label>
+              <textarea
+                id="preventive_measures"
+                {...form.register('preventive_measures')}
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+                placeholder="List preventive measures to prevent spread..."
+              />
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="veterinarian">Attending Veterinarian</Label>
+              <Input
+                id="veterinarian"
+                {...form.register('veterinarian')}
+                placeholder="Dr. Smith, Emergency Vet Clinic"
+              />
+            </div>
+            
+            <div>
+              <Label htmlFor="estimated_duration">Estimated Duration (days)</Label>
+              <Input
+                id="estimated_duration"
+                type="number"
+                min="1"
+                {...form.register('estimated_duration', { valueAsNumber: true })}
+                placeholder="7"
+              />
+            </div>
+          </div>
+          
           <div>
-            <Label htmlFor="notes">Notes and Observations</Label>
+            <Label htmlFor="notes">Additional Notes</Label>
             <textarea
               id="notes"
               {...form.register('notes')}
-              rows={4}
+              rows={2}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
-              placeholder="Describe symptoms observed, suspected cause, actions taken, etc..."
+              placeholder="Any additional information, observations, or special instructions..."
             />
           </div>
           
-          <div className="flex justify-end space-x-3 pt-6">
+          {/* Action Buttons */}
+          <div className="flex justify-end space-x-3 pt-6 border-t">
             <Button
               type="button"
               variant="outline"
@@ -285,8 +365,18 @@ export function CreateOutbreakModal({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={loading}>
-              {loading ? <LoadingSpinner size="sm" /> : 'Report Outbreak'}
+            <Button type="submit" disabled={loading} className="bg-red-600 hover:bg-red-700">
+              {loading ? (
+                <>
+                  <LoadingSpinner size="sm" />
+                  <span className="ml-2">Creating Outbreak Record...</span>
+                </>
+              ) : (
+                <>
+                <AlertTriangle className="w-4 h-4 mr-2" />
+                  Report Outbreak
+                </>
+              )}
             </Button>
           </div>
         </form>

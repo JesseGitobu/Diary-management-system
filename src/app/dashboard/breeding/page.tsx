@@ -2,7 +2,7 @@ import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { getBreedingStats, getUpcomingBreedingEvents, getBreedingAlerts } from '@/lib/database/breeding-stats'
 import { redirect } from 'next/navigation'
-import { BreedingDashboard } from '@/components/breeding/BreedingDashboard'
+import { BreedingDashboardWrapper } from '@/components/breeding/BreedingDashboardWrapper'
 
 export default async function BreedingPage() {
   const user = await getCurrentUser()
@@ -17,7 +17,7 @@ export default async function BreedingPage() {
     redirect('/dashboard')
   }
   
-  // Load all breeding data
+  // Load initial data server-side for faster initial load
   const [breedingStats, upcomingEvents, breedingAlerts] = await Promise.all([
     getBreedingStats(userRole.farm_id),
     getUpcomingBreedingEvents(userRole.farm_id),
@@ -38,12 +38,12 @@ export default async function BreedingPage() {
   
   return (
     <div className="dashboard-container">
-      <BreedingDashboard
+      <BreedingDashboardWrapper
         userRole={userRole.role_type}
         farmId={userRole.farm_id}
-        breedingStats={breedingStats}
-        calendarEvents={calendarEvents}
-        breedingAlerts={breedingAlerts}
+        initialBreedingStats={breedingStats}
+        initialCalendarEvents={calendarEvents}
+        initialBreedingAlerts={breedingAlerts}
       />
     </div>
   )

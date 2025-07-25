@@ -4,8 +4,7 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { Progress } from '@/components/ui/Progress'
-import { Baby, Calendar, Heart, AlertTriangle } from 'lucide-react'
+import { Baby, Calendar, Clock, AlertTriangle } from 'lucide-react'
 import Link from 'next/link'
 
 interface PregnantAnimalsListProps {
@@ -13,206 +12,258 @@ interface PregnantAnimalsListProps {
   canManage: boolean
 }
 
+interface PregnantAnimal {
+  id: string
+  tag_number: string
+  name?: string
+  estimated_due_date: string
+  days_pregnant: number
+  conception_date: string
+  status: 'normal' | 'overdue' | 'due_soon'
+}
+
 export function PregnantAnimalsList({ farmId, canManage }: PregnantAnimalsListProps) {
-  const [pregnantAnimals, setPregnantAnimals] = useState<any[]>([])
+  const [pregnantAnimals, setPregnantAnimals] = useState<PregnantAnimal[]>([])
   const [loading, setLoading] = useState(true)
-  
+
   useEffect(() => {
-    fetchPregnantAnimals()
+    loadPregnantAnimals()
   }, [farmId])
-  
-  const fetchPregnantAnimals = async () => {
+
+  const loadPregnantAnimals = async () => {
     try {
-      const response = await fetch(`/api/breeding/pregnant?farmId=${farmId}`)
-      if (response.ok) {
-        const data = await response.json()
-        setPregnantAnimals(data.pregnantAnimals || [])
-      }
+      // This would fetch from your API
+      // For now, using mock data
+      const mockData: PregnantAnimal[] = [
+        {
+          id: '1',
+          tag_number: '001',
+          name: 'Bessie',
+          estimated_due_date: '2025-02-15',
+          days_pregnant: 250,
+          conception_date: '2024-05-10',
+          status: 'due_soon'
+        },
+        {
+          id: '2',
+          tag_number: '045',
+          name: 'Daisy',
+          estimated_due_date: '2025-03-20',
+          days_pregnant: 220,
+          conception_date: '2024-06-15',
+          status: 'normal'
+        }
+      ]
+      
+      setPregnantAnimals(mockData)
     } catch (error) {
-      console.error('Error fetching pregnant animals:', error)
+      console.error('Error loading pregnant animals:', error)
     } finally {
       setLoading(false)
     }
   }
-  
-  const calculatePregnancyProgress = (breedingDate: string, expectedCalvingDate: string) => {
-    const bred = new Date(breedingDate).getTime()
-    const expected = new Date(expectedCalvingDate).getTime()
-    const now = new Date().getTime()
+
+  const getDaysUntilDue = (dueDate: string) => {
+    const today = new Date()
+    const due = new Date(dueDate)
+    const diffTime = due.getTime() - today.getTime()
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+    return diffDays
+  }
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'overdue':
+        return 'bg-red-100 text-red-800'
+      case 'due_soon':
+        return 'bg-yellow-100 text-yellow-800'
+      case 'normal':
+        return 'bg-green-100 text-green-800'
+      default:
+        return 'bg-gray-100 text-gray-800'
+    }
+  }
+
+  const getStatusLabel = (animal: PregnantAnimal) => {
+    const daysUntilDue = getDaysUntilDue(animal.estimated_due_date)
     
-    const totalGestation = expected - bred
-    const elapsed = now - bred
-    
-    return Math.min(Math.max((elapsed / totalGestation) * 100, 0), 100)
+    if (daysUntilDue < 0) {
+      return `${Math.abs(daysUntilDue)} days overdue`
+    } else if (daysUntilDue <= 7) {
+      return `Due in ${daysUntilDue} days`
+    } else {
+      return `${daysUntilDue} days to go`
+    }
   }
-  
-  const getDaysUntilCalving = (expectedDate: string) => {
-    const expected = new Date(expectedDate).getTime()
-    const now = new Date().getTime()
-    const days = Math.ceil((expected - now) / (1000 * 60 * 60 * 24))
-    return days
-  }
-  
-  const getPregnancyStage = (progress: number) => {
-    if (progress < 33) return { stage: 'First Trimester', color: 'bg-blue-500' }
-    if (progress < 66) return { stage: 'Second Trimester', color: 'bg-yellow-500' }
-    if (progress < 90) return { stage: 'Third Trimester', color: 'bg-orange-500' }
-    return { stage: 'Due Soon', color: 'bg-red-500' }
-  }
-  
+
   if (loading) {
     return (
       <Card>
-        <CardContent className="flex items-center justify-center py-12">
+        <CardContent className="flex items-center justify-center py-8">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-farm-green mx-auto mb-4"></div>
-            <p className="text-gray-500">Loading pregnant animals...</p>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-farm-green mx-auto"></div>
+            <p className="text-sm text-gray-500 mt-2">Loading pregnant animals...</p>
           </div>
         </CardContent>
       </Card>
     )
   }
-  
-  if (pregnantAnimals.length === 0) {
-    return (
+
+  return (
+    <div className="space-y-6">
       <Card>
-        <CardContent className="flex flex-col items-center justify-center py-12">
-          <Baby className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">
-            No Pregnant Animals
-          </h3>
-          <p className="text-gray-600 text-center mb-6">
-            No confirmed pregnancies at this time. Record breeding events and pregnancy checks to track expecting mothers.
-          </p>
-          {canManage && (
-            <div className="flex space-x-3">
-              <Button asChild variant="outline">
-                <Link href="/dashboard/breeding/record">
-                  <Heart className="mr-2 h-4 w-4" />
-                  Record Breeding
-                </Link>
-              </Button>
-              <Button asChild>
-                <Link href="/dashboard/breeding/pregnancy-check">
-                  <Baby className="mr-2 h-4 w-4" />
-                  Pregnancy Check
-                </Link>
-              </Button>
+        <CardHeader>
+          <CardTitle className="flex items-center space-x-2">
+            <Baby className="h-5 w-5" />
+            <span>Pregnant Animals</span>
+          </CardTitle>
+          <CardDescription>
+            Monitor pregnant animals and expected calving dates
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {pregnantAnimals.length === 0 ? (
+            <div className="text-center py-8">
+              <Baby className="mx-auto h-12 w-12 text-gray-400" />
+              <h3 className="mt-2 text-sm font-medium text-gray-900">
+                No pregnant animals
+              </h3>
+              <p className="mt-1 text-sm text-gray-500">
+                Animals will appear here after confirmed pregnancies
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {pregnantAnimals.map((animal) => {
+                const daysUntilDue = getDaysUntilDue(animal.estimated_due_date)
+                const isOverdue = daysUntilDue < 0
+                const isDueSoon = daysUntilDue <= 7 && daysUntilDue >= 0
+                
+                return (
+                  <div key={animal.id} className="border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-4">
+                        <div className="flex-shrink-0">
+                          <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+                            isOverdue ? 'bg-red-100' : isDueSoon ? 'bg-yellow-100' : 'bg-green-100'
+                          }`}>
+                            {isOverdue ? (
+                              <AlertTriangle className="w-6 h-6 text-red-600" />
+                            ) : (
+                              <Baby className="w-6 h-6 text-green-600" />
+                            )}
+                          </div>
+                        </div>
+                        
+                        <div>
+                          <h4 className="font-medium text-gray-900">
+                            {animal.name || `Animal ${animal.tag_number}`}
+                          </h4>
+                          <p className="text-sm text-gray-600">
+                            Tag: {animal.tag_number} • {animal.days_pregnant} days pregnant
+                          </p>
+                          <div className="flex items-center space-x-4 mt-1">
+                            <div className="flex items-center space-x-1 text-sm text-gray-500">
+                              <Calendar className="w-4 h-4" />
+                              <span>Due: {new Date(animal.estimated_due_date).toLocaleDateString()}</span>
+                            </div>
+                            <div className="flex items-center space-x-1 text-sm text-gray-500">
+                              <Clock className="w-4 h-4" />
+                              <span>Conceived: {new Date(animal.conception_date).toLocaleDateString()}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="text-right">
+                        <Badge className={getStatusColor(animal.status)}>
+                          {getStatusLabel(animal)}
+                        </Badge>
+                        <div className="mt-2 space-x-2">
+                          <Button asChild size="sm" variant="outline">
+                            <Link href={`/dashboard/animals/${animal.id}`}>
+                              View Animal
+                            </Link>
+                          </Button>
+                          {canManage && (isDueSoon || isOverdue) && (
+                            <Button size="sm">
+                              Record Calving
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Progress Bar */}
+                    <div className="mt-4">
+                      <div className="flex justify-between text-sm text-gray-600 mb-1">
+                        <span>Pregnancy Progress</span>
+                        <span>{Math.round((animal.days_pregnant / 283) * 100)}%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className={`h-2 rounded-full ${
+                            isOverdue ? 'bg-red-500' : isDueSoon ? 'bg-yellow-500' : 'bg-green-500'
+                          }`}
+                          style={{ width: `${Math.min((animal.days_pregnant / 283) * 100, 100)}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           )}
         </CardContent>
       </Card>
-    )
-  }
-  
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-gray-900">
-          Pregnant Animals ({pregnantAnimals.length})
-        </h2>
-        {canManage && (
-          <Button asChild size="sm">
-            <Link href="/dashboard/breeding/calving">
-              <Baby className="mr-2 h-4 w-4" />
-              Record Calving
-            </Link>
-          </Button>
-        )}
-      </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {pregnantAnimals.map((animal) => {
-          const progress = calculatePregnancyProgress(
-            animal.breeding_records[0]?.breeding_date,
-            animal.expected_calving_date
-          )
-          const daysUntilCalving = getDaysUntilCalving(animal.expected_calving_date)
-          const pregnancyStage = getPregnancyStage(progress)
-          const isDueSoon = daysUntilCalving <= 14
-          
-          return (
-            <Card key={animal.id} className={isDueSoon ? 'border-red-200 bg-red-50' : ''}>
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg">
-                    {animal.animals?.name || `Animal ${animal.animals?.tag_number}`}
-                  </CardTitle>
-                  <Badge variant="outline">
-                    {animal.animals?.tag_number}
-                  </Badge>
-                </div>
-                <CardDescription>
-                  Bred: {new Date(animal.breeding_records[0]?.breeding_date).toLocaleDateString()}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Pregnancy Progress */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium">{pregnancyStage.stage}</span>
-                    <span className="text-sm text-gray-600">{Math.round(progress)}%</span>
-                  </div>
-                  <Progress value={progress} className="h-2" />
-                </div>
-                
-                {/* Due Date Info */}
-                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center space-x-2">
-                    <Calendar className="h-4 w-4 text-gray-600" />
-                    <span className="text-sm font-medium">Due Date</span>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-medium">
-                      {new Date(animal.expected_calving_date).toLocaleDateString()}
-                    </p>
-                    <p className={`text-xs ${
-                      daysUntilCalving <= 7 ? 'text-red-600' : 
-                      daysUntilCalving <= 14 ? 'text-orange-600' : 'text-gray-600'
-                    }`}>
-                      {daysUntilCalving > 0 ? `${daysUntilCalving} days` : 'Overdue'}
-                    </p>
-                  </div>
-                </div>
-                
-                {/* Breeding Info */}
-                <div className="text-sm text-gray-600">
-                  <p>Method: {animal.breeding_records[0]?.breeding_type?.replace('_', ' ')}</p>
-                  {animal.breeding_records[0]?.sire_name && (
-                    <p>Sire: {animal.breeding_records[0].sire_name}</p>
-                  )}
-                  {animal.confirmation_method && (
-                    <p>Confirmed by: {animal.confirmation_method.replace('_', ' ')}</p>
-                  )}
-                </div>
-                
-                {/* Alerts */}
-                {isDueSoon && (
-                  <div className="flex items-center space-x-2 p-2 bg-yellow-100 border border-yellow-200 rounded-lg">
-                    <AlertTriangle className="h-4 w-4 text-yellow-600" />
-                    <span className="text-sm text-yellow-800 font-medium">
-                      Due soon - Monitor closely
-                    </span>
-                  </div>
-                )}
-                
-                {/* Actions */}
-                {canManage && (
-                  <div className="flex space-x-2 pt-2">
-                    <Button size="sm" variant="outline" className="flex-1">
-                      View Details
-                    </Button>
-                    {daysUntilCalving <= 30 && (
-                      <Button size="sm" className="flex-1">
-                        Record Calving
-                      </Button>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )
-        })}
+      {/* Summary Statistics */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center space-x-2">
+              <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                <Baby className="w-4 h-4 text-green-600" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-900">Total Pregnant</p>
+                <p className="text-lg font-bold text-green-600">{pregnantAnimals.length}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center space-x-2">
+              <div className="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center">
+                <Clock className="w-4 h-4 text-yellow-600" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-900">Due Soon</p>
+                <p className="text-lg font-bold text-yellow-600">
+                  {pregnantAnimals.filter(a => getDaysUntilDue(a.estimated_due_date) <= 7 && getDaysUntilDue(a.estimated_due_date) >= 0).length}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center space-x-2">
+              <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
+                <AlertTriangle className="w-4 h-4 text-red-600" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-900">Overdue</p>
+                <p className="text-lg font-bold text-red-600">
+                  {pregnantAnimals.filter(a => getDaysUntilDue(a.estimated_due_date) < 0).length}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )
