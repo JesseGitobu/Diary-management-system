@@ -6,21 +6,31 @@ import Link from 'next/link'
 import { cn } from '@/lib/utils/cn'
 import { 
   Home, 
-  Dog, 
+  CalendarFold, 
+  Heart,
+  Coins,
   Droplets, 
   Wheat, 
-  BarChart3, 
+  BarChart3,
+  Warehouse, 
+  Tractor,
   Users, 
   Settings,
   Menu,
   X
 } from 'lucide-react'
+import { GiCow } from 'react-icons/gi'
 
 const mobileNavItems = [
   { icon: Home, label: 'Dashboard', href: '/dashboard' },
-  { icon: Dog, label: 'Animals', href: '/dashboard/animals' },
+  { icon: GiCow, label: 'Herd Management', href: '/dashboard/animals' },
+  { icon: CalendarFold, label: 'Breeding', href: '/dashboard/breeding' },
+  { icon: Heart, label: 'Health', href: '/dashboard/health' },
   { icon: Droplets, label: 'Production', href: '/dashboard/production' },
   { icon: Wheat, label: 'Feed', href: '/dashboard/feed' },
+  { icon: Coins, label: 'Finance', href: '/dashboard/financial' },
+  { icon: Warehouse, label: 'Inventory', href: '/dashboard/inventory' },
+  { icon: Tractor, label: 'Equipment', href: '/dashboard/equipment' },
   { icon: BarChart3, label: 'Reports', href: '/dashboard/reports' },
   { icon: Users, label: 'Team', href: '/dashboard/settings/team' },
   { icon: Settings, label: 'Settings', href: '/dashboard/settings' },
@@ -34,7 +44,7 @@ export function MobileNavigation() {
     <>
       {/* Mobile Header */}
       <div className="md:hidden bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-gray-900">FarmTrack Pro</h1>
+        <div className={"logo"}>DairyTrack Pro</div>
         <button
           onClick={() => setIsOpen(true)}
           className="p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100"
@@ -48,7 +58,7 @@ export function MobileNavigation() {
         <div className="fixed inset-0 z-50 md:hidden">
           <div className="fixed inset-0 bg-black bg-opacity-25" onClick={() => setIsOpen(false)} />
           <nav className="fixed top-0 left-0 bottom-0 flex flex-col w-5/6 max-w-sm bg-white">
-            <div className="px-4 py-3 bg-farm-green">
+            <div className="px-4 py-3 bg-dairy-primary">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-white">Menu</h2>
                 <button
@@ -70,7 +80,7 @@ export function MobileNavigation() {
                     className={cn(
                       'flex items-center px-3 py-3 text-sm font-medium rounded-md',
                       isActive
-                        ? 'bg-farm-green text-white'
+                        ? 'bg-dairy-primary text-white'
                         : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                     )}
                   >
@@ -95,7 +105,7 @@ export function MobileNavigation() {
                 href={item.href}
                 className={cn(
                   'flex flex-col items-center py-2 px-1',
-                  isActive ? 'text-farm-green' : 'text-gray-400'
+                  isActive ? 'text-dairy-primary' : 'text-gray-400'
                 )}
               >
                 <item.icon className="h-5 w-5" />
