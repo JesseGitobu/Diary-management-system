@@ -1,3 +1,7 @@
+// src/app/admin/layout.tsx
+'use client'
+
+import { usePathname } from 'next/navigation'
 import { AdminAuthProvider } from '@/lib/hooks/useAdminAuth'
 import { AdminHeader } from '@/components/admin/AdminHeader'
 import { AdminSidebar } from '@/components/admin/AdminSidebar'
@@ -8,6 +12,19 @@ export default function AdminLayout({
 }: {
   children: React.ReactNode
 }) {
+  const pathname = usePathname()
+  
+  // Don't wrap auth page with AdminAuthGuard
+  const isAuthPage = pathname === '/admin/auth'
+  
+  if (isAuthPage) {
+    return (
+      <AdminAuthProvider>
+        {children}
+      </AdminAuthProvider>
+    )
+  }
+  
   return (
     <AdminAuthProvider>
       <AdminAuthGuard>

@@ -3,118 +3,167 @@ import type { NextRequest } from 'next/server'
 import { createMiddlewareClient } from '@/lib/supabase/middleware'
 
 export async function middleware(request: NextRequest) {
-  
   const { supabase, response } = createMiddlewareClient(request)
-  
   const { data: { user } } = await supabase.auth.getUser()
   
-  // Protected routes that require authentication
+  const pathname = request.nextUrl.pathname
+  console.log('🔍 Middleware checking path:', pathname, 'User:', user?.email)
+  
+  // Define route patterns more precisely
   const protectedRoutes = ['/dashboard', '/onboarding']
-  const adminRoutes = ['/admin']
+  const adminProtectedRoutes = ['/admin/dashboard', '/admin/farms', '/admin/users', '/admin/support', '/admin/billing', '/admin/analytics', '/admin/monitoring', '/admin/audit', '/admin/settings']
+  const adminPublicRoutes = ['/admin/auth']
   
-  const isProtectedRoute = protectedRoutes.some(route => 
-    request.nextUrl.pathname.startsWith(route)
-  )
+  const isProtectedRoute = protectedRoutes.some(route => pathname.startsWith(route))
+  const isAdminProtectedRoute = adminProtectedRoutes.some(route => pathname.startsWith(route))
+  const isAdminPublicRoute = adminPublicRoutes.some(route => pathname === route)
   
-  const isAdminRoute = adminRoutes.some(route => 
-    request.nextUrl.pathname.startsWith(route)
-  )
-  
-  // Redirect unauthenticated users to auth page
-  if (isProtectedRoute && !user) {
-    return NextResponse.redirect(new URL('/auth', request.url))
+  // Allow admin auth page to load without authentication
+  if (isAdminPublicRoute) {
+    console.log('✅ Allowing access to admin auth page')
+    return response
   }
   
-  // Handle admin routes
-  if (isAdminRoute) {
+  // Handle admin protected routes
+  if (isAdminProtectedRoute) {
+    console.log('🔒 Admin protected route detected:', pathname)
+    
     if (!user) {
+      console.log('❌ No user found, redirecting to admin auth')
       return NextResponse.redirect(new URL('/admin/auth', request.url))
     }
     
-    // Check if user is admin
-    const { data: adminUser } = await supabase
-      .from('admin_users')
-      .select('id')
-      .eq('user_id', user.id)
-      .single()
+    console.log('👤 User found:', user.email, 'Checking admin status...')
     
-    if (!adminUser) {
-      return NextResponse.redirect(new URL('/dashboard', request.url))
+    try {
+      const { data: adminUser, error: adminError } = await supabase
+        .from('admin_users')
+        .select('id, created_at')
+        .eq('user_id', user.id)
+        .maybeSingle()
+      
+      console.log('🔍 Admin check result:', { adminUser, adminError })
+      
+      if (adminError) {
+        console.error('❌ Admin check error:', adminError)
+        return NextResponse.redirect(new URL('/admin/auth', request.url))
+      }
+      
+      if (!adminUser) {
+        console.log('❌ User is not admin, redirecting to regular dashboard')
+        return NextResponse.redirect(new URL('/dashboard', request.url))
+      }
+      
+      console.log('✅ Admin user confirmed, allowing access to:', pathname)
+      return response
+      
+    } catch (error) {
+      console.error('💥 Exception checking admin status:', error)
+      return NextResponse.redirect(new URL('/admin/auth', request.url))
     }
   }
   
-  // 🎯 NEW: Handle authenticated users with role-based routing
+  // Handle regular protected routes
+  if (isProtectedRoute && !user) {
+    console.log('🔒 Protected route requires auth, redirecting to /auth')
+    return NextResponse.redirect(new URL('/auth', request.url))
+  }
+  
+  // Role-based routing for authenticated users on protected routes
   if (user && isProtectedRoute) {
+    // First check if user is admin
+    try {
+      const { data: adminUser, error: adminError } = await supabase
+        .from('admin_users')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle()
+      
+      // If user is admin and trying to access regular routes, redirect to admin dashboard
+      if (!adminError && adminUser) {
+        console.log('🔄 Admin user accessing regular route, redirecting to admin dashboard')
+        return NextResponse.redirect(new URL('/admin/dashboard', request.url))
+      }
+    } catch (error) {
+      console.error('Error checking admin status:', error)
+    }
+    
+    // Continue with regular user role checking
     const userRole = await getUserRole(user.id, supabase)
     
     if (userRole) {
-      // 🎯 NEW: Handle users with pending_setup status
       if (userRole.status === 'pending_setup') {
-        // Users with pending setup should only access onboarding
-        if (!request.nextUrl.pathname.startsWith('/onboarding')) {
+        if (!pathname.startsWith('/onboarding')) {
           console.log('🔄 Redirecting pending user to onboarding:', user.id)
           return NextResponse.redirect(new URL('/onboarding', request.url))
         }
       }
       
-      // 🎯 NEW: Handle users with active status
       if (userRole.status === 'active' && userRole.farm_id) {
-        // Active users trying to access onboarding should go to dashboard
-        if (request.nextUrl.pathname.startsWith('/onboarding')) {
+        if (pathname.startsWith('/onboarding')) {
           console.log('🔄 Redirecting active user to dashboard:', user.id)
           return NextResponse.redirect(new URL('/dashboard', request.url))
         }
       }
       
-      // 🎯 NEW: Handle edge case - active farm owner without farm_id
       if (userRole.role_type === 'farm_owner' && !userRole.farm_id) {
-        // Farm owner without farm should complete onboarding
-        if (!request.nextUrl.pathname.startsWith('/onboarding')) {
+        if (!pathname.startsWith('/onboarding')) {
           console.log('🔄 Redirecting farm owner without farm to onboarding:', user.id)
           return NextResponse.redirect(new URL('/onboarding', request.url))
         }
       }
     } else {
-      // 🎯 NEW: User authenticated but no role found
-      // This shouldn't happen with new flow, but handle gracefully
       console.log('⚠️ Authenticated user without role found:', user.id)
       
-      // If trying to access dashboard, redirect to onboarding
-      if (request.nextUrl.pathname.startsWith('/dashboard')) {
+      if (pathname.startsWith('/dashboard')) {
         return NextResponse.redirect(new URL('/onboarding', request.url))
       }
     }
   }
   
-  // 🎯 UPDATED: Enhanced auth page redirect logic
-  if (user && (request.nextUrl.pathname === '/auth' || request.nextUrl.pathname === '/')) {
-    // Get user role to determine where to redirect
+  // Smart landing page redirects
+  if (user && (pathname === '/auth' || pathname === '/')) {
+    console.log('🏠 User accessing auth/home, determining redirect...')
+    
+    // First check if user is admin
+    try {
+      const { data: adminUser, error: adminError } = await supabase
+        .from('admin_users')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle()
+      
+      if (!adminError && adminUser) {
+        console.log('🔄 Admin user accessing auth/home, redirecting to admin dashboard')
+        return NextResponse.redirect(new URL('/admin/dashboard', request.url))
+      }
+    } catch (error) {
+      console.error('Error checking admin status for redirect:', error)
+    }
+    
+    // Get regular user role to determine redirect
     const userRole = await getUserRole(user.id, supabase)
     
     if (userRole) {
       if (userRole.status === 'pending_setup') {
-        // Pending users go to onboarding
         return NextResponse.redirect(new URL('/onboarding', request.url))
       } else if (userRole.status === 'active' && userRole.farm_id) {
-        // Active users go to dashboard
         return NextResponse.redirect(new URL('/dashboard', request.url))
       } else if (userRole.role_type === 'farm_owner' && !userRole.farm_id) {
-        // Farm owner without farm goes to onboarding
         return NextResponse.redirect(new URL('/onboarding', request.url))
       } else {
-        // Default to dashboard for other cases
         return NextResponse.redirect(new URL('/dashboard', request.url))
       }
     } else {
-      // No role found, redirect to onboarding
       return NextResponse.redirect(new URL('/onboarding', request.url))
     }
   }
   
+  console.log('✅ No redirect needed for:', pathname)
   return response
 }
 
-// 🎯 NEW: Helper function to get user role in middleware
+// Helper function to get user role in middleware
 async function getUserRole(userId: string, supabase: any) {
   try {
     const { data, error } = await supabase
@@ -137,6 +186,6 @@ async function getUserRole(userId: string, supabase: any) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|public/).*)',
+    '/((?!_next/static|_next/image|favicon.ico|public/|api/).*)',
   ],
 }

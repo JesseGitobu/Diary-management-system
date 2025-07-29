@@ -56,12 +56,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe()
   }, [])
 
-  const loadUserRole = async (userId: string) => {
+ // Update your useAuth.tsx - modify the loadUserRole function
+
+const loadUserRole = async (userId: string) => {
+  try {
+    // First check if user is admin
+    const { data: adminUser, error: adminError } = await supabase
+      .from('admin_users')
+      .select('id')
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    // If user is admin, don't load regular user role
+    if (!adminError && adminUser) {
+      console.log('User is admin, skipping regular role check')
+      setUserRole('super_admin' as any) // Set a special admin role
+      return
+    }
+
+    // Only check regular user role if not admin
     const { data, error } = await supabase
       .from('user_roles')
       .select('role_type')
       .eq('user_id', userId)
-      .single()
+      .maybeSingle() // Use maybeSingle instead of single
 
     if (error) {
       console.error('Error loading user role:', error)
@@ -69,8 +87,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } else {
       setUserRole(data?.role_type || null)
     }
+  } catch (error) {
+    console.error('Exception loading user role:', error)
+    setUserRole(null)
   }
-
+}
   const signIn = async (email: string, password: string) => {
   console.log('🔍 Auth hook signIn called:', email) // Debug log
   

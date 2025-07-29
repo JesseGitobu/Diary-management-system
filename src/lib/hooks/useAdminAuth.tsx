@@ -35,20 +35,37 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
 
       setUser(currentUser)
 
-      // Check if user is admin
+      // Check if user is admin with more detailed error handling
+      console.log('Checking admin status for user:', currentUser.id)
+      
       const { data: adminUser, error: adminError } = await supabase
         .from('admin_users')
         .select('id, created_at')
         .eq('user_id', currentUser.id)
-        .single()
+        .maybeSingle() // Use maybeSingle instead of single to avoid errors when no record found
 
-      if (adminError && adminError.code !== 'PGRST116') {
-        // PGRST116 is "not found" error, which is expected for non-admin users
+      console.log('Admin check result:', { adminUser, adminError })
+
+      if (adminError) {
         console.error('Error checking admin status:', adminError)
-        throw new Error('Failed to verify admin access')
+        
+        // Check if it's a table not found error
+        if (adminError.message?.includes('relation "admin_users" does not exist')) {
+          throw new Error('Admin system not set up. Please contact administrator.')
+        }
+        
+        // Check if it's a permission error
+        if (adminError.message?.includes('permission')) {
+          throw new Error('Database permission error. Please contact administrator.')
+        }
+        
+        throw new Error(`Admin verification failed: ${adminError.message}`)
       }
 
-      setIsAdmin(!!adminUser)
+      const isUserAdmin = !!adminUser
+      setIsAdmin(isUserAdmin)
+      
+      console.log('User admin status:', isUserAdmin)
       
       // Log admin access for audit trail
       if (adminUser) {
@@ -107,12 +124,15 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     // Get initial session
     const getInitialSession = async () => {
       try {
+        console.log('Getting initial session...')
+        
         const { data: { session }, error } = await supabase.auth.getSession()
         
         if (error) {
           throw error
         }
 
+        console.log('Initial session:', session?.user?.email || 'No user')
         await checkAdminStatus(session?.user || null)
       } catch (err: any) {
         console.error('Initial session error:', err)
@@ -187,47 +207,5 @@ export const useRequireAdmin = () => {
     error,
     isAuthorized: !loading && user && isAdmin,
     shouldRedirect: !loading && (!user || !isAdmin)
-  }
-}
-
-// Hook for admin-specific operations
-export const useAdminOperations = () => {
-  const { user, isAdmin } = useAdminAuth()
-  const supabase = createClient()
-  
-  const performAdminAction = async (
-    action: string,
-    operation: () => Promise<any>
-  ) => {
-    if (!user || !isAdmin) {
-      throw new Error('Admin access required')
-    }
-    
-    try {
-      const result = await operation()
-      
-      // Log the admin action for audit trail
-      await supabase.from('audit_logs').insert({
-        user_id: user.id,
-        action,
-        resource_type: 'admin_action',
-        resource_id: user.id,
-        new_values: { 
-          action,
-          timestamp: new Date().toISOString(),
-          user_agent: navigator.userAgent 
-        }
-      })
-      
-      return result
-    } catch (error) {
-      console.error(`Admin action failed: ${action}`, error)
-      throw error
-    }
-  }
-  
-  return {
-    performAdminAction,
-    canPerformAdminActions: user && isAdmin
   }
 }
