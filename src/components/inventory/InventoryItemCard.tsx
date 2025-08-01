@@ -25,9 +25,11 @@ interface InventoryItemCardProps {
   item: any
   canManage: boolean
   onStockUpdate: (itemId: string, newStock: number) => void
+  viewMode?: 'grid' | 'list'
+  isMobile?: boolean
 }
 
-export function InventoryItemCard({ item, canManage, onStockUpdate }: InventoryItemCardProps) {
+export function InventoryItemCard({ item, canManage, onStockUpdate, viewMode, isMobile }: InventoryItemCardProps) {
   const [isUpdatingStock, setIsUpdatingStock] = useState(false)
   const [stockAdjustment, setStockAdjustment] = useState('')
   const [adjustmentType, setAdjustmentType] = useState<'in' | 'out'>('in')

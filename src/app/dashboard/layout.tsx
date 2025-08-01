@@ -2,6 +2,8 @@ import { getCurrentUser } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { DashboardHeader } from '@/components/layout/DashboardHeader'
 import { DashboardSidebar } from '@/components/layout/DashboardSidebar'
+import { MobileHeader } from '@/components/mobile/MobileHeader'
+import { MobileBottomNav } from '@/components/mobile/MobileBottomNav'
 import { MobileNavigation } from '@/components/mobile/MobileNavigation'
 
 export default async function DashboardLayout({
@@ -23,7 +25,7 @@ export default async function DashboardLayout({
       </div>
       
       {/* Mobile Navigation */}
-      <MobileNavigation />
+      <MobileHeader />
       
       <div className="flex h-full">
         {/* Desktop Sidebar */}
@@ -38,6 +40,9 @@ export default async function DashboardLayout({
           </div>
         </main>
       </div>
+
+      {/* Mobile Bottom Navigation */}
+      <MobileBottomNav />
     </div>
   )
 }

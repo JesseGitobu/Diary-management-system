@@ -32,13 +32,15 @@ interface ProductionEntryFormProps {
   animals: Array<{ id: string; tag_number: string; name?: string }>
   initialData?: Partial<ProductionFormData>
   onSuccess?: () => void
+  isMobile?: boolean
 }
 
 export function ProductionEntryForm({ 
   farmId, 
   animals, 
   initialData,
-  onSuccess 
+  onSuccess,
+  isMobile
 }: ProductionEntryFormProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)

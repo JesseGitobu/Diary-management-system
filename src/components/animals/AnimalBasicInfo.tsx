@@ -1,8 +1,11 @@
 'use client'
 
+import { useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
+import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
+import { cn } from '@/lib/utils/cn'
 import { 
   Calendar, 
   Tag, 
@@ -16,7 +19,10 @@ import {
   ShoppingCart,
   Droplets,
   Activity,
-  Clock
+  Clock,
+  ChevronDown,
+  ChevronUp,
+  Plus
 } from 'lucide-react'
 
 interface AnimalBasicInfoProps {
@@ -26,11 +32,23 @@ interface AnimalBasicInfoProps {
 }
 
 export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInfoProps) {
+  const [showAllSections, setShowAllSections] = useState(false)
+  const [expandedSections, setExpandedSections] = useState<string[]>(['identification'])
+  const { isMobile, isTouch } = useDeviceInfo()
+  
+  const toggleSection = (sectionId: string) => {
+    setExpandedSections(prev => 
+      prev.includes(sectionId) 
+        ? prev.filter(id => id !== sectionId)
+        : [...prev, sectionId]
+    )
+  }
+  
   const formatDate = (dateString: string) => {
     if (!dateString) return 'Not specified'
     return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
+      year: isMobile ? '2-digit' : 'numeric',
+      month: isMobile ? 'short' : 'long',
       day: 'numeric'
     })
   }
@@ -38,16 +56,22 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
   const getSourceBadge = () => {
     if (animal.animal_source === 'newborn_calf') {
       return (
-        <Badge className="bg-blue-100 text-blue-800">
+        <Badge className={cn(
+          "bg-blue-100 text-blue-800",
+          isMobile ? "text-xs px-2 py-0.5" : ""
+        )}>
           <Baby className="w-3 h-3 mr-1" />
-          Born Here
+          {isMobile ? "Born" : "Born Here"}
         </Badge>
       )
     } else if (animal.animal_source === 'purchased_animal') {
       return (
-        <Badge className="bg-green-100 text-green-800">
+        <Badge className={cn(
+          "bg-green-100 text-green-800",
+          isMobile ? "text-xs px-2 py-0.5" : ""
+        )}>
           <ShoppingCart className="w-3 h-3 mr-1" />
-          Purchased
+          {isMobile ? "Bought" : "Purchased"}
         </Badge>
       )
     }
@@ -66,7 +90,10 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
     if (!animal.production_status) return null
     
     return (
-      <Badge className={statusColors[animal.production_status as keyof typeof statusColors] || 'bg-gray-100 text-gray-800'}>
+      <Badge className={cn(
+        statusColors[animal.production_status as keyof typeof statusColors] || 'bg-gray-100 text-gray-800',
+        isMobile ? "text-xs px-2 py-0.5" : ""
+      )}>
         {animal.production_status.replace('_', ' ').toUpperCase()}
       </Badge>
     )
@@ -83,9 +110,15 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
     if (!animal.health_status) return null
     
     return (
-      <Badge className={statusColors[animal.health_status as keyof typeof statusColors] || 'bg-gray-100 text-gray-800'}>
+      <Badge className={cn(
+        statusColors[animal.health_status as keyof typeof statusColors] || 'bg-gray-100 text-gray-800',
+        isMobile ? "text-xs px-2 py-0.5" : ""
+      )}>
         <Heart className="w-3 h-3 mr-1" />
-        {animal.health_status.replace('_', ' ').toUpperCase()}
+        {isMobile 
+          ? animal.health_status.replace('_', ' ').split(' ')[0].toUpperCase()
+          : animal.health_status.replace('_', ' ').toUpperCase()
+        }
       </Badge>
     )
   }
@@ -99,251 +132,433 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
     
     if (diffDays < 30) {
-      return `${diffDays} days old`
+      return isMobile ? `${diffDays}d` : `${diffDays} days old`
     } else if (diffDays < 365) {
       const months = Math.floor(diffDays / 30)
-      return `${months} month${months !== 1 ? 's' : ''} old`
+      return isMobile ? `${months}mo` : `${months} month${months !== 1 ? 's' : ''} old`
     } else {
       const years = Math.floor(diffDays / 365)
       const remainingMonths = Math.floor((diffDays % 365) / 30)
-      return `${years} year${years !== 1 ? 's' : ''} ${remainingMonths} month${remainingMonths !== 1 ? 's' : ''} old`
+      return isMobile 
+        ? `${years}y ${remainingMonths}m`
+        : `${years} year${years !== 1 ? 's' : ''} ${remainingMonths} month${remainingMonths !== 1 ? 's' : ''} old`
     }
+  }
+
+  // Mobile: Collapsible section component
+  const CollapsibleSection = ({ 
+    id, 
+    title, 
+    icon: Icon, 
+    children, 
+    defaultExpanded = false 
+  }: {
+    id: string
+    title: string
+    icon: any
+    children: React.ReactNode
+    defaultExpanded?: boolean
+  }) => {
+    const isExpanded = expandedSections.includes(id)
+    
+    if (!isMobile) {
+      return (
+        <div>
+          <h4 className="font-medium text-gray-900 mb-3 flex items-center">
+            <Icon className="w-4 h-4 mr-2" />
+            {title}
+          </h4>
+          {children}
+        </div>
+      )
+    }
+    
+    return (
+      <div className="border-b border-gray-100 last:border-0">
+        <button
+          onClick={() => toggleSection(id)}
+          className="w-full flex items-center justify-between py-3 text-left focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded-sm"
+        >
+          <h4 className="font-medium text-gray-900 flex items-center">
+            <Icon className="w-4 h-4 mr-2" />
+            {title}
+          </h4>
+          {isExpanded ? (
+            <ChevronUp className="w-4 h-4 text-gray-500" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-gray-500" />
+          )}
+        </button>
+        {isExpanded && (
+          <div className="pb-4">
+            {children}
+          </div>
+        )}
+      </div>
+    )
   }
   
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      {/* Basic Information */}
+    <div className={cn(
+      "grid gap-6",
+      isMobile ? "grid-cols-1" : "grid-cols-1 lg:grid-cols-2"
+    )}>
+      {/* Basic Information Card */}
       <Card>
-        <CardHeader>
+        <CardHeader className={cn(
+          isMobile ? "px-4 py-3" : ""
+        )}>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="flex items-center space-x-2">
-                <Tag className="w-5 h-5" />
+              <CardTitle className={cn(
+                "flex items-center space-x-2",
+                isMobile ? "text-lg" : ""
+              )}>
+                <Tag className={cn(isMobile ? "w-4 h-4" : "w-5 h-5")} />
                 <span>Basic Information</span>
               </CardTitle>
-              <CardDescription>
+              <CardDescription className={cn(
+                isMobile ? "text-sm" : ""
+              )}>
                 Core animal details and identification
               </CardDescription>
             </div>
             {canEdit && (
-              <Button variant="outline" size="sm" onClick={onEditClick}>
-                <Edit className="mr-2 h-4 w-4" />
-                Edit
+              <Button 
+                variant="outline" 
+                size={isMobile ? "default" : "sm"} 
+                onClick={onEditClick}
+                className={cn(
+                  isMobile && "h-9 px-3"
+                )}
+              >
+                <Edit className={cn("mr-2", isMobile ? "w-3 h-3" : "w-4 h-4")} />
+                {isMobile ? "Edit" : "Edit"}
               </Button>
             )}
           </div>
         </CardHeader>
-        <CardContent className="space-y-6">
+        <CardContent className={cn(
+          isMobile ? "px-4 pb-4 space-y-0" : "space-y-6"
+        )}>
           {/* Identification Section */}
-          <div>
-            <h4 className="font-medium text-gray-900 mb-3 flex items-center">
-              <Tag className="w-4 h-4 mr-2" />
-              Identification
-            </h4>
-            <div className="grid grid-cols-2 gap-4">
+          <CollapsibleSection id="identification" title="Identification" icon={Tag} defaultExpanded>
+            <div className={cn(
+              "grid gap-4",
+              isMobile ? "grid-cols-1" : "grid-cols-2"
+            )}>
               <div>
-                <p className="text-sm text-gray-600 mb-1">Tag Number</p>
-                <span className="font-medium">{animal.tag_number}</span>
+                <p className={cn(
+                  "text-gray-600 mb-1",
+                  isMobile ? "text-xs" : "text-sm"
+                )}>Tag Number</p>
+                <span className={cn(
+                  "font-medium",
+                  isMobile ? "text-sm" : ""
+                )}>{animal.tag_number}</span>
               </div>
               
               <div>
-                <p className="text-sm text-gray-600 mb-1">Name</p>
-                <span className="font-medium">{animal.name || 'Not named'}</span>
+                <p className={cn(
+                  "text-gray-600 mb-1",
+                  isMobile ? "text-xs" : "text-sm"
+                )}>Name</p>
+                <span className={cn(
+                  "font-medium",
+                  isMobile ? "text-sm" : ""
+                )}>{animal.name || 'Not named'}</span>
               </div>
               
               <div>
-                <p className="text-sm text-gray-600 mb-1">Breed</p>
-                <span className="font-medium capitalize">{animal.breed || 'Not specified'}</span>
+                <p className={cn(
+                  "text-gray-600 mb-1",
+                  isMobile ? "text-xs" : "text-sm"
+                )}>Breed</p>
+                <span className={cn(
+                  "font-medium capitalize",
+                  isMobile ? "text-sm" : ""
+                )}>{animal.breed || 'Not specified'}</span>
               </div>
               
               <div>
-                <p className="text-sm text-gray-600 mb-1">Gender</p>
-                <Badge variant="secondary" className="capitalize">
+                <p className={cn(
+                  "text-gray-600 mb-1",
+                  isMobile ? "text-xs" : "text-sm"
+                )}>Gender</p>
+                <Badge variant="secondary" className={cn(
+                  "capitalize",
+                  isMobile ? "text-xs px-2 py-0.5" : ""
+                )}>
                   {animal.gender}
                 </Badge>
               </div>
             </div>
-          </div>
+          </CollapsibleSection>
           
           {/* Source & Status Section */}
-          <div className="border-t pt-4">
-            <h4 className="font-medium text-gray-900 mb-3 flex items-center">
-              <Activity className="w-4 h-4 mr-2" />
-              Source & Status
-            </h4>
+          <CollapsibleSection id="status" title="Source & Status" icon={Activity}>
             <div className="space-y-3">
               {animal.animal_source && (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600">Source:</span>
+                <div className={cn(
+                  "flex items-center",
+                  isMobile ? "justify-between" : "justify-between"
+                )}>
+                  <span className={cn(
+                    "text-gray-600",
+                    isMobile ? "text-sm" : "text-sm"
+                  )}>Source:</span>
                   {getSourceBadge()}
                 </div>
               )}
               
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-600">General Status:</span>
+              <div className={cn(
+                "flex items-center",
+                isMobile ? "justify-between" : "justify-between"
+              )}>
+                <span className={cn(
+                  "text-gray-600",
+                  isMobile ? "text-sm" : "text-sm"
+                )}>Status:</span>
                 <Badge 
-                  className={
+                  className={cn(
                     animal.status === 'active' ? 'bg-green-100 text-green-800' :
                     animal.status === 'pregnant' ? 'bg-blue-100 text-blue-800' :
                     animal.status === 'dry' ? 'bg-yellow-100 text-yellow-800' :
-                    'bg-gray-100 text-gray-800'
-                  }
+                    'bg-gray-100 text-gray-800',
+                    isMobile ? "text-xs px-2 py-0.5" : ""
+                  )}
                 >
                   {animal.status}
                 </Badge>
               </div>
               
               {animal.production_status && (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600">Production:</span>
+                <div className={cn(
+                  "flex items-center",
+                  isMobile ? "justify-between" : "justify-between"
+                )}>
+                  <span className={cn(
+                    "text-gray-600",
+                    isMobile ? "text-sm" : "text-sm"
+                  )}>Production:</span>
                   {getProductionStatusBadge()}
                 </div>
               )}
               
               {animal.health_status && (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600">Health:</span>
+                <div className={cn(
+                  "flex items-center",
+                  isMobile ? "justify-between" : "justify-between"
+                )}>
+                  <span className={cn(
+                    "text-gray-600",
+                    isMobile ? "text-sm" : "text-sm"
+                  )}>Health:</span>
                   {getHealthStatusBadge()}
                 </div>
               )}
             </div>
-          </div>
+          </CollapsibleSection>
           
           {/* Physical Details Section */}
-          <div className="border-t pt-4">
-            <h4 className="font-medium text-gray-900 mb-3 flex items-center">
-              <Weight className="w-4 h-4 mr-2" />
-              Physical Details
-            </h4>
-            <div className="grid grid-cols-2 gap-4">
+          <CollapsibleSection id="physical" title="Physical Details" icon={Weight}>
+            <div className={cn(
+              "grid gap-4",
+              isMobile ? "grid-cols-1" : "grid-cols-2"
+            )}>
               <div>
-                <p className="text-sm text-gray-600 mb-1">Birth Date</p>
+                <p className={cn(
+                  "text-gray-600 mb-1",
+                  isMobile ? "text-xs" : "text-sm"
+                )}>Birth Date</p>
                 <div className="flex items-center space-x-2">
-                  <Calendar className="w-4 h-4 text-gray-500" />
-                  <span className="font-medium">{formatDate(animal.birth_date)}</span>
+                  <Calendar className={cn(
+                    "text-gray-500",
+                    isMobile ? "w-3 h-3" : "w-4 h-4"
+                  )} />
+                  <span className={cn(
+                    "font-medium",
+                    isMobile ? "text-sm" : ""
+                  )}>{formatDate(animal.birth_date)}</span>
                 </div>
                 {animal.birth_date && (
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className={cn(
+                    "text-gray-500 mt-1",
+                    isMobile ? "text-xs" : "text-xs"
+                  )}>
                     {calculateAge(animal.birth_date)}
                   </p>
                 )}
               </div>
               
               <div>
-                <p className="text-sm text-gray-600 mb-1">Weight</p>
-                <span className="font-medium">
+                <p className={cn(
+                  "text-gray-600 mb-1",
+                  isMobile ? "text-xs" : "text-sm"
+                )}>Weight</p>
+                <span className={cn(
+                  "font-medium",
+                  isMobile ? "text-sm" : ""
+                )}>
                   {animal.weight ? `${animal.weight} kg` : 'Not recorded'}
                 </span>
               </div>
               
               {animal.purchase_date && (
-                <div className="col-span-2">
-                  <p className="text-sm text-gray-600 mb-1">Purchase Date</p>
+                <div className={cn(
+                  isMobile ? "col-span-1" : "col-span-2"
+                )}>
+                  <p className={cn(
+                    "text-gray-600 mb-1",
+                    isMobile ? "text-xs" : "text-sm"
+                  )}>Purchase Date</p>
                   <div className="flex items-center space-x-2">
-                    <ShoppingCart className="w-4 h-4 text-gray-500" />
-                    <span className="font-medium">{formatDate(animal.purchase_date)}</span>
+                    <ShoppingCart className={cn(
+                      "text-gray-500",
+                      isMobile ? "w-3 h-3" : "w-4 h-4"
+                    )} />
+                    <span className={cn(
+                      "font-medium",
+                      isMobile ? "text-sm" : ""
+                    )}>{formatDate(animal.purchase_date)}</span>
                   </div>
                 </div>
               )}
             </div>
-          </div>
+          </CollapsibleSection>
           
           {/* Parentage Information for Newborn Calves */}
           {animal.animal_source === 'newborn_calf' && (
-            <div className="border-t pt-4">
-              <h4 className="font-medium text-gray-900 mb-3 flex items-center">
-                <Heart className="w-4 h-4 mr-2" />
-                Parentage
-              </h4>
+            <CollapsibleSection id="parentage" title="Parentage" icon={Heart}>
               <div className="space-y-2">
                 <div className="flex justify-between">
-                  <span className="text-sm text-gray-600">Mother (Dam):</span>
-                  <span className="font-medium">
+                  <span className={cn(
+                    "text-gray-600",
+                    isMobile ? "text-sm" : "text-sm"
+                  )}>Mother (Dam):</span>
+                  <span className={cn(
+                    "font-medium",
+                    isMobile ? "text-sm" : ""
+                  )}>
                     {animal.mother?.name || animal.mother?.tag_number || 'Unknown'}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-gray-600">Father (Sire):</span>
-                  <span className="font-medium">
+                  <span className={cn(
+                    "text-gray-600",
+                    isMobile ? "text-sm" : "text-sm"
+                  )}>Father (Sire):</span>
+                  <span className={cn(
+                    "font-medium",
+                    isMobile ? "text-sm" : ""
+                  )}>
                     {animal.father?.name || animal.father?.tag_number || 'Not recorded'}
                   </span>
                 </div>
               </div>
-            </div>
+            </CollapsibleSection>
           )}
           
           {/* Production Information for Lactating Animals */}
           {animal.production_status === 'lactating' && animal.current_daily_production && (
-            <div className="border-t pt-4">
-              <h4 className="font-medium text-gray-900 mb-3 flex items-center">
-                <Droplets className="w-4 h-4 mr-2" />
-                Current Production
-              </h4>
+            <CollapsibleSection id="production" title="Current Production" icon={Droplets}>
               <div className="bg-green-50 p-3 rounded-md">
                 <div className="flex justify-between items-center">
-                  <span className="text-sm text-green-700">Daily Production:</span>
-                  <span className="font-bold text-green-800 text-lg">
+                  <span className={cn(
+                    "text-green-700",
+                    isMobile ? "text-sm" : "text-sm"
+                  )}>Daily Production:</span>
+                  <span className={cn(
+                    "font-bold text-green-800",
+                    isMobile ? "text-base" : "text-lg"
+                  )}>
                     {animal.current_daily_production}L
                   </span>
                 </div>
               </div>
-            </div>
+            </CollapsibleSection>
           )}
           
           {/* Service Information for Served Animals */}
           {animal.production_status === 'served' && (animal.service_date || animal.service_method) && (
-            <div className="border-t pt-4">
-              <h4 className="font-medium text-gray-900 mb-3 flex items-center">
-                <Activity className="w-4 h-4 mr-2" />
-                Service Information
-              </h4>
+            <CollapsibleSection id="service" title="Service Information" icon={Activity}>
               <div className="space-y-2">
                 {animal.service_date && (
                   <div className="flex justify-between">
-                    <span className="text-sm text-gray-600">Service Date:</span>
-                    <span className="font-medium">
+                    <span className={cn(
+                      "text-gray-600",
+                      isMobile ? "text-sm" : "text-sm"
+                    )}>Service Date:</span>
+                    <span className={cn(
+                      "font-medium",
+                      isMobile ? "text-sm" : ""
+                    )}>
                       {formatDate(animal.service_date)}
                     </span>
                   </div>
                 )}
                 {animal.service_method && (
                   <div className="flex justify-between">
-                    <span className="text-sm text-gray-600">Method:</span>
-                    <Badge variant="outline" className="capitalize">
+                    <span className={cn(
+                      "text-gray-600",
+                      isMobile ? "text-sm" : "text-sm"
+                    )}>Method:</span>
+                    <Badge variant="outline" className={cn(
+                      "capitalize",
+                      isMobile ? "text-xs px-2 py-0.5" : ""
+                    )}>
                       {animal.service_method.replace('_', ' ')}
                     </Badge>
                   </div>
                 )}
               </div>
-            </div>
+            </CollapsibleSection>
           )}
         </CardContent>
       </Card>
       
       {/* Timeline & Additional Information */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Clock className="w-5 h-5" />
-            <span>Timeline & History</span>
+        <CardHeader className={cn(
+          isMobile ? "px-4 py-3" : ""
+        )}>
+          <CardTitle className={cn(
+            "flex items-center space-x-2",
+            isMobile ? "text-lg" : ""
+          )}>
+            <Clock className={cn(isMobile ? "w-4 h-4" : "w-5 h-5")} />
+            <span>{isMobile ? "Timeline" : "Timeline & History"}</span>
           </CardTitle>
-          <CardDescription>
+          <CardDescription className={cn(
+            isMobile ? "text-sm" : ""
+          )}>
             Key events in this animal's life
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className={cn(
+          isMobile ? "px-4 pb-4" : ""
+        )}>
           <div className="space-y-4">
             {/* Birth Event */}
             {animal.birth_date && (
               <div className="flex items-start space-x-3">
                 <div className="w-3 h-3 bg-blue-500 rounded-full mt-1.5" />
                 <div className="flex-1">
-                  <p className="font-medium text-gray-900">Born</p>
-                  <p className="text-sm text-gray-600">
+                  <p className={cn(
+                    "font-medium text-gray-900",
+                    isMobile ? "text-sm" : ""
+                  )}>Born</p>
+                  <p className={cn(
+                    "text-gray-600",
+                    isMobile ? "text-xs" : "text-sm"
+                  )}>
                     {formatDate(animal.birth_date)}
                   </p>
                   {animal.birth_date && (
-                    <p className="text-xs text-gray-500">
+                    <p className={cn(
+                      "text-gray-500",
+                      isMobile ? "text-xs" : "text-xs"
+                    )}>
                       {calculateAge(animal.birth_date)}
                     </p>
                   )}
@@ -356,11 +571,20 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
               <div className="flex items-start space-x-3">
                 <div className="w-3 h-3 bg-green-500 rounded-full mt-1.5" />
                 <div className="flex-1">
-                  <p className="font-medium text-gray-900">Purchased</p>
-                  <p className="text-sm text-gray-600">
+                  <p className={cn(
+                    "font-medium text-gray-900",
+                    isMobile ? "text-sm" : ""
+                  )}>Purchased</p>
+                  <p className={cn(
+                    "text-gray-600",
+                    isMobile ? "text-xs" : "text-sm"
+                  )}>
                     {formatDate(animal.purchase_date)}
                   </p>
-                  <p className="text-xs text-gray-500">
+                  <p className={cn(
+                    "text-gray-500",
+                    isMobile ? "text-xs" : "text-xs"
+                  )}>
                     Added to farm inventory
                   </p>
                 </div>
@@ -371,12 +595,21 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
             <div className="flex items-start space-x-3">
               <div className="w-3 h-3 bg-farm-green rounded-full mt-1.5" />
               <div className="flex-1">
-                <p className="font-medium text-gray-900">Added to Farm</p>
-                <p className="text-sm text-gray-600">
+                <p className={cn(
+                  "font-medium text-gray-900",
+                  isMobile ? "text-sm" : ""
+                )}>Added to Farm</p>
+                <p className={cn(
+                  "text-gray-600",
+                  isMobile ? "text-xs" : "text-sm"
+                )}>
                   {formatDate(animal.created_at)}
                 </p>
-                <p className="text-xs text-gray-500">
-                  Registered in farm management system
+                <p className={cn(
+                  "text-gray-500",
+                  isMobile ? "text-xs" : "text-xs"
+                )}>
+                  {isMobile ? "Registered in system" : "Registered in farm management system"}
                 </p>
               </div>
             </div>
@@ -386,11 +619,20 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
               <div className="flex items-start space-x-3">
                 <div className="w-3 h-3 bg-purple-500 rounded-full mt-1.5" />
                 <div className="flex-1">
-                  <p className="font-medium text-gray-900">Served</p>
-                  <p className="text-sm text-gray-600">
+                  <p className={cn(
+                    "font-medium text-gray-900",
+                    isMobile ? "text-sm" : ""
+                  )}>Served</p>
+                  <p className={cn(
+                    "text-gray-600",
+                    isMobile ? "text-xs" : "text-sm"
+                  )}>
                     {formatDate(animal.service_date)}
                   </p>
-                  <p className="text-xs text-gray-500">
+                  <p className={cn(
+                    "text-gray-500",
+                    isMobile ? "text-xs" : "text-xs"
+                  )}>
                     {animal.service_method?.replace('_', ' ') || 'Breeding service'}
                   </p>
                 </div>
@@ -401,8 +643,14 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
             <div className="flex items-start space-x-3 opacity-50">
               <div className="w-3 h-3 bg-gray-300 rounded-full mt-1.5" />
               <div className="flex-1">
-                <p className="text-sm text-gray-500 italic">
-                  More events will appear as you add health and production records
+                <p className={cn(
+                  "text-gray-500 italic",
+                  isMobile ? "text-xs" : "text-sm"
+                )}>
+                  {isMobile 
+                    ? "More events will appear with records"
+                    : "More events will appear as you add health and production records"
+                  }
                 </p>
               </div>
             </div>
@@ -410,34 +658,80 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
           
           {/* Additional Notes Section */}
           {animal.notes && (
-            <div className="mt-6 pt-6 border-t">
-              <h4 className="font-medium text-gray-900 mb-2 flex items-center">
+            <div className={cn(
+              "pt-6 border-t",
+              isMobile ? "mt-4" : "mt-6"
+            )}>
+              <h4 className={cn(
+                "font-medium text-gray-900 mb-2 flex items-center",
+                isMobile ? "text-sm" : ""
+              )}>
                 <FileText className="w-4 h-4 mr-2" />
                 Notes
               </h4>
               <div className="bg-gray-50 p-3 rounded-md">
-                <p className="text-gray-700 text-sm whitespace-pre-wrap">{animal.notes}</p>
+                <p className={cn(
+                  "text-gray-700 whitespace-pre-wrap",
+                  isMobile ? "text-sm" : "text-sm"
+                )}>{animal.notes}</p>
               </div>
             </div>
           )}
           
           {/* Quick Actions */}
-          <div className="mt-6 pt-6 border-t">
-            <h4 className="font-medium text-gray-900 mb-3">Quick Actions</h4>
-            <div className="grid grid-cols-2 gap-2">
-              <Button variant="outline" size="sm" className="text-xs">
+          <div className={cn(
+            "pt-6 border-t",
+            isMobile ? "mt-4" : "mt-6"
+          )}>
+            <h4 className={cn(
+              "font-medium text-gray-900 mb-3",
+              isMobile ? "text-sm" : ""
+            )}>Quick Actions</h4>
+            <div className={cn(
+              "grid gap-2",
+              isMobile ? "grid-cols-1" : "grid-cols-2"
+            )}>
+              <Button 
+                variant="outline" 
+                size={isMobile ? "default" : "sm"} 
+                className={cn(
+                  isMobile ? "text-sm h-10 justify-start" : "text-xs"
+                )}
+              >
+                <Plus className={cn("mr-2", isMobile ? "w-4 h-4" : "w-3 h-3")} />
                 Add Health Record
               </Button>
-              <Button variant="outline" size="sm" className="text-xs">
+              <Button 
+                variant="outline" 
+                size={isMobile ? "default" : "sm"} 
+                className={cn(
+                  isMobile ? "text-sm h-10 justify-start" : "text-xs"
+                )}
+              >
+                <Plus className={cn("mr-2", isMobile ? "w-4 h-4" : "w-3 h-3")} />
                 Record Production
               </Button>
               {canEdit && (
-                <Button variant="outline" size="sm" className="text-xs" onClick={onEditClick}>
-                  <Edit className="w-3 h-3 mr-1" />
+                <Button 
+                  variant="outline" 
+                  size={isMobile ? "default" : "sm"} 
+                  className={cn(
+                    isMobile ? "text-sm h-10 justify-start" : "text-xs"
+                  )} 
+                  onClick={onEditClick}
+                >
+                  <Edit className={cn("mr-2", isMobile ? "w-4 h-4" : "w-3 h-3")} />
                   Edit Details
                 </Button>
               )}
-              <Button variant="outline" size="sm" className="text-xs">
+              <Button 
+                variant="outline" 
+                size={isMobile ? "default" : "sm"} 
+                className={cn(
+                  isMobile ? "text-sm h-10 justify-start" : "text-xs"
+                )}
+              >
+                <FileText className={cn("mr-2", isMobile ? "w-4 h-4" : "w-3 h-3")} />
                 View Full History
               </Button>
             </div>

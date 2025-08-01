@@ -1,10 +1,11 @@
-// Enhanced HealthRecordsContent.tsx with Multiple Tabs
+// Mobile-Optimized HealthRecordsContent.tsx
 // src/components/health/HealthRecordsContent.tsx
 
 'use client'
 
 import { useState, useMemo, useEffect } from 'react'
 import { toast } from 'react-hot-toast'
+import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -31,6 +32,12 @@ import { OutbreakCard } from '@/components/health/OutbreakCard'
 import { VaccinationCard } from '@/components/health/VaccinationCard'
 import { VetVisitCard } from '@/components/health/VetVisitCard'
 
+// Mobile-specific components
+import { MobileStatsScroller } from '@/components/mobile/MobileStatsScroller'
+import { MobileActionSheet } from '@/components/mobile/MobileActionSheet'
+import { MobileTabBar } from '@/components/mobile/MobileTabBar'
+import { MobileSearchFilter } from '@/components/mobile/MobileSearchFilter'
+
 import {
   Plus,
   Search,
@@ -48,6 +55,7 @@ import {
   Bell,
   ChevronDown,
   UserPlus,
+  MoreHorizontal,
   // Tab icons
   ClipboardList,
   UserCheck,
@@ -83,6 +91,9 @@ export function HealthRecordsContent({
   vaccinations: initialVaccinations = [],
   vetVisits: initialVetVisits = []
 }: HealthRecordsContentProps) {
+  // Get device info for responsive behavior
+  const { isMobile, isTablet,  } = useDeviceInfo()
+
   // State management for all data types
   const [healthRecords, setHealthRecords] = useState(
     Array.isArray(initialHealthRecords) ? initialHealthRecords : []
@@ -112,6 +123,10 @@ export function HealthRecordsContent({
   const [showVaccinationModal, setShowVaccinationModal] = useState(false)
   const [showScheduleVisitModal, setShowScheduleVisitModal] = useState(false)
   const [showVeterinarianModal, setShowVeterinarianModal] = useState(false)
+
+  // Mobile-specific states
+  const [showActionSheet, setShowActionSheet] = useState(false)
+  const [showMobileFilters, setShowMobileFilters] = useState(false)
 
   // Form states
   const [selectedAnimalId, setSelectedAnimalId] = useState('')
@@ -150,7 +165,7 @@ export function HealthRecordsContent({
     ...healthStats
   }
 
-  // Filtered data for each tab
+  // Filtered data for each tab (same as original)
   const filteredHealthRecords = useMemo(() => {
     if (!Array.isArray(healthRecords)) return []
     
@@ -260,18 +275,20 @@ export function HealthRecordsContent({
     })
   }, [vetVisits, searchTerms])
 
-  // Tab configuration
+  // Tab configuration with mobile-optimized layout
   const tabs = [
     {
       id: 'health-records',
-      label: 'Health Records',
+      label: isMobile ? 'Records' : 'Health Records',
+      shortLabel: 'Records',
       icon: ClipboardList,
       count: filteredHealthRecords.length,
       color: 'text-blue-600'
     },
     {
       id: 'veterinarians',
-      label: 'Veterinarians',
+      label: isMobile ? 'Vets' : 'Veterinarians',
+      shortLabel: 'Vets',
       icon: UserCheck,
       count: filteredVeterinarians.length,
       color: 'text-indigo-600'
@@ -279,6 +296,7 @@ export function HealthRecordsContent({
     {
       id: 'protocols',
       label: 'Protocols',
+      shortLabel: 'Protocols',
       icon: BookOpen,
       count: filteredProtocols.length,
       color: 'text-purple-600'
@@ -286,27 +304,132 @@ export function HealthRecordsContent({
     {
       id: 'outbreaks',
       label: 'Outbreaks',
+      shortLabel: 'Outbreaks',
       icon: Zap,
       count: filteredOutbreaks.length,
       color: 'text-red-600'
     },
     {
       id: 'vaccinations',
-      label: 'Vaccinations',
+      label: isMobile ? 'Vaccines' : 'Vaccinations',
+      shortLabel: 'Vaccines',
       icon: Syringe,
       count: filteredVaccinations.length,
       color: 'text-green-600'
     },
     {
       id: 'vet-visits',
-      label: 'Vet Visits',
+      label: 'Visits',
+      shortLabel: 'Visits',
       icon: CalendarCheck,
       count: filteredVetVisits.length,
       color: 'text-orange-600'
     }
   ]
 
-  // Enhanced modal callbacks
+  // Mobile-optimized stats configuration
+  const statsConfig = [
+    {
+      title: 'Records',
+      value: safeHealthStats.totalRecords,
+      icon: Activity,
+      color: 'text-blue-600',
+      bgColor: 'bg-blue-50',
+      description: 'Health events'
+    },
+    {
+      title: 'Veterinarians',
+      value: safeHealthStats.totalVeterinarians,
+      icon: Stethoscope,
+      color: 'text-indigo-600',
+      bgColor: 'bg-indigo-50',
+      description: 'Registered'
+    },
+    {
+      title: 'Protocols',
+      value: safeHealthStats.totalProtocols,
+      icon: BookOpen,
+      color: 'text-purple-600',
+      bgColor: 'bg-purple-50',
+      description: 'Active'
+    },
+    {
+      title: 'Outbreaks',
+      value: safeHealthStats.activeOutbreaks,
+      icon: AlertTriangle,
+      color: 'text-red-600',
+      bgColor: 'bg-red-50',
+      description: 'Active'
+    },
+    {
+      title: 'Vaccinations',
+      value: safeHealthStats.totalVaccinations,
+      icon: Syringe,
+      color: 'text-green-600',
+      bgColor: 'bg-green-50',
+      description: 'Recorded'
+    },
+    {
+      title: 'Upcoming',
+      value: safeHealthStats.upcomingTasks,
+      icon: Clock,
+      color: 'text-blue-600',
+      bgColor: 'bg-blue-50',
+      description: 'Tasks'
+    }
+  ]
+
+  // Mobile action sheet configuration
+  const actionSheetItems = [
+    ...(canAddRecords ? [
+      {
+        id: 'add-health-record',
+        label: 'Add Health Record',
+        icon: ClipboardList,
+        color: 'text-blue-600',
+        onClick: () => setShowAddModal(true)
+      },
+      {
+        id: 'schedule-vaccination',
+        label: 'Schedule Vaccination',
+        icon: Syringe,
+        color: 'text-green-600',
+        onClick: () => setShowVaccinationModal(true)
+      },
+      {
+        id: 'schedule-visit',
+        label: 'Schedule Vet Visit',
+        icon: Calendar,
+        color: 'text-blue-600',
+        onClick: () => setShowScheduleVisitModal(true)
+      },
+      {
+        id: 'add-veterinarian',
+        label: 'Add Veterinarian',
+        icon: UserPlus,
+        color: 'text-indigo-600',
+        onClick: () => setShowVeterinarianModal(true)
+      }
+    ] : []),
+    ...(canManageProtocols ? [
+      {
+        id: 'create-protocol',
+        label: 'Create Protocol',
+        icon: FileText,
+        color: 'text-purple-600',
+        onClick: () => setShowProtocolModal(true)
+      },
+      {
+        id: 'report-outbreak',
+        label: 'Report Outbreak',
+        icon: AlertTriangle,
+        color: 'text-red-600',
+        onClick: () => setShowOutbreakModal(true)
+      }
+    ] : [])
+  ]
+
+  // All the existing handler functions remain the same
   const handleRecordAdded = async (newRecord: any) => {
     if (newRecord) {
       setHealthRecords(prev => [newRecord, ...prev])
@@ -373,7 +496,7 @@ export function HealthRecordsContent({
     await refreshVeterinariansData()
   }
 
-  // Data refresh functions
+  // Data refresh functions (same as original)
   const refreshHealthData = async () => {
     setLoading(true)
     try {
@@ -402,7 +525,7 @@ export function HealthRecordsContent({
     }
   }
 
-  // Helper functions
+  // Helper functions (same as original - truncated for brevity)
   const createVisitReminder = async (visit: any) => {
     try {
       console.log(`Creating reminder for visit: ${visit?.id}`)
@@ -495,249 +618,290 @@ export function HealthRecordsContent({
     { value: 'illness', label: '🤒 Illness' }
   ]
 
+  // Mobile-optimized grid function
+  const getMobileGridCols = (dataLength: number) => {
+    if (isMobile) {
+      return 'grid-cols-1'
+    } else if (isTablet) {
+      return 'grid-cols-2'
+    } else {
+      return dataLength > 6 ? 'grid-cols-3' : 'grid-cols-2'
+    }
+  }
+
   return (
-    <div className="space-y-6">
-      {/* Header with Enhanced Actions */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 flex items-center space-x-3">
-            <Stethoscope className="w-8 h-8 text-farm-green" />
-            <span>Health Management</span>
-          </h1>
-          <p className="text-gray-600 mt-2">
-            Comprehensive health tracking, protocols, and veterinary care management
-          </p>
-        </div>
-
-        {/* Enhanced Action Buttons */}
-        <div className="flex items-center space-x-3">
-          {/* Quick Actions Dropdown */}
-          <div className="relative group">
-            <Button variant="outline" className="flex items-center space-x-2">
-              <Plus className="w-4 h-4" />
-              <span>Quick Actions</span>
-              <ChevronDown className="w-4 h-4" />
-            </Button>
-
-            <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200">
-              <div className="py-2">
-                {canAddRecords && (
-                  <>
-                    <button
-                      onClick={() => setShowVaccinationModal(true)}
-                      className="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center space-x-3"
-                    >
-                      <Syringe className="w-4 h-4 text-green-600" />
-                      <span>Schedule Vaccination</span>
-                    </button>
-
-                    <button
-                      onClick={() => setShowScheduleVisitModal(true)}
-                      className="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center space-x-3"
-                    >
-                      <Calendar className="w-4 h-4 text-blue-600" />
-                      <span>Schedule Vet Visit</span>
-                    </button>
-
-                    <button
-                      onClick={() => setShowVeterinarianModal(true)}
-                      className="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center space-x-3"
-                    >
-                      <UserPlus className="w-4 h-4 text-indigo-600" />
-                      <span>Add Veterinarian</span>
-                    </button>
-                  </>
-                )}
-
-                {canManageProtocols && (
-                  <>
-                    <button
-                      onClick={() => setShowProtocolModal(true)}
-                      className="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center space-x-3"
-                    >
-                      <FileText className="w-4 h-4 text-purple-600" />
-                      <span>Create Protocol</span>
-                    </button>
-
-                    <button
-                      onClick={() => setShowOutbreakModal(true)}
-                      className="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center space-x-3"
-                    >
-                      <AlertTriangle className="w-4 h-4 text-red-600" />
-                      <span>Report Outbreak</span>
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
+    <div className="space-y-4 pb-safe">
+      {/* Mobile-Optimized Header */}
+      <div className={`${isMobile ? 'px-4' : ''}`}>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className={`${isMobile ? 'text-2xl' : 'text-3xl'} font-bold text-gray-900 flex items-center space-x-2`}>
+              <Stethoscope className={`${isMobile ? 'w-6 h-6' : 'w-8 h-8'} text-farm-green`} />
+              <span>{isMobile ? 'Health' : 'Health Management'}</span>
+            </h1>
+            {!isMobile && (
+              <p className="text-gray-600 mt-2">
+                Comprehensive health tracking, protocols, and veterinary care management
+              </p>
+            )}
           </div>
 
-          {/* Primary Add Button */}
-          {canAddRecords && (
-            <Button onClick={() => setShowAddModal(true)} size="lg">
-              <Plus className="mr-2 h-5 w-5" />
-              Add Health Record
-            </Button>
-          )}
+          {/* Mobile Action Button */}
+          <div className="flex items-center space-x-2">
+            {isMobile ? (
+              <Button
+                onClick={() => setShowActionSheet(true)}
+                size="lg"
+                className="h-12 w-12 rounded-full p-0"
+              >
+                <Plus className="h-6 w-6" />
+              </Button>
+            ) : (
+              <div className="flex items-center space-x-3">
+                {/* Desktop Quick Actions Dropdown - same as original */}
+                <div className="relative group">
+                  <Button variant="outline" className="flex items-center space-x-2">
+                    <Plus className="w-4 h-4" />
+                    <span>Quick Actions</span>
+                    <ChevronDown className="w-4 h-4" />
+                  </Button>
+
+                  <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200">
+                    <div className="py-2">
+                      {canAddRecords && (
+                        <>
+                          <button
+                            onClick={() => setShowVaccinationModal(true)}
+                            className="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center space-x-3"
+                          >
+                            <Syringe className="w-4 h-4 text-green-600" />
+                            <span>Schedule Vaccination</span>
+                          </button>
+
+                          <button
+                            onClick={() => setShowScheduleVisitModal(true)}
+                            className="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center space-x-3"
+                          >
+                            <Calendar className="w-4 h-4 text-blue-600" />
+                            <span>Schedule Vet Visit</span>
+                          </button>
+
+                          <button
+                            onClick={() => setShowVeterinarianModal(true)}
+                            className="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center space-x-3"
+                          >
+                            <UserPlus className="w-4 h-4 text-indigo-600" />
+                            <span>Add Veterinarian</span>
+                          </button>
+                        </>
+                      )}
+
+                      {canManageProtocols && (
+                        <>
+                          <button
+                            onClick={() => setShowProtocolModal(true)}
+                            className="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center space-x-3"
+                          >
+                            <FileText className="w-4 h-4 text-purple-600" />
+                            <span>Create Protocol</span>
+                          </button>
+
+                          <button
+                            onClick={() => setShowOutbreakModal(true)}
+                            className="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center space-x-3"
+                          >
+                            <AlertTriangle className="w-4 h-4 text-red-600" />
+                            <span>Report Outbreak</span>
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {canAddRecords && (
+                  <Button onClick={() => setShowAddModal(true)} size="lg">
+                    <Plus className="mr-2 h-5 w-5" />
+                    Add Health Record
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Enhanced Health Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Records</CardTitle>
-            <Activity className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl font-bold">{safeHealthStats.totalRecords}</div>
-            <p className="text-xs text-muted-foreground">Health events</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Veterinarians</CardTitle>
-            <Stethoscope className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl font-bold text-indigo-600">{safeHealthStats.totalVeterinarians}</div>
-            <p className="text-xs text-muted-foreground">Registered</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Protocols</CardTitle>
-            <BookOpen className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl font-bold text-purple-600">{safeHealthStats.totalProtocols}</div>
-            <p className="text-xs text-muted-foreground">Active</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Outbreaks</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl font-bold text-red-600">{safeHealthStats.activeOutbreaks}</div>
-            <p className="text-xs text-muted-foreground">Active</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Vaccinations</CardTitle>
-            <Syringe className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl font-bold text-green-600">{safeHealthStats.totalVaccinations}</div>
-            <p className="text-xs text-muted-foreground">Recorded</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Upcoming</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl font-bold text-blue-600">{safeHealthStats.upcomingTasks}</div>
-            <p className="text-xs text-muted-foreground">Tasks</p>
-          </CardContent>
-        </Card>
+      {/* Mobile-Optimized Scrollable Stats */}
+      <div className={`${isMobile ? 'px-4' : ''}`}>
+        {isMobile ? (
+          <MobileStatsScroller stats={statsConfig} />
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+            {statsConfig.map((stat, index) => (
+              <Card key={index}>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
+                  <stat.icon className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className={`text-xl font-bold ${stat.color}`}>{stat.value}</div>
+                  <p className="text-xs text-muted-foreground">{stat.description}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Upcoming Tasks Section */}
       {Array.isArray(upcomingTasks) && upcomingTasks.length > 0 && (
-        <UpcomingTasksCard
-          tasks={upcomingTasks}
-          onQuickAdd={handleQuickAddForAnimal}
-        />
+        <div className={`${isMobile ? 'px-4' : ''}`}>
+          <UpcomingTasksCard
+            tasks={upcomingTasks}
+            onQuickAdd={handleQuickAddForAnimal}
+          />
+        </div>
       )}
 
-      {/* Enhanced Tabbed Content Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Health Management Records</CardTitle>
-          <CardDescription>
-            Comprehensive view of all health-related records and data
-          </CardDescription>
+      {/* Mobile-Optimized Tabbed Content */}
+      <Card className={`${isMobile ? 'mx-4 mb-20' : ''}`}>
+        <CardHeader className={`${isMobile ? 'pb-2' : ''}`}>
+          <CardTitle className={`${isMobile ? 'text-lg' : ''}`}>Health Management Records</CardTitle>
+          {!isMobile && (
+            <CardDescription>
+              Comprehensive view of all health-related records and data
+            </CardDescription>
+          )}
         </CardHeader>
-        <CardContent>
+        <CardContent className={`${isMobile ? 'px-2' : ''}`}>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-6 mb-6">
-              {tabs.map((tab) => {
-                const Icon = tab.icon
-                return (
-                  <TabsTrigger 
-                    key={tab.id} 
-                    value={tab.id}
-                    className="flex items-center space-x-2"
-                  >
-                    <Icon className={`w-4 h-4 ${tab.color}`} />
-                    <span className="hidden sm:inline">{tab.label}</span>
-                    <Badge variant="secondary" className="ml-1">
-                      {tab.count}
-                    </Badge>
-                  </TabsTrigger>
-                )
-              })}
-            </TabsList>
+            {/* Mobile Tab Bar */}
+            {isMobile ? (
+              <MobileTabBar 
+                tabs={tabs} 
+                activeTab={activeTab} 
+                onTabChange={setActiveTab}
+              />
+            ) : (
+              <TabsList className="grid w-full grid-cols-6 mb-6">
+                {tabs.map((tab) => {
+                  const Icon = tab.icon
+                  return (
+                    <TabsTrigger 
+                      key={tab.id} 
+                      value={tab.id}
+                      className="flex items-center space-x-2"
+                    >
+                      <Icon className={`w-4 h-4 ${tab.color}`} />
+                      <span className="hidden sm:inline">{tab.label}</span>
+                      <Badge variant="secondary" className="ml-1">
+                        {tab.count}
+                      </Badge>
+                    </TabsTrigger>
+                  )
+                })}
+              </TabsList>
+            )}
 
             {/* Health Records Tab */}
             <TabsContent value="health-records" className="space-y-4">
-              {/* Search and Filters for Health Records */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                  <Input
-                    placeholder="Search health records..."
-                    value={searchTerms['health-records']}
-                    onChange={(e) => updateSearchTerm('health-records', e.target.value)}
-                    className="pl-10"
-                  />
+              {/* Mobile-Optimized Search and Filters */}
+              {isMobile ? (
+                <MobileSearchFilter
+                  searchValue={searchTerms['health-records']}
+                  onSearchChange={(value) => updateSearchTerm('health-records', value)}
+                  showFilters={showMobileFilters}
+                  onToggleFilters={() => setShowMobileFilters(!showMobileFilters)}
+                  filters={showMobileFilters && (
+                    <div className="space-y-3 mt-3 p-3 bg-gray-50 rounded-lg">
+                      <select
+                        value={selectedRecordType}
+                        onChange={(e) => setSelectedRecordType(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+                      >
+                        {recordTypes.map(type => (
+                          <option key={type.value} value={type.value}>
+                            {type.label}
+                          </option>
+                        ))}
+                      </select>
+
+                      <select
+                        value={selectedAnimalFilter}
+                        onChange={(e) => setSelectedAnimalFilter(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+                      >
+                        <option value="">All Animals</option>
+                        {Array.isArray(animals) && animals.map(animal => (
+                          <option key={animal.id} value={animal.id}>
+                            {animal.name || `Animal ${animal.tag_number}`} (#{animal.tag_number})
+                          </option>
+                        ))}
+                      </select>
+
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          updateSearchTerm('health-records', '')
+                          setSelectedRecordType('')
+                          setSelectedAnimalFilter('')
+                        }}
+                        className="w-full"
+                      >
+                        Clear Filters
+                      </Button>
+                    </div>
+                  )}
+                />
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <Input
+                      placeholder="Search health records..."
+                      value={searchTerms['health-records']}
+                      onChange={(e) => updateSearchTerm('health-records', e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+
+                  <select
+                    value={selectedRecordType}
+                    onChange={(e) => setSelectedRecordType(e.target.value)}
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+                  >
+                    {recordTypes.map(type => (
+                      <option key={type.value} value={type.value}>
+                        {type.label}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={selectedAnimalFilter}
+                    onChange={(e) => setSelectedAnimalFilter(e.target.value)}
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+                  >
+                    <option value="">All Animals</option>
+                    {Array.isArray(animals) && animals.map(animal => (
+                      <option key={animal.id} value={animal.id}>
+                        {animal.name || `Animal ${animal.tag_number}`} (#{animal.tag_number})
+                      </option>
+                    ))}
+                  </select>
+
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      updateSearchTerm('health-records', '')
+                      setSelectedRecordType('')
+                      setSelectedAnimalFilter('')
+                    }}
+                  >
+                    Clear Filters
+                  </Button>
                 </div>
-
-                <select
-                  value={selectedRecordType}
-                  onChange={(e) => setSelectedRecordType(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
-                >
-                  {recordTypes.map(type => (
-                    <option key={type.value} value={type.value}>
-                      {type.label}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  value={selectedAnimalFilter}
-                  onChange={(e) => setSelectedAnimalFilter(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
-                >
-                  <option value="">All Animals</option>
-                  {Array.isArray(animals) && animals.map(animal => (
-                    <option key={animal.id} value={animal.id}>
-                      {animal.name || `Animal ${animal.tag_number}`} (#{animal.tag_number})
-                    </option>
-                  ))}
-                </select>
-
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    updateSearchTerm('health-records', '')
-                    setSelectedRecordType('')
-                    setSelectedAnimalFilter('')
-                  }}
-                >
-                  Clear Filters
-                </Button>
-              </div>
+              )}
 
               {/* Health Records Display */}
               {filteredHealthRecords.length === 0 ? (
@@ -760,7 +924,7 @@ export function HealthRecordsContent({
                   )}
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className={`grid ${getMobileGridCols(filteredHealthRecords.length)} gap-4`}>
                   {filteredHealthRecords.map((record) => (
                     <HealthRecordCard
                       key={record.id}
@@ -777,7 +941,7 @@ export function HealthRecordsContent({
             {/* Veterinarians Tab */}
             <TabsContent value="veterinarians" className="space-y-4">
               <div className="flex items-center justify-between">
-                <div className="relative flex-1 max-w-sm">
+                <div className={`relative ${isMobile ? 'flex-1 mr-2' : 'flex-1 max-w-sm'}`}>
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                   <Input
                     placeholder="Search veterinarians..."
@@ -787,9 +951,18 @@ export function HealthRecordsContent({
                   />
                 </div>
                 {canManageProtocols && (
-                  <Button onClick={() => setShowVeterinarianModal(true)}>
-                    <UserPlus className="mr-2 h-4 w-4" />
-                    Add Veterinarian
+                  <Button 
+                    onClick={() => setShowVeterinarianModal(true)}
+                    size={isMobile ? "sm" : "default"}
+                  >
+                    {isMobile ? (
+                      <UserPlus className="h-4 w-4" />
+                    ) : (
+                      <>
+                        <UserPlus className="mr-2 h-4 w-4" />
+                        Add Veterinarian
+                      </>
+                    )}
                   </Button>
                 )}
               </div>
@@ -814,7 +987,7 @@ export function HealthRecordsContent({
                   )}
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className={`grid ${getMobileGridCols(filteredVeterinarians.length)} gap-4`}>
                   {filteredVeterinarians.map((veterinarian) => (
                     <VeterinarianCard
                       key={veterinarian.id}
@@ -831,7 +1004,7 @@ export function HealthRecordsContent({
             {/* Protocols Tab */}
             <TabsContent value="protocols" className="space-y-4">
               <div className="flex items-center justify-between">
-                <div className="relative flex-1 max-w-sm">
+                <div className={`relative ${isMobile ? 'flex-1 mr-2' : 'flex-1 max-w-sm'}`}>
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                   <Input
                     placeholder="Search protocols..."
@@ -841,9 +1014,18 @@ export function HealthRecordsContent({
                   />
                 </div>
                 {canManageProtocols && (
-                  <Button onClick={() => setShowProtocolModal(true)}>
-                    <FileText className="mr-2 h-4 w-4" />
-                    Create Protocol
+                  <Button 
+                    onClick={() => setShowProtocolModal(true)}
+                    size={isMobile ? "sm" : "default"}
+                  >
+                    {isMobile ? (
+                      <FileText className="h-4 w-4" />
+                    ) : (
+                      <>
+                        <FileText className="mr-2 h-4 w-4" />
+                        Create Protocol
+                      </>
+                    )}
                   </Button>
                 )}
               </div>
@@ -868,7 +1050,7 @@ export function HealthRecordsContent({
                   )}
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className={`grid ${getMobileGridCols(filteredProtocols.length)} gap-4`}>
                   {filteredProtocols.map((protocol) => (
                     <ProtocolCard
                       key={protocol.id}
@@ -885,7 +1067,7 @@ export function HealthRecordsContent({
             {/* Outbreaks Tab */}
             <TabsContent value="outbreaks" className="space-y-4">
               <div className="flex items-center justify-between">
-                <div className="relative flex-1 max-w-sm">
+                <div className={`relative ${isMobile ? 'flex-1 mr-2' : 'flex-1 max-w-sm'}`}>
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                   <Input
                     placeholder="Search outbreaks..."
@@ -895,9 +1077,20 @@ export function HealthRecordsContent({
                   />
                 </div>
                 {canManageProtocols && (
-                  <Button onClick={() => setShowOutbreakModal(true)} variant="outline" className="border-red-300 text-red-600 hover:bg-red-50">
-                    <AlertTriangle className="mr-2 h-4 w-4" />
-                    Report Outbreak
+                  <Button 
+                    onClick={() => setShowOutbreakModal(true)} 
+                    variant="outline" 
+                    className="border-red-300 text-red-600 hover:bg-red-50"
+                    size={isMobile ? "sm" : "default"}
+                  >
+                    {isMobile ? (
+                      <AlertTriangle className="h-4 w-4" />
+                    ) : (
+                      <>
+                        <AlertTriangle className="mr-2 h-4 w-4" />
+                        Report Outbreak
+                      </>
+                    )}
                   </Button>
                 )}
               </div>
@@ -916,7 +1109,7 @@ export function HealthRecordsContent({
                   </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className={`grid ${getMobileGridCols(filteredOutbreaks.length)} gap-4`}>
                   {filteredOutbreaks.map((outbreak) => (
                     <OutbreakCard
                       key={outbreak.id}
@@ -933,7 +1126,7 @@ export function HealthRecordsContent({
             {/* Vaccinations Tab */}
             <TabsContent value="vaccinations" className="space-y-4">
               <div className="flex items-center justify-between">
-                <div className="relative flex-1 max-w-sm">
+                <div className={`relative ${isMobile ? 'flex-1 mr-2' : 'flex-1 max-w-sm'}`}>
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                   <Input
                     placeholder="Search vaccinations..."
@@ -943,9 +1136,19 @@ export function HealthRecordsContent({
                   />
                 </div>
                 {canAddRecords && (
-                  <Button onClick={() => setShowVaccinationModal(true)} className="bg-green-600 hover:bg-green-700">
-                    <Syringe className="mr-2 h-4 w-4" />
-                    Record Vaccination
+                  <Button 
+                    onClick={() => setShowVaccinationModal(true)} 
+                    className="bg-green-600 hover:bg-green-700"
+                    size={isMobile ? "sm" : "default"}
+                  >
+                    {isMobile ? (
+                      <Syringe className="h-4 w-4" />
+                    ) : (
+                      <>
+                        <Syringe className="mr-2 h-4 w-4" />
+                        Record Vaccination
+                      </>
+                    )}
                   </Button>
                 )}
               </div>
@@ -970,7 +1173,7 @@ export function HealthRecordsContent({
                   )}
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className={`grid ${getMobileGridCols(filteredVaccinations.length)} gap-4`}>
                   {filteredVaccinations.map((vaccination) => (
                     <VaccinationCard
                       key={vaccination.id}
@@ -987,7 +1190,7 @@ export function HealthRecordsContent({
             {/* Vet Visits Tab */}
             <TabsContent value="vet-visits" className="space-y-4">
               <div className="flex items-center justify-between">
-                <div className="relative flex-1 max-w-sm">
+                <div className={`relative ${isMobile ? 'flex-1 mr-2' : 'flex-1 max-w-sm'}`}>
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                   <Input
                     placeholder="Search vet visits..."
@@ -997,9 +1200,19 @@ export function HealthRecordsContent({
                   />
                 </div>
                 {canAddRecords && (
-                  <Button onClick={() => setShowScheduleVisitModal(true)} className="bg-orange-600 hover:bg-orange-700">
-                    <CalendarCheck className="mr-2 h-4 w-4" />
-                    Schedule Visit
+                  <Button 
+                    onClick={() => setShowScheduleVisitModal(true)} 
+                    className="bg-orange-600 hover:bg-orange-700"
+                    size={isMobile ? "sm" : "default"}
+                  >
+                    {isMobile ? (
+                      <CalendarCheck className="h-4 w-4" />
+                    ) : (
+                      <>
+                        <CalendarCheck className="mr-2 h-4 w-4" />
+                        Schedule Visit
+                      </>
+                    )}
                   </Button>
                 )}
               </div>
@@ -1024,7 +1237,7 @@ export function HealthRecordsContent({
                   )}
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className={`grid ${getMobileGridCols(filteredVetVisits.length)} gap-4`}>
                   {filteredVetVisits.map((visit) => (
                     <VetVisitCard
                       key={visit.id}
@@ -1041,7 +1254,17 @@ export function HealthRecordsContent({
         </CardContent>
       </Card>
 
-      {/* All Modals */}
+      {/* Mobile Action Sheet */}
+      {isMobile && (
+        <MobileActionSheet
+          isOpen={showActionSheet}
+          onClose={() => setShowActionSheet(false)}
+          title="Health Actions"
+          items={actionSheetItems}
+        />
+      )}
+
+      {/* All Modals - Same as original */}
       {showAddModal && (
         <AddHealthRecordModal
           farmId={userRole?.farm_id}

@@ -38,9 +38,10 @@ interface HealthRecordCardProps {
   onEdit: (recordId: string) => void
   onDelete: (recordId: string) => void
   canEdit: boolean
+  isMobile?: boolean
 }
 
-export function HealthRecordCard({ record, onEdit, onDelete, canEdit }: HealthRecordCardProps) {
+export function HealthRecordCard({ record, onEdit, onDelete, canEdit, isMobile }: HealthRecordCardProps) {
   const getRecordTypeIcon = (type: string) => {
     switch (type) {
       case 'vaccination': return '💉'

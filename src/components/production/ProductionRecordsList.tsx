@@ -41,6 +41,7 @@ interface ProductionRecord {
     tag_number: string
     name?: string
   }
+  
 }
 
 interface ProductionRecordsListProps {
@@ -49,6 +50,7 @@ interface ProductionRecordsListProps {
   onEdit?: (record: ProductionRecord) => void
   onDelete?: (recordId: string) => void
   onView?: (record: ProductionRecord) => void
+  isMobile?: boolean
 }
 
 export function ProductionRecordsList({ 
@@ -56,7 +58,8 @@ export function ProductionRecordsList({
   canEdit, 
   onEdit,
   onDelete,
-  onView 
+  onView,
+  isMobile = false 
 }: ProductionRecordsListProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   

@@ -8,6 +8,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { EditAnimalModal } from '@/components/animals/EditAnimalModal'
+import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
+import { cn } from '@/lib/utils/cn'
 import { 
   Calendar, 
   Weight, 
@@ -19,7 +21,9 @@ import {
   Baby,
   AlertTriangle,
   Shield,
-  Activity
+  Activity,
+  MoreVertical,
+  Phone
 } from 'lucide-react'
 
 interface AnimalCardProps {
@@ -27,12 +31,15 @@ interface AnimalCardProps {
   farmId: string
   userRole: string
   onAnimalUpdated?: (updatedAnimal: Animal) => void
+  isMobile?: boolean
 }
 
-export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated }: AnimalCardProps) {
+export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, isMobile }: AnimalCardProps) {
   const [showEditModal, setShowEditModal] = useState(false)
   const [animalData, setAnimalData] = useState(animal)
-  
+  const [showAllInfo, setShowAllInfo] = useState(false)
+
+  const { isMobile: isMobileDevice, isTouch } = useDeviceInfo()
   const canEdit = ['farm_owner', 'farm_manager'].includes(userRole)
   
   const handleAnimalUpdated = (updatedAnimal: Animal) => {
@@ -44,16 +51,22 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated }: Animal
   const getSourceBadge = () => {
     if (animalData.animal_source === 'newborn_calf') {
       return (
-        <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-          <Baby className="w-3 h-3 mr-1" />
-          Born Here
+        <Badge variant="secondary" className={cn(
+          "bg-blue-100 text-blue-800",
+          isMobile ? "text-xs px-2 py-1" : "text-xs"
+        )}>
+          <Baby className={cn("mr-1", isMobile ? "w-3 h-3" : "w-3 h-3")} />
+          {isMobile ? "Born" : "Born Here"}
         </Badge>
       )
     } else if (animalData.animal_source === 'purchased_animal') {
       return (
-        <Badge variant="secondary" className="bg-green-100 text-green-800">
-          <ShoppingCart className="w-3 h-3 mr-1" />
-          Purchased
+        <Badge variant="secondary" className={cn(
+          "bg-green-100 text-green-800",
+          isMobile ? "text-xs px-2 py-1" : "text-xs"
+        )}>
+          <ShoppingCart className={cn("mr-1", isMobile ? "w-3 h-3" : "w-3 h-3")} />
+          {isMobile ? "Bought" : "Purchased"}
         </Badge>
       )
     }
@@ -71,9 +84,20 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated }: Animal
       dry: 'bg-gray-100 text-gray-800',
     }
     
+    const statusLabels = {
+      calf: 'Calf',
+      heifer: 'Heifer',
+      served: 'Served',
+      lactating: isMobile ? 'Lactating' : 'Lactating',
+      dry: 'Dry',
+    }
+    
     return (
-      <Badge className={statusColors[animalData.production_status] || 'bg-gray-100 text-gray-800'}>
-        {animalData.production_status.replace('_', ' ').toUpperCase()}
+      <Badge className={cn(
+        statusColors[animalData.production_status] || 'bg-gray-100 text-gray-800',
+        isMobile ? "text-xs px-2 py-1" : "text-xs"
+      )}>
+        {statusLabels[animalData.production_status] || animalData.production_status.replace('_', ' ').toUpperCase()}
       </Badge>
     )
   }
@@ -95,7 +119,7 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated }: Animal
       requires_attention: {
         color: 'bg-yellow-100 text-yellow-800',
         icon: Activity,
-        label: 'Needs Attention'
+        label: isMobile ? 'Attention' : 'Needs Attention'
       },
       quarantined: {
         color: 'bg-orange-100 text-orange-800',
@@ -110,8 +134,11 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated }: Animal
     const IconComponent = config.icon
     
     return (
-      <Badge className={config.color}>
-        <IconComponent className="w-3 h-3 mr-1" />
+      <Badge className={cn(
+        config.color,
+        isMobile ? "text-xs px-2 py-1" : "text-xs"
+      )}>
+        <IconComponent className={cn("mr-1", isMobile ? "w-3 h-3" : "w-3 h-3")} />
         {config.label}
       </Badge>
     )
@@ -125,14 +152,14 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated }: Animal
     const ageInDays = Math.floor((now.getTime() - birthDate.getTime()) / (1000 * 60 * 60 * 24))
     
     if (ageInDays < 30) {
-      return `${ageInDays} days old`
+      return `${ageInDays}d`
     } else if (ageInDays < 365) {
       const months = Math.floor(ageInDays / 30)
-      return `${months} month${months > 1 ? 's' : ''} old`
+      return `${months}mo`
     } else {
       const years = Math.floor(ageInDays / 365)
       const remainingMonths = Math.floor((ageInDays % 365) / 30)
-      return `${years}y ${remainingMonths}m old`
+      return isMobile ? `${years}y ${remainingMonths}m` : `${years}y ${remainingMonths}m old`
     }
   }
   
@@ -140,151 +167,280 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated }: Animal
     return new Date(dateString).toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
-      year: 'numeric'
+      year: isMobile ? '2-digit' : 'numeric'
     })
   }
   
   const animalAge = calculateAge()
   
+  // Mobile-specific info items (prioritized)
+  const getPrimaryInfo = () => {
+    const items = []
+    
+    // Always show age if available
+    if (animalData.birth_date && animalAge) {
+      items.push({
+        icon: Calendar,
+        text: animalAge,
+        color: 'text-gray-600'
+      })
+    }
+    
+    // Show weight if available
+    if (animalData.weight) {
+      items.push({
+        icon: Weight,
+        text: `${animalData.weight}kg`,
+        color: 'text-gray-600'
+      })
+    }
+    
+    // Show current production for lactating animals
+    if (animalData.production_status === 'lactating' && animalData.current_daily_production) {
+      items.push({
+        icon: Droplets,
+        text: `${animalData.current_daily_production}L/day`,
+        color: 'text-blue-600'
+      })
+    }
+    
+    // Show mother for newborn calves
+    if (animalData.animal_source === 'newborn_calf' && animalData.mother) {
+      items.push({
+        icon: Heart,
+        text: `Mom: ${animalData.mother.name || animalData.mother.tag_number}`,
+        color: 'text-pink-600'
+      })
+    }
+    
+    return items.slice(0, isMobile ? 2 : 4) // Limit items on mobile
+  }
+  
+  const getSecondaryInfo = () => {
+    const items = []
+    
+    // Purchase date for purchased animals
+    if (animalData.animal_source === 'purchased_animal' && animalData.purchase_date) {
+      items.push({
+        icon: ShoppingCart,
+        text: `Bought: ${formatDate(animalData.purchase_date)}`,
+        color: 'text-gray-600'
+      })
+    }
+    
+    // Service information for served animals
+    if (animalData.production_status === 'served' && animalData.service_date) {
+      items.push({
+        icon: Calendar,
+        text: `Served: ${formatDate(animalData.service_date)}`,
+        color: 'text-purple-600'
+      })
+    }
+    
+    // Expected calving date
+    if (animalData.expected_calving_date) {
+      items.push({
+        icon: Baby,
+        text: `Due: ${formatDate(animalData.expected_calving_date)}`,
+        color: 'text-green-600'
+      })
+    }
+    
+    return items
+  }
+  
+  const primaryInfo = getPrimaryInfo()
+  const secondaryInfo = getSecondaryInfo()
+  
   return (
     <>
-      <Card className="hover:shadow-lg transition-shadow duration-200 group">
-        <CardHeader className="pb-3">
+      <Card className={cn(
+        "transition-all duration-200 group",
+        isMobile 
+          ? "hover:shadow-md active:scale-[0.98] active:shadow-lg" 
+          : "hover:shadow-lg",
+        isTouch && "cursor-pointer"
+      )}>
+        <CardHeader className={cn(
+          isMobile ? "pb-2 px-4 pt-4" : "pb-3"
+        )}>
           <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <CardTitle className="text-lg font-semibold leading-tight">
+            <div className="flex-1 min-w-0">
+              <CardTitle className={cn(
+                "font-semibold leading-tight",
+                isMobile ? "text-base" : "text-lg"
+              )}>
                 {animalData.name || `Animal ${animalData.tag_number}`}
               </CardTitle>
-              <CardDescription className="mt-1">
-                Tag: {animalData.tag_number} • {animalData.breed || 'Unknown breed'}
+              <CardDescription className={cn(
+                "mt-1 truncate",
+                isMobile ? "text-xs" : "text-sm"
+              )}>
+                #{animalData.tag_number} • {animalData.breed || 'Unknown breed'}
               </CardDescription>
             </div>
             
-            <div className="flex flex-col space-y-1 items-end">
+            <div className={cn(
+              "flex items-center space-x-1 ml-2",
+              isMobile ? "flex-row" : "flex-col space-y-1 items-end"
+            )}>
               {getSourceBadge()}
-              <Badge variant={animalData.gender === 'female' ? 'default' : 'secondary'} className="text-xs">
+              {!isMobile && (
+                <Badge variant={animalData.gender === 'female' ? 'default' : 'secondary'} 
+                       className="text-xs">
+                  {animalData.gender === 'female' ? '♀ Female' : '♂ Male'}
+                </Badge>
+              )}
+            </div>
+          </div>
+          
+          {/* Mobile: Show gender badge in header on separate line */}
+          {isMobile && (
+            <div className="flex items-center justify-between mt-2">
+              <Badge variant={animalData.gender === 'female' ? 'default' : 'secondary'} 
+                     className="text-xs">
                 {animalData.gender === 'female' ? '♀ Female' : '♂ Male'}
               </Badge>
             </div>
-          </div>
+          )}
         </CardHeader>
         
-        <CardContent className="pt-0">
-          <div className="space-y-3">
+        <CardContent className={cn(
+          isMobile ? "px-4 pb-4 pt-0" : "pt-0"
+        )}>
+          <div className={cn(
+            isMobile ? "space-y-3" : "space-y-3"
+          )}>
             {/* Production and Health Status */}
-            <div className="flex flex-wrap gap-2">
+            <div className={cn(
+              "flex flex-wrap gap-1.5",
+              isMobile ? "gap-1" : "gap-2"
+            )}>
               {getProductionStatusBadge()}
               {getHealthStatusBadge()}
             </div>
             
-            {/* Key Information */}
-            <div className="space-y-2 text-sm">
-              {/* Age and Birth Date */}
-              {animalData.birth_date && (
-                <div className="flex items-center text-gray-600">
-                  <Calendar className="w-4 h-4 mr-2 flex-shrink-0" />
-                  <span>
-                    Born: {formatDate(animalData.birth_date)}
-                    {animalAge && <span className="text-gray-500 ml-1">({animalAge})</span>}
-                  </span>
-                </div>
-              )}
-              
-              {/* Purchase Date for purchased animals */}
-              {animalData.animal_source === 'purchased_animal' && animalData.purchase_date && (
-                <div className="flex items-center text-gray-600">
-                  <ShoppingCart className="w-4 h-4 mr-2 flex-shrink-0" />
-                  <span>Purchased: {formatDate(animalData.purchase_date)}</span>
-                </div>
-              )}
-              
-              {/* Weight */}
-              {animalData.weight && (
-                <div className="flex items-center text-gray-600">
-                  <Weight className="w-4 h-4 mr-2 flex-shrink-0" />
-                  <span>Weight: {animalData.weight} kg</span>
-                </div>
-              )}
-              
-              {/* Mother information for newborn calves */}
-              {animalData.animal_source === 'newborn_calf' && animalData.mother && (
-                <div className="flex items-center text-gray-600">
-                  <Heart className="w-4 h-4 mr-2 flex-shrink-0" />
-                  <span>
-                    Mother: {animalData.mother.name || animalData.mother.tag_number}
-                  </span>
-                </div>
-              )}
-              
-              {/* Current production for lactating animals */}
-              {animalData.production_status === 'lactating' && animalData.current_daily_production && (
-                <div className="flex items-center text-gray-600">
-                  <Droplets className="w-4 h-4 mr-2 flex-shrink-0" />
-                  <span>
-                    Daily: {animalData.current_daily_production}L
-                    {animalData.days_in_milk && (
-                      <span className="text-gray-500 ml-1">
-                        ({animalData.days_in_milk} DIM)
-                      </span>
-                    )}
-                  </span>
-                </div>
-              )}
-              
-              {/* Service information for served animals */}
-              {animalData.production_status === 'served' && animalData.service_date && (
-                <div className="flex items-center text-gray-600">
-                  <Calendar className="w-4 h-4 mr-2 flex-shrink-0" />
-                  <span>
-                    Served: {formatDate(animalData.service_date)}
-                    {animalData.service_method && (
-                      <span className="text-gray-500 ml-1">
-                        ({animalData.service_method === 'artificial_insemination' ? 'AI' : 'Natural'})
-                      </span>
-                    )}
-                  </span>
-                </div>
-              )}
-              
-              {/* Expected calving date */}
-              {animalData.expected_calving_date && (
-                <div className="flex items-center text-gray-600">
-                  <Baby className="w-4 h-4 mr-2 flex-shrink-0" />
-                  <span>
-                    Expected calving: {formatDate(animalData.expected_calving_date)}
-                  </span>
-                </div>
-              )}
+            {/* Primary Information - Always Visible */}
+            <div className={cn(
+              "grid gap-2",
+              isMobile ? "grid-cols-1" : "space-y-2"
+            )}>
+              {primaryInfo.map((item, index) => {
+                const IconComponent = item.icon
+                return (
+                  <div key={index} className={cn(
+                    "flex items-center",
+                    isMobile ? "text-sm" : "text-sm",
+                    item.color
+                  )}>
+                    <IconComponent className={cn(
+                      "flex-shrink-0 mr-2",
+                      isMobile ? "w-4 h-4" : "w-4 h-4"
+                    )} />
+                    <span className="truncate">{item.text}</span>
+                  </div>
+                )
+              })}
             </div>
             
-            {/* Additional Information */}
+            {/* Secondary Information - Collapsible on Mobile */}
+            {secondaryInfo.length > 0 && (
+              <>
+                {(showAllInfo || !isMobile) && (
+                  <div className={cn(
+                    "grid gap-2",
+                    isMobile ? "grid-cols-1" : "space-y-2"
+                  )}>
+                    {secondaryInfo.map((item, index) => {
+                      const IconComponent = item.icon
+                      return (
+                        <div key={index} className={cn(
+                          "flex items-center",
+                          isMobile ? "text-sm" : "text-sm",
+                          item.color
+                        )}>
+                          <IconComponent className={cn(
+                            "flex-shrink-0 mr-2",
+                            isMobile ? "w-4 h-4" : "w-4 h-4"
+                          )} />
+                          <span className="truncate">{item.text}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+                
+                {/* Show More/Less Button for Mobile */}
+                {isMobile && secondaryInfo.length > 0 && (
+                  <button
+                    onClick={() => setShowAllInfo(!showAllInfo)}
+                    className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                  >
+                    {showAllInfo ? 'Show Less' : `Show More (${secondaryInfo.length})`}
+                  </button>
+                )}
+              </>
+            )}
+            
+            {/* Notes - Collapsible */}
             {animalData.notes && (
-              <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded-md line-clamp-2">
+              <div className={cn(
+                "text-xs text-gray-500 bg-gray-50 rounded-md",
+                isMobile ? "p-2" : "p-2",
+                showAllInfo || !isMobile ? "" : "line-clamp-1"
+              )}>
                 {animalData.notes}
               </div>
             )}
             
             {/* Action Buttons */}
-            <div className="flex space-x-2 pt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-              <Button asChild size="sm" variant="outline" className="flex-1">
+            <div className={cn(
+              "flex pt-2 transition-opacity duration-200",
+              isMobile 
+                ? "space-x-2 opacity-100" // Always visible on mobile
+                : "space-x-2 opacity-0 group-hover:opacity-100"
+            )}>
+              <Button 
+                asChild 
+                size={isMobile ? "default" : "sm"} 
+                variant="outline" 
+                className={cn(
+                  "flex-1",
+                  isMobile && "h-10 text-sm" // Larger touch target
+                )}
+              >
                 <Link href={`/dashboard/animals/${animalData.id}`}>
-                  <Eye className="w-4 h-4 mr-1" />
+                  <Eye className={cn("mr-2", isMobile ? "w-4 h-4" : "w-4 h-4")} />
                   View
                 </Link>
               </Button>
               
-              {canEdit ? (
+              {isMobile ? (
+                // Mobile: Dropdown menu for actions
+                <div className="relative">
+                  <Button 
+                    size="default"
+                    variant="outline"
+                    className="h-10 px-3"
+                    onClick={() => {
+                      if (canEdit) {
+                        setShowEditModal(true)
+                      }
+                    }}
+                    disabled={!canEdit}
+                  >
+                    <Edit className="w-4 h-4" />
+                  </Button>
+                </div>
+              ) : (
+                // Desktop: Full edit button
                 <Button 
                   size="sm" 
                   variant="outline" 
                   className="flex-1"
                   onClick={() => setShowEditModal(true)}
+                  disabled={!canEdit}
                 >
-                  <Edit className="w-4 h-4 mr-1" />
-                  Edit
-                </Button>
-              ) : (
-                <Button size="sm" variant="outline" className="flex-1" disabled>
                   <Edit className="w-4 h-4 mr-1" />
                   Edit
                 </Button>

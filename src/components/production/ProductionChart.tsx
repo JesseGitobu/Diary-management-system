@@ -21,9 +21,10 @@ interface ProductionChartProps {
     average_protein_content: number
     animals_milked: number
   }>
+  isMobile?: boolean
 }
 
-export function ProductionChart({ data }: ProductionChartProps) {
+export function ProductionChart({ data, isMobile }: ProductionChartProps) {
   const chartData = useMemo(() => {
     return data
       .slice(-30) // Last 30 days

@@ -6,7 +6,16 @@ import { Button } from '@/components/ui/Button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { AnimalsList } from '@/components/animals/AnimalsList'
 import { AddAnimalModal } from '@/components/animals/AddAnimalModal'
-import { Plus, Users, BarChart3, Import, Download } from 'lucide-react'
+import { MobileStatsCarousel } from '@/components/mobile/MobileStatsCarousel'
+import { QuickActionButton } from '@/components/mobile/QuickActionButton'
+import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
+import { 
+  Plus, 
+  Users, 
+  BarChart3, 
+  Download,
+  TrendingUp
+} from 'lucide-react'
 import { GiCow } from 'react-icons/gi'
 import { Animal } from '@/types/database'
 
@@ -46,8 +55,12 @@ export function AnimalsClientPage({
   const [stats, setStats] = useState(initialStats)
   const [showAddModal, setShowAddModal] = useState(false)
   const [loading, setLoading] = useState(false)
+  
+  const { isMobile } = useDeviceInfo()
 
   const canAddAnimals = ['farm_owner', 'farm_manager', 'worker'].includes(userRole)
+  const canManageAnimals = ['farm_owner', 'farm_manager', 'worker'].includes(userRole)
+  const canExportData = ['farm_owner', 'farm_manager'].includes(userRole)
 
   const handleAnimalAdded = (newAnimal: Animal) => {
     // Update local state with new animal
@@ -101,7 +114,6 @@ export function AnimalsClientPage({
       },
     }))
     
-    // Close modal
     setShowAddModal(false)
   }
 
@@ -139,21 +151,15 @@ export function AnimalsClientPage({
     if (originalAnimal) {
       setStats(prev => {
         let newStats = { ...prev }
-
-        // Update total count
         newStats.total = animals.length
-
-        // Update gender breakdown
         newStats.female = animals.filter(a => a.gender === 'female').length
         newStats.male = animals.filter(a => a.gender === 'male').length
 
-        // Update source breakdown
         newStats.bySource = {
           newborn_calves: animals.filter(a => a.animal_source === 'newborn_calf').length,
           purchased: animals.filter(a => a.animal_source === 'purchased_animal').length,
         }
 
-        // Update production status breakdown
         newStats.byProduction = {
           calves: animals.filter(a => a.production_status === 'calf').length,
           heifers: animals.filter(a => a.production_status === 'heifer').length,
@@ -162,7 +168,6 @@ export function AnimalsClientPage({
           dry: animals.filter(a => a.production_status === 'dry').length,
         }
 
-        // Update health status breakdown
         newStats.byHealth = {
           healthy: animals.filter(a => a.health_status === 'healthy').length,
           needsAttention: animals.filter(a => a.health_status !== 'healthy').length,
@@ -173,164 +178,290 @@ export function AnimalsClientPage({
     }
   }
 
-  const canManageAnimals = ['farm_owner', 'farm_manager', 'worker'].includes(userRole)
-  const canExportData = ['farm_owner', 'farm_manager'].includes(userRole)
+  // Prepare stats for mobile carousel
+  const statsCards = [
+    {
+      title: "Total Animals",
+      value: stats.total,
+      subtitle: stats.bySource 
+        ? `${stats.bySource.newborn_calves} born, ${stats.bySource.purchased} purchased`
+        : 'Active animals in your herd',
+      icon: <GiCow className="h-5 w-5" />,
+      color: "bg-blue-500"
+    },
+    {
+      title: "Lactating Cows",
+      value: stats.byProduction?.lactating || 0,
+      subtitle: "Currently producing milk",
+      icon: <Users className="h-5 w-5" />,
+      color: "bg-green-500"
+    },
+    {
+      title: "Young Stock", 
+      value: (stats.byProduction?.calves || 0) + (stats.byProduction?.heifers || 0),
+      subtitle: `${stats.byProduction?.calves || 0} calves, ${stats.byProduction?.heifers || 0} heifers`,
+      icon: <BarChart3 className="h-5 w-5" />,
+      color: "bg-yellow-500"
+    },
+    {
+      title: "Health Status",
+      value: stats.byHealth?.healthy || stats.total,
+      subtitle: stats.byHealth?.needsAttention && stats.byHealth.needsAttention > 0 
+        ? `${stats.byHealth.needsAttention} need attention`
+        : "All healthy",
+      icon: <div className={`h-5 w-5 rounded-full ${
+        stats.byHealth?.needsAttention && stats.byHealth.needsAttention > 0 
+          ? 'bg-yellow-500' 
+          : 'bg-green-500'
+      }`} />,
+      color: stats.byHealth?.needsAttention && stats.byHealth.needsAttention > 0 
+        ? "bg-yellow-500" 
+        : "bg-green-500"
+    }
+  ]
 
   return (
-    <div className="dashboard-container">
-      {/* Header Section */}
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Animals</h1>
-          <p className="text-gray-600 mt-2">
-            Manage your herd and track individual animal information
-          </p>
+    <div className={`
+      ${isMobile ? 'px-4 py-4' : 'dashboard-container'} 
+      pb-20 lg:pb-6
+    `}>
+      {/* Mobile Header */}
+      {isMobile ? (
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Animals</h1> 
+              <p className="text-sm text-gray-600 mt-1">
+                {stats.total} animals in your herd
+              </p>
+            </div>
+            
+            {/* Mobile Action Button */}
+            {canAddAnimals && (
+              <QuickActionButton
+                onClick={() => setShowAddModal(true)}
+                icon={<Plus className="h-6 w-6" />}
+                label="Add Animal"
+              />
+            )}
+          </div>
         </div>
-        
-        <div className="flex space-x-3">
-          {canExportData && (
-            <Button 
-              variant="outline" 
-              onClick={handleExportAnimals}
-              disabled={loading || animals.length === 0}
-            >
-              <Download className="mr-2 h-4 w-4" />
-              Export
-            </Button>
-          )}
+      ) : (
+        /* Desktop Header - Removed Quick Actions Bar from here */
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Animals</h1>
+            <p className="text-gray-600 mt-2">
+              Manage your herd and track individual animal information
+            </p>
+          </div>
           
-          {canManageAnimals && (
-            <Button variant="primary" size="default" primary={true} onClick={() => setShowAddModal(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Animal
-            </Button>
-          )}
+          <div className="flex space-x-3">
+            {canExportData && (
+              <Button 
+                variant="outline" 
+                onClick={handleExportAnimals}
+                disabled={loading || animals.length === 0}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Export
+              </Button>
+            )}
+            
+            {canManageAnimals && (
+              <Button onClick={() => setShowAddModal(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Animal
+              </Button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
       
-      {/* Enhanced Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Animals</CardTitle>
-            <GiCow className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.total}</div>
-            <p className="text-xs text-muted-foreground">
-              {stats.bySource 
-                ? `${stats.bySource.newborn_calves} born here, ${stats.bySource.purchased} purchased`
-                : 'Active animals in your herd'
-              }
-            </p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Lactating Cows</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {stats.byProduction?.lactating || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Currently producing milk
-            </p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Young Stock</CardTitle>
-            <BarChart3 className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {(stats.byProduction?.calves || 0) + (stats.byProduction?.heifers || 0)}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {stats.byProduction?.calves || 0} calves, {stats.byProduction?.heifers || 0} heifers
-            </p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Health Status</CardTitle>
-            <div className={`h-4 w-4 rounded-full ${
-              stats.byHealth?.needsAttention && stats.byHealth.needsAttention > 0 
-                ? 'bg-yellow-500' 
-                : 'bg-green-500'
-            }`} />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">
-              {stats.byHealth?.healthy || stats.total}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Healthy animals
-              {stats.byHealth?.needsAttention && stats.byHealth.needsAttention > 0 && 
-                `, ${stats.byHealth.needsAttention} need attention`
-              }
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Mobile Stats Carousel vs Desktop Grid */}
+      {isMobile ? (
+        <MobileStatsCarousel cards={statsCards} className="mb-6" />
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Animals</CardTitle>
+              <GiCow className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.total}</div>
+              <p className="text-xs text-muted-foreground">
+                {stats.bySource 
+                  ? `${stats.bySource.newborn_calves} born here, ${stats.bySource.purchased} purchased`
+                  : 'Active animals in your herd'
+                }
+              </p>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Lactating Cows</CardTitle>
+              <Users className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {stats.byProduction?.lactating || 0}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Currently producing milk
+              </p>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Young Stock</CardTitle>
+              <BarChart3 className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {(stats.byProduction?.calves || 0) + (stats.byProduction?.heifers || 0)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {stats.byProduction?.calves || 0} calves, {stats.byProduction?.heifers || 0} heifers
+              </p>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Health Status</CardTitle>
+              <div className={`h-4 w-4 rounded-full ${
+                stats.byHealth?.needsAttention && stats.byHealth.needsAttention > 0 
+                  ? 'bg-yellow-500' 
+                  : 'bg-green-500'
+              }`} />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-600">
+                {stats.byHealth?.healthy || stats.total}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Healthy animals
+                {stats.byHealth?.needsAttention && stats.byHealth.needsAttention > 0 && 
+                  `, ${stats.byHealth.needsAttention} need attention`
+                }
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
       
-      {/* Quick Stats Summary */}
+      {/* Herd Composition - Responsive Layout */}
       {stats.byProduction && (
-        <Card className="mb-8">
+        <Card className={`mb-6 ${isMobile ? 'mx-0' : 'mb-8'}`}>
           <CardHeader>
-            <CardTitle className="text-lg">Herd Composition</CardTitle>
-            <CardDescription>
-              Breakdown of animals by production status
-            </CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className={isMobile ? "text-base" : "text-lg"}>
+                  Herd Composition
+                </CardTitle>
+                <CardDescription className={isMobile ? "text-sm" : undefined}>
+                  Breakdown by production status
+                </CardDescription>
+              </div>
+              {!isMobile && (
+                <TrendingUp className="h-5 w-5 text-muted-foreground" />
+              )}
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className={`
+              grid gap-4
+              ${isMobile 
+                ? 'grid-cols-3' 
+                : 'grid-cols-2 md:grid-cols-5'
+              }
+            `}>
               <div className="text-center">
-                <div className="text-2xl font-bold text-yellow-600">
+                <div className={`font-bold text-yellow-600 ${
+                  isMobile ? 'text-xl' : 'text-2xl'
+                }`}>
                   {stats.byProduction.calves}
                 </div>
-                <div className="text-sm text-gray-600">Calves</div>
+                <div className={`text-gray-600 ${
+                  isMobile ? 'text-xs' : 'text-sm'
+                }`}>
+                  Calves
+                </div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-blue-600">
+                <div className={`font-bold text-blue-600 ${
+                  isMobile ? 'text-xl' : 'text-2xl'
+                }`}>
                   {stats.byProduction.heifers}
                 </div>
-                <div className="text-sm text-gray-600">Heifers</div>
+                <div className={`text-gray-600 ${
+                  isMobile ? 'text-xs' : 'text-sm'
+                }`}>
+                  Heifers
+                </div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-purple-600">
+                <div className={`font-bold text-purple-600 ${
+                  isMobile ? 'text-xl' : 'text-2xl'
+                }`}>
                   {stats.byProduction.served}
                 </div>
-                <div className="text-sm text-gray-600">Served</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-green-600">
-                  {stats.byProduction.lactating}
+                <div className={`text-gray-600 ${
+                  isMobile ? 'text-xs' : 'text-sm'
+                }`}>
+                  Served
                 </div>
-                <div className="text-sm text-gray-600">Lactating</div>
               </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-gray-600">
-                  {stats.byProduction.dry}
-                </div>
-                <div className="text-sm text-gray-600">Dry</div>
-              </div>
+              {!isMobile && (
+                <>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-green-600">
+                      {stats.byProduction.lactating}
+                    </div>
+                    <div className="text-sm text-gray-600">Lactating</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-gray-600">
+                      {stats.byProduction.dry}
+                    </div>
+                    <div className="text-sm text-gray-600">Dry</div>
+                  </div>
+                </>
+              )}
             </div>
+            
+            {/* Mobile: Show remaining stats in second row */}
+            {isMobile && (
+              <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-gray-200">
+                <div className="text-center">
+                  <div className="text-xl font-bold text-green-600">
+                    {stats.byProduction.lactating}
+                  </div>
+                  <div className="text-xs text-gray-600">Lactating</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xl font-bold text-gray-600">
+                    {stats.byProduction.dry}
+                  </div>
+                  <div className="text-xs text-gray-600">Dry</div>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
       
-      {/* Animals List */}
+      {/* Animals List - Now includes the mobile quick actions bar */}
       <AnimalsList 
         animals={animals}
         farmId={farmId}
         userRole={userRole}
         onAnimalUpdated={handleAnimalUpdated}
+        onExportAnimals={handleExportAnimals}
+        loading={loading}
       />
       
       {/* Add Animal Modal */}

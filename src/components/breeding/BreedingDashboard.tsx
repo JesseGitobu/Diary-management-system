@@ -4,7 +4,24 @@ import { useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { Calendar, Plus, Heart, Baby, TrendingUp, Clock, AlertCircle, Syringe, Stethoscope } from 'lucide-react'
+import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
+import { cn } from '@/lib/utils/cn'
+import { 
+  Calendar, 
+  Plus, 
+  Heart, 
+  Baby, 
+  TrendingUp, 
+  Clock, 
+  AlertCircle, 
+  Syringe, 
+  Stethoscope,
+  ChevronDown,
+  ChevronUp,
+  Grid3X3,
+  List,
+  Filter
+} from 'lucide-react'
 import Link from 'next/link'
 import { BreedingCalendar } from '@/components/breeding/BreedingCalendar'
 import { PregnantAnimalsList } from '@/components/breeding/PregnantAnimalsList'
@@ -45,7 +62,10 @@ export function BreedingDashboard({
 }: BreedingDashboardProps) {
   const [selectedView, setSelectedView] = useState<'overview' | 'calendar' | 'pregnant'>('overview')
   const [activeModal, setActiveModal] = useState<BreedingEventType>(null)
+  const [showQuickActions, setShowQuickActions] = useState(false)
+  const [upcomingEventsExpanded, setUpcomingEventsExpanded] = useState(false)
 
+  const { isMobile, isTouch } = useDeviceInfo()
   const canManageBreeding = ['farm_owner', 'farm_manager'].includes(userRole)
 
   const handleEventCreated = () => {
@@ -74,13 +94,27 @@ export function BreedingDashboard({
     }
 
     return (
-      <Modal isOpen={true} onClose={handleModalClose} className="max-w-2xl">
-        <div className="p-6">
+      <Modal 
+        isOpen={true} 
+        onClose={handleModalClose} 
+        className={cn(
+          isMobile ? "max-w-full h-full m-0 rounded-none" : "max-w-2xl"
+        )}
+      >
+        <div className={cn("p-6", isMobile && "pb-safe")}>
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-gray-900">
+            <h2 className={cn(
+              "font-bold text-gray-900",
+              isMobile ? "text-xl" : "text-2xl"
+            )}>
               {modalTitles[activeModal]}
             </h2>
-            <Button variant="ghost" onClick={handleModalClose} size="sm">
+            <Button 
+              variant="ghost" 
+              onClick={handleModalClose} 
+              size={isMobile ? "default" : "sm"}
+              className={cn(isMobile && "h-10 w-10")}
+            >
               ✕
             </Button>
           </div>
@@ -94,72 +128,171 @@ export function BreedingDashboard({
     )
   }
 
+  const quickActionButtons = [
+    {
+      key: 'heat_detection',
+      icon: Heart,
+      label: 'Heat Detection',
+      color: 'text-pink-500',
+      description: 'Record heat signs'
+    },
+    {
+      key: 'insemination',
+      icon: Syringe,
+      label: 'Insemination',
+      color: 'text-blue-500',
+      description: 'Record AI/Natural service'
+    },
+    {
+      key: 'pregnancy_check',
+      icon: Stethoscope,
+      label: 'Pregnancy Check',
+      color: 'text-green-500',
+      description: 'Confirm pregnancy'
+    },
+    {
+      key: 'calving',
+      icon: Baby,
+      label: 'Calving Event',
+      color: 'text-yellow-500',
+      description: 'Record birth'
+    }
+  ]
+
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Breeding Management</h1>
-          <p className="text-gray-600 mt-2">
+    <div className={cn("space-y-6", isMobile ? "pb-20" : "space-y-8")}>
+      {/* Mobile-Optimized Header */}
+      <div className={cn(
+        "flex justify-between",
+        isMobile ? "flex-col space-y-4" : "items-center"
+      )}>
+        <div className={isMobile ? "" : ""}>
+          <h1 className={cn(
+            "font-bold text-gray-900",
+            isMobile ? "text-2xl" : "text-3xl"
+          )}>
+            Breeding Management
+          </h1>
+          <p className={cn(
+            "text-gray-600 mt-2",
+            isMobile ? "text-sm" : ""
+          )}>
             Track breeding cycles, pregnancies, and reproductive performance
           </p>
         </div>
 
         {canManageBreeding && (
-          <div className="flex space-x-3">
-            <Button asChild variant="outline">
-              <Link href="/dashboard/breeding/calendar">
-                <Calendar className="mr-2 h-4 w-4" />
-                Breeding Calendar
-              </Link>
-            </Button>
-            <Button onClick={() => setActiveModal('heat_detection')}>
-              <Plus className="mr-2 h-4 w-4" />
-              Quick Record
-            </Button>
+          <div className={cn(
+            "flex",
+            isMobile ? "flex-col space-y-2" : "space-x-3"
+          )}>
+            {isMobile ? (
+              <>
+                <Button 
+                  onClick={() => setShowQuickActions(!showQuickActions)}
+                  className="w-full justify-between"
+                >
+                  <span className="flex items-center">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Quick Record
+                  </span>
+                  {showQuickActions ? 
+                    <ChevronUp className="h-4 w-4" /> : 
+                    <ChevronDown className="h-4 w-4" />
+                  }
+                </Button>
+                
+                <Button asChild variant="outline" className="w-full">
+                  <Link href="/dashboard/breeding/calendar">
+                    <Calendar className="mr-2 h-4 w-4" />
+                    Breeding Calendar
+                  </Link>
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button asChild variant="outline">
+                  <Link href="/dashboard/breeding/calendar">
+                    <Calendar className="mr-2 h-4 w-4" />
+                    Breeding Calendar
+                  </Link>
+                </Button>
+                <Button onClick={() => setActiveModal('heat_detection')}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Quick Record
+                </Button>
+              </>
+            )}
           </div>
         )}
       </div>
 
-      {/* Navigation Tabs */}
+      {/* Mobile Quick Actions Dropdown */}
+      {isMobile && canManageBreeding && showQuickActions && (
+        <Card className="border-farm-green/20 bg-farm-green/5">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Quick Record Options</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-3">
+              {quickActionButtons.map((action) => {
+                const IconComponent = action.icon
+                return (
+                  <Button
+                    key={action.key}
+                    onClick={() => {
+                      setActiveModal(action.key as BreedingEventType)
+                      setShowQuickActions(false)
+                    }}
+                    variant="outline"
+                    className="h-16 flex-col space-y-1 text-xs"
+                  >
+                    <IconComponent className={cn("h-5 w-5", action.color)} />
+                    <span className="font-medium">{action.label}</span>
+                  </Button>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Mobile-Optimized Navigation Tabs */}
       <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8">
-          <button
-            onClick={() => setSelectedView('overview')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              selectedView === 'overview'
-                ? 'border-farm-green text-farm-green'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            Overview
-          </button>
-          <button
-            onClick={() => setSelectedView('calendar')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              selectedView === 'calendar'
-                ? 'border-farm-green text-farm-green'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            Calendar
-          </button>
-          <button
-            onClick={() => setSelectedView('pregnant')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              selectedView === 'pregnant'
-                ? 'border-farm-green text-farm-green'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            Pregnant Animals ({breedingStats.currentPregnant})
-          </button>
+        <nav className={cn(
+          "-mb-px flex",
+          isMobile ? "overflow-x-auto scrollbar-hide" : "space-x-8"
+        )}>
+          {[
+            { key: 'overview', label: 'Overview' },
+            { key: 'calendar', label: isMobile ? 'Calendar' : 'Calendar' },
+            { 
+              key: 'pregnant', 
+              label: isMobile 
+                ? `Pregnant (${breedingStats.currentPregnant})` 
+                : `Pregnant Animals (${breedingStats.currentPregnant})`
+            }
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setSelectedView(tab.key as any)}
+              className={cn(
+                "py-3 px-4 border-b-2 font-medium text-sm whitespace-nowrap",
+                isMobile ? "flex-shrink-0" : "px-1",
+                selectedView === tab.key
+                  ? 'border-farm-green text-farm-green'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
         </nav>
       </div>
 
       {/* Content based on selected view */}
       {selectedView === 'overview' && (
-        <div className="space-y-8">
+        <div className={cn("space-y-6", !isMobile && "space-y-8")}>
           {/* Stats Cards */}
           <BreedingStatsCards stats={breedingStats} />
 
@@ -177,41 +310,89 @@ export function BreedingDashboard({
             />
           )}
 
-          {/* Upcoming Events & Quick Actions */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Mobile-Optimized Content Layout */}
+          <div className={cn(
+            "grid gap-6",
+            isMobile ? "grid-cols-1" : "grid-cols-1 lg:grid-cols-2"
+          )}>
+            {/* Upcoming Events */}
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <Clock className="h-5 w-5" />
-                  <span>Upcoming Events</span>
-                </CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center space-x-2">
+                    <Clock className="h-5 w-5" />
+                    <span>Upcoming Events</span>
+                  </CardTitle>
+                  {isMobile && calendarEvents.length > 3 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setUpcomingEventsExpanded(!upcomingEventsExpanded)}
+                    >
+                      {upcomingEventsExpanded ? 
+                        <ChevronUp className="h-4 w-4" /> : 
+                        <ChevronDown className="h-4 w-4" />
+                      }
+                    </Button>
+                  )}
+                </div>
                 <CardDescription>
-                  Breeding events scheduled for the next 7 days
+                  {isMobile ? 'Next 7 days' : 'Breeding events scheduled for the next 7 days'}
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {calendarEvents.slice(0, 5).length > 0 ? (
+                {calendarEvents.length > 0 ? (
                   <div className="space-y-3">
-                    {calendarEvents.slice(0, 5).map((event) => (
-                      <div key={event.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <div>
+                    {calendarEvents
+                      .slice(0, isMobile && !upcomingEventsExpanded ? 3 : 5)
+                      .map((event) => (
+                      <div 
+                        key={event.id} 
+                        className={cn(
+                          "flex justify-between p-3 bg-gray-50 rounded-lg",
+                          isMobile ? "flex-col space-y-2" : "items-center"
+                        )}
+                      >
+                        <div className={isMobile ? "" : ""}>
                           <p className="font-medium text-gray-900">
                             {event.animals?.name || event.animals?.tag_number}
                           </p>
-                          <p className="text-sm text-gray-600 capitalize">
+                          <p className={cn(
+                            "text-gray-600 capitalize",
+                            isMobile ? "text-xs" : "text-sm"
+                          )}>
                             {event.event_type.replace('_', ' ')}
                           </p>
                         </div>
-                        <div className="text-right">
-                          <p className="text-sm font-medium">
+                        <div className={cn(
+                          isMobile ? "flex justify-between items-center" : "text-right"
+                        )}>
+                          <p className={cn(
+                            "font-medium",
+                            isMobile ? "text-sm" : "text-sm"
+                          )}>
                             {new Date(event.scheduled_date).toLocaleDateString()}
                           </p>
-                          <Badge variant={event.status === 'scheduled' ? 'default' : 'destructive'}>
+                          <Badge 
+                            variant={event.status === 'scheduled' ? 'default' : 'destructive'}
+                            className={isMobile ? "text-xs" : ""}
+                          >
                             {event.status}
                           </Badge>
                         </div>
                       </div>
                     ))}
+                    
+                    {isMobile && !upcomingEventsExpanded && calendarEvents.length > 3 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setUpcomingEventsExpanded(true)}
+                        className="w-full text-sm text-gray-600"
+                      >
+                        Show {calendarEvents.length - 3} more events
+                      </Button>
+                    )}
                   </div>
                 ) : (
                   <div className="text-center py-8">
@@ -222,99 +403,82 @@ export function BreedingDashboard({
               </CardContent>
             </Card>
 
-            {/* Enhanced Quick Actions */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Record Breeding Events</CardTitle>
-                <CardDescription>
-                  Click to record specific breeding activities
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {canManageBreeding ? (
-                  <div className="grid grid-cols-2 gap-4">
-                    {/* Heat Detection Button */}
-                    <Button 
-                      onClick={() => setActiveModal('heat_detection')}
-                      className="h-20 flex-col space-y-2" 
-                      variant="outline"
-                    >
-                      <Heart className="h-6 w-6 text-pink-500" />
-                      <span className="text-sm">Heat Detection</span>
-                    </Button>
-
-                    {/* Insemination Button */}
-                    <Button 
-                      onClick={() => setActiveModal('insemination')}
-                      className="h-20 flex-col space-y-2" 
-                      variant="outline"
-                    >
-                      <Syringe className="h-6 w-6 text-blue-500" />
-                      <span className="text-sm">Insemination</span>
-                    </Button>
-
-                    {/* Pregnancy Check Button */}
-                    <Button 
-                      onClick={() => setActiveModal('pregnancy_check')}
-                      className="h-20 flex-col space-y-2" 
-                      variant="outline"
-                    >
-                      <Stethoscope className="h-6 w-6 text-green-500" />
-                      <span className="text-sm">Pregnancy Check</span>
-                    </Button>
-
-                    {/* Calving Event Button */}
-                    <Button 
-                      onClick={() => setActiveModal('calving')}
-                      className="h-20 flex-col space-y-2" 
-                      variant="outline"
-                    >
-                      <Baby className="h-6 w-6 text-yellow-500" />
-                      <span className="text-sm">Calving Event</span>
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="text-center py-8">
-                    <AlertCircle className="mx-auto h-8 w-8 text-gray-400" />
-                    <p className="mt-2 text-sm text-gray-500">
-                      You don't have permission to record breeding events
-                    </p>
-                  </div>
-                )}
-                
-                {/* Additional Action Buttons */}
-                <div className="mt-4 grid grid-cols-2 gap-4">
-                  <Button asChild variant="ghost" className="text-sm">
-                    <Link href="/dashboard/animals">
-                      View All Animals
-                    </Link>
-                  </Button>
+            {/* Quick Actions - Desktop Only (Mobile version is above) */}
+            {!isMobile && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Record Breeding Events</CardTitle>
+                  <CardDescription>
+                    Click to record specific breeding activities
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {canManageBreeding ? (
+                    <div className="grid grid-cols-2 gap-4">
+                      {quickActionButtons.map((action) => {
+                        const IconComponent = action.icon
+                        return (
+                          <Button
+                            key={action.key}
+                            onClick={() => setActiveModal(action.key as BreedingEventType)}
+                            className="h-20 flex-col space-y-2"
+                            variant="outline"
+                          >
+                            <IconComponent className={cn("h-6 w-6", action.color)} />
+                            <span className="text-sm">{action.label}</span>
+                          </Button>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <AlertCircle className="mx-auto h-8 w-8 text-gray-400" />
+                      <p className="mt-2 text-sm text-gray-500">
+                        You don't have permission to record breeding events
+                      </p>
+                    </div>
+                  )}
                   
-                  <Button asChild variant="ghost" className="text-sm">
-                    <Link href="/dashboard/reports">
-                      Breeding Reports
-                    </Link>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+                  {/* Additional Action Buttons */}
+                  <div className="mt-4 grid grid-cols-2 gap-4">
+                    <Button asChild variant="ghost" className="text-sm">
+                      <Link href="/dashboard/animals">
+                        View All Animals
+                      </Link>
+                    </Button>
+                    
+                    <Button asChild variant="ghost" className="text-sm">
+                      <Link href="/dashboard/reports">
+                        Breeding Reports
+                      </Link>
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
+
+          
         </div>
       )}
 
       {selectedView === 'calendar' && (
-        <BreedingCalendar
-          farmId={farmId}
-          events={calendarEvents}
-          canManage={canManageBreeding}
-        />
+        <div className={cn(isMobile && "pb-4")}>
+          <BreedingCalendar
+            farmId={farmId}
+            events={calendarEvents}
+            canManage={canManageBreeding}
+          />
+        </div>
       )}
 
       {selectedView === 'pregnant' && (
-        <PregnantAnimalsList
-          farmId={farmId}
-          canManage={canManageBreeding}
-        />
+        <div className={cn(isMobile && "pb-4")}>
+          <PregnantAnimalsList
+            farmId={farmId}
+            canManage={canManageBreeding}
+          />
+        </div>
       )}
 
       {/* Individual Breeding Event Modals */}
