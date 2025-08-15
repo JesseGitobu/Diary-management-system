@@ -3,6 +3,39 @@
 
 import { useState, useEffect } from 'react'
 
+
+interface DeviceInfo {
+  isMobile: boolean
+  isTablet: boolean
+  isDesktop: boolean
+  isTouch: boolean
+  viewport: 'mobile' | 'tablet' | 'desktop'
+  inputMode: 'touch' | 'mouse' | 'hybrid'
+}
+
+export function useDeviceInfo(): DeviceInfo {
+  const isMobile = useMediaQuery('(max-width: 768px)')
+  const isTablet = useMediaQuery('(min-width: 769px) and (max-width: 1024px)')
+  const isDesktop = useMediaQuery('(min-width: 1025px)')
+  const isTouch = useTouch()
+
+  const viewport = isMobile ? 'mobile' : isTablet ? 'tablet' : 'desktop'
+  
+  const inputMode = 
+    isTouch && isMobile ? 'touch' : 
+    isTouch && !isMobile ? 'hybrid' : 
+    'mouse'
+
+  return {
+    isMobile,
+    isTablet,
+    isDesktop,
+    isTouch,
+    viewport,
+    inputMode
+  }
+}
+
 export function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(false)
 
@@ -57,34 +90,4 @@ export function useTouch(): boolean {
   return isTouch
 }
 
-interface DeviceInfo {
-  isMobile: boolean
-  isTablet: boolean
-  isDesktop: boolean
-  isTouch: boolean
-  viewport: 'mobile' | 'tablet' | 'desktop'
-  inputMode: 'touch' | 'mouse' | 'hybrid'
-}
 
-export function useDeviceInfo(): DeviceInfo {
-  const isMobile = useMediaQuery('(max-width: 768px)')
-  const isTablet = useMediaQuery('(min-width: 769px) and (max-width: 1024px)')
-  const isDesktop = useMediaQuery('(min-width: 1025px)')
-  const isTouch = useTouch()
-
-  const viewport = isMobile ? 'mobile' : isTablet ? 'tablet' : 'desktop'
-  
-  const inputMode = 
-    isTouch && isMobile ? 'touch' : 
-    isTouch && !isMobile ? 'hybrid' : 
-    'mouse'
-
-  return {
-    isMobile,
-    isTablet,
-    isDesktop,
-    isTouch,
-    viewport,
-    inputMode
-  }
-}

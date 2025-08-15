@@ -1,5 +1,5 @@
-// Mobile-Optimized HealthRecordsContent.tsx
-// src/components/health/HealthRecordsContent.tsx
+// Mobile-Optimized HealthDashboard.tsx
+// src/components/health/HealthDashboard.tsx
 
 'use client'
 
@@ -12,6 +12,8 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Input } from '@/components/ui/Input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
+
+import { HealthStatsCards } from '@/components/health/HealthStatsCards'
 
 // Existing modals
 import { AddHealthRecordModal } from '@/components/health/AddHealthRecordModal'
@@ -63,19 +65,28 @@ import {
   Zap,
   CalendarCheck
 } from 'lucide-react'
+import { LoadingSpinner } from '../ui/LoadingSpinner'
 
 interface HealthRecordsContentProps {
   user: any
   userRole: any
   animals: any[]
   healthRecords: any[]
-  healthStats: any
+  healthStats: {
+    totalHealthRecords: number
+    veterinariansRegistered: number
+    protocolsRecorded: number
+    outbreaksReported: number
+    vaccinationsAdministered: number
+    upcomingTasks: number
+  }
   upcomingTasks: any[]
   veterinarians?: any[]
   protocols?: any[]
   outbreaks?: any[]
   vaccinations?: any[]
   vetVisits?: any[]
+
 }
 
 export function HealthRecordsContent({
@@ -83,7 +94,7 @@ export function HealthRecordsContent({
   userRole,
   animals = [],
   healthRecords: initialHealthRecords = [],
-  healthStats = {},
+  healthStats,
   upcomingTasks = [],
   veterinarians: initialVeterinarians = [],
   protocols: initialProtocols = [],
@@ -92,7 +103,7 @@ export function HealthRecordsContent({
   vetVisits: initialVetVisits = []
 }: HealthRecordsContentProps) {
   // Get device info for responsive behavior
-  const { isMobile, isTablet,  } = useDeviceInfo()
+  const { isMobile, isTablet, } = useDeviceInfo()
 
   // State management for all data types
   const [healthRecords, setHealthRecords] = useState(
@@ -113,7 +124,7 @@ export function HealthRecordsContent({
   const [vetVisits, setVetVisits] = useState(
     Array.isArray(initialVetVisits) ? initialVetVisits : []
   )
-  
+
   const [loading, setLoading] = useState(false)
 
   // Modal states
@@ -147,28 +158,19 @@ export function HealthRecordsContent({
   const [selectedAnimalFilter, setSelectedAnimalFilter] = useState('')
 
   // Permission checks
-  const canAddRecords = userRole?.role_type && 
+  const canAddRecords = userRole?.role_type &&
     ['farm_owner', 'farm_manager', 'worker'].includes(userRole.role_type)
-  const canManageProtocols = userRole?.role_type && 
+  const canManageProtocols = userRole?.role_type &&
     ['farm_owner', 'farm_manager'].includes(userRole.role_type)
 
-  // Safe health stats with defaults
-  const safeHealthStats = {
-    totalRecords: healthStats?.totalRecords || 0,
-    upcomingTasks: healthStats?.upcomingTasks || 0,
-    overdueCount: healthStats?.overdueCount || 0,
-    totalVeterinarians: veterinarians.length,
-    totalProtocols: protocols.length,
-    activeOutbreaks: outbreaks.filter(o => o.status === 'active').length,
-    totalVaccinations: vaccinations.length,
-    upcomingVisits: vetVisits.filter(v => new Date(v.scheduled_datetime) > new Date()).length,
-    ...healthStats
-  }
+  useEffect(() => {
+    refreshHealthData()
+  }, []) // Run once when component mounts
 
   // Filtered data for each tab (same as original)
   const filteredHealthRecords = useMemo(() => {
     if (!Array.isArray(healthRecords)) return []
-    
+
     let filtered = [...healthRecords]
     const searchTerm = searchTerms['health-records'].toLowerCase()
 
@@ -197,7 +199,7 @@ export function HealthRecordsContent({
 
   const filteredVeterinarians = useMemo(() => {
     if (!Array.isArray(veterinarians)) return []
-    
+
     const searchTerm = searchTerms['veterinarians'].toLowerCase()
     if (!searchTerm) return veterinarians
 
@@ -213,7 +215,7 @@ export function HealthRecordsContent({
 
   const filteredProtocols = useMemo(() => {
     if (!Array.isArray(protocols)) return []
-    
+
     const searchTerm = searchTerms['protocols'].toLowerCase()
     if (!searchTerm) return protocols
 
@@ -229,7 +231,7 @@ export function HealthRecordsContent({
 
   const filteredOutbreaks = useMemo(() => {
     if (!Array.isArray(outbreaks)) return []
-    
+
     const searchTerm = searchTerms['outbreaks'].toLowerCase()
     if (!searchTerm) return outbreaks
 
@@ -245,7 +247,7 @@ export function HealthRecordsContent({
 
   const filteredVaccinations = useMemo(() => {
     if (!Array.isArray(vaccinations)) return []
-    
+
     const searchTerm = searchTerms['vaccinations'].toLowerCase()
     if (!searchTerm) return vaccinations
 
@@ -261,7 +263,7 @@ export function HealthRecordsContent({
 
   const filteredVetVisits = useMemo(() => {
     if (!Array.isArray(vetVisits)) return []
-    
+
     const searchTerm = searchTerms['vet-visits'].toLowerCase()
     if (!searchTerm) return vetVisits
 
@@ -327,57 +329,7 @@ export function HealthRecordsContent({
     }
   ]
 
-  // Mobile-optimized stats configuration
-  const statsConfig = [
-    {
-      title: 'Records',
-      value: safeHealthStats.totalRecords,
-      icon: Activity,
-      color: 'text-blue-600',
-      bgColor: 'bg-blue-50',
-      description: 'Health events'
-    },
-    {
-      title: 'Veterinarians',
-      value: safeHealthStats.totalVeterinarians,
-      icon: Stethoscope,
-      color: 'text-indigo-600',
-      bgColor: 'bg-indigo-50',
-      description: 'Registered'
-    },
-    {
-      title: 'Protocols',
-      value: safeHealthStats.totalProtocols,
-      icon: BookOpen,
-      color: 'text-purple-600',
-      bgColor: 'bg-purple-50',
-      description: 'Active'
-    },
-    {
-      title: 'Outbreaks',
-      value: safeHealthStats.activeOutbreaks,
-      icon: AlertTriangle,
-      color: 'text-red-600',
-      bgColor: 'bg-red-50',
-      description: 'Active'
-    },
-    {
-      title: 'Vaccinations',
-      value: safeHealthStats.totalVaccinations,
-      icon: Syringe,
-      color: 'text-green-600',
-      bgColor: 'bg-green-50',
-      description: 'Recorded'
-    },
-    {
-      title: 'Upcoming',
-      value: safeHealthStats.upcomingTasks,
-      icon: Clock,
-      color: 'text-blue-600',
-      bgColor: 'bg-blue-50',
-      description: 'Tasks'
-    }
-  ]
+
 
   // Mobile action sheet configuration
   const actionSheetItems = [
@@ -493,37 +445,63 @@ export function HealthRecordsContent({
     }
     setShowVeterinarianModal(false)
     toast.success('Veterinarian added successfully!')
-    await refreshVeterinariansData()
+    await refreshHealthData()
   }
 
   // Data refresh functions (same as original)
   const refreshHealthData = async () => {
-    setLoading(true)
-    try {
-      const response = await fetch('/api/health/records')
-      if (response.ok) {
-        const data = await response.json()
-        setHealthRecords(Array.isArray(data.healthRecords) ? data.healthRecords : [])
-      }
-    } catch (error) {
-      console.error('Error refreshing health data:', error)
-      toast.error('Failed to refresh data')
-    } finally {
-      setLoading(false)
-    }
-  }
+  setLoading(true)
+  try {
+    // Fetch all data in parallel using Promise.all
+    const [
+      healthRecordsRes,
+      veterinariansRes,
+      protocolsRes,
+      outbreaksRes,
+      vaccinationsRes,
+      vetVisitsRes
+    ] = await Promise.all([
+      fetch('/api/health/records'),
+      fetch('/api/health/veterinarians'),
+      fetch('/api/health/protocols'),
+      fetch('/api/health/outbreaks'),
+      fetch('/api/health/vaccinations'),
+      fetch('/api/health/visits')
+    ])
 
-  const refreshVeterinariansData = async () => {
-    try {
-      const response = await fetch('/api/health/veterinarians')
-      if (response.ok) {
-        const data = await response.json()
-        setVeterinarians(Array.isArray(data.veterinarians) ? data.veterinarians : [])
-      }
-    } catch (error) {
-      console.error('Error refreshing veterinarians data:', error)
-    }
+    // Process all responses in parallel
+    const [
+      healthData,
+      veterinariansData,
+      protocolsData,
+      outbreaksData,
+      vaccinationsData,
+      vetVisitsData
+    ] = await Promise.all([
+      healthRecordsRes.ok ? healthRecordsRes.json() : { HealthRecords: [] },
+      veterinariansRes.ok ? veterinariansRes.json() : { Veterinarians: [] },
+      protocolsRes.ok ? protocolsRes.json() : { Protocols: [] },
+      outbreaksRes.ok ? outbreaksRes.json() : { Outbreaks: [] },
+      vaccinationsRes.ok ? vaccinationsRes.json() : { Vaccinations: [] },
+      vetVisitsRes.ok ? vetVisitsRes.json() : { VetVisits: [] }
+    ])
+
+    // Update all state variables
+    setHealthRecords(healthData.healthRecords || [])
+    setVeterinarians(veterinariansData.veterinarians || [])
+    setProtocols(protocolsData.protocols || [])
+    setOutbreaks(outbreaksData.outbreaks || [])
+    setVaccinations(vaccinationsData.vaccinations || [])
+    setVetVisits(vetVisitsData.visits || [])
+  } catch (error) {
+    console.error('Error refreshing health data:', error)
+    toast.error('Failed to refresh data')
+  } finally {
+    setLoading(false)
   }
+}
+
+  
 
   // Helper functions (same as original - truncated for brevity)
   const createVisitReminder = async (visit: any) => {
@@ -668,7 +646,7 @@ export function HealthRecordsContent({
 
                   <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200">
                     <div className="py-2">
-                      {canAddRecords && (
+                      {!loading && canAddRecords && (
                         <>
                           <button
                             onClick={() => setShowVaccinationModal(true)}
@@ -696,7 +674,7 @@ export function HealthRecordsContent({
                         </>
                       )}
 
-                      {canManageProtocols && (
+                      {!loading && canManageProtocols && (
                         <>
                           <button
                             onClick={() => setShowProtocolModal(true)}
@@ -719,7 +697,7 @@ export function HealthRecordsContent({
                   </div>
                 </div>
 
-                {canAddRecords && (
+                {!loading && canAddRecords && (
                   <Button onClick={() => setShowAddModal(true)} size="lg">
                     <Plus className="mr-2 h-5 w-5" />
                     Add Health Record
@@ -733,24 +711,9 @@ export function HealthRecordsContent({
 
       {/* Mobile-Optimized Scrollable Stats */}
       <div className={`${isMobile ? 'px-4' : ''}`}>
-        {isMobile ? (
-          <MobileStatsScroller stats={statsConfig} />
-        ) : (
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
-            {statsConfig.map((stat, index) => (
-              <Card key={index}>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
-                  <stat.icon className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className={`text-xl font-bold ${stat.color}`}>{stat.value}</div>
-                  <p className="text-xs text-muted-foreground">{stat.description}</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
+        {/* Stats Cards */}
+        <HealthStatsCards stats={healthStats} />
+
       </div>
 
       {/* Upcoming Tasks Section */}
@@ -777,9 +740,9 @@ export function HealthRecordsContent({
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             {/* Mobile Tab Bar */}
             {isMobile ? (
-              <MobileTabBar 
-                tabs={tabs} 
-                activeTab={activeTab} 
+              <MobileTabBar
+                tabs={tabs}
+                activeTab={activeTab}
                 onTabChange={setActiveTab}
               />
             ) : (
@@ -787,8 +750,8 @@ export function HealthRecordsContent({
                 {tabs.map((tab) => {
                   const Icon = tab.icon
                   return (
-                    <TabsTrigger 
-                      key={tab.id} 
+                    <TabsTrigger
+                      key={tab.id}
                       value={tab.id}
                       className="flex items-center space-x-2"
                     >
@@ -951,7 +914,7 @@ export function HealthRecordsContent({
                   />
                 </div>
                 {canManageProtocols && (
-                  <Button 
+                  <Button
                     onClick={() => setShowVeterinarianModal(true)}
                     size={isMobile ? "sm" : "default"}
                   >
@@ -1014,7 +977,7 @@ export function HealthRecordsContent({
                   />
                 </div>
                 {canManageProtocols && (
-                  <Button 
+                  <Button
                     onClick={() => setShowProtocolModal(true)}
                     size={isMobile ? "sm" : "default"}
                   >
@@ -1077,9 +1040,9 @@ export function HealthRecordsContent({
                   />
                 </div>
                 {canManageProtocols && (
-                  <Button 
-                    onClick={() => setShowOutbreakModal(true)} 
-                    variant="outline" 
+                  <Button
+                    onClick={() => setShowOutbreakModal(true)}
+                    variant="outline"
                     className="border-red-300 text-red-600 hover:bg-red-50"
                     size={isMobile ? "sm" : "default"}
                   >
@@ -1094,6 +1057,7 @@ export function HealthRecordsContent({
                   </Button>
                 )}
               </div>
+              
 
               {filteredOutbreaks.length === 0 ? (
                 <div className="text-center py-12">
@@ -1136,8 +1100,8 @@ export function HealthRecordsContent({
                   />
                 </div>
                 {canAddRecords && (
-                  <Button 
-                    onClick={() => setShowVaccinationModal(true)} 
+                  <Button
+                    onClick={() => setShowVaccinationModal(true)}
                     className="bg-green-600 hover:bg-green-700"
                     size={isMobile ? "sm" : "default"}
                   >
@@ -1200,8 +1164,8 @@ export function HealthRecordsContent({
                   />
                 </div>
                 {canAddRecords && (
-                  <Button 
-                    onClick={() => setShowScheduleVisitModal(true)} 
+                  <Button
+                    onClick={() => setShowScheduleVisitModal(true)}
                     className="bg-orange-600 hover:bg-orange-700"
                     size={isMobile ? "sm" : "default"}
                   >
@@ -1308,7 +1272,7 @@ export function HealthRecordsContent({
           onVaccinationRecorded={handleVaccinationScheduled}
         />
       )}
- 
+
       {showScheduleVisitModal && (
         <ScheduleVisitModal
           farmId={userRole?.farm_id}
@@ -1328,6 +1292,15 @@ export function HealthRecordsContent({
           existingVeterinarians={veterinarians}
         />
       )}
+
+      
+      {loading && (
+        <div className="fixed top-4 right-4 z-50 bg-white rounded-lg shadow-lg p-4 flex items-center space-x-2">
+          <LoadingSpinner size="sm" />
+          <span className="text-sm text-gray-600">Updating stats...</span>
+        </div>
+      )}
+      
     </div>
   )
 }

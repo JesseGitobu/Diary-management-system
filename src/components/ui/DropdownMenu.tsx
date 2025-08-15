@@ -64,6 +64,26 @@ export function DropdownMenuTrigger({ children, className, asChild = false }: Dr
     e.stopPropagation()
     setIsOpen(!isOpen)
   }
+
+   if (asChild) {
+    // Clone the child element and inject the props directly
+    const child = children as React.ReactElement<{ onClick?: (e: React.MouseEvent) => void, className?: string, 'aria-expanded'?: boolean, 'aria-haspopup'?: string }>
+    return React.cloneElement(child, {
+      onClick: (e: React.MouseEvent) => {
+        child.props?.onClick?.(e) // preserve child onClick if any
+        handleClick(e)
+      },
+      className: cn(
+        "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        "disabled:pointer-events-none disabled:opacity-50",
+        className,
+        React.isValidElement(children) ? (children.props as { className?: string })?.className : undefined
+      ),
+      "aria-expanded": isOpen,
+      "aria-haspopup": "true",
+    })
+  }
   
   
   

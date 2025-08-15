@@ -11,18 +11,20 @@ import { Label } from '@/components/ui/Label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 
+// Updated schema to handle null values properly
 const productionSchema = z.object({
   animal_id: z.string().min(1, 'Please select an animal'),
   record_date: z.string().min(1, 'Date is required'),
   milking_session: z.enum(['morning', 'afternoon', 'evening']),
   milk_volume: z.number().min(0, 'Volume must be positive').max(100, 'Volume seems too high'),
-  fat_content: z.number().min(0).max(10).optional(),
-  protein_content: z.number().min(0).max(10).optional(),
-  somatic_cell_count: z.number().min(0).optional(),
-  lactose_content: z.number().min(0).max(10).optional(),
-  temperature: z.number().min(0).max(50).optional(),
-  ph_level: z.number().min(6).max(8).optional(),
-  notes: z.string().optional(),
+  // Allow null values explicitly for optional fields
+  fat_content: z.number().min(0).max(10).nullable().optional(),
+  protein_content: z.number().min(0).max(10).nullable().optional(),
+  somatic_cell_count: z.number().min(0).nullable().optional(),
+  lactose_content: z.number().min(0).max(10).nullable().optional(),
+  temperature: z.number().min(0).max(50).nullable().optional(),
+  ph_level: z.number().min(6).max(8).nullable().optional(),
+  notes: z.string().nullable().optional(),
 })
 
 type ProductionFormData = z.infer<typeof productionSchema>
@@ -53,28 +55,46 @@ export function ProductionEntryForm({
       record_date: initialData?.record_date || new Date().toISOString().split('T')[0],
       milking_session: initialData?.milking_session || 'morning',
       milk_volume: initialData?.milk_volume || undefined,
-      fat_content: initialData?.fat_content || undefined,
-      protein_content: initialData?.protein_content || undefined,
-      somatic_cell_count: initialData?.somatic_cell_count || undefined,
-      lactose_content: initialData?.lactose_content || undefined,
-      temperature: initialData?.temperature || undefined,
-      ph_level: initialData?.ph_level || undefined,
+      fat_content: initialData?.fat_content || null,
+      protein_content: initialData?.protein_content || null,
+      somatic_cell_count: initialData?.somatic_cell_count || null,
+      lactose_content: initialData?.lactose_content || null,
+      temperature: initialData?.temperature || null,
+      ph_level: initialData?.ph_level || null,
       notes: initialData?.notes || '',
     },
   })
+  
+  // Function to convert empty strings to null for numeric fields
+  const preprocessFormData = (data: ProductionFormData) => {
+    return {
+      ...data,
+      fat_content: data.fat_content === undefined ? null : data.fat_content,
+      protein_content: data.protein_content === undefined ? null : data.protein_content,
+      somatic_cell_count: data.somatic_cell_count === undefined ? null : data.somatic_cell_count,
+      lactose_content: data.lactose_content === undefined ? null : data.lactose_content,
+      temperature: data.temperature === undefined ? null : data.temperature,
+      ph_level: data.ph_level === undefined ? null : data.ph_level,
+
+      notes: data.notes === '' ? null : data.notes,
+    }
+  }
   
   const handleSubmit = async (data: ProductionFormData) => {
     setLoading(true)
     setError(null)
     
     try {
+      // Preprocess the data to handle null values
+      const processedData = preprocessFormData(data)
+      
       const response = await fetch('/api/production', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          ...data,
+          ...processedData,
           farm_id: farmId,
         }),
       })
@@ -90,11 +110,19 @@ export function ProductionEntryForm({
         router.push('/dashboard/production')
       }
       
-      // Reset form for next entry
+      // Reset form for next entry with null defaults for optional fields
       form.reset({
         animal_id: '',
         record_date: new Date().toISOString().split('T')[0],
         milking_session: 'morning',
+        milk_volume: undefined,
+        fat_content: null,
+        protein_content: null,
+        somatic_cell_count: null,
+        lactose_content: null,
+        temperature: null,
+        ph_level: null,
+        notes: '',
       })
       
     } catch (err) {
@@ -191,7 +219,10 @@ export function ProductionEntryForm({
                 id="fat_content"
                 type="number"
                 step="0.01"
-                {...form.register('fat_content', { valueAsNumber: true })}
+                {...form.register('fat_content', { 
+                  valueAsNumber: true,
+                  setValueAs: (value) => value === '' ? null : parseFloat(value) || null
+                })}
                 error={form.formState.errors.fat_content?.message}
                 placeholder="e.g., 3.75"
               />
@@ -205,7 +236,10 @@ export function ProductionEntryForm({
                 id="protein_content"
                 type="number"
                 step="0.01"
-                {...form.register('protein_content', { valueAsNumber: true })}
+                {...form.register('protein_content', { 
+                  valueAsNumber: true,
+                  setValueAs: (value) => value === '' ? null : parseFloat(value) || null
+                })}
                 error={form.formState.errors.protein_content?.message}
                 placeholder="e.g., 3.25"
               />
@@ -216,7 +250,10 @@ export function ProductionEntryForm({
               <Input
                 id="somatic_cell_count"
                 type="number"
-                {...form.register('somatic_cell_count', { valueAsNumber: true })}
+                {...form.register('somatic_cell_count', { 
+                  valueAsNumber: true,
+                  setValueAs: (value) => value === '' ? null : parseInt(value) || null
+                })}
                 error={form.formState.errors.somatic_cell_count?.message}
                 placeholder="e.g., 200000"
               />
@@ -231,7 +268,10 @@ export function ProductionEntryForm({
                 id="lactose_content"
                 type="number"
                 step="0.01"
-                {...form.register('lactose_content', { valueAsNumber: true })}
+                {...form.register('lactose_content', { 
+                  valueAsNumber: true,
+                  setValueAs: (value) => value === '' ? null : parseFloat(value) || null
+                })}
                 error={form.formState.errors.lactose_content?.message}
                 placeholder="e.g., 4.8"
               />
@@ -243,7 +283,10 @@ export function ProductionEntryForm({
                 id="temperature"
                 type="number"
                 step="0.1"
-                {...form.register('temperature', { valueAsNumber: true })}
+                {...form.register('temperature', { 
+                  valueAsNumber: true,
+                  setValueAs: (value) => value === '' ? null : parseFloat(value) || null
+                })}
                 error={form.formState.errors.temperature?.message}
                 placeholder="e.g., 37.5"
               />
@@ -255,7 +298,10 @@ export function ProductionEntryForm({
                 id="ph_level"
                 type="number"
                 step="0.1"
-                {...form.register('ph_level', { valueAsNumber: true })}
+                {...form.register('ph_level', { 
+                  valueAsNumber: true,
+                  setValueAs: (value) => value === '' ? null : parseFloat(value) || null
+                })}
                 error={form.formState.errors.ph_level?.message}
                 placeholder="e.g., 6.7"
               />
@@ -266,7 +312,9 @@ export function ProductionEntryForm({
             <Label htmlFor="notes">Notes</Label>
             <textarea
               id="notes"
-              {...form.register('notes')}
+              {...form.register('notes', {
+                setValueAs: (value) => value === '' ? null : value
+              })}
               rows={3}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
               placeholder="Any additional notes about this milking session..."

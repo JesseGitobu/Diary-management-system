@@ -11,6 +11,12 @@ export interface DiseaseOutbreak {
   quarantine_area?: string
   notes?: string
   created_by: string
+  description: string
+  disease_type: string
+  first_detected_date: string
+  outbreak_name: string
+  severity_level: string
+  symptoms: string[]
 }
 
 export interface AnimalDiseaseRecord {

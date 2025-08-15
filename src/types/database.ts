@@ -507,12 +507,12 @@ export interface ProductionStats {
   topProducers: AnimalWithProduction[]
 }
 
-export interface HealthStats {
-  healthyAnimals: number
-  animalsNeedingAttention: number
-  upcomingVaccinations: number
-  recentTreatments: number
-}
+// export interface HealthStats {
+//   healthyAnimals: number
+//   animalsNeedingAttention: number
+//   upcomingVaccinations: number
+//   recentTreatments: number
+// }
 
 // Report types
 export interface ProductionReport {
@@ -1163,14 +1163,18 @@ export interface ProtocolWithAnimals extends HealthProtocol {
 // ============================================================================
 
 export interface HealthStats {
-  totalRecords: number
-  upcomingTasks: number
-  overdueCount: number
-  recentRecords: number
-  vaccinationsDue: number
-  activeOutbreaks: number
-  scheduledVisits: number
-  activeProtocols: number
+  totalHealthRecords: number
+  veterinariansRegistered: number
+    protocolsRecorded: number
+    outbreaksReported: number
+    vaccinationsAdministered: number
+    upcomingTasks: number
+  // overdueCount: number
+  // recentRecords: number
+  // vaccinationsDue: number
+  // activeOutbreaks: number
+  // scheduledVisits: number
+  // activeProtocols: number
 }
 
 export interface UpcomingTask {

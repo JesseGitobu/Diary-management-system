@@ -6,7 +6,8 @@ import { getUserRole } from '@/lib/database/auth'
 import { getFarmAnimals } from '@/lib/database/animals'
 import { getAnimalHealthRecords, getHealthStats, getUpcomingHealthTasks } from '@/lib/database/health'
 import { redirect } from 'next/navigation'
-import { HealthRecordsContent } from '@/components/health/HealthDashboard'
+import { HealthDashboardWrapper } from '@/components/health/HealthDashboardWrapper'
+// import { HealthRecordsContent } from '@/components/health/HealthDashboard'
 
 export default async function HealthRecordsPage() {
   const user = await getCurrentUser()
@@ -31,12 +32,16 @@ export default async function HealthRecordsPage() {
   
   return (
     <div className="dashboard-container">
-      <HealthRecordsContent
+      <HealthDashboardWrapper
         user={user}
         userRole={userRole}
+        farmId={userRole.farm_id}
         animals={animals}
         healthRecords={healthRecords}
-        healthStats={healthStats}
+        initialHealthStats={{
+          ...healthStats,
+          protocolsRecorded: healthStats.protocolsRecorded,
+        }}
         upcomingTasks={upcomingTasks}
       />
     </div>

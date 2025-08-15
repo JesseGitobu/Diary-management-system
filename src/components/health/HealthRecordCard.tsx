@@ -1,4 +1,3 @@
-// Health Record Card Component
 // src/components/health/HealthRecordCard.tsx
 
 'use client'
@@ -15,6 +14,7 @@ import {
   Clock,
   AlertTriangle 
 } from 'lucide-react'
+import { format } from 'date-fns'
 
 interface HealthRecordCardProps {
   record: {
@@ -41,7 +41,7 @@ interface HealthRecordCardProps {
   isMobile?: boolean
 }
 
-export function HealthRecordCard({ record, onEdit, onDelete, canEdit, isMobile }: HealthRecordCardProps) {
+export function HealthRecordCard({ record, onEdit, onDelete, canEdit }: HealthRecordCardProps) {
   const getRecordTypeIcon = (type: string) => {
     switch (type) {
       case 'vaccination': return '💉'
@@ -71,6 +71,12 @@ export function HealthRecordCard({ record, onEdit, onDelete, canEdit, isMobile }
       case 'low': return 'text-green-600'
       default: return 'text-gray-600'
     }
+  }
+
+  // ✅ Consistent date formatting everywhere
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return ''
+    return format(new Date(dateString), 'MM/dd/yyyy')
   }
   
   const isOverdue = record.next_due_date && new Date(record.next_due_date) < new Date()
@@ -148,7 +154,7 @@ export function HealthRecordCard({ record, onEdit, onDelete, canEdit, isMobile }
         <div className="flex items-center justify-between text-sm">
           <div className="flex items-center space-x-1 text-gray-600">
             <Calendar className="w-4 h-4" />
-            <span>{new Date(record.record_date).toLocaleDateString()}</span>
+            <span>{formatDate(record.record_date)}</span>
           </div>
           
           {record.veterinarian && (
@@ -183,7 +189,7 @@ export function HealthRecordCard({ record, onEdit, onDelete, canEdit, isMobile }
             )}
             <span>
               {isOverdue ? 'Overdue: ' : 'Next due: '}
-              {new Date(record.next_due_date).toLocaleDateString()}
+              {formatDate(record.next_due_date)}
             </span>
           </div>
         )}

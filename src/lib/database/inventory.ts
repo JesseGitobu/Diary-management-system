@@ -1,5 +1,6 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { InventoryItem, InventoryTransaction, Supplier } from '@/types/database'
+import { getSupabaseClient } from '../supabase/client'
 
 export async function getInventoryItems(
   farmId: string,
@@ -216,5 +217,146 @@ export async function getInventoryStats(farmId: string) {
       expiringItems: 0,
       totalValue: 0,
     }
+  }
+}
+// lib/database/inventory.ts
+export async function getAvailableVolume(farmId: string): Promise<number> {
+  try {
+    const supabase = await createServerSupabaseClient()
+    
+    // Try to use the database function first
+    const { data, error } = await supabase
+      .rpc('get_available_volume', { 
+        target_farm_id: farmId,
+        check_date: new Date().toISOString().split('T')[0]
+      })
+
+    if (error) {
+      console.log('Database function not available, using fallback calculation')
+    } else {
+      return data || 0
+    }
+  } catch (error) {
+    console.log('RPC function error, using fallback calculation')
+  }
+  
+  // Fallback calculation
+  try {
+    const supabase = await createServerSupabaseClient()
+    
+    // Get total production for today and yesterday (available for distribution)
+    const today = new Date()
+    const yesterday = new Date()
+    yesterday.setDate(today.getDate() - 1)
+    
+    const todayStr = today.toISOString().split('T')[0]
+    const yesterdayStr = yesterday.toISOString().split('T')[0]
+
+    // Get production records for available dates
+    const { data: production, error: productionError } = await supabase
+      .from('production_records')
+      .select('milk_volume')
+      .eq('farm_id', farmId)
+      .in('record_date', [todayStr, yesterdayStr])
+
+    if (productionError) throw productionError
+
+    const totalProduced = production?.reduce((sum, record) => sum + record.milk_volume, 0) || 0
+
+    // Get distributed volume for the same period
+    const { data: distributed, error: distributionError } = await supabase
+      .from('distribution_records')
+      .select('volume')
+      .eq('farm_id', farmId)
+      .in('delivery_date', [todayStr, yesterdayStr])
+
+    if (distributionError) throw distributionError
+
+    const totalDistributed = distributed?.reduce((sum, record) => sum + record.volume, 0) || 0
+
+    // Calculate available volume (produced but not yet distributed)
+    const availableVolume = Math.max(0, totalProduced - totalDistributed)
+
+    return availableVolume
+  } catch (fallbackError) {
+    console.error('Fallback calculation failed:', fallbackError)
+    return 0
+  }
+}
+
+// Client-side functions for components
+export async function createDistributionRecord(data: {
+  farmId: string
+  channelId: string
+  volume: number
+  pricePerLiter: number
+  totalAmount: number
+  deliveryDate: string
+  deliveryTime?: string
+  driverName: string
+  vehicleNumber?: string
+  paymentMethod: string
+  expectedPaymentDate?: string
+  notes?: string
+  status: 'pending' | 'delivered' | 'paid'
+}) {
+  try {
+    const supabase = getSupabaseClient()
+    
+    const { data: record, error } = await supabase
+      .from('distribution_records')
+      .insert({
+        farm_id: data.farmId,
+        channel_id: data.channelId,
+        volume: data.volume,
+        price_per_liter: data.pricePerLiter,
+        total_amount: data.totalAmount,
+        delivery_date: data.deliveryDate,
+        delivery_time: data.deliveryTime,
+        driver_name: data.driverName,
+        vehicle_number: data.vehicleNumber,
+        payment_method: data.paymentMethod,
+        expected_payment_date: data.expectedPaymentDate,
+        notes: data.notes,
+        status: data.status
+      })
+      .select()
+      .single()
+
+    if (error) throw error
+
+    return record
+  } catch (error) {
+    console.error('Error creating distribution record:', error)
+    throw error
+  }
+}
+
+export async function updateDistributionRecord(
+  recordId: string,
+  updates: Partial<{
+    status: 'pending' | 'delivered' | 'paid'
+    actual_delivery_time: string
+    payment_date: string
+    payment_reference: string
+    notes: string
+  }>
+) {
+  try {
+    const supabase = getSupabaseClient()
+    
+    const { data: record, error } = await supabase
+      .from('distribution_records')
+      .update(updates)
+      .eq('id', recordId)
+      .select()
+      .single()
+
+    if (error) throw error
+
+    return record
+  } catch (error) {
+    console.error('Error updating distribution record:', error)
+    throw error
   }
 }

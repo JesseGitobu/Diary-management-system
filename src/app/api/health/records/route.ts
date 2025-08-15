@@ -2,9 +2,10 @@
 // src/app/api/health/records/route.ts
 
 import { NextRequest, NextResponse } from 'next/server'
+import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
-import { createHealthRecord, getAnimalHealthRecords } from '@/lib/database/health'
+import { createHealthRecord } from '@/lib/database/health'
 
 export async function POST(request: NextRequest) {
   try {
@@ -78,27 +79,49 @@ export async function GET(request: NextRequest) {
     const userRole = await getUserRole(user.id)
     
     if (!userRole?.farm_id) {
-      return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
+      return NextResponse.json({ error: 'No farm associated' }, { status: 400 })
     }
+
+    const supabase = await createServerSupabaseClient()
     
-    const { searchParams } = new URL(request.url)
-    const animalId = searchParams.get('animal_id')
-    const recordType = searchParams.get('record_type')
-    const limit = parseInt(searchParams.get('limit') || '50')
-    
-    const records = await getAnimalHealthRecords(userRole.farm_id, {
-      animalId: animalId || undefined,
-      recordType: recordType || undefined,
-      limit
-    })
-    
+    // First, get the animal IDs for the user's farm
+    const { data: animalIdsData, error: animalIdsError } = await supabase
+      .from('animals')
+      .select('id')
+      .eq('farm_id', userRole.farm_id);
+
+    if (animalIdsError) {
+      console.error('Error fetching animal IDs:', animalIdsError);
+      return NextResponse.json({ error: 'Failed to fetch animal IDs' }, { status: 500 });
+    }
+
+    const animalIds = (animalIdsData ?? []).map((a: { id: string }) => a.id);
+
+    const { data: healthRecords, error } = await supabase
+      .from('animal_health_records')
+      .select(`
+        *,
+        animals (
+          id,
+          name,
+          tag_number
+        )
+      `)
+      .in('animal_id', animalIds)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching health records:', error)
+      return NextResponse.json({ error: 'Failed to fetch health records' }, { status: 500 })
+    }
+
     return NextResponse.json({ 
       success: true, 
-      records 
+      healthRecords: healthRecords || [] 
     })
     
   } catch (error) {
-    console.error('Health records GET API error:', error)
+    console.error('Health records API error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

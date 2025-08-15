@@ -12,13 +12,13 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 
 const feedTypeSchema = z.object({
   name: z.string().min(2, 'Feed name must be at least 2 characters'),
-  description: z.string().optional(),
-  typical_cost_per_kg: z.number().min(0, 'Cost must be positive').optional(),
-  supplier: z.string().optional(),
-  protein_content: z.number().min(0).max(100).optional(),
-  energy_content: z.number().min(0).optional(),
-  fiber_content: z.number().min(0).max(100).optional(),
-  fat_content: z.number().min(0).max(100).optional(),
+  description: z.string().nullable().optional(),
+  typical_cost_per_kg: z.number().min(0, 'Cost must be positive').nullable().optional(),
+  supplier: z.string().nullable().optional(),
+  protein_content: z.number().min(0).max(100).nullable().optional(),
+  energy_content: z.number().min(0).nullable().optional(),
+  fiber_content: z.number().min(0).max(100).nullable().optional(),
+  fat_content: z.number().min(0).max(100).nullable().optional(),
 })
 
 type FeedTypeFormData = z.infer<typeof feedTypeSchema>
@@ -44,12 +44,12 @@ export function AddFeedTypeModal({
     defaultValues: {
       name: '',
       description: '',
-      typical_cost_per_kg: undefined,
+      typical_cost_per_kg: null,
       supplier: '',
-      protein_content: undefined,
-      energy_content: undefined,
-      fiber_content: undefined,
-      fat_content: undefined,
+      protein_content: null,
+      energy_content: null,
+      fiber_content: null,
+      fat_content: null,
     },
   })
   
@@ -160,7 +160,9 @@ export function AddFeedTypeModal({
                 id="typical_cost_per_kg"
                 type="number"
                 step="0.01"
-                {...form.register('typical_cost_per_kg', { valueAsNumber: true })}
+                {...form.register('typical_cost_per_kg', { 
+                  setValueAs: (v: string) => v === "" ? null : Number(v)
+                })}
                 error={form.formState.errors.typical_cost_per_kg?.message}
                 placeholder="e.g., 0.45"
               />
@@ -181,7 +183,9 @@ export function AddFeedTypeModal({
                   id="protein_content"
                   type="number"
                   step="0.1"
-                  {...form.register('protein_content', { valueAsNumber: true })}
+                  {...form.register('protein_content', { 
+                    setValueAs: (v: string) => v === "" ? null : Number(v)
+                  })}
                   error={form.formState.errors.protein_content?.message}
                   placeholder="e.g., 18.5"
                 />
@@ -193,7 +197,9 @@ export function AddFeedTypeModal({
                   id="fat_content"
                   type="number"
                   step="0.1"
-                  {...form.register('fat_content', { valueAsNumber: true })}
+                  {...form.register('fat_content', { 
+                    setValueAs: (v: string) => v === "" ? null : Number(v)
+                  })}
                   error={form.formState.errors.fat_content?.message}
                   placeholder="e.g., 3.2"
                 />
@@ -205,7 +211,9 @@ export function AddFeedTypeModal({
                   id="fiber_content"
                   type="number"
                   step="0.1"
-                  {...form.register('fiber_content', { valueAsNumber: true })}
+                  {...form.register('fiber_content', { 
+                    setValueAs: (v: string) => v === "" ? null : Number(v)
+                  })}
                   error={form.formState.errors.fiber_content?.message}
                   placeholder="e.g., 25.0"
                 />
@@ -217,7 +225,9 @@ export function AddFeedTypeModal({
                   id="energy_content"
                   type="number"
                   step="0.1"
-                  {...form.register('energy_content', { valueAsNumber: true })}
+                  {...form.register('energy_content', { 
+                    setValueAs: (v: string) => v === "" ? null : Number(v)
+                  })}
                   error={form.formState.errors.energy_content?.message}
                   placeholder="e.g., 12.5"
                 />

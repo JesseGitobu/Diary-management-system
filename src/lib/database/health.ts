@@ -3,6 +3,7 @@
 // src/lib/database/health.ts
 
 import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { HealthStats } from '@/types/database'
 
 export interface HealthRecordData {
   animal_id: string
@@ -39,6 +40,7 @@ export async function createHealthRecord(data: HealthRecordData) {
     const { data: record, error: recordError } = await supabase
       .from('animal_health_records')
       .insert({
+        farm_id: data.farm_id,
         animal_id: data.animal_id,
         record_date: data.record_date,
         record_type: data.record_type,
@@ -253,7 +255,7 @@ export async function getUpcomingHealthTasks(farmId: string, days: number = 30) 
   return data || []
 }
 
-export async function getHealthStats(farmId: string) {
+export async function getHealthStats(farmId: string) : Promise<HealthStats> {
   const supabase = await createServerSupabaseClient()
   
   try {
@@ -261,38 +263,78 @@ export async function getHealthStats(farmId: string) {
     const { count: totalRecords } = await supabase
       .from('animal_health_records')
       .select('*', { count: 'exact', head: true })
-      .eq('animals.farm_id', farmId)
+      .eq('farm_id', farmId)
+
+    console.log('Total health records:', totalRecords || 0)
+
+    // Get  Veterinarians registered
+    const { count: totalVeterinarians } = await supabase
+      .from('veterinarians')
+      .select('*', { count: 'exact', head: true })
+      .eq('farm_id', farmId)
+
+    console.log('Total veterinarians registered:', totalVeterinarians || 0)
+
+    // Get protocols records
+    const { count: totalProtocols } = await supabase
+      .from('health_protocols')
+      .select('*', { count: 'exact', head: true })
+      .eq('farm_id', farmId)
+
+    console.log('Total protocols recorded:', totalProtocols || 0)
+
+    // Get outbreaks reported
+    const { count: totalOutbreaks } = await supabase
+      .from('disease_outbreaks')
+      .select('*', { count: 'exact', head: true })
+      .eq('farm_id', farmId)
+    console.log('Total outbreaks reported:', totalOutbreaks || 0)
+
+    // Get vaccinations administered
+    const { count: totalVaccinations } = await supabase
+      .from('vaccinations')
+      .select('*', { count: 'exact', head: true })
+      .eq('farm_id', farmId)
+    console.log('Total vaccinations administered:', totalVaccinations || 0)
     
     // Get records by type
-    const { data: recordsByType } = await supabase
-      .from('animal_health_records')
-      .select('record_type, animals!inner(farm_id)')
-      .eq('animals.farm_id', farmId)
+    // const { data: recordsByType } = await supabase
+    //   .from('animal_health_records')
+    //   .select('record_type, animals!inner(farm_id)')
+    //   .eq('animals.farm_id', farmId)
     
     // Get upcoming tasks
     const upcomingTasks = await getUpcomingHealthTasks(farmId, 30)
     
     // Calculate stats
-    const typeStats = recordsByType?.reduce((acc, record) => {
-      acc[record.record_type] = (acc[record.record_type] || 0) + 1
-      return acc
-    }, {} as Record<string, number>) || {}
+    // const typeStats = recordsByType?.reduce((acc, record) => {
+    //   acc[record.record_type] = (acc[record.record_type] || 0) + 1
+    //   return acc
+    // }, {} as Record<string, number>) || {}
     
     return {
-      totalRecords: totalRecords || 0,
+      totalHealthRecords: totalRecords || 0,
+      veterinariansRegistered: totalVeterinarians || 0,
+      protocolsRecorded: totalProtocols || 0,
+      outbreaksReported: totalOutbreaks || 0,
+      vaccinationsAdministered: totalVaccinations || 0,
       upcomingTasks: upcomingTasks.length,
-      recordsByType: typeStats,
-      overdueCount: upcomingTasks.filter(task => 
-        new Date(task.next_due_date!) < new Date()
-      ).length
+      // recordsByType: typeStats,
+      // overdueCount: upcomingTasks.filter(task => 
+      //   new Date(task.next_due_date!) < new Date()
+      // ).length
     }
   } catch (error) {
     console.error('Error getting health stats:', error)
     return {
-      totalRecords: 0,
+      totalHealthRecords: 0,
+      veterinariansRegistered: 0,
+      protocolsRecorded: 0,
+      outbreaksReported: 0,
+      vaccinationsAdministered: 0,
       upcomingTasks: 0,
-      recordsByType: {},
-      overdueCount: 0
+      // recordsByType: {},
+      // overdueCount: 0
     }
   }
 }
@@ -399,8 +441,8 @@ export async function getVeterinaryVisits(farmId: string, options: {
       veterinarians (
         id,
         name,
-        practice_name,
-        phone,
+        clinic_name,
+        phone_primary,
         email
       )
     `)

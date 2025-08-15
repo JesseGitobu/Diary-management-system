@@ -1,86 +1,235 @@
+// app/api/feed/consumption/route.ts - Fixed timestamp handling
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUser } from '@/lib/supabase/server'
-import { getUserRole } from '@/lib/database/auth'
-import { recordFeedConsumption, getFeedConsumption } from '@/lib/database/feed'
-
-export async function POST(request: NextRequest) {
-  try {
-    const user = await getCurrentUser()
-    
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    
-    const userRole = await getUserRole(user.id)
-    
-    if (!userRole?.farm_id) {
-      return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
-    }
-    
-    // Check permissions
-    if (!['farm_owner', 'farm_manager', 'worker'].includes(userRole.role_type)) {
-      return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
-    }
-    
-    const body = await request.json()
-    
-    // Add recorded_by field
-    const dataWithRecorder = {
-      ...body,
-      recorded_by: user.id,
-    }
-    
-    const result = await recordFeedConsumption(userRole.farm_id, dataWithRecorder)
-    
-    if (!result.success) {
-      return NextResponse.json({ error: result.error }, { status: 400 })
-    }
-    
-    return NextResponse.json({ 
-      success: true, 
-      data: result.data,
-      message: 'Feed consumption recorded successfully'
-    })
-    
-  } catch (error) {
-    console.error('Feed consumption API error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
-  }
-}
+import { getCurrentUser, createServerSupabaseClient } from '@/lib/supabase/server'
 
 export async function GET(request: NextRequest) {
   try {
     const user = await getCurrentUser()
-    
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    
-    const userRole = await getUserRole(user.id)
-    
-    if (!userRole?.farm_id) {
-      return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
-    }
-    
+
     const { searchParams } = new URL(request.url)
-    const startDate = searchParams.get('start_date')
-    const endDate = searchParams.get('end_date')
-    const animalId = searchParams.get('animal_id')
+    const farmId = searchParams.get('farm_id')
+    const limit = parseInt(searchParams.get('limit') || '50')
+    const offset = parseInt(searchParams.get('offset') || '0')
+
+    if (!farmId) {
+      return NextResponse.json({ error: 'farm_id parameter required' }, { status: 400 })
+    }
+
+    const supabase = await createServerSupabaseClient()
     
-    const consumption = await getFeedConsumption(
-      userRole.farm_id,
-      startDate || undefined,
-      endDate || undefined,
-      animalId || undefined
-    )
-    
-    return NextResponse.json({ 
-      success: true, 
-      data: consumption 
-    })
-    
+    // Get consumption records with related data
+    const { data: records, error } = await supabase
+      .from('feed_consumption')
+      .select(`
+        *,
+        feed_consumption_animals (
+          animal_id
+        )
+      `)
+      .eq('farm_id', farmId)
+      .order('feeding_time', { ascending: false })
+      .range(offset, offset + limit - 1)
+
+    if (error) {
+      console.error('Database error:', error)
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json(records || [])
   } catch (error) {
-    console.error('Feed consumption GET API error:', error)
+    console.error('API error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const body = await request.json()
+    const { farmId, feedingTime, mode, entries } = body
+
+    console.log('Received feeding data:', { farmId, feedingTime, mode, entries })
+
+    // Validate required fields
+    if (!farmId || !entries || !Array.isArray(entries) || entries.length === 0) {
+      return NextResponse.json({ 
+        error: 'Missing required fields: farmId, entries' 
+      }, { status: 400 })
+    }
+
+    const supabase = await createServerSupabaseClient()
+    
+    const consumptionRecords = []
+
+    // Process each entry
+    for (const entry of entries) {
+      const { feedTypeId, quantityKg, animalIds, notes } = entry
+
+      if (!feedTypeId || !quantityKg || !animalIds || animalIds.length === 0) {
+        return NextResponse.json({ 
+          error: 'Each entry must have feedTypeId, quantityKg, and animalIds' 
+        }, { status: 400 })
+      }
+
+      // Create proper timestamp from feeding time
+      let feedingTimestamp: string
+      
+      if (feedingTime) {
+        // If feedingTime is just a time (HH:mm), combine with today's date
+        if (feedingTime.match(/^\d{2}:\d{2}$/)) {
+          const today = new Date()
+          const [hours, minutes] = feedingTime.split(':')
+          today.setHours(parseInt(hours), parseInt(minutes), 0, 0)
+          feedingTimestamp = today.toISOString()
+        } else {
+          // If it's already a full timestamp, use it
+          feedingTimestamp = new Date(feedingTime).toISOString()
+        }
+      } else {
+        // Default to current time
+        feedingTimestamp = new Date().toISOString()
+      }
+
+      console.log('Using feeding timestamp:', feedingTimestamp)
+
+      // Create consumption record
+      const insertData = {
+        farm_id: farmId,
+        feed_type_id: feedTypeId,
+        quantity_kg: parseFloat(quantityKg),
+        feeding_time: feedingTimestamp,
+        feeding_mode: mode || 'individual',
+        animal_count: animalIds.length,
+        notes: notes || null,
+        recorded_by: user.email || 'Unknown',
+        created_by: user.id
+      }
+
+      console.log('Inserting consumption data:', insertData)
+
+      const { data: consumptionRecord, error: consumptionError } = await supabase
+        .from('feed_consumption')
+        .insert(insertData)
+        .select()
+        .single()
+
+      if (consumptionError) {
+        console.error('Consumption insert error:', consumptionError)
+        return NextResponse.json({ 
+          error: `Failed to create consumption record: ${consumptionError.message}`,
+          details: consumptionError
+        }, { status: 500 })
+      }
+
+      console.log('Created consumption record:', consumptionRecord)
+
+      // Create animal consumption records
+      if (animalIds.length > 0) {
+        const animalRecords = animalIds.map((animalId: string) => ({
+          consumption_id: consumptionRecord.id,
+          animal_id: animalId
+        }))
+
+        console.log('Inserting animal records:', animalRecords)
+
+        const { error: animalError } = await supabase
+          .from('feed_consumption_animals')
+          .insert(animalRecords)
+
+        if (animalError) {
+          console.error('Animal consumption insert error:', animalError)
+          // Continue processing other entries even if this fails
+        }
+      }
+
+      consumptionRecords.push(consumptionRecord)
+    }
+
+    return NextResponse.json({ 
+      success: true,
+      records: consumptionRecords,
+      message: `Successfully recorded ${consumptionRecords.length} consumption record(s)`
+    }, { status: 201 })
+
+  } catch (error) {
+    console.error('API error:', error)
+    return NextResponse.json({ 
+      error: 'Internal server error',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 })
+  }
+}
+
+// Get consumption statistics
+export async function PUT(request: NextRequest) {
+  try {
+    const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { searchParams } = new URL(request.url)
+    const farmId = searchParams.get('farm_id')
+    const days = parseInt(searchParams.get('days') || '30')
+
+    if (!farmId) {
+      return NextResponse.json({ error: 'farm_id parameter required' }, { status: 400 })
+    }
+
+    const supabase = await createServerSupabaseClient()
+    
+    const endDate = new Date()
+    const startDate = new Date()
+    startDate.setDate(endDate.getDate() - days)
+
+    // Get consumption statistics
+    const { data: stats, error } = await supabase
+      .from('feed_consumption')
+      .select('quantity_kg, feeding_time, feed_type_id')
+      .eq('farm_id', farmId)
+      .gte('feeding_time', startDate.toISOString())
+      .lte('feeding_time', endDate.toISOString())
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    // Calculate statistics
+    const totalQuantity = stats?.reduce((sum, record) => sum + record.quantity_kg, 0) || 0
+    const avgDailyQuantity = totalQuantity / days
+    
+    // Group by date for daily summaries
+    const dailyConsumption = stats?.reduce((acc: any, record) => {
+      const date = new Date(record.feeding_time).toISOString().split('T')[0]
+      if (!acc[date]) {
+        acc[date] = 0
+      }
+      acc[date] += record.quantity_kg
+      return acc
+    }, {}) || {}
+
+    const dailySummaries = Object.entries(dailyConsumption).map(([date, quantity]) => ({
+      date,
+      quantity: quantity as number
+    }))
+
+    return NextResponse.json({
+      totalQuantity,
+      avgDailyQuantity,
+      recordCount: stats?.length || 0,
+      dailySummaries,
+      periodDays: days
+    })
+
+  } catch (error) {
+    console.error('Stats API error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

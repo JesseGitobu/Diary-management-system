@@ -194,7 +194,9 @@ export async function recordFeedConsumption(farmId: string, data: Omit<FeedConsu
   }
   
   // Update daily summary
-  await updateDailyFeedSummary(farmId, data.consumption_date)
+  if (data.feeding_time) {
+    await updateDailyFeedSummary(farmId, data.feeding_time)
+  }
   
   return { success: true, data: consumption }
 }
@@ -338,5 +340,43 @@ export async function getFeedStats(farmId: string, days: number = 30) {
       dailySummaries: [],
       periodDays: days,
     }
+  }
+}
+export async function getFeedConsumptionRecords(farmId: string, limit: number = 50) {
+  try {
+    const supabase = await createServerSupabaseClient()
+    
+    const { data: records, error } = await supabase
+      .from('feed_consumption')
+      .select(`
+        id,
+        feed_type_id,
+        quantity_kg,
+        feeding_time,
+        feeding_mode,
+        animal_count,
+        notes,
+        recorded_by,
+        created_at,
+        feed_types (
+          id,
+          name,
+          description
+        )
+      `)
+      .eq('farm_id', farmId)
+      .order('feeding_time', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(limit)
+
+    if (error) {
+      console.error('Error fetching consumption records:', error)
+      return []
+    }
+
+    return records || []
+  } catch (error) {
+    console.error('Error in getFeedConsumptionRecords:', error)
+    return []
   }
 }

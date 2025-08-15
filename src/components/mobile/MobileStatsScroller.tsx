@@ -6,7 +6,7 @@ import { LucideIcon } from 'lucide-react'
 
 interface StatConfig {
   title: string
-  value: number
+  value: number | string
   icon: LucideIcon
   color: string
   bgColor: string

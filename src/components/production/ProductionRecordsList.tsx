@@ -41,7 +41,6 @@ interface ProductionRecord {
     tag_number: string
     name?: string
   }
-  
 }
 
 interface ProductionRecordsListProps {
@@ -51,6 +50,25 @@ interface ProductionRecordsListProps {
   onDelete?: (recordId: string) => void
   onView?: (record: ProductionRecord) => void
   isMobile?: boolean
+}
+
+// Consistent, hydration-safe date formatting
+const formatDate = (dateString: string) => {
+  return new Date(dateString).toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  })
+}
+
+const formatDateTime = (dateString: string) => {
+  return new Date(dateString).toLocaleString('en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
 export function ProductionRecordsList({ 
@@ -82,7 +100,6 @@ export function ProductionRecordsList({
       if (onDelete) {
         onDelete(recordId)
       } else {
-        // Refresh the page if no callback provided
         window.location.reload()
       }
     } catch (error) {
@@ -104,11 +121,8 @@ export function ProductionRecordsList({
   
   const getQualityIndicator = (fatContent?: number, proteinContent?: number) => {
     if (!fatContent || !proteinContent) return null
-    
-    // Industry standards: Fat 3.5-4.5%, Protein 3.0-3.5%
     const fatGood = fatContent >= 3.5 && fatContent <= 4.5
     const proteinGood = proteinContent >= 3.0 && proteinContent <= 3.5
-    
     if (fatGood && proteinGood) return { label: 'Excellent', color: 'bg-green-100 text-green-800' }
     if (fatGood || proteinGood) return { label: 'Good', color: 'bg-yellow-100 text-yellow-800' }
     return { label: 'Needs Attention', color: 'bg-red-100 text-red-800' }
@@ -139,9 +153,7 @@ export function ProductionRecordsList({
           <Card key={record.id} className="hover:shadow-md transition-shadow">
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
-                {/* Main Record Info */}
                 <div className="flex items-start space-x-4">
-                  {/* Animal Info */}
                   <div className="flex-shrink-0">
                     <div className="w-12 h-12 bg-farm-green/10 rounded-lg flex items-center justify-center">
                       <Droplets className="w-6 h-6 text-farm-green" />
@@ -167,36 +179,29 @@ export function ProductionRecordsList({
                     <div className="flex items-center space-x-4 text-sm text-gray-600 mb-3">
                       <span className="flex items-center">
                         <Calendar className="w-4 h-4 mr-1" />
-                        {new Date(record.record_date).toLocaleDateString()}
+                        {formatDate(record.record_date)}
                       </span>
                       <span>Tag: {record.animals?.tag_number}</span>
                     </div>
                     
                     {/* Production Metrics */}
                     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                      {/* Volume */}
                       <div className="text-center p-3 bg-blue-50 rounded-lg">
                         <p className="text-2xl font-bold text-blue-600">{record.milk_volume}</p>
                         <p className="text-xs text-blue-600 font-medium">Liters</p>
                       </div>
-                      
-                      {/* Fat Content */}
                       {record.fat_content && (
                         <div className="text-center p-3 bg-orange-50 rounded-lg">
                           <p className="text-xl font-bold text-orange-600">{record.fat_content}%</p>
                           <p className="text-xs text-orange-600 font-medium">Fat</p>
                         </div>
                       )}
-                      
-                      {/* Protein Content */}
                       {record.protein_content && (
                         <div className="text-center p-3 bg-green-50 rounded-lg">
                           <p className="text-xl font-bold text-green-600">{record.protein_content}%</p>
                           <p className="text-xs text-green-600 font-medium">Protein</p>
                         </div>
                       )}
-                      
-                      {/* SCC */}
                       {record.somatic_cell_count && (
                         <div className="text-center p-3 bg-purple-50 rounded-lg">
                           <p className="text-sm font-bold text-purple-600">
@@ -205,16 +210,12 @@ export function ProductionRecordsList({
                           <p className="text-xs text-purple-600 font-medium">SCC</p>
                         </div>
                       )}
-                      
-                      {/* Temperature */}
                       {record.temperature && (
                         <div className="text-center p-3 bg-red-50 rounded-lg">
                           <p className="text-xl font-bold text-red-600">{record.temperature}°C</p>
                           <p className="text-xs text-red-600 font-medium">Temp</p>
                         </div>
                       )}
-                      
-                      {/* pH Level */}
                       {record.ph_level && (
                         <div className="text-center p-3 bg-indigo-50 rounded-lg">
                           <p className="text-xl font-bold text-indigo-600">{record.ph_level}</p>
@@ -223,7 +224,6 @@ export function ProductionRecordsList({
                       )}
                     </div>
                     
-                    {/* Notes */}
                     {record.notes && (
                       <div className="mt-4 p-3 bg-gray-50 rounded-lg">
                         <p className="text-sm text-gray-700">
@@ -232,36 +232,28 @@ export function ProductionRecordsList({
                       </div>
                     )}
                     
-                    {/* Timestamp */}
                     <div className="mt-3 pt-3 border-t border-gray-100">
                       <p className="text-xs text-gray-500">
-                        Recorded on {new Date(record.created_at).toLocaleString()}
+                        Recorded on {formatDateTime(record.created_at)}
                       </p>
                     </div>
                   </div>
                 </div>
                 
-                {/* Actions */}
                 {canEdit && (
                   <div className="flex-shrink-0">
                     <DropdownMenu>
-                      <DropdownMenuTrigger>
+                      <DropdownMenuTrigger asChild={true}>
                         <Button variant="ghost" size="sm">
                           <MoreHorizontal className="w-4 h-4" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem 
-                          onClick={() => onView?.(record)}
-                          className="flex items-center"
-                        >
+                        <DropdownMenuItem onClick={() => onView?.(record)} className="flex items-center">
                           <Eye className="w-4 h-4 mr-2" />
                           View Details
                         </DropdownMenuItem>
-                        <DropdownMenuItem 
-                          onClick={() => onEdit?.(record)}
-                          className="flex items-center"
-                        >
+                        <DropdownMenuItem onClick={() => onEdit?.(record)} className="flex items-center">
                           <Edit className="w-4 h-4 mr-2" />
                           Edit Record
                         </DropdownMenuItem>
@@ -283,12 +275,9 @@ export function ProductionRecordsList({
         )
       })}
       
-      {/* Load More Button (if needed) */}
       {records.length >= 10 && (
         <div className="text-center py-4">
-          <Button variant="outline">
-            Load More Records
-          </Button>
+          <Button variant="outline">Load More Records</Button>
         </div>
       )}
     </div>

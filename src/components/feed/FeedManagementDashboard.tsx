@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
 import { AddFeedTypeModal } from '@/components/feed/AddFeedTypeModal'
 import { AddFeedInventoryModal } from '@/components/feed/AddFeedInventoryModal'
+import { FeedConsumptionModal } from '@/components/feed/FeedConsumptionModal'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { 
   Plus, 
@@ -15,7 +16,12 @@ import {
   TrendingDown, 
   AlertTriangle,
   Wheat,
-  MoreVertical
+  MoreVertical,
+  Clock,
+  Calendar,
+  Users,
+  User,
+  ChevronRight
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -29,6 +35,8 @@ interface FeedManagementDashboardProps {
   feedStats: any
   feedTypes: any[]
   inventory: any[]
+  consumptionRecords: any[]
+  animals: any[]
   userRole: string
 }
 
@@ -37,19 +45,24 @@ export function FeedManagementDashboard({
   feedStats,
   feedTypes: initialFeedTypes,
   inventory: initialInventory,
+  consumptionRecords: initialConsumptionRecords,
+  animals,
   userRole
 }: FeedManagementDashboardProps) {
   const [activeTab, setActiveTab] = useState('overview')
   const [showAddTypeModal, setShowAddTypeModal] = useState(false)
   const [showAddInventoryModal, setShowAddInventoryModal] = useState(false)
+  const [showConsumptionModal, setShowConsumptionModal] = useState(false)
   const [feedTypes, setFeedTypes] = useState(initialFeedTypes)
   const [inventory, setInventory] = useState(initialInventory)
+  const [consumptionRecords, setConsumptionRecords] = useState(initialConsumptionRecords)
   
   const { isMobile, isTablet } = useDeviceInfo()
   const canManageFeed = ['farm_owner', 'farm_manager'].includes(userRole)
+  const canRecordFeeding = ['farm_owner', 'farm_manager', 'worker'].includes(userRole)
   
   // Calculate low stock alerts
-  const lowStockItems = feedStats.stockLevels.filter((stock: any) => stock.currentStock < 50)
+  const lowStockItems = feedStats.stockLevels?.filter((stock: any) => stock.currentStock < 50) || []
   
   const handleFeedTypeAdded = (newFeedType: any) => {
     setFeedTypes(prev => [...prev, newFeedType])
@@ -58,6 +71,12 @@ export function FeedManagementDashboard({
   const handleInventoryAdded = (newInventory: any) => {
     setInventory(prev => [...prev, newInventory])
     window.location.reload()
+  }
+
+  const handleConsumptionAdded = (newConsumption: any) => {
+    setConsumptionRecords(prev => [...newConsumption, ...prev])
+    setShowConsumptionModal(false)
+    window.location.reload() // Refresh to update stats
   }
 
   // Mobile Stats Card Component
@@ -87,17 +106,37 @@ export function FeedManagementDashboard({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">
-        <DropdownMenuItem onClick={() => setShowAddTypeModal(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Add Feed Type
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setShowAddInventoryModal(true)}>
-          <Package className="mr-2 h-4 w-4" />
-          Add Inventory
-        </DropdownMenuItem>
+        {canRecordFeeding && (
+          <DropdownMenuItem onClick={() => setShowConsumptionModal(true)}>
+            <Wheat className="mr-2 h-4 w-4" />
+            Record Feeding
+          </DropdownMenuItem>
+        )}
+        {canManageFeed && (
+          <>
+            <DropdownMenuItem onClick={() => setShowAddTypeModal(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Feed Type
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setShowAddInventoryModal(true)}>
+              <Package className="mr-2 h-4 w-4" />
+              Add Inventory
+            </DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )
+
+  // Format date helper
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
 
   return (
     <div className="space-y-6">
@@ -113,24 +152,32 @@ export function FeedManagementDashboard({
             </p>
           </div>
           
-          {canManageFeed && (
-            <div className="ml-4">
-              {isMobile ? (
-                <MobileActionMenu />
-              ) : (
-                <div className="flex space-x-3">
-                  <Button onClick={() => setShowAddTypeModal(true)}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add Feed Type
+          <div className="ml-4">
+            {isMobile ? (
+              <MobileActionMenu />
+            ) : (
+              <div className="flex space-x-3">
+                {canRecordFeeding && (
+                  <Button onClick={() => setShowConsumptionModal(true)}>
+                    <Wheat className="mr-2 h-4 w-4" />
+                    Record Feeding
                   </Button>
-                  <Button variant="outline" onClick={() => setShowAddInventoryModal(true)}>
-                    <Package className="mr-2 h-4 w-4" />
-                    Add Inventory
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
+                )}
+                {canManageFeed && (
+                  <>
+                    <Button onClick={() => setShowAddTypeModal(true)} variant="outline">
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add Feed Type
+                    </Button>
+                    <Button variant="outline" onClick={() => setShowAddInventoryModal(true)}>
+                      <Package className="mr-2 h-4 w-4" />
+                      Add Inventory
+                    </Button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
       
@@ -141,14 +188,14 @@ export function FeedManagementDashboard({
             <div className="flex space-x-4 pb-4">
               <MobileStatsCard
                 title="Monthly Cost"
-                value={`$${feedStats.totalCost.toFixed(2)}`}
-                subtitle={`$${feedStats.avgDailyCost.toFixed(2)} daily average`}
+                value={`${feedStats.totalCost?.toFixed(2) || '0.00'}`}
+                subtitle={`${feedStats.avgDailyCost?.toFixed(2) || '0.00'} daily average`}
                 icon={DollarSign}
               />
               <MobileStatsCard
                 title="Total Consumption"
-                value={`${feedStats.totalQuantity.toFixed(1)}kg`}
-                subtitle={`${feedStats.avgDailyQuantity.toFixed(1)}kg daily average`}
+                value={`${feedStats.totalQuantity?.toFixed(1) || '0.0'}kg`}
+                subtitle={`${feedStats.avgDailyQuantity?.toFixed(1) || '0.0'}kg daily average`}
                 icon={Wheat}
               />
               <MobileStatsCard
@@ -175,9 +222,9 @@ export function FeedManagementDashboard({
                 <DollarSign className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">${feedStats.totalCost.toFixed(2)}</div>
+                <div className="text-2xl font-bold">${feedStats.totalCost?.toFixed(2) || '0.00'}</div>
                 <p className="text-xs text-muted-foreground">
-                  ${feedStats.avgDailyCost.toFixed(2)} daily average
+                  ${feedStats.avgDailyCost?.toFixed(2) || '0.00'} daily average
                 </p>
               </CardContent>
             </Card>
@@ -188,9 +235,9 @@ export function FeedManagementDashboard({
                 <Wheat className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{feedStats.totalQuantity.toFixed(1)}kg</div>
+                <div className="text-2xl font-bold">{feedStats.totalQuantity?.toFixed(1) || '0.0'}kg</div>
                 <p className="text-xs text-muted-foreground">
-                  {feedStats.avgDailyQuantity.toFixed(1)}kg daily average
+                  {feedStats.avgDailyQuantity?.toFixed(1) || '0.0'}kg daily average
                 </p>
               </CardContent>
             </Card>
@@ -251,20 +298,58 @@ export function FeedManagementDashboard({
         </div>
       )}
       
-      {/* Mobile Optimized Tabs */}
+      {/* Horizontal Tabs - Optimized for both Mobile and Desktop */}
       <div className="px-4 lg:px-0">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className={`${isMobile ? 'w-full grid-cols-4' : ''} grid`}>
-            <TabsTrigger value="overview" className={isMobile ? 'text-xs' : ''}>
-              {isMobile ? 'Overview' : 'Overview'}
+          {/* Horizontal Tab Layout for both Mobile and Desktop */}
+          <TabsList className={`
+            ${isMobile 
+              ? 'w-full h-12 p-1 grid grid-cols-4 gap-1' 
+              : 'h-12 w-auto inline-flex gap-2 justify-start'
+            }
+          `}>
+            <TabsTrigger 
+              value="overview" 
+              className={`
+                ${isMobile 
+                  ? 'text-xs px-2 py-2 h-10' 
+                  : 'text-sm px-6 py-2 h-10 min-w-[120px]'
+                }
+              `}
+            >
+              Overview
             </TabsTrigger>
-            <TabsTrigger value="inventory" className={isMobile ? 'text-xs' : ''}>
+            <TabsTrigger 
+              value="inventory" 
+              className={`
+                ${isMobile 
+                  ? 'text-xs px-2 py-2 h-10' 
+                  : 'text-sm px-6 py-2 h-10 min-w-[120px]'
+                }
+              `}
+            >
               {isMobile ? 'Stock' : 'Inventory'}
             </TabsTrigger>
-            <TabsTrigger value="consumption" className={isMobile ? 'text-xs' : ''}>
+            <TabsTrigger 
+              value="consumption" 
+              className={`
+                ${isMobile 
+                  ? 'text-xs px-2 py-2 h-10' 
+                  : 'text-sm px-6 py-2 h-10 min-w-[120px]'
+                }
+              `}
+            >
               {isMobile ? 'Usage' : 'Consumption'}
             </TabsTrigger>
-            <TabsTrigger value="types" className={isMobile ? 'text-xs' : ''}>
+            <TabsTrigger 
+              value="types" 
+              className={`
+                ${isMobile 
+                  ? 'text-xs px-2 py-2 h-10' 
+                  : 'text-sm px-6 py-2 h-10 min-w-[120px]'
+                }
+              `}
+            >
               Types
             </TabsTrigger>
           </TabsList>
@@ -279,7 +364,7 @@ export function FeedManagementDashboard({
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {feedStats.stockLevels.map((stock: any, index: number) => (
+                  {feedStats.stockLevels?.map((stock: any, index: number) => (
                     <div key={index} className={`flex items-center justify-between p-4 border rounded-lg ${isMobile ? 'p-3' : 'p-4'}`}>
                       <div className="flex-1 min-w-0">
                         <h4 className={`font-medium ${isMobile ? 'text-sm' : 'text-base'} truncate`}>
@@ -301,9 +386,9 @@ export function FeedManagementDashboard({
                         )}
                       </div>
                     </div>
-                  ))}
+                  )) || []}
                   
-                  {feedStats.stockLevels.length === 0 && (
+                  {(!feedStats.stockLevels || feedStats.stockLevels.length === 0) && (
                     <div className="text-center py-8 text-gray-500">
                       <Package className="mx-auto h-8 w-8 text-gray-400 mb-3" />
                       <h3 className={`font-medium text-gray-900 ${isMobile ? 'text-sm' : 'text-base'}`}>
@@ -392,25 +477,177 @@ export function FeedManagementDashboard({
           </TabsContent>
           
           <TabsContent value="consumption" className="mt-6">
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className={isMobile ? 'text-base' : 'text-lg'}>Feed Consumption</CardTitle>
-                <CardDescription className={isMobile ? 'text-sm' : ''}>
-                  Track daily feed usage and costs
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-8 text-gray-500">
-                  <Wheat className="mx-auto h-8 w-8 text-gray-400 mb-3" />
-                  <h3 className={`font-medium text-gray-900 ${isMobile ? 'text-sm' : 'text-base'}`}>
-                    Consumption tracking
-                  </h3>
-                  <p className={`text-gray-500 ${isMobile ? 'text-xs' : 'text-sm'} mt-1`}>
-                    Feed consumption tracking will be available soon.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+            <div className="space-y-6">
+              {/* Quick Action Card */}
+              <Card className="border-green-200 bg-green-50">
+                <CardHeader className="pb-3">
+                  <CardTitle className={`${isMobile ? 'text-base' : 'text-lg'} text-green-800 flex items-center space-x-2`}>
+                    <Wheat className="h-5 w-5" />
+                    <span>Record New Feeding</span>
+                  </CardTitle>
+                  <CardDescription className={`${isMobile ? 'text-sm' : ''} text-green-700`}>
+                    Track individual animal feeding or batch feeding sessions
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {canRecordFeeding ? (
+                    <div className={`flex ${isMobile ? 'flex-col space-y-3' : 'flex-row space-x-4'}`}>
+                      <Button 
+                        onClick={() => setShowConsumptionModal(true)}
+                        className="bg-green-600 hover:bg-green-700"
+                        size={isMobile ? "default" : "lg"}
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Record Feeding
+                      </Button>
+                      <div className={`text-sm text-green-700 ${isMobile ? '' : 'flex items-center'}`}>
+                        <div>
+                          <p className="font-medium">Track both individual and batch feeding</p>
+                          <p>Monitor consumption patterns and feed efficiency</p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-green-700">Contact farm manager to record feeding sessions.</p>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Consumption Records */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className={isMobile ? 'text-base' : 'text-lg'}>Recent Feeding Records</CardTitle>
+                      <CardDescription className={isMobile ? 'text-sm' : ''}>
+                        Latest feed consumption entries
+                      </CardDescription>
+                    </div>
+                    
+                    {canRecordFeeding && !isMobile && (
+                      <Button
+                        onClick={() => setShowConsumptionModal(true)}
+                        size="sm"
+                        variant="outline"
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        Record
+                      </Button>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {consumptionRecords.length > 0 ? (
+                    <div className="space-y-3">
+                      {consumptionRecords.slice(0, 10).map((record: any) => (
+                        <div key={record.id} className={`flex items-start justify-between p-3 border rounded-lg ${isMobile ? 'flex-col space-y-2' : 'flex-row items-center'}`}>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center space-x-2 mb-1">
+                              <h4 className={`font-medium ${isMobile ? 'text-sm' : 'text-base'}`}>
+                                {record.feed_types?.name}
+                              </h4>
+                              <Badge variant="outline" className="text-xs">
+                                {record.feeding_mode === 'individual' ? (
+                                  <><User className="w-3 h-3 mr-1" />Individual</>
+                                ) : (
+                                  <><Users className="w-3 h-3 mr-1" />Batch</>
+                                )}
+                              </Badge>
+                            </div>
+                            <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>
+                              {record.quantity_kg}kg • {record.animal_count} animal{record.animal_count !== 1 ? 's' : ''}
+                              {record.notes && ` • ${record.notes}`}
+                            </p>
+                            <p className={`text-gray-500 ${isMobile ? 'text-xs' : 'text-xs'} flex items-center space-x-1`}>
+                              <Clock className="w-3 h-3" />
+                              <span>{formatDate(record.feeding_time)}</span>
+                              {record.recorded_by && (
+                                <span>• by {record.recorded_by}</span>
+                              )}
+                            </p>
+                          </div>
+                          <div className={`text-right ${isMobile ? 'self-end' : 'ml-4'}`}>
+                            <p className={`font-bold ${isMobile ? 'text-base' : 'text-lg'} text-green-600`}>
+                              {record.quantity_kg}kg
+                            </p>
+                            <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>
+                              {(record.quantity_kg / record.animal_count).toFixed(1)}kg per animal
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                      
+                      {consumptionRecords.length > 10 && (
+                        <div className="text-center pt-4">
+                          <Button variant="outline" size="sm">
+                            View All Records
+                            <ChevronRight className="w-4 h-4 ml-1" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-gray-500">
+                      <Wheat className="mx-auto h-8 w-8 text-gray-400 mb-3" />
+                      <h3 className={`font-medium text-gray-900 ${isMobile ? 'text-sm' : 'text-base'}`}>
+                        No feeding records
+                      </h3>
+                      <p className={`text-gray-500 ${isMobile ? 'text-xs' : 'text-sm'} mt-1`}>
+                        Start tracking feed consumption by recording your first feeding session.
+                      </p>
+                      {canRecordFeeding && (
+                        <Button 
+                          className="mt-4" 
+                          onClick={() => setShowConsumptionModal(true)}
+                          size={isMobile ? "sm" : "default"}
+                        >
+                          <Plus className="w-4 h-4 mr-2" />
+                          Record First Feeding
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Consumption Analytics */}
+              {consumptionRecords.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className={isMobile ? 'text-base' : 'text-lg'}>Consumption Analytics</CardTitle>
+                    <CardDescription className={isMobile ? 'text-sm' : ''}>
+                      Feed consumption insights and trends
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className={`grid ${isMobile ? 'grid-cols-2' : 'grid-cols-3'} gap-4`}>
+                      <div className="text-center p-4 bg-blue-50 rounded-lg">
+                        <div className="text-2xl font-bold text-blue-600">
+                          {feedStats.totalQuantity?.toFixed(1) || '0.0'}kg
+                        </div>
+                        <div className="text-sm text-blue-700 font-medium">Total This Month</div>
+                      </div>
+                      
+                      <div className="text-center p-4 bg-green-50 rounded-lg">
+                        <div className="text-2xl font-bold text-green-600">
+                          {feedStats.avgDailyQuantity?.toFixed(1) || '0.0'}kg
+                        </div>
+                        <div className="text-sm text-green-700 font-medium">Daily Average</div>
+                      </div>
+                      
+                      {!isMobile && (
+                        <div className="text-center p-4 bg-purple-50 rounded-lg">
+                          <div className="text-2xl font-bold text-purple-600">
+                            {consumptionRecords.length}
+                          </div>
+                          <div className="text-sm text-purple-700 font-medium">Feeding Sessions</div>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
           </TabsContent>
           
           <TabsContent value="types" className="mt-6">
@@ -493,7 +730,16 @@ export function FeedManagementDashboard({
         onClose={() => setShowAddInventoryModal(false)}
         onSuccess={handleInventoryAdded}
       />
+
+      <FeedConsumptionModal
+        farmId={farmId}
+        feedTypes={feedTypes}
+        animals={animals}
+        isOpen={showConsumptionModal}
+        onClose={() => setShowConsumptionModal(false)}
+        onSuccess={handleConsumptionAdded}
+        isMobile={isMobile}
+      />
     </div>
   )
 }
-
