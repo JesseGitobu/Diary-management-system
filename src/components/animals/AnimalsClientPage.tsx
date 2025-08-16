@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { AnimalsList } from '@/components/animals/AnimalsList'
 import { AddAnimalModal } from '@/components/animals/AddAnimalModal'
+import { ImportAnimalsModal } from '@/components/animals/ImportAnimalsModal'
 import { MobileStatsCarousel } from '@/components/mobile/MobileStatsCarousel'
 import { QuickActionButton } from '@/components/mobile/QuickActionButton'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
@@ -14,6 +15,7 @@ import {
   Users, 
   BarChart3, 
   Download,
+  Upload,
   TrendingUp
 } from 'lucide-react'
 import { GiCow } from 'react-icons/gi'
@@ -54,6 +56,7 @@ export function AnimalsClientPage({
   const [animals, setAnimals] = useState(initialAnimals)
   const [stats, setStats] = useState(initialStats)
   const [showAddModal, setShowAddModal] = useState(false)
+  const [showImportModal, setShowImportModal] = useState(false)
   const [loading, setLoading] = useState(false)
   
   const { isMobile } = useDeviceInfo()
@@ -61,12 +64,28 @@ export function AnimalsClientPage({
   const canAddAnimals = ['farm_owner', 'farm_manager', 'worker'].includes(userRole)
   const canManageAnimals = ['farm_owner', 'farm_manager', 'worker'].includes(userRole)
   const canExportData = ['farm_owner', 'farm_manager'].includes(userRole)
+  const canImportData = ['farm_owner', 'farm_manager'].includes(userRole)
 
   const handleAnimalAdded = (newAnimal: Animal) => {
     // Update local state with new animal
     setAnimals(prev => [newAnimal, ...prev])
     
     // Update stats
+    updateStatsForNewAnimal(newAnimal)
+    setShowAddModal(false)
+  }
+
+  const handleAnimalsImported = (importedAnimals: Animal[]) => {
+    // Update local state with imported animals
+    setAnimals(prev => [...importedAnimals, ...prev])
+    
+    // Recalculate stats with new animals
+    const allAnimals = [...importedAnimals, ...animals]
+    recalculateStats(allAnimals)
+    setShowImportModal(false)
+  }
+
+  const updateStatsForNewAnimal = (newAnimal: Animal) => {
     setStats(prev => ({
       ...prev,
       total: prev.total + 1,
@@ -113,8 +132,29 @@ export function AnimalsClientPage({
         needsAttention: newAnimal.health_status !== 'healthy' ? 1 : 0,
       },
     }))
-    
-    setShowAddModal(false)
+  }
+
+  const recalculateStats = (allAnimals: Animal[]) => {
+    setStats({
+      total: allAnimals.length,
+      female: allAnimals.filter(a => a.gender === 'female').length,
+      male: allAnimals.filter(a => a.gender === 'male').length,
+      bySource: {
+        newborn_calves: allAnimals.filter(a => a.animal_source === 'newborn_calf').length,
+        purchased: allAnimals.filter(a => a.animal_source === 'purchased_animal').length,
+      },
+      byProduction: {
+        calves: allAnimals.filter(a => a.production_status === 'calf').length,
+        heifers: allAnimals.filter(a => a.production_status === 'heifer').length,
+        served: allAnimals.filter(a => a.production_status === 'served').length,
+        lactating: allAnimals.filter(a => a.production_status === 'lactating').length,
+        dry: allAnimals.filter(a => a.production_status === 'dry').length,
+      },
+      byHealth: {
+        healthy: allAnimals.filter(a => a.health_status === 'healthy').length,
+        needsAttention: allAnimals.filter(a => a.health_status !== 'healthy').length,
+      },
+    })
   }
 
   const handleExportAnimals = async () => {
@@ -146,36 +186,11 @@ export function AnimalsClientPage({
       )
     )
 
-    // Recalculate stats
-    const originalAnimal = animals.find(a => a.id === updatedAnimal.id)
-    if (originalAnimal) {
-      setStats(prev => {
-        let newStats = { ...prev }
-        newStats.total = animals.length
-        newStats.female = animals.filter(a => a.gender === 'female').length
-        newStats.male = animals.filter(a => a.gender === 'male').length
-
-        newStats.bySource = {
-          newborn_calves: animals.filter(a => a.animal_source === 'newborn_calf').length,
-          purchased: animals.filter(a => a.animal_source === 'purchased_animal').length,
-        }
-
-        newStats.byProduction = {
-          calves: animals.filter(a => a.production_status === 'calf').length,
-          heifers: animals.filter(a => a.production_status === 'heifer').length,
-          served: animals.filter(a => a.production_status === 'served').length,
-          lactating: animals.filter(a => a.production_status === 'lactating').length,
-          dry: animals.filter(a => a.production_status === 'dry').length,
-        }
-
-        newStats.byHealth = {
-          healthy: animals.filter(a => a.health_status === 'healthy').length,
-          needsAttention: animals.filter(a => a.health_status !== 'healthy').length,
-        }
-
-        return newStats
-      })
-    }
+    // Recalculate stats with updated animals
+    const updatedAnimals = animals.map(animal =>
+      animal.id === updatedAnimal.id ? updatedAnimal : animal
+    )
+    recalculateStats(updatedAnimals)
   }
 
   // Prepare stats for mobile carousel
@@ -236,18 +251,28 @@ export function AnimalsClientPage({
               </p>
             </div>
             
-            {/* Mobile Action Button */}
+            {/* Mobile Action Buttons */}
             {canAddAnimals && (
-              <QuickActionButton
-                onClick={() => setShowAddModal(true)}
-                icon={<Plus className="h-6 w-6" />}
-                label="Add Animal"
-              />
+              <div className="flex space-x-2">
+                {canImportData && (
+                  <QuickActionButton
+                    onClick={() => setShowImportModal(true)}
+                    icon={<Upload className="h-5 w-5" />}
+                    label="Import"
+                    variant="secondary"
+                  />
+                )}
+                <QuickActionButton
+                  onClick={() => setShowAddModal(true)}
+                  icon={<Plus className="h-6 w-6" />}
+                  label="Add Animal"
+                />
+              </div>
             )}
           </div>
         </div>
       ) : (
-        /* Desktop Header - Removed Quick Actions Bar from here */
+        /* Desktop Header */
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Animals</h1>
@@ -265,6 +290,16 @@ export function AnimalsClientPage({
               >
                 <Download className="mr-2 h-4 w-4" />
                 Export
+              </Button>
+            )}
+            
+            {canImportData && (
+              <Button 
+                variant="outline"
+                onClick={() => setShowImportModal(true)}
+              >
+                <Upload className="mr-2 h-4 w-4" />
+                Import
               </Button>
             )}
             
@@ -454,7 +489,7 @@ export function AnimalsClientPage({
         </Card>
       )}
       
-      {/* Animals List - Now includes the mobile quick actions bar */}
+      {/* Animals List */}
       <AnimalsList 
         animals={animals}
         farmId={farmId}
@@ -470,6 +505,14 @@ export function AnimalsClientPage({
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}
         onAnimalAdded={handleAnimalAdded}
+      />
+
+      {/* Import Animals Modal */}
+      <ImportAnimalsModal
+        farmId={farmId}
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onAnimalsImported={handleAnimalsImported}
       />
     </div>
   )
