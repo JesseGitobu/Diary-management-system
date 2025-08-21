@@ -44,7 +44,7 @@ export function AddTeamMemberModal({ farmId, isOpen, onClose, onInvitationSent }
     setError(null)
     
     try {
-      const response = await fetch('/api/team/invite', {
+      const response = await fetch(`/api/farms/[farmId]/team/invite`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

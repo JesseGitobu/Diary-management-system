@@ -52,7 +52,7 @@ export function TeamMemberCard({ member, currentUserId, canManage, onRemove }: T
     setLoading(true)
     
     try {
-      const response = await fetch('/api/team/remove', {
+      const response = await fetch('/api/farms/[farmId]/team/remove', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -76,9 +76,11 @@ export function TeamMemberCard({ member, currentUserId, canManage, onRemove }: T
   }
   
   // Use the corrected data structure
-  const userEmail = member.user_email || 'No email'
-  const userName = member.user_name || userEmail
-   const avatarUrl = member.profiles?.avatar_url
+  const userEmail = member.profiles?.email || 'No email'
+const userName = member.profiles?.user_metadata?.full_name || 
+                 member.profiles?.user_metadata?.name || 
+                 userEmail
+const avatarUrl = member.profiles?.user_metadata?.avatar_url
   const userInitials = userName.split(' ').map((n: string) => n[0]).join('').toUpperCase()
   
   return (

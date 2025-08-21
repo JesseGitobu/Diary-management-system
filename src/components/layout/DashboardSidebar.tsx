@@ -21,7 +21,7 @@ const mainNavigation = [
   { name: 'Inventory', href: '/dashboard/inventory', icon: Warehouse },
   { name: 'Equipment', href: '/dashboard/equipment', icon: Tractor },
   { name: 'Reports', href: '/dashboard/reports', icon: BarChart3 },
-  { name: 'Team', href: '/dashboard/settings/team', icon: Users },
+  // { name: 'Team', href: '/dashboard/settings/team', icon: Users },
 ]
 
 // Bottom navigation items (will be pushed to the bottom)

@@ -24,7 +24,7 @@ export function InvitationCard({ invitation, canManage, onCancel }: InvitationCa
     setLoading(true)
     
     try {
-      const response = await fetch('/api/team/cancel-invitation', {
+      const response = await fetch(`/api/farms/[farmId]/team/cancel-invitation`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -51,7 +51,7 @@ export function InvitationCard({ invitation, canManage, onCancel }: InvitationCa
     setLoading(true)
     
     try {
-      const response = await fetch('/api/team/resend-invitation', {
+      const response = await fetch(`/api/farms/[farmId]/team/resend-invitation`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

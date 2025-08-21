@@ -8,6 +8,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
 import { AnimalBasicInfo } from '@/components/animals/AnimalBasicInfo'
 import { AnimalHealthRecords } from '@/components/animals/AnimalHealthRecords'
 import { AnimalProductionRecords } from '@/components/animals/AnimalProductionRecords'
+import { AnimalFeedingRecords } from '@/components/animals/AnimalFeedingRecords'
+import { AnimalBreedingRecords } from '@/components/animals/AnimalBreedingRecords'
 import { EditAnimalModal } from '@/components/animals/EditAnimalModal'
 import { ReleaseAnimalModal } from '@/components/animals/ReleaseAnimalModal'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
@@ -24,7 +26,9 @@ import {
   Camera,
   AlertTriangle,
   MoreVertical,
-  Share
+  Share,
+  Utensils,
+  Baby
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -33,6 +37,22 @@ interface AnimalProfileProps {
   animal: any
   userRole: string
   farmId: string
+}
+
+// Breeding age thresholds (in days)
+const BREEDING_AGE_THRESHOLDS = {
+  cattle: {
+    female: 365, // 12 months for heifers
+    male: 365    // 12 months for bulls
+  },
+  goat: {
+    female: 240, // 8 months for does
+    male: 240    // 8 months for bucks
+  },
+  sheep: {
+    female: 240, // 8 months for ewes
+    male: 240    // 8 months for rams
+  }
 }
 
 export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) {
@@ -80,6 +100,59 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
     }
   }
   
+  // Calculate age in days for breeding eligibility
+  const calculateAgeInDays = (birthDate: string): number => {
+    if (!birthDate) return 0
+    
+    const birth = new Date(birthDate)
+    const now = new Date()
+    const diffTime = Math.abs(now.getTime() - birth.getTime())
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+  }
+  
+  // Check if animal is of breeding age
+  const isBreedingAge = (): boolean => {
+    const ageInDays = calculateAgeInDays(animalData.birth_date)
+    
+    // Determine animal type from breed or default to cattle
+    let animalType = 'cattle'
+    if (animalData.breed) {
+      const breed = animalData.breed.toLowerCase()
+      if (breed.includes('goat') || breed.includes('boer') || breed.includes('nubian')) {
+        animalType = 'goat'
+      } else if (breed.includes('sheep') || breed.includes('dorper') || breed.includes('merino')) {
+        animalType = 'sheep'
+      }
+    }
+    
+    const threshold = BREEDING_AGE_THRESHOLDS[animalType as keyof typeof BREEDING_AGE_THRESHOLDS]
+    const genderThreshold = threshold[animalData.gender as keyof typeof threshold] || threshold.female
+    
+    return ageInDays >= genderThreshold
+  }
+  
+  // Get days until breeding age
+  const getDaysUntilBreedingAge = (): number => {
+    const ageInDays = calculateAgeInDays(animalData.birth_date)
+    
+    let animalType = 'cattle'
+    if (animalData.breed) {
+      const breed = animalData.breed.toLowerCase()
+      if (breed.includes('goat') || breed.includes('boer') || breed.includes('nubian')) {
+        animalType = 'goat'
+      } else if (breed.includes('sheep') || breed.includes('dorper') || breed.includes('merino')) {
+        animalType = 'sheep'
+      }
+    }
+    
+    const threshold = BREEDING_AGE_THRESHOLDS[animalType as keyof typeof BREEDING_AGE_THRESHOLDS]
+    const genderThreshold = threshold[animalData.gender as keyof typeof threshold] || threshold.female
+    
+    return Math.max(0, genderThreshold - ageInDays)
+  }
+  
+  const shouldShowBreedingTab = isBreedingAge()
+  
   const handleAnimalUpdated = (updatedAnimal: any) => {
     setAnimalData(updatedAnimal)
     setShowEditModal(false)
@@ -117,6 +190,20 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
       },
       destructive: true
     }] : [])
+  ]
+  
+  // Generate tab configuration
+  const tabs = [
+    { value: 'overview', label: isMobile ? 'Info' : 'Overview', icon: FileText },
+    { value: 'feeding', label: isMobile ? 'Feed' : 'Feeding', icon: Utensils },
+    { value: 'health', label: 'Health', icon: Heart },
+    ...(shouldShowBreedingTab ? [{ 
+      value: 'breeding', 
+      label: isMobile ? 'Breed' : 'Breeding', 
+      icon: Baby 
+    }] : []),
+    { value: 'production', label: isMobile ? 'Prod.' : 'Production', icon: Milk },
+    { value: 'notes', label: 'Notes', icon: FileText }
   ]
   
   return (
@@ -188,6 +275,15 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
               )}
             </div>
           </div>
+          
+          {/* Breeding Age Indicator for Mobile */}
+          {!shouldShowBreedingTab && animalData.birth_date && (
+            <div className="mt-2 p-2 bg-blue-50 rounded-lg">
+              <p className="text-xs text-blue-700">
+                🔄 Breeding available in {getDaysUntilBreedingAge()} days
+              </p>
+            </div>
+          )}
         </div>
       ) : (
         /* Desktop Header */
@@ -207,6 +303,13 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
               <p className="text-gray-600">
                 Tag: {animalData.tag_number} • {animalData.breed || 'Unknown breed'}
               </p>
+              
+              {/* Breeding Age Indicator for Desktop */}
+              {!shouldShowBreedingTab && animalData.birth_date && (
+                <p className="text-sm text-blue-600 mt-1">
+                  🔄 Breeding available in {getDaysUntilBreedingAge()} days
+                </p>
+              )}
             </div>
           </div>
           
@@ -387,32 +490,28 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
         )}>
           <TabsList className={cn(
             "grid w-full",
-            isMobile ? "grid-cols-4 h-10" : "grid-cols-4"
+            isMobile 
+              ? `grid-cols-${tabs.length} h-10 gap-1` 
+              : `grid-cols-${tabs.length}`
           )}>
-            <TabsTrigger 
-              value="overview"
-              className={cn(isMobile ? "text-xs px-2" : "")}
-            >
-              {isMobile ? "Info" : "Overview"}
-            </TabsTrigger>
-            <TabsTrigger 
-              value="health"
-              className={cn(isMobile ? "text-xs px-2" : "")}
-            >
-              Health
-            </TabsTrigger>
-            <TabsTrigger 
-              value="production"
-              className={cn(isMobile ? "text-xs px-2" : "")}
-            >
-              {isMobile ? "Prod." : "Production"}
-            </TabsTrigger>
-            <TabsTrigger 
-              value="notes"
-              className={cn(isMobile ? "text-xs px-2" : "")}
-            >
-              Notes
-            </TabsTrigger>
+            {tabs.map((tab) => (
+              <TabsTrigger 
+                key={tab.value}
+                value={tab.value}
+                className={cn(
+                  isMobile ? "text-xs px-1 min-w-0" : "flex items-center space-x-2",
+                  tab.value === 'breeding' && "relative"
+                )}
+              >
+                {!isMobile && <tab.icon className="w-4 h-4" />}
+                <span className={cn(isMobile && "truncate")}>
+                  {tab.label}
+                </span>
+                {tab.value === 'breeding' && shouldShowBreedingTab && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full" />
+                )}
+              </TabsTrigger>
+            ))}
           </TabsList>
         </div>
         
@@ -424,14 +523,33 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
               onEditClick={() => setShowEditModal(true)}
             />
           </TabsContent>
-          <TabsContent value="production" className="space-y-6 mt-0">
-            <AnimalProductionRecords 
+          
+          <TabsContent value="feeding" className="space-y-6 mt-0">
+            <AnimalFeedingRecords 
               animalId={animalData.id}
               canAddRecords={canAddRecords}
             />
           </TabsContent>
+          
           <TabsContent value="health" className="space-y-6 mt-0">
             <AnimalHealthRecords 
+              animalId={animalData.id}
+              canAddRecords={canAddRecords}
+            />
+          </TabsContent>
+          
+          {shouldShowBreedingTab && (
+            <TabsContent value="breeding" className="space-y-6 mt-0">
+              <AnimalBreedingRecords 
+                animalId={animalData.id}
+                animal={animalData}
+                canAddRecords={canAddRecords}
+              />
+            </TabsContent>
+          )}
+          
+          <TabsContent value="production" className="space-y-6 mt-0">
+            <AnimalProductionRecords 
               animalId={animalData.id}
               canAddRecords={canAddRecords}
             />
@@ -495,6 +613,10 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
                 // Navigate to add health record
               } else if (activeTab === 'production') {
                 // Navigate to add production record
+              } else if (activeTab === 'feeding') {
+                // Navigate to add feeding record
+              } else if (activeTab === 'breeding' && shouldShowBreedingTab) {
+                // Navigate to add breeding record
               }
             }}
           >

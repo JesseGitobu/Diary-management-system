@@ -1,14 +1,15 @@
 'use client'
 
 import React, { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { TeamMemberCard } from '@/components/team/TeamMemberCard'
-import { InvitationCard } from '@/components/team/InvitationCard'
-import { AddTeamMemberModal } from '@/components/team/AddTeamMemberModal'
+import { TeamMemberCard } from '@/components/settings/team/TeamMemberCard'
+import { InvitationCard } from '@/components/settings/team/InvitationCard'
+import { AddTeamMemberModal } from '@/components/settings/team/AddTeamMemberModal'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
-import { Users, UserPlus, Clock, Crown, Settings, Briefcase, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Users, UserPlus, Clock, Crown, Settings, Briefcase, ChevronLeft, ChevronRight, ArrowLeft, Stethoscope, Wrench, CheckCircle } from 'lucide-react'
 
 interface TeamManagementProps {
   currentUser: any
@@ -25,6 +26,61 @@ interface TeamManagementProps {
   }
 }
 
+const roleConfigs = {
+  farm_owner: {
+    label: 'Farm Owner',
+    icon: Crown,
+    color: 'text-purple-600 bg-purple-100',
+    description: 'Full access to all farm management features',
+    permissions: [
+      'Manage all farm settings',
+      'Add/remove team members',
+      'View financial reports',
+      'Export all data',
+      'Manage subscriptions'
+    ]
+  },
+  farm_manager: {
+    label: 'Farm Manager',
+    icon: Briefcase,
+    color: 'text-blue-600 bg-blue-100',
+    description: 'Comprehensive farm operations management',
+    permissions: [
+      'Manage animals and records',
+      'View production reports',
+      'Manage workers',
+      'Configure farm settings',
+      'Access health records'
+    ]
+  },
+  worker: {
+    label: 'Farm Worker',
+    icon: Wrench,
+    color: 'text-green-600 bg-green-100',
+    description: 'Daily operations and data entry',
+    permissions: [
+      'Record milking data',
+      'Log feeding activities',
+      'Add animal treatments',
+      'View assigned animals',
+      'Update animal status'
+    ]
+  },
+  veterinarian: {
+    label: 'Veterinarian',
+    icon: Stethoscope,
+    color: 'text-red-600 bg-red-100',
+    description: 'Health and medical management access',
+    permissions: [
+      'Access health records',
+      'Prescribe treatments',
+      'Schedule vaccinations',
+      'View breeding records',
+      'Generate health reports'
+    ]
+  }
+}
+
 export function TeamManagement({
   currentUser,
   currentUserRole,
@@ -33,6 +89,7 @@ export function TeamManagement({
   pendingInvitations: initialPendingInvitations,
   teamStats: initialTeamStats
 }: TeamManagementProps) {
+  const router = useRouter()
   const [teamMembers, setTeamMembers] = useState(initialTeamMembers)
   const [pendingInvitations, setPendingInvitations] = useState(initialPendingInvitations)
   const [teamStats, setTeamStats] = useState(initialTeamStats)
@@ -55,6 +112,9 @@ export function TeamManagement({
   const handleInvitationCanceled = (canceledInvitationId: string) => {
     setPendingInvitations(prev => prev.filter(inv => inv.id !== canceledInvitationId))
     setTeamStats(prev => ({ ...prev, pending: prev.pending - 1 }))
+  }
+  const handleBack = () => {
+    router.push(`/dashboard/settings`)
   }
 
   // Stats data for easier management
@@ -101,12 +161,29 @@ export function TeamManagement({
     <div className="space-y-4 lg:space-y-8 px-4 lg:px-0">
       {/* Mobile-Optimized Header */}
       <div className="space-y-4">
+      <div className="flex items-center space-x-4 mb-4">
+          <Button
+            variant="ghost"
+            onClick={handleBack}
+            className="flex items-center space-x-2"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Back to Settings</span>
+          </Button>
+        </div>
         <div className="flex flex-col space-y-3 lg:flex-row lg:items-center lg:justify-between lg:space-y-0">
-          <div className="space-y-1">
-            <h1 className="text-2xl lg:text-3xl font-bold text-gray-900">Team Management</h1>
-            <p className="text-sm lg:text-base text-gray-600">
-              Manage your farm team and collaborate on daily operations
-            </p>
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+              <Users className="w-5 h-5 text-blue-600" />
+            </div>
+            <div>
+              <h1 className={`font-bold text-gray-900 ${isMobile ? 'text-2xl' : 'text-3xl'}`}>
+                Users & Roles
+              </h1>
+              <p className={`text-gray-600 ${isMobile ? 'text-sm' : 'text-base'}`}>
+                Manage team members and their access permissions
+              </p>
+            </div>
           </div>
           
           {canManageTeam && (
@@ -288,8 +365,38 @@ export function TeamManagement({
           </CardContent>
         </Card>
       )}
-      
-      
+
+      {/* Roles Information */}
+      <div className="mt-8">
+        <h3 className="text-lg font-medium text-gray-900 mb-4">Role Permissions</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {Object.entries(roleConfigs).map(([role, config]) => (
+            <Card key={role}>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center space-x-2 text-base">
+                  <span className={`p-2 rounded-lg ${config.color}`}>
+                    <config.icon className="w-4 h-4" />
+                  </span>
+                  <span>{config.label}</span>
+                </CardTitle>
+                <CardDescription className="text-sm">
+                  {config.description}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <ul className="space-y-1 text-sm text-gray-600">
+                  {config.permissions.map((permission, index) => (
+                    <li key={index} className="flex items-center space-x-2">
+                      <CheckCircle className="w-3 h-3 text-green-500" />
+                      <span>{permission}</span>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>      
       
       {/* Add Team Member Modal */}
       {showAddModal && (

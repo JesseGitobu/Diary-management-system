@@ -2,7 +2,13 @@ import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { getTeamMembers, getPendingInvitations, getTeamStats } from '@/lib/database/team'
 import { redirect } from 'next/navigation'
-import { TeamManagement } from '@/components/team/TeamManagement'
+import { TeamManagement } from '@/components/settings/team/TeamManagement'
+import { Metadata } from 'next'
+
+export const metadata: Metadata = {
+  title: 'Users & Roles Settings | Farm Management',
+  description: 'Manage team members and their permissions',
+}
 
 export default async function TeamPage() {
   const user = await getCurrentUser()
