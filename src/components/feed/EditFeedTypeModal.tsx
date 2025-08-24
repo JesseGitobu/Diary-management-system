@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -33,19 +33,21 @@ const feedTypeSchema = z.object({
 
 type FeedTypeFormData = z.infer<typeof feedTypeSchema>
 
-interface AddFeedTypeModalProps {
+interface EditFeedTypeModalProps {
   farmId: string
+  feedType: any | null
   isOpen: boolean
   onClose: () => void
-  onSuccess: (feedType: any) => void
+  onSuccess: (updatedFeedType: any) => void
 }
 
-export function AddFeedTypeModal({ 
+export function EditFeedTypeModal({ 
   farmId, 
+  feedType,
   isOpen, 
   onClose, 
   onSuccess 
-}: AddFeedTypeModalProps) {
+}: EditFeedTypeModalProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   
@@ -64,6 +66,25 @@ export function AddFeedTypeModal({
     },
   })
   
+  // Reset form when feedType changes or modal opens
+  useEffect(() => {
+    if (feedType && isOpen) {
+      const nutritionalInfo = feedType.nutritional_info || {}
+      
+      form.reset({
+        name: feedType.name || '',
+        description: feedType.description || '',
+        typical_cost_per_kg: feedType.typical_cost_per_kg || null,
+        supplier: feedType.supplier || '',
+        protein_content: nutritionalInfo.protein_content || null,
+        energy_content: nutritionalInfo.energy_content || null,
+        fiber_content: nutritionalInfo.fiber_content || null,
+        fat_content: nutritionalInfo.fat_content || null,
+        animal_categories: feedType.animal_categories || [],
+      })
+    }
+  }, [feedType, isOpen, form])
+  
   const handleCategoryChange = (categoryValue: string, checked: boolean) => {
     const currentCategories = form.getValues('animal_categories')
     
@@ -78,6 +99,8 @@ export function AddFeedTypeModal({
   }
   
   const handleSubmit = async (data: FeedTypeFormData) => {
+    if (!feedType?.id) return
+    
     setLoading(true)
     setError(null)
     
@@ -98,8 +121,8 @@ export function AddFeedTypeModal({
         nutritional_info: nutritionalInfo,
       }
       
-      const response = await fetch('/api/feed/types', {
-        method: 'POST',
+      const response = await fetch(`/api/feed/types/${feedType.id}`, {
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -108,12 +131,11 @@ export function AddFeedTypeModal({
       
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to create feed type')
+        throw new Error(errorData.error || 'Failed to update feed type')
       }
       
       const result = await response.json()
       onSuccess(result.data)
-      form.reset()
       onClose()
       
     } catch (err) {
@@ -129,11 +151,13 @@ export function AddFeedTypeModal({
   
   const selectedCategories = form.watch('animal_categories')
   
+  if (!feedType) return null
+  
   return (
     <Modal isOpen={isOpen} onClose={onClose} className="max-w-2xl">
       <div className="p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-6">
-          Add New Feed Type
+          Edit Feed Type
         </h3>
         
         {error && (
@@ -307,7 +331,7 @@ export function AddFeedTypeModal({
               type="submit"
               disabled={loading}
             >
-              {loading ? <LoadingSpinner size="sm" /> : 'Create Feed Type'}
+              {loading ? <LoadingSpinner size="sm" /> : 'Update Feed Type'}
             </Button>
           </div>
         </form>

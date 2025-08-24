@@ -483,7 +483,7 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
         </Card>
       </div>
       
-      {/* Main Content Tabs - Mobile Optimized */}
+{/* Main Content Tabs - Mobile Optimized */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <div className={cn(
           isMobile && "sticky top-16 bg-white border-b border-gray-200 z-10 -mx-4 px-4 pb-2"
@@ -500,7 +500,8 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
                 value={tab.value}
                 className={cn(
                   isMobile ? "text-xs px-1 min-w-0" : "flex items-center space-x-2",
-                  tab.value === 'breeding' && "relative"
+                  tab.value === 'breeding' && "relative",
+                  "data-[state=active]:text-blue-600"
                 )}
               >
                 {!isMobile && <tab.icon className="w-4 h-4" />}
@@ -515,7 +516,9 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
           </TabsList>
         </div>
         
-        <div className={cn(isMobile && "mt-4")}>
+        <div className={cn(
+          isMobile ? "mt-6" : "mt-8" // Increased spacing between tabs and content
+        )}>
           <TabsContent value="overview" className="space-y-6 mt-0">
             <AnimalBasicInfo 
               animal={animalData} 

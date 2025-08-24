@@ -380,3 +380,140 @@ export async function getFeedConsumptionRecords(farmId: string, limit: number = 
     return []
   }
 }
+
+// Add these functions to your existing lib/database/feed.ts file
+
+// Update Feed Type
+export async function updateFeedType(
+  farmId: string, 
+  feedTypeId: string, 
+  data: Omit<FeedTypeInsert, 'farm_id' | 'id'>
+) {
+  const supabase = await createServerSupabaseClient()
+  
+  // First check if the feed type belongs to the farm
+  const { data: existingFeedType, error: checkError } = await supabase
+    .from('feed_types')
+    .select('id')
+    .eq('id', feedTypeId)
+    .eq('farm_id', farmId)
+    .single()
+  
+  if (checkError || !existingFeedType) {
+    return { success: false, error: 'Feed type not found or access denied' }
+  }
+  
+  const { data: feedType, error } = await supabase
+    .from('feed_types')
+    .update({
+      ...data,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', feedTypeId)
+    .eq('farm_id', farmId)
+    .select()
+    .single()
+  
+  if (error) {
+    console.error('Error updating feed type:', error)
+    return { success: false, error: error.message }
+  }
+  
+  return { success: true, data: feedType }
+}
+
+// Delete Feed Type
+export async function deleteFeedType(farmId: string, feedTypeId: string) {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    // First check if the feed type belongs to the farm
+    const { data: existingFeedType, error: checkError } = await supabase
+      .from('feed_types')
+      .select('id, name')
+      .eq('id', feedTypeId)
+      .eq('farm_id', farmId)
+      .single()
+    
+    if (checkError || !existingFeedType) {
+      return { success: false, error: 'Feed type not found or access denied' }
+    }
+    
+    // Check if there are any inventory records using this feed type
+    const { data: inventoryRecords, error: inventoryError } = await supabase
+      .from('feed_inventory')
+      .select('id')
+      .eq('feed_type_id', feedTypeId)
+      .eq('farm_id', farmId)
+      .limit(1)
+    
+    if (inventoryError) {
+      console.error('Error checking inventory records:', inventoryError)
+      return { success: false, error: 'Error checking related records' }
+    }
+    
+    if (inventoryRecords && inventoryRecords.length > 0) {
+      return { 
+        success: false, 
+        error: 'Cannot delete feed type with existing inventory records. Please remove or reassign inventory first.' 
+      }
+    }
+    
+    // Check if there are any consumption records using this feed type
+    const { data: consumptionRecords, error: consumptionError } = await supabase
+      .from('feed_consumption')
+      .select('id')
+      .eq('feed_type_id', feedTypeId)
+      .eq('farm_id', farmId)
+      .limit(1)
+    
+    if (consumptionError) {
+      console.error('Error checking consumption records:', consumptionError)
+      return { success: false, error: 'Error checking related records' }
+    }
+    
+    if (consumptionRecords && consumptionRecords.length > 0) {
+      return { 
+        success: false, 
+        error: 'Cannot delete feed type with existing consumption records. This feed type has been used in feeding sessions.' 
+      }
+    }
+    
+    // If no related records, proceed with deletion
+    const { error: deleteError } = await supabase
+      .from('feed_types')
+      .delete()
+      .eq('id', feedTypeId)
+      .eq('farm_id', farmId)
+    
+    if (deleteError) {
+      console.error('Error deleting feed type:', deleteError)
+      return { success: false, error: deleteError.message }
+    }
+    
+    return { success: true }
+    
+  } catch (error) {
+    console.error('Error in deleteFeedType:', error)
+    return { success: false, error: 'An unexpected error occurred' }
+  }
+}
+
+// Get Feed Type by ID (helper function)
+export async function getFeedTypeById(farmId: string, feedTypeId: string) {
+  const supabase = await createServerSupabaseClient()
+  
+  const { data, error } = await supabase
+    .from('feed_types')
+    .select('*')
+    .eq('id', feedTypeId)
+    .eq('farm_id', farmId)
+    .single()
+  
+  if (error) {
+    console.error('Error fetching feed type:', error)
+    return null
+  }
+  
+  return data
+}

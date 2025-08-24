@@ -8,16 +8,20 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select'
 import { AnimalCard } from '@/components/animals/AnimalCard'
+import { AnimalListRow } from '@/components/animals/AnimalListRow'
 import { MobileFilterDrawer } from '@/components/mobile/MobileFilterDrawer'
 import { SearchModal } from '@/components/mobile/SearchModal'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
+import { cn } from "@/lib/utils/cn"
 import { 
   Filter, 
   Search, 
   Download, 
   X, 
   ChevronDown,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Grid3X3,
+  List
 } from 'lucide-react'
 import { GiCow } from 'react-icons/gi'
 
@@ -29,6 +33,8 @@ interface AnimalsListProps {
   onExportAnimals?: () => Promise<void>
   loading?: boolean
 }
+
+type ViewMode = 'grid' | 'list'
 
 export function AnimalsList({ 
   animals, 
@@ -52,6 +58,7 @@ export function AnimalsList({
   const [showFilters, setShowFilters] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
   const [activeFiltersCount, setActiveFiltersCount] = useState(0)
+  const [viewMode, setViewMode] = useState<ViewMode>('grid')
   
   const canExportData = ['farm_owner', 'farm_manager'].includes(userRole)
   
@@ -162,8 +169,29 @@ export function AnimalsList({
     return labels[filterKey]?.[value] || value
   }
 
+  const ViewToggleButton = () => (
+    <div className="flex items-center bg-gray-100 rounded-lg p-1">
+      <Button
+        variant={viewMode === 'grid' ? 'default' : 'ghost'}
+        size="sm"
+        onClick={() => setViewMode('grid')}
+        className={`px-2 py-1 h-8 ${viewMode === 'grid' ? 'bg-white shadow-sm' : 'hover:bg-gray-200'}`}
+      >
+        <Grid3X3 className="w-4 h-4" />
+      </Button>
+      <Button
+        variant={viewMode === 'list' ? 'default' : 'ghost'}
+        size="sm"
+        onClick={() => setViewMode('list')}
+        className={`px-2 py-1 h-8 ${viewMode === 'list' ? 'bg-white shadow-sm' : 'hover:bg-gray-200'}`}
+      >
+        <List className="w-4 h-4" />
+      </Button>
+    </div>
+  )
+
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col h-full space-y-4">
       {/* Mobile Quick Actions Bar */}
       {isMobile && (
         <div className="flex space-x-2 overflow-x-auto pb-2 scrollbar-hide">
@@ -204,6 +232,10 @@ export function AnimalsList({
               Export
             </Button>
           )}
+          
+          <div className="flex-shrink-0">
+            <ViewToggleButton />
+          </div>
         </div>
       )}
       
@@ -336,20 +368,24 @@ export function AnimalsList({
               </div>
             </div>
             
-            {/* Filter Summary */}
+            {/* Filter Summary and View Toggle */}
             <div className="mt-4 flex items-center justify-between">
               <span className="text-sm text-gray-600">
                 Showing {filteredAnimals.length} of {animalsList.length} animals
               </span>
               
-              {/* Clear Filters */}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleClearFilters}
-              >
-                Clear Filters
-              </Button>
+              <div className="flex items-center space-x-3">
+                <ViewToggleButton />
+                
+                {/* Clear Filters */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleClearFilters}
+                >
+                  Clear Filters
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -372,61 +408,88 @@ export function AnimalsList({
         </div>
       )}
       
-      {/* Animals Grid */}
-      {filteredAnimals.length === 0 ? (
-        <Card>
-          <CardContent className={`flex flex-col items-center justify-center ${
-            isMobile ? 'py-8' : 'py-12'
-          }`}>
-            <div className="text-center">
-              <GiCow className={`mx-auto text-gray-400 mb-4 ${
-                isMobile ? 'h-8 w-8' : 'h-12 w-12'
-              }`} />
-              <h3 className={`font-medium text-gray-900 mb-2 ${
-                isMobile ? 'text-base' : 'text-lg'
-              }`}>
-                {animalsList.length === 0 ? 'No animals yet' : 'No animals match your filters'}
-              </h3>
-              <p className={`text-gray-600 mb-6 ${
-                isMobile ? 'text-sm' : ''
-              }`}>
-                {animalsList.length === 0 
-                  ? 'Get started by adding your first animal to the herd.'
-                  : 'Try adjusting your filters or search terms.'
-                }
-              </p>
-              
-              {activeFiltersCount > 0 && (
-                <Button
-                  variant="outline"
-                  size={isMobile ? "sm" : "default"}
-                  onClick={handleClearFilters}
-                >
-                  <X className="h-4 w-4 mr-2" />
-                  Clear Filters
-                </Button>
-              )}
+      {/* Animals Display - Scrollable Container */}
+      <div className="flex-1 min-h-0"> {/* min-h-0 is important for flex child scrolling */}
+        <div className={cn(
+          "h-full overflow-y-auto",
+          "scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100", // Custom scrollbar styling
+          isMobile && "scrollbar-hide" // Hide scrollbar on mobile for cleaner look
+        )}>
+          {filteredAnimals.length === 0 ? (
+            <div className="h-full flex items-center justify-center p-8">
+              <Card className="w-full max-w-md">
+                <CardContent className="flex flex-col items-center justify-center p-8">
+                  <div className="text-center">
+                    <GiCow className={`mx-auto text-gray-400 mb-4 ${
+                      isMobile ? 'h-8 w-8' : 'h-12 w-12'
+                    }`} />
+                    <h3 className={`font-medium text-gray-900 mb-2 ${
+                      isMobile ? 'text-base' : 'text-lg'
+                    }`}>
+                      {animalsList.length === 0 ? 'No animals yet' : 'No animals match your filters'}
+                    </h3>
+                    <p className={`text-gray-600 mb-6 ${
+                      isMobile ? 'text-sm' : ''
+                    }`}>
+                      {animalsList.length === 0 
+                        ? 'Get started by adding your first animal to the herd.'
+                        : 'Try adjusting your filters or search terms.'
+                      }
+                    </p>
+                    
+                    {activeFiltersCount > 0 && (
+                      <Button
+                        variant="outline"
+                        size={isMobile ? "sm" : "default"}
+                        onClick={handleClearFilters}
+                      >
+                        <X className="h-4 w-4 mr-2" />
+                        Clear Filters
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
             </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className={`grid gap-4 ${
-          isMobile 
-            ? 'grid-cols-1' 
-            : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'
-        }`}>
-          {filteredAnimals.map((animal) => (
-            <AnimalCard 
-              key={animal.id} 
-              animal={animal} 
-              farmId={farmId}
-              userRole={userRole}
-              onAnimalUpdated={handleAnimalUpdated}
-              isMobile={isMobile}
-            />
-          ))}
+          ) : viewMode === 'list' ? (
+            // List View
+            <div className={cn(
+              "space-y-2 p-1", // Add small padding for better scroll experience
+              isMobile ? "pb-4" : "pb-6"
+            )}>
+              {filteredAnimals.map((animal) => (
+                <AnimalListRow 
+                  key={animal.id} 
+                  animal={animal} 
+                  farmId={farmId}
+                  userRole={userRole}
+                  onAnimalUpdated={handleAnimalUpdated}
+                  isMobile={isMobile}
+                />
+              ))}
+            </div>
+          ) : (
+            // Grid View (existing card layout)
+            <div className={cn(
+              "grid gap-4 p-1", // Add small padding for better scroll experience
+              isMobile 
+                ? 'grid-cols-1 pb-4' 
+                : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-6'
+            )}>
+              {filteredAnimals.map((animal) => (
+                <AnimalCard 
+                  key={animal.id} 
+                  animal={animal} 
+                  farmId={farmId}
+                  userRole={userRole}
+                  onAnimalUpdated={handleAnimalUpdated}
+                  isMobile={isMobile}
+                />
+              ))}
+            </div>
+          )}
         </div>
-      )}
+      </div>
       
       {/* Mobile Filter Drawer */}
       <MobileFilterDrawer
