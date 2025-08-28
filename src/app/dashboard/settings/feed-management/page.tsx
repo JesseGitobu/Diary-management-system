@@ -13,13 +13,14 @@ import {
 import { FeedManagementSettings } from '@/components/settings/feeds/FeedManagementSettings'
 
 interface FeedManagementSettingsPageProps {
-  searchParams: { farmId: string }
+  searchParams: Promise<{ farmId: string }>
 }
 
 export default async function FeedManagementSettingsPage({
   searchParams
 }: FeedManagementSettingsPageProps) {
-  const { farmId } = searchParams
+  // Await searchParams before accessing its properties
+  const { farmId } = await searchParams
   
   if (!farmId) {
     redirect('/dashboard')

@@ -31,6 +31,9 @@ interface FeedTypesTabProps {
   onAddFeedType: () => void
   onFeedTypeUpdated: (updatedFeedType: any) => void
   onFeedTypeDeleted: (feedTypeId: string) => void
+  feedTypeCategories: any[]
+  animalCategories: any[]
+  weightConversions: any[]
 }
 
 export function FeedTypesTab({
@@ -40,7 +43,10 @@ export function FeedTypesTab({
   farmId,
   onAddFeedType,
   onFeedTypeUpdated,
-  onFeedTypeDeleted
+  onFeedTypeDeleted,
+  feedTypeCategories,
+  animalCategories,
+  weightConversions,
 }: FeedTypesTabProps) {
   const [editingFeedType, setEditingFeedType] = useState<any | null>(null)
   const [showEditModal, setShowEditModal] = useState(false)
@@ -48,19 +54,28 @@ export function FeedTypesTab({
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [deleteLoading, setDeleteLoading] = useState(false)
 
-  // Helper function to format animal categories
-  const formatAnimalCategories = (categories: string[] | null) => {
-    if (!categories || categories.length === 0) return 'All categories'
+  // Helper function to format animal categories using UUIDs
+  const formatAnimalCategories = (categoryIds: string[] | null) => {
+    if (!categoryIds || categoryIds.length === 0) return 'All categories'
     
-    const categoryLabels: { [key: string]: string } = {
-      'calf': 'Calf',
-      'heifers': 'Heifers',
-      'dry_cows': 'Dry Cows',
-      'lactating': 'Lactating Cows',
-      'served_cows': 'Served Cows'
-    }
-    
-    return categories.map(cat => categoryLabels[cat] || cat).join(', ')
+    return categoryIds.map(id => {
+      const category = animalCategories.find(cat => cat.id === id)
+      return category ? category.name : id
+    }).join(', ')
+  }
+
+  // Helper function to get feed category name
+  const getFeedCategoryName = (categoryId: string | null) => {
+    if (!categoryId) return null
+    const category = feedTypeCategories.find(cat => cat.id === categoryId)
+    return category ? category.name : null
+  }
+
+  // Helper function to get preferred measurement unit name
+  const getPreferredMeasurementUnit = (unitId: string | null) => {
+    if (!unitId) return null
+    const unit = weightConversions.find(conv => conv.id === unitId)
+    return unit ? unit.unit_name : null
   }
 
   const handleEdit = (feedType: any) => {
@@ -170,20 +185,35 @@ export function FeedTypesTab({
               <div key={feedType.id} className={`flex items-center justify-between p-3 border rounded-lg ${isMobile ? 'flex-col items-start space-y-2' : 'flex-row'}`}>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between mb-2">
-                    <h4 className={`font-medium ${isMobile ? 'text-sm' : 'text-base'} truncate`}>
-                      {feedType.name}
-                    </h4>
+                    <div className="flex-1 min-w-0">
+                      <h4 className={`font-medium ${isMobile ? 'text-sm' : 'text-base'} truncate`}>
+                        {feedType.name}
+                      </h4>
+                      {/* Display feed category name */}
+                      {getFeedCategoryName(feedType.category_id) && (
+                        <div className="flex items-center space-x-1 mt-1">
+                          <div
+                            className="w-2 h-2 rounded-full"
+                            style={{ 
+                              backgroundColor: feedTypeCategories.find(cat => cat.id === feedType.category_id)?.color || '#gray' 
+                            }}
+                          />
+                          <span className="text-xs text-gray-500">
+                            {getFeedCategoryName(feedType.category_id)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
                     {feedType.animal_categories && feedType.animal_categories.length > 0 && (
                       <div className="ml-2 flex flex-wrap gap-1">
-                        {feedType.animal_categories.slice(0, 2).map((category: string) => (
-                          <Badge key={category} variant="secondary" className="text-xs">
-                            {category === 'calf' ? 'Calf' :
-                             category === 'heifers' ? 'Heifers' :
-                             category === 'dry_cows' ? 'Dry Cows' :
-                             category === 'lactating' ? 'Lactating' :
-                             category === 'served_cows' ? 'Served Cows' : category}
-                          </Badge>
-                        ))}
+                        {feedType.animal_categories.slice(0, 2).map((categoryId: string) => {
+                          const category = animalCategories.find(cat => cat.id === categoryId)
+                          return (
+                            <Badge key={categoryId} variant="secondary" className="text-xs">
+                              {category ? category.name : categoryId}
+                            </Badge>
+                          )
+                        })}
                         {feedType.animal_categories.length > 2 && (
                           <Badge variant="outline" className="text-xs">
                             +{feedType.animal_categories.length - 2}
@@ -197,13 +227,23 @@ export function FeedTypesTab({
                     {feedType.description || 'No description'}
                   </p>
                   
-                  <div className="flex flex-wrap gap-2 text-xs text-gray-500">
+                  <div className="flex flex-wrap gap-3 text-xs text-gray-500">
                     {feedType.supplier && (
                       <span>Supplier: {feedType.supplier}</span>
                     )}
                     
+                    {/* Display preferred measurement unit */}
+                    {getPreferredMeasurementUnit(feedType.preferred_measurement_unit) && (
+                      <span>Unit: {getPreferredMeasurementUnit(feedType.preferred_measurement_unit)}</span>
+                    )}
+
+                    {/* Display low stock threshold */}
+                    {feedType.low_stock_threshold && (
+                      <span>Alert at: {feedType.low_stock_threshold}kg</span>
+                    )}
+                    
                     {feedType.nutritional_info && (
-                      <div className="flex gap-2">
+                      <div className="flex gap-3">
                         {feedType.nutritional_info.protein_content && (
                           <span>Protein: {feedType.nutritional_info.protein_content}%</span>
                         )}
@@ -216,7 +256,7 @@ export function FeedTypesTab({
                   
                   {feedType.animal_categories && feedType.animal_categories.length > 0 && (
                     <p className={`text-gray-500 ${isMobile ? 'text-xs' : 'text-xs'} mt-1`}>
-                      For: {formatAnimalCategories(feedType.animal_categories)}
+                      Suitable for: {formatAnimalCategories(feedType.animal_categories)}
                     </p>
                   )}
                 </div>
@@ -270,6 +310,9 @@ export function FeedTypesTab({
           setEditingFeedType(null)
         }}
         onSuccess={handleEditSuccess}
+        feedTypeCategories={feedTypeCategories}
+        animalCategories={animalCategories}
+        weightConversions={weightConversions}
       />
 
       {/* Delete Confirmation Dialog */}
@@ -279,7 +322,6 @@ export function FeedTypesTab({
             <AlertDialogTitle>Delete Feed Type</AlertDialogTitle>
             <AlertDialogDescription>
               Are you sure you want to delete "{deletingFeedType?.name}"? This action cannot be undone.
-              {/* You might want to add more warnings about related inventory/consumption records */}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

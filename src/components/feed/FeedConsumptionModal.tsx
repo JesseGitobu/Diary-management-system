@@ -1,7 +1,7 @@
 // components/feed/FeedConsumptionModal.tsx
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -24,8 +24,47 @@ import {
   Calculator,
   AlertTriangle,
   CheckCircle,
-  X
+  X,
+  Target,
+  Tags,
+  Utensils,
+  TrendingUp,
+  TrendingDown,
+  Equal
 } from 'lucide-react'
+
+interface FeedCategoryQuantity {
+  category_id: string
+  quantity_kg: number
+  unit: 'kg' | 'grams'
+}
+
+interface ConsumptionBatch {
+  id: string
+  batch_name: string
+  description: string
+  animal_category_ids: string[]
+  feed_type_categories: FeedCategoryQuantity[]
+  daily_consumption_per_animal_kg: number
+  consumption_unit: 'kg' | 'grams'
+  feeding_frequency_per_day: number
+  feeding_times: string[]
+  batch_factors: any
+  is_active: boolean
+}
+
+interface FeedTypeCategory {
+  id: string
+  name: string
+  description: string
+  color: string
+}
+
+interface AnimalCategory {
+  id: string
+  name: string
+  description: string
+}
 
 interface FeedConsumptionModalProps {
   isOpen: boolean
@@ -34,6 +73,10 @@ interface FeedConsumptionModalProps {
   farmId: string
   feedTypes: any[]
   animals: any[]
+  inventory: any[] // Add inventory prop
+  consumptionBatches?: ConsumptionBatch[]
+  feedTypeCategories?: FeedTypeCategory[]
+  animalCategories?: AnimalCategory[]
   isMobile?: boolean
 }
 
@@ -44,6 +87,15 @@ interface ConsumptionEntry {
   notes?: string
 }
 
+interface BatchQuantityStatus {
+  categoryId: string
+  categoryName: string
+  recommendedKg: number
+  actualKg: number
+  status: 'under' | 'over' | 'perfect'
+  percentage: number
+}
+
 export function FeedConsumptionModal({
   isOpen,
   onClose,
@@ -51,9 +103,14 @@ export function FeedConsumptionModal({
   farmId,
   feedTypes,
   animals,
+  inventory,
+  consumptionBatches = [],
+  feedTypeCategories = [],
+  animalCategories = [],
   isMobile = false
 }: FeedConsumptionModalProps) {
   const [feedingMode, setFeedingMode] = useState<'individual' | 'batch'>('individual')
+  const [selectedBatch, setSelectedBatch] = useState<string>('')
   const [selectedFeedType, setSelectedFeedType] = useState('')
   const [selectedAnimals, setSelectedAnimals] = useState<string[]>([])
   const [quantity, setQuantity] = useState('')
@@ -63,9 +120,121 @@ export function FeedConsumptionModal({
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [multipleEntries, setMultipleEntries] = useState<ConsumptionEntry[]>([])
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [animalCount, setAnimalCount] = useState<number>(1)
+  const [perCowQuantity, setPerCowQuantity] = useState('')
 
   const { isMobile: deviceIsMobile } = useDeviceInfo()
   const isMobileView = isMobile || deviceIsMobile
+
+  // Get available feed types with inventory
+  const availableFeedTypes = useMemo(() => {
+    const feedTypesWithStock = feedTypes.map(feedType => {
+      // Calculate total available stock for this feed type
+      const totalStock = inventory
+        .filter(item => item.feed_type_id === feedType.id)
+        .reduce((sum, item) => sum + item.quantity_kg, 0)
+      
+      return {
+        ...feedType,
+        totalStock,
+        hasStock: totalStock > 0
+      }
+    }).filter(feedType => feedType.hasStock) // Only show feed types with stock
+    
+    return feedTypesWithStock
+  }, [feedTypes, inventory])
+
+  // Get selected batch and feed type data
+  const selectedConsumptionBatch = useMemo(() => 
+    consumptionBatches.find(batch => batch.id === selectedBatch),
+    [consumptionBatches, selectedBatch]
+  )
+
+  const selectedFeedTypeData = useMemo(() => 
+    availableFeedTypes.find(ft => ft.id === selectedFeedType),
+    [availableFeedTypes, selectedFeedType]
+  )
+
+  // Calculate quantity recommendations and status
+  const quantityAnalysis = useMemo(() => {
+    if (!selectedConsumptionBatch || !selectedFeedTypeData || !perCowQuantity || animalCount <= 0) {
+      return null
+    }
+
+    // Find the feed category for the selected feed type
+    const feedCategory = selectedFeedTypeData.feed_category_id
+    const batchFeedCategory = (selectedConsumptionBatch.feed_type_categories || []).find(
+      fc => fc.category_id === feedCategory
+    )
+
+    if (!batchFeedCategory) return null
+
+    const category = feedTypeCategories.find(cat => cat.id === feedCategory)
+    const perCowActual = parseFloat(perCowQuantity)
+    const totalActualThisSession = perCowActual * animalCount
+    
+    // Calculate recommended amounts
+    const recommendedPerCowPerSession = batchFeedCategory.unit === 'grams' 
+      ? batchFeedCategory.quantity_kg / 1000 
+      : batchFeedCategory.quantity_kg
+    const recommendedThisSession = recommendedPerCowPerSession * animalCount
+    
+    // Daily calculations
+    const feedingFrequency = selectedConsumptionBatch.feeding_frequency_per_day
+    const recommendedPerCowDaily = recommendedPerCowPerSession * feedingFrequency
+    const recommendedDailyTotal = recommendedPerCowDaily * animalCount
+    
+    // Session performance
+    const sessionPerformance = recommendedThisSession > 0 ? (totalActualThisSession / recommendedThisSession) * 100 : 0
+    let sessionStatus: 'under' | 'over' | 'perfect' = 'perfect'
+    
+    if (sessionPerformance < 90) sessionStatus = 'under'
+    else if (sessionPerformance > 110) sessionStatus = 'over'
+    
+    // Remaining calculations
+    const sessionVariance = totalActualThisSession - recommendedThisSession
+    const remainingSessionsToday = feedingFrequency - 1
+    const remainingRecommendedTotal = recommendedPerCowPerSession * animalCount * remainingSessionsToday
+    
+    // Adjust remaining amounts based on current session performance
+    const suggestedRemainingTotal = remainingRecommendedTotal - (sessionVariance * remainingSessionsToday / feedingFrequency)
+
+    return {
+      categoryId: feedCategory,
+      categoryName: category?.name || 'Unknown Category',
+      // This session
+      recommendedThisSession,
+      actualThisSession: totalActualThisSession,
+      sessionVariance,
+      sessionStatus,
+      sessionPerformance: Math.round(sessionPerformance),
+      // Per cow
+      recommendedPerCow: recommendedPerCowPerSession,
+      actualPerCow: perCowActual,
+      // Daily totals
+      recommendedDailyTotal,
+      recommendedPerCowDaily,
+      // Remaining sessions
+      remainingSessionsToday,
+      remainingRecommendedTotal,
+      suggestedRemainingTotal: Math.max(0, suggestedRemainingTotal),
+      unit: batchFeedCategory.unit,
+      feedingFrequency
+    }
+  }, [selectedConsumptionBatch, selectedFeedTypeData, perCowQuantity, animalCount, feedTypeCategories])
+
+  // Filter animals by batch categories
+  const batchAnimals = useMemo(() => {
+    if (!selectedConsumptionBatch || selectedConsumptionBatch.animal_category_ids.length === 0) {
+      return animals
+    }
+    
+    return animals.filter(animal => 
+      selectedConsumptionBatch.animal_category_ids.some(categoryId => 
+        animal.category_id === categoryId || animal.animal_category_id === categoryId
+      )
+    )
+  }, [animals, selectedConsumptionBatch])
 
   // Reset form when modal opens
   useEffect(() => {
@@ -76,33 +245,44 @@ export function FeedConsumptionModal({
 
   const resetForm = () => {
     setFeedingMode('individual')
+    setSelectedBatch('')
     setSelectedFeedType('')
     setSelectedAnimals([])
     setQuantity('')
+    setPerCowQuantity('')
     setFeedingTime(new Date().toTimeString().slice(0, 5))
     setNotes('')
     setErrors({})
     setMultipleEntries([])
     setShowAdvanced(false)
+    setAnimalCount(1)
   }
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {}
 
-    if (!selectedFeedType) newErrors.feedType = 'Please select a feed type'
-    
-    if (feedingMode === 'individual' && selectedAnimals.length === 0) {
-      newErrors.animals = 'Please select at least one animal'
-    }
-    
-    if (feedingMode === 'batch' && multipleEntries.length === 0) {
-      newErrors.entries = 'Please add at least one feeding entry'
-    }
-    
     if (feedingMode === 'individual') {
+      if (!selectedFeedType) newErrors.feedType = 'Please select a feed type'
+      if (selectedAnimals.length === 0) newErrors.animals = 'Please select at least one animal'
       if (!quantity || parseFloat(quantity) <= 0) {
         newErrors.quantity = 'Please enter a valid quantity'
+      } else if (selectedFeedTypeData && parseFloat(quantity) > selectedFeedTypeData.totalStock) {
+        newErrors.quantity = `Insufficient stock. Only ${selectedFeedTypeData.totalStock}kg available`
       }
+    }
+    
+    if (feedingMode === 'batch') {
+      if (!selectedBatch || selectedBatch === 'none') newErrors.batch = 'Please select a consumption batch'
+      if (!selectedFeedType) newErrors.feedType = 'Please select a feed type'
+      if (!perCowQuantity || parseFloat(perCowQuantity) <= 0) {
+        newErrors.perCowQuantity = 'Please enter amount per cow'
+      } else if (selectedFeedTypeData) {
+        const totalQuantityNeeded = parseFloat(perCowQuantity) * animalCount
+        if (totalQuantityNeeded > selectedFeedTypeData.totalStock) {
+          newErrors.perCowQuantity = `Insufficient stock. Only ${selectedFeedTypeData.totalStock}kg available (${(selectedFeedTypeData.totalStock / animalCount).toFixed(1)}kg per cow max)`
+        }
+      }
+      if (animalCount <= 0) newErrors.animalCount = 'Please enter a valid animal count'
     }
 
     setErrors(newErrors)
@@ -148,15 +328,14 @@ export function FeedConsumptionModal({
     if (feedingMode === 'individual') {
       return parseFloat(quantity) || 0
     }
-    return multipleEntries.reduce((sum, entry) => sum + entry.quantityKg, 0)
+    return (parseFloat(perCowQuantity) || 0) * animalCount
   }
 
   const getTotalAnimals = () => {
     if (feedingMode === 'individual') {
       return selectedAnimals.length
     }
-    const allAnimals = new Set(multipleEntries.flatMap(entry => entry.animalIds))
-    return allAnimals.size
+    return animalCount
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -174,8 +353,9 @@ export function FeedConsumptionModal({
 
       const consumptionData = {
         farmId,
-        feedingTime: feedingTimestamp, // Send full timestamp instead of just time
+        feedingTime: feedingTimestamp,
         mode: feedingMode,
+        batchId: feedingMode === 'batch' ? selectedBatch : null,
         entries: feedingMode === 'individual' 
           ? [{
               feedTypeId: selectedFeedType,
@@ -183,7 +363,15 @@ export function FeedConsumptionModal({
               animalIds: selectedAnimals,
               notes
             }]
-          : multipleEntries
+          : [{
+              feedTypeId: selectedFeedType,
+              quantityKg: getTotalQuantity(),
+              animalIds: [], // Empty array for batch mode since we're using animalCount
+              animalCount: animalCount,
+              perCowQuantityKg: parseFloat(perCowQuantity),
+              batchId: selectedBatch,
+              notes: `Batch: ${selectedConsumptionBatch?.batch_name} - ${parseFloat(perCowQuantity)}kg per cow${notes ? `\n${notes}` : ''}`
+            }]
       }
 
       console.log('Sending consumption data:', consumptionData)
@@ -207,6 +395,24 @@ export function FeedConsumptionModal({
       setErrors({ submit: error instanceof Error ? error.message : 'Failed to record consumption. Please try again.' })
     } finally {
       setIsSubmitting(false)
+    }
+  }
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'under': return <TrendingDown className="w-4 h-4 text-red-500" />
+      case 'over': return <TrendingUp className="w-4 h-4 text-orange-500" />
+      case 'perfect': return <Equal className="w-4 h-4 text-green-500" />
+      default: return <Target className="w-4 h-4 text-gray-500" />
+    }
+  }
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'under': return 'border-red-200 bg-red-50'
+      case 'over': return 'border-orange-200 bg-orange-50'
+      case 'perfect': return 'border-green-200 bg-green-50'
+      default: return 'border-gray-200 bg-gray-50'
     }
   }
 
@@ -252,8 +458,8 @@ export function FeedConsumptionModal({
                     <span>Individual</span>
                   </TabsTrigger>
                   <TabsTrigger value="batch" className="flex items-center space-x-2">
-                    <Users className="w-4 h-4" />
-                    <span>Batch</span>
+                    <Utensils className="w-4 h-4" />
+                    <span>Batch Template</span>
                   </TabsTrigger>
                 </TabsList>
               </Tabs>
@@ -277,18 +483,21 @@ export function FeedConsumptionModal({
                           <SelectValue placeholder="Select feed type" />
                         </SelectTrigger>
                         <SelectContent>
-                          {feedTypes.map(feedType => (
+                          {availableFeedTypes.map(feedType => (
                             <SelectItem key={feedType.id} value={feedType.id}>
                               <div className="flex items-center justify-between w-full">
                                 <span>{feedType.name}</span>
-                                {feedType.currentStock && (
-                                  <Badge variant="outline" className="ml-2 text-xs">
-                                    {feedType.currentStock.toFixed(1)}kg available
-                                  </Badge>
-                                )}
+                                <Badge variant="outline" className="ml-2 text-xs">
+                                  {feedType.totalStock.toFixed(1)}kg available
+                                </Badge>
                               </div>
                             </SelectItem>
                           ))}
+                          {availableFeedTypes.length === 0 && (
+                            <SelectItem value="no-stock" disabled>
+                              No feeds with stock available
+                            </SelectItem>
+                          )}
                         </SelectContent>
                       </Select>
                       {errors.feedType && <p className="text-sm text-red-600 mt-1">{errors.feedType}</p>}
@@ -375,157 +584,324 @@ export function FeedConsumptionModal({
           {/* Batch Feeding */}
           {feedingMode === 'batch' && (
             <div className="space-y-6">
-              {/* Add Entry Form */}
+              {/* Feed Type and Quantity - First */}
               <Card>
                 <CardHeader className={`${isMobileView ? 'pb-3' : ''}`}>
-                  <CardTitle className={`${isMobileView ? 'text-lg' : ''}`}>Add Feeding Entry</CardTitle>
+                  <CardTitle className={`${isMobileView ? 'text-lg' : ''}`}>Feed Details</CardTitle>
                   <CardDescription className={`${isMobileView ? 'text-sm' : ''}`}>
-                    Add multiple feeding entries for different feed types or animal groups
+                    Select the feed type and enter the quantity used
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className={`grid ${isMobileView ? 'grid-cols-1' : 'grid-cols-2'} gap-4`}>
                     <div>
-                      <Label htmlFor="batchFeedType">Feed Type</Label>
+                      <Label htmlFor="batchFeedType">Feed Type *</Label>
                       <Select value={selectedFeedType} onValueChange={setSelectedFeedType}>
-                        <SelectTrigger>
+                        <SelectTrigger className={errors.feedType ? 'border-red-300' : ''}>
                           <SelectValue placeholder="Select feed type" />
                         </SelectTrigger>
                         <SelectContent>
-                          {feedTypes.map(feedType => (
+                          {availableFeedTypes.map(feedType => (
                             <SelectItem key={feedType.id} value={feedType.id}>
-                              {feedType.name}
+                              <div className="flex items-center space-x-2">
+                                <span>{feedType.name}</span>
+                                {feedType.feed_category_id && (
+                                  <div 
+                                    className="w-3 h-3 rounded-full"
+                                    style={{ 
+                                      backgroundColor: feedTypeCategories.find(cat => cat.id === feedType.feed_category_id)?.color || '#gray' 
+                                    }}
+                                  />
+                                )}
+                                <Badge variant="outline" className="text-xs">
+                                  {feedType.totalStock.toFixed(1)}kg
+                                </Badge>
+                              </div>
                             </SelectItem>
                           ))}
+                          {availableFeedTypes.length === 0 && (
+                            <SelectItem value="no-stock" disabled>
+                              No feeds with stock available
+                            </SelectItem>
+                          )}
                         </SelectContent>
                       </Select>
+                      {errors.feedType && <p className="text-sm text-red-600 mt-1">{errors.feedType}</p>}
                     </div>
 
                     <div>
-                      <Label htmlFor="batchQuantity">Quantity (kg)</Label>
+                      <Label htmlFor="batchQuantity">Amount per Cow (kg) *</Label>
                       <Input
                         id="batchQuantity"
                         type="number"
                         step="0.1"
                         min="0"
-                        value={quantity}
-                        onChange={(e) => setQuantity(e.target.value)}
-                        placeholder="Enter quantity"
+                        value={perCowQuantity}
+                        onChange={(e) => setPerCowQuantity(e.target.value)}
+                        placeholder="Enter amount per cow this session"
+                        className={errors.perCowQuantity ? 'border-red-300' : ''}
+                      />
+                      {errors.perCowQuantity && <p className="text-sm text-red-600 mt-1">{errors.perCowQuantity}</p>}
+                      {perCowQuantity && animalCount && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          Total this session: {(parseFloat(perCowQuantity) * animalCount).toFixed(1)}kg
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className={`grid ${isMobileView ? 'grid-cols-1' : 'grid-cols-2'} gap-4`}>
+                    <div>
+                      <Label htmlFor="animalCount">Number of Animals *</Label>
+                      <Input
+                        id="animalCount"
+                        type="number"
+                        min="1"
+                        value={animalCount}
+                        onChange={(e) => setAnimalCount(parseInt(e.target.value) || 1)}
+                        placeholder="Enter animal count"
+                        className={errors.animalCount ? 'border-red-300' : ''}
+                      />
+                      {errors.animalCount && <p className="text-sm text-red-600 mt-1">{errors.animalCount}</p>}
+                    </div>
+
+                    <div>
+                      <Label htmlFor="batchFeedingTime">Feeding Time</Label>
+                      <Input
+                        id="batchFeedingTime"
+                        type="time"
+                        value={feedingTime}
+                        onChange={(e) => setFeedingTime(e.target.value)}
                       />
                     </div>
                   </div>
-
-                  {/* Animal Selection for Batch */}
-                  <div>
-                    <Label>Select Animals</Label>
-                    <div className={`grid ${isMobileView ? 'grid-cols-1' : 'grid-cols-2 md:grid-cols-3'} gap-2 mt-2 max-h-40 overflow-y-auto border rounded-lg p-3`}>
-                      {animals.map(animal => (
-                        <div
-                          key={animal.id}
-                          onClick={() => handleAnimalToggle(animal.id)}
-                          className={`p-2 border rounded cursor-pointer text-sm ${
-                            selectedAnimals.includes(animal.id)
-                              ? 'border-blue-500 bg-blue-50'
-                              : 'border-gray-200 hover:border-gray-300'
-                          }`}
-                        >
-                          {animal.tag_number || animal.name}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="batchNotes">Notes (Optional)</Label>
-                    <Textarea
-                      id="batchNotes"
-                      value={notes}
-                      onChange={(e) => setNotes(e.target.value)}
-                      placeholder="Any notes about this feeding..."
-                      rows={2}
-                    />
-                  </div>
-
-                  <Button 
-                    type="button" 
-                    onClick={addBatchEntry}
-                    className="w-full"
-                    variant="outline"
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Entry
-                  </Button>
-
-                  {errors.batch && <p className="text-sm text-red-600">{errors.batch}</p>}
                 </CardContent>
               </Card>
 
-              {/* Batch Entries List */}
-              {multipleEntries.length > 0 && (
-                <Card>
+              {/* Batch Selection - Second */}
+              <Card>
+                <CardHeader className={`${isMobileView ? 'pb-3' : ''}`}>
+                  <CardTitle className={`${isMobileView ? 'text-lg' : ''}`}>Select Animal Batch</CardTitle>
+                  <CardDescription className={`${isMobileView ? 'text-sm' : ''}`}>
+                    Choose a consumption batch to compare against recommended feeding guidelines
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <Label htmlFor="batch">Consumption Batch *</Label>
+                    <Select value={selectedBatch} onValueChange={setSelectedBatch}>
+                      <SelectTrigger className={errors.batch ? 'border-red-300' : ''}>
+                        <SelectValue placeholder="Select a consumption batch" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {consumptionBatches.filter(batch => batch.is_active).map(batch => (
+                          <SelectItem key={batch.id} value={batch.id}>
+                            <div className="flex flex-col">
+                              <span className="font-medium">{batch.batch_name}</span>
+                              <span className="text-xs text-gray-500">
+                                {(batch.feed_type_categories || []).length} feed categories • {batch.feeding_frequency_per_day}x daily
+                              </span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Batch Details */}
+                  {selectedConsumptionBatch && (
+                    <div className="border rounded-lg p-4 bg-blue-50">
+                      <div className="flex items-start space-x-3">
+                        <Utensils className="w-5 h-5 text-blue-600 mt-0.5" />
+                        <div className="flex-1">
+                          <h4 className="font-medium text-blue-900 mb-2">{selectedConsumptionBatch.batch_name}</h4>
+                          {selectedConsumptionBatch.description && (
+                            <p className="text-sm text-blue-700 mb-3">{selectedConsumptionBatch.description}</p>
+                          )}
+                          
+                          <div className="space-y-2">
+                            <div className="text-sm text-blue-700">
+                              <strong>Feed Categories:</strong>
+                            </div>
+                            {(selectedConsumptionBatch.feed_type_categories || []).map(fc => {
+                              const category = feedTypeCategories.find(cat => cat.id === fc.category_id)
+                              return (
+                                <div key={fc.category_id} className="flex items-center space-x-2">
+                                  <div 
+                                    className="w-3 h-3 rounded-full"
+                                    style={{ backgroundColor: category?.color || '#gray' }}
+                                  />
+                                  <span className="text-sm text-blue-700">
+                                    {category?.name}: {fc.quantity_kg} {fc.unit} per animal per feeding
+                                  </span>
+                                </div>
+                              )
+                            })}
+                            
+                            <div className="text-sm text-blue-700 mt-3">
+                              <strong>Schedule:</strong> {selectedConsumptionBatch.feeding_frequency_per_day}x daily
+                              {(selectedConsumptionBatch.feeding_times || []).length > 0 && (
+                                <span> at {(selectedConsumptionBatch.feeding_times || []).join(', ')}</span>
+                              )}
+                            </div>
+                            
+                            <div className="text-sm text-blue-700">
+                              <strong>Target Animals:</strong> {batchAnimals.length} animals match this batch
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Quantity Analysis - Third */}
+              {quantityAnalysis && (
+                <Card className={`border-2 ${getStatusColor(quantityAnalysis.sessionStatus)}`}>
                   <CardHeader className={`${isMobileView ? 'pb-3' : ''}`}>
-                    <CardTitle className={`${isMobileView ? 'text-lg' : ''}`}>Feeding Entries</CardTitle>
-                    <CardDescription className={`${isMobileView ? 'text-sm' : ''}`}>
-                      Review your batch feeding entries
+                    <CardTitle className={`${isMobileView ? 'text-lg' : ''} flex items-center space-x-2`}>
+                      {getStatusIcon(quantityAnalysis.sessionStatus)}
+                      <span>Daily Feeding Analysis</span>
+                      <Badge variant="outline" className="ml-auto">
+                        {quantityAnalysis.sessionPerformance}% of session target
+                      </Badge>
+                    </CardTitle>
+                    <CardDescription>
+                      Session {1} of {quantityAnalysis.feedingFrequency} daily feedings
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <div className="space-y-3">
-                      {multipleEntries.map((entry, index) => {
-                        const feedTypeName = feedTypes.find(ft => ft.id === entry.feedTypeId)?.name
-                        return (
-                          <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
-                            <div className="flex-1">
-                              <div className="flex items-center space-x-2">
-                                <Badge variant="outline">{feedTypeName}</Badge>
-                                <span className="font-medium">{entry.quantityKg}kg</span>
-                                <span className="text-gray-500">•</span>
-                                <span className="text-gray-500">{entry.animalIds.length} animals</span>
-                              </div>
-                              {entry.notes && (
-                                <p className="text-sm text-gray-600 mt-1">{entry.notes}</p>
-                              )}
-                            </div>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => removeBatchEntry(index)}
-                            >
-                              <Minus className="w-4 h-4" />
-                            </Button>
+                    {/* This Session Performance */}
+                    <div className="mb-6">
+                      <h4 className="font-medium text-gray-900 mb-3">This Session Performance</h4>
+                      <div className={`grid ${isMobileView ? 'grid-cols-1' : 'grid-cols-3'} gap-4`}>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-blue-600">
+                            {quantityAnalysis.recommendedThisSession.toFixed(1)}kg
                           </div>
-                        )
-                      })}
+                          <div className="text-sm text-gray-600">Recommended This Session</div>
+                          <div className="text-xs text-gray-500">
+                            ({quantityAnalysis.recommendedPerCow.toFixed(1)}kg per cow)
+                          </div>
+                        </div>
+                        
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-gray-900">
+                            {quantityAnalysis.actualThisSession.toFixed(1)}kg
+                          </div>
+                          <div className="text-sm text-gray-600">Actual This Session</div>
+                          <div className="text-xs text-gray-500">
+                            ({quantityAnalysis.actualPerCow.toFixed(1)}kg per cow)
+                          </div>
+                        </div>
+                        
+                        <div className="text-center">
+                          <div className={`text-2xl font-bold ${
+                            quantityAnalysis.sessionStatus === 'under' ? 'text-red-600' :
+                            quantityAnalysis.sessionStatus === 'over' ? 'text-orange-600' : 'text-green-600'
+                          }`}>
+                            {quantityAnalysis.sessionVariance >= 0 ? '+' : ''}{quantityAnalysis.sessionVariance.toFixed(1)}kg
+                          </div>
+                          <div className="text-sm text-gray-600">Variance</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Daily Planning */}
+                    <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                      <h4 className="font-medium text-gray-900 mb-3">Daily Planning Overview</h4>
+                      <div className={`grid ${isMobileView ? 'grid-cols-1' : 'grid-cols-2'} gap-4`}>
+                        <div>
+                          <div className="text-lg font-bold text-gray-900">
+                            {quantityAnalysis.recommendedDailyTotal.toFixed(1)}kg
+                          </div>
+                          <div className="text-sm text-gray-600">Total Daily Target</div>
+                          <div className="text-xs text-gray-500">
+                            {quantityAnalysis.recommendedPerCowDaily.toFixed(1)}kg per cow across {quantityAnalysis.feedingFrequency} sessions
+                          </div>
+                        </div>
+                        
+                        <div>
+                          <div className="text-lg font-bold text-purple-600">
+                            {quantityAnalysis.suggestedRemainingTotal.toFixed(1)}kg
+                          </div>
+                          <div className="text-sm text-gray-600">
+                            Suggested for {quantityAnalysis.remainingSessionsToday} Remaining Sessions
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {quantityAnalysis.remainingSessionsToday > 0 
+                              ? `${(quantityAnalysis.suggestedRemainingTotal / quantityAnalysis.remainingSessionsToday / animalCount).toFixed(1)}kg per cow per session`
+                              : 'No more sessions today'
+                            }
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="mt-4 p-3 bg-white rounded border">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <Tags className="w-4 h-4 text-gray-600" />
+                        <span className="text-sm font-medium text-gray-700">Feed Category:</span>
+                        <span className="text-sm text-gray-600">{quantityAnalysis.categoryName}</span>
+                        <div 
+                          className="w-3 h-3 rounded-full"
+                          style={{ backgroundColor: feedTypeCategories.find(cat => cat.id === quantityAnalysis.categoryId)?.color || '#gray' }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Action Recommendations */}
+                    <div className="mt-4">
+                      {quantityAnalysis.sessionStatus === 'under' ? (
+                        <Alert className="border-red-200 bg-red-50">
+                          <AlertTriangle className="h-4 w-4 text-red-600" />
+                          <AlertDescription className="text-red-800">
+                            <strong>Under-fed this session:</strong> Consider increasing next feeding by {Math.abs(quantityAnalysis.sessionVariance / quantityAnalysis.remainingSessionsToday || 0).toFixed(1)}kg total 
+                            ({Math.abs(quantityAnalysis.sessionVariance / quantityAnalysis.remainingSessionsToday / animalCount || 0).toFixed(1)}kg per cow) to meet daily targets.
+                          </AlertDescription>
+                        </Alert>
+                      ) : quantityAnalysis.sessionStatus === 'over' ? (
+                        <Alert className="border-orange-200 bg-orange-50">
+                          <AlertTriangle className="h-4 w-4 text-orange-600" />
+                          <AlertDescription className="text-orange-800">
+                            <strong>Over-fed this session:</strong> You can reduce next feedings by {Math.abs(quantityAnalysis.sessionVariance / quantityAnalysis.remainingSessionsToday || 0).toFixed(1)}kg total 
+                            ({Math.abs(quantityAnalysis.sessionVariance / quantityAnalysis.remainingSessionsToday / animalCount || 0).toFixed(1)}kg per cow) to maintain daily balance.
+                          </AlertDescription>
+                        </Alert>
+                      ) : (
+                        <Alert className="border-green-200 bg-green-50">
+                          <CheckCircle className="h-4 w-4 text-green-600" />
+                          <AlertDescription className="text-green-800">
+                            <strong>Perfect session feeding!</strong> Continue with {quantityAnalysis.recommendedPerCow.toFixed(1)}kg per cow for remaining sessions.
+                          </AlertDescription>
+                        </Alert>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
               )}
-
-              {errors.entries && <p className="text-sm text-red-600">{errors.entries}</p>}
             </div>
           )}
 
-          {/* Notes (Individual mode only) */}
-          {feedingMode === 'individual' && (
-            <Card>
-              <CardHeader className={`${isMobileView ? 'pb-3' : ''}`}>
-                <CardTitle className={`${isMobileView ? 'text-lg' : ''}`}>Additional Notes</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Any notes about this feeding session..."
-                  rows={3}
-                />
-              </CardContent>
-            </Card>
-          )}
+          {/* Notes */}
+          <Card>
+            <CardHeader className={`${isMobileView ? 'pb-3' : ''}`}>
+              <CardTitle className={`${isMobileView ? 'text-lg' : ''}`}>Additional Notes</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Any notes about this feeding session..."
+                rows={3}
+              />
+            </CardContent>
+          </Card>
 
           {/* Summary */}
-          {(feedingMode === 'individual' && selectedFeedType && quantity) || 
-           (feedingMode === 'batch' && multipleEntries.length > 0) ? (
+          {((feedingMode === 'individual' && selectedFeedType && quantity) || 
+            (feedingMode === 'batch' && selectedBatch && selectedFeedType && quantity)) && (
             <Card className="border-green-200 bg-green-50">
               <CardHeader className={`${isMobileView ? 'pb-3' : ''}`}>
                 <CardTitle className={`${isMobileView ? 'text-lg' : ''} text-green-800 flex items-center space-x-2`}>
@@ -556,9 +932,18 @@ export function FeedConsumptionModal({
                     </div>
                   )}
                 </div>
+                
+                {feedingMode === 'batch' && selectedConsumptionBatch && (
+                  <div className="mt-4 pt-4 border-t border-green-200">
+                    <div className="flex items-center space-x-2 text-sm text-green-700">
+                      <Utensils className="w-4 h-4" />
+                      <span>Using batch: <strong>{selectedConsumptionBatch.batch_name}</strong></span>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
-          ) : null}
+          )}
 
           {/* Error Alert */}
           {errors.submit && (

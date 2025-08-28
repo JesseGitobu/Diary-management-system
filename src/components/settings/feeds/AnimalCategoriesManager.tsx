@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
@@ -91,7 +91,7 @@ export function AnimalCategoriesManager({
     growth_phase: false
   })
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setFormData({
       name: '',
       description: '',
@@ -102,14 +102,14 @@ export function AnimalCategoriesManager({
       breeding_male: false,
       growth_phase: false
     })
-  }
+  }, [])
 
-  const handleAdd = () => {
+  const handleAdd = useCallback(() => {
     resetForm()
     setShowAddModal(true)
-  }
+  }, [resetForm])
 
-  const handleEdit = (category: AnimalCategory) => {
+  const handleEdit = useCallback((category: AnimalCategory) => {
     setFormData({
       name: category.name,
       description: category.description || '',
@@ -122,7 +122,13 @@ export function AnimalCategoriesManager({
     })
     setEditingCategory(category)
     setShowAddModal(true)
-  }
+  }, [])
+
+  const handleModalClose = useCallback(() => {
+    setShowAddModal(false)
+    setEditingCategory(null)
+    resetForm()
+  }, [resetForm])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -147,8 +153,8 @@ export function AnimalCategoriesManager({
       }
 
       const url = editingCategory 
-        ? `/api/settings/feed-management/animal-categories/${editingCategory.id}`
-        : '/api/settings/feed-management/animal-categories'
+        ? `/api/farms/${farmId}/feed-management/animal-categories/${editingCategory.id}`
+        : `/api/farms/${farmId}/feed-management/animal-categories`
       
       const method = editingCategory ? 'PUT' : 'POST'
       
@@ -173,9 +179,7 @@ export function AnimalCategoriesManager({
         onCategoriesUpdate([...categories, result.data])
       }
 
-      setShowAddModal(false)
-      setEditingCategory(null)
-      resetForm()
+      handleModalClose()
     } catch (error) {
       console.error('Error saving category:', error)
       // You might want to show a toast notification here
@@ -189,7 +193,7 @@ export function AnimalCategoriesManager({
 
     setLoading(true)
     try {
-      const response = await fetch(`/api/settings/feed-management/animal-categories/${deletingCategory.id}`, {
+      const response = await fetch(`/api/farms/${farmId}/feed-management/animal-categories/${deletingCategory.id}`, {
         method: 'DELETE'
       })
 
@@ -207,6 +211,27 @@ export function AnimalCategoriesManager({
     }
   }
 
+  // Memoized event handlers to prevent input focus issues
+  const handleNameChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData(prev => ({ ...prev, name: e.target.value }))
+  }, [])
+
+  const handleDescriptionChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setFormData(prev => ({ ...prev, description: e.target.value }))
+  }, [])
+
+  const handleMinAgeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData(prev => ({ ...prev, min_age_days: e.target.value }))
+  }, [])
+
+  const handleMaxAgeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData(prev => ({ ...prev, max_age_days: e.target.value }))
+  }, [])
+
+  const handleCharacteristicChange = useCallback((key: string, checked: boolean) => {
+    setFormData(prev => ({ ...prev, [key]: checked }))
+  }, [])
+
   const formatAge = (minAge?: number, maxAge?: number) => {
     if (!minAge && !maxAge) return 'Any age'
     if (minAge && !maxAge) return `${Math.floor(minAge / 30)}+ months`
@@ -223,7 +248,10 @@ export function AnimalCategoriesManager({
       .map(option => option.label)
   }
 
-  const sortedCategories = [...categories].sort((a, b) => a.sort_order - b.sort_order)
+  const sortedCategories = useMemo(() => 
+    [...categories].sort((a, b) => a.sort_order - b.sort_order),
+    [categories]
+  )
 
   const ActionButtons = ({ category }: { category: AnimalCategory }) => {
     if (!canEdit) return null
@@ -355,11 +383,11 @@ export function AnimalCategoriesManager({
       </div>
 
       {/* Add/Edit Modal */}
-      <Modal isOpen={showAddModal} onClose={() => {
-        setShowAddModal(false)
-        setEditingCategory(null)
-        resetForm()
-      }} className="max-w-lg">
+      <Modal 
+        isOpen={showAddModal} 
+        onClose={handleModalClose}
+        className="max-w-lg"
+      >
         <div className="p-6">
           <h3 className="text-lg font-semibold mb-4">
             {editingCategory ? 'Edit Animal Category' : 'Add New Animal Category'}
@@ -367,22 +395,25 @@ export function AnimalCategoriesManager({
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <Label htmlFor="name">Category Name *</Label>
+              <Label htmlFor="animal-name">Category Name *</Label>
               <Input
-                id="name"
+                id="animal-name"
+                key={`name-${editingCategory?.id || 'new'}`}
                 value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                onChange={handleNameChange}
                 placeholder="e.g., Young Heifers, Dry Cows"
                 required
+                autoComplete="off"
               />
             </div>
 
             <div>
-              <Label htmlFor="description">Description</Label>
+              <Label htmlFor="animal-description">Description</Label>
               <textarea
-                id="description"
+                id="animal-description"
+                key={`description-${editingCategory?.id || 'new'}`}
                 value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                onChange={handleDescriptionChange}
                 rows={3}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
                 placeholder="Describe this animal category..."
@@ -396,18 +427,22 @@ export function AnimalCategoriesManager({
                 <div>
                   <Input
                     type="number"
+                    key={`min-age-${editingCategory?.id || 'new'}`}
                     value={formData.min_age_days}
-                    onChange={(e) => setFormData({ ...formData, min_age_days: e.target.value })}
+                    onChange={handleMinAgeChange}
                     placeholder="Min age"
+                    autoComplete="off"
                   />
                   <p className="text-xs text-gray-500 mt-1">Minimum age in days</p>
                 </div>
                 <div>
                   <Input
                     type="number"
+                    key={`max-age-${editingCategory?.id || 'new'}`}
                     value={formData.max_age_days}
-                    onChange={(e) => setFormData({ ...formData, max_age_days: e.target.value })}
+                    onChange={handleMaxAgeChange}
                     placeholder="Max age"
+                    autoComplete="off"
                   />
                   <p className="text-xs text-gray-500 mt-1">Maximum age in days</p>
                 </div>
@@ -423,10 +458,7 @@ export function AnimalCategoriesManager({
                     <input
                       type="checkbox"
                       checked={formData[option.key as keyof CategoryFormData] as boolean}
-                      onChange={(e) => setFormData({ 
-                        ...formData, 
-                        [option.key]: e.target.checked 
-                      })}
+                      onChange={(e) => handleCharacteristicChange(option.key, e.target.checked)}
                       className="mt-1 h-4 w-4 text-farm-green border-gray-300 rounded focus:ring-farm-green"
                     />
                     <div className="flex-1">
@@ -442,11 +474,7 @@ export function AnimalCategoriesManager({
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => {
-                  setShowAddModal(false)
-                  setEditingCategory(null)
-                  resetForm()
-                }}
+                onClick={handleModalClose}
                 disabled={loading}
               >
                 Cancel

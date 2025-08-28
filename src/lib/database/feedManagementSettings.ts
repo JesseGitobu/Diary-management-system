@@ -407,7 +407,12 @@ export async function getConsumptionBatches(farmId: string): Promise<Consumption
     return []
   }
   
-  return data || []
+  return data?.map(batch => ({
+    ...batch,
+    feed_type_categories: batch.feed_type_categories || [], // Ensure always array
+    feeding_times: batch.feeding_times || [], // Ensure always array
+    animal_category_ids: batch.animal_category_ids || [] // Ensure always array
+  })) || []
 }
 
 export async function createConsumptionBatch(

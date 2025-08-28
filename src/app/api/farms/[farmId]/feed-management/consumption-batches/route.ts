@@ -1,4 +1,4 @@
-// app/api/settings/feed-management/consumption-batches/route.ts
+// app/api/farms/[farmId]/feed-management/consumption-batches/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'

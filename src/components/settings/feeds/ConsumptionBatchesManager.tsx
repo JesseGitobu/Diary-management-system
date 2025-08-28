@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
@@ -26,7 +26,9 @@ import {
   Settings,
   MoreVertical,
   Clock,
-  Target
+  Target,
+  Tags,
+  Scale
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -35,14 +37,25 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/DropdownMenu'
 
+interface FeedCategoryQuantity {
+  category_id: string
+  quantity_kg: number
+  unit: 'kg' | 'grams'
+}
+
 interface ConsumptionBatch {
   id: string
   batch_name: string
   description: string
   animal_category_ids: string[]
+  feed_type_categories: FeedCategoryQuantity[]
   batch_factors: any
   default_quantity_kg: number
+  daily_consumption_per_animal_kg: number
+  consumption_unit: 'kg' | 'grams'
   feeding_frequency_per_day: number
+  feeding_times: string[]
+  feeding_schedule: any
   is_active: boolean
   is_preset: boolean
 }
@@ -61,11 +74,19 @@ interface AnimalCategory {
   description: string
 }
 
+interface FeedTypeCategory {
+  id: string
+  name: string
+  description: string
+  color: string
+}
+
 interface ConsumptionBatchesManagerProps {
   farmId: string
   batches: ConsumptionBatch[]
   batchFactors: ConsumptionBatchFactor[]
   animalCategories: AnimalCategory[]
+  feedTypeCategories: FeedTypeCategory[]
   onBatchesUpdate: (batches: ConsumptionBatch[]) => void
   onFactorsUpdate: (factors: ConsumptionBatchFactor[]) => void
   canEdit: boolean
@@ -76,8 +97,12 @@ interface BatchFormData {
   batch_name: string
   description: string
   animal_category_ids: string[]
+  feed_type_categories: FeedCategoryQuantity[]
   default_quantity_kg: string
+  daily_consumption_per_animal_kg: string
+  consumption_unit: 'kg' | 'grams'
   feeding_frequency_per_day: string
+  feeding_times: string[]
   age_factor: string
   breeding_status: string
   milk_production: string
@@ -98,11 +123,14 @@ const FACTOR_TYPES = [
   { value: 'custom', label: 'Custom', description: 'User-defined factor' }
 ]
 
+const DEFAULT_FEEDING_TIMES = ['06:00', '12:00', '18:00']
+
 export function ConsumptionBatchesManager({
   farmId,
   batches,
   batchFactors,
   animalCategories,
+  feedTypeCategories,
   onBatchesUpdate,
   onFactorsUpdate,
   canEdit,
@@ -116,61 +144,73 @@ export function ConsumptionBatchesManager({
   const [deletingBatch, setDeletingBatch] = useState<ConsumptionBatch | null>(null)
   const [deletingFactor, setDeletingFactor] = useState<ConsumptionBatchFactor | null>(null)
   const [loading, setLoading] = useState(false)
-  
+
   const [batchFormData, setBatchFormData] = useState<BatchFormData>({
     batch_name: '',
     description: '',
     animal_category_ids: [],
+    feed_type_categories: [],
     default_quantity_kg: '',
+    daily_consumption_per_animal_kg: '',
+    consumption_unit: 'kg',
     feeding_frequency_per_day: '2',
+    feeding_times: ['06:00', '18:00'],
     age_factor: '',
     breeding_status: '',
     milk_production: '',
     body_condition: '',
     season: ''
   })
-  
+
   const [factorFormData, setFactorFormData] = useState<FactorFormData>({
     factor_name: '',
     factor_type: 'custom',
     description: ''
   })
 
-  const resetBatchForm = () => {
+  const resetBatchForm = useCallback(() => {
     setBatchFormData({
       batch_name: '',
       description: '',
       animal_category_ids: [],
+      feed_type_categories: [],
       default_quantity_kg: '',
+      daily_consumption_per_animal_kg: '',
+      consumption_unit: 'kg',
       feeding_frequency_per_day: '2',
+      feeding_times: ['06:00', '18:00'],
       age_factor: '',
       breeding_status: '',
       milk_production: '',
       body_condition: '',
       season: ''
     })
-  }
+  }, [])
 
-  const resetFactorForm = () => {
+  const resetFactorForm = useCallback(() => {
     setFactorFormData({
       factor_name: '',
       factor_type: 'custom',
       description: ''
     })
-  }
+  }, [])
 
-  const handleAddBatch = () => {
+  const handleAddBatch = useCallback(() => {
     resetBatchForm()
     setShowBatchModal(true)
-  }
+  }, [resetBatchForm])
 
-  const handleEditBatch = (batch: ConsumptionBatch) => {
+  const handleEditBatch = useCallback((batch: ConsumptionBatch) => {
     setBatchFormData({
       batch_name: batch.batch_name,
       description: batch.description || '',
       animal_category_ids: batch.animal_category_ids || [],
+      feed_type_categories: batch.feed_type_categories || [],
       default_quantity_kg: batch.default_quantity_kg?.toString() || '',
+      daily_consumption_per_animal_kg: batch.daily_consumption_per_animal_kg?.toString() || '',
+      consumption_unit: batch.consumption_unit || 'kg',
       feeding_frequency_per_day: batch.feeding_frequency_per_day?.toString() || '2',
+      feeding_times: batch.feeding_times || ['06:00', '18:00'],
       age_factor: batch.batch_factors?.age || '',
       breeding_status: batch.batch_factors?.breeding_status || '',
       milk_production: batch.batch_factors?.milk_production || '',
@@ -179,7 +219,29 @@ export function ConsumptionBatchesManager({
     })
     setEditingBatch(batch)
     setShowBatchModal(true)
-  }
+  }, [])
+
+  const handleModalClose = useCallback(() => {
+    setShowBatchModal(false)
+    setEditingBatch(null)
+    resetBatchForm()
+  }, [resetBatchForm])
+
+  const handleFeedingFrequencyChange = useCallback((frequency: number) => {
+    const newTimes = DEFAULT_FEEDING_TIMES.slice(0, frequency)
+    setBatchFormData(prev => ({
+      ...prev,
+      feeding_frequency_per_day: frequency.toString(),
+      feeding_times: newTimes
+    }))
+  }, [])
+
+  const handleFeedingTimeChange = useCallback((index: number, time: string) => {
+    setBatchFormData(prev => ({
+      ...prev,
+      feeding_times: prev.feeding_times.map((t, i) => i === index ? time : t)
+    }))
+  }, [])
 
   const handleSubmitBatch = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -206,19 +268,28 @@ export function ConsumptionBatchesManager({
         batch_name: batchFormData.batch_name,
         description: batchFormData.description,
         animal_category_ids: batchFormData.animal_category_ids,
+        feed_type_categories: batchFormData.feed_type_categories,
         batch_factors: batchFactors,
         default_quantity_kg: parseFloat(batchFormData.default_quantity_kg) || 0,
+        daily_consumption_per_animal_kg: parseFloat(batchFormData.daily_consumption_per_animal_kg) || 0,
+        consumption_unit: batchFormData.consumption_unit,
         feeding_frequency_per_day: parseInt(batchFormData.feeding_frequency_per_day) || 2,
+        feeding_times: batchFormData.feeding_times,
+        feeding_schedule: {
+          times: batchFormData.feeding_times,
+          frequency: parseInt(batchFormData.feeding_frequency_per_day),
+          feed_categories: batchFormData.feed_type_categories
+        },
         is_active: true,
         is_preset: false
       }
 
-      const url = editingBatch 
-        ? `/api/settings/feed-management/consumption-batches/${editingBatch.id}`
-        : '/api/settings/feed-management/consumption-batches'
-      
+      const url = editingBatch
+        ? `/api/farms/${farmId}/feed-management/consumption-batches/${editingBatch.id}`
+        : `/api/farms/${farmId}/feed-management/consumption-batches`
+
       const method = editingBatch ? 'PUT' : 'POST'
-      
+
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -231,18 +302,16 @@ export function ConsumptionBatchesManager({
       }
 
       const result = await response.json()
-      
+
       if (editingBatch) {
-        onBatchesUpdate(batches.map(batch => 
+        onBatchesUpdate(batches.map(batch =>
           batch.id === editingBatch.id ? result.data : batch
         ))
       } else {
         onBatchesUpdate([...batches, result.data])
       }
 
-      setShowBatchModal(false)
-      setEditingBatch(null)
-      resetBatchForm()
+      handleModalClose()
     } catch (error) {
       console.error('Error saving batch:', error)
     } finally {
@@ -255,7 +324,7 @@ export function ConsumptionBatchesManager({
 
     setLoading(true)
     try {
-      const response = await fetch(`/api/settings/feed-management/consumption-batches/${deletingBatch.id}`, {
+      const response = await fetch(`/api/farms/${farmId}/feed-management/consumption-batches/${deletingBatch.id}`, {
         method: 'DELETE'
       })
 
@@ -273,13 +342,78 @@ export function ConsumptionBatchesManager({
     }
   }
 
+  // Memoized event handlers
+  const handleBatchNameChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setBatchFormData(prev => ({ ...prev, batch_name: e.target.value }))
+  }, [])
+
+  const handleBatchDescriptionChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setBatchFormData(prev => ({ ...prev, description: e.target.value }))
+  }, [])
+
+  const handleDefaultQuantityChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setBatchFormData(prev => ({ ...prev, default_quantity_kg: e.target.value }))
+  }, [])
+
+  const handleDailyConsumptionChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setBatchFormData(prev => ({ ...prev, daily_consumption_per_animal_kg: e.target.value }))
+  }, [])
+
+  const handleConsumptionUnitChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    setBatchFormData(prev => ({ ...prev, consumption_unit: e.target.value as 'kg' | 'grams' }))
+  }, [])
+
   const handleCategoryToggle = (categoryId: string) => {
     const currentIds = batchFormData.animal_category_ids
     const newIds = currentIds.includes(categoryId)
       ? currentIds.filter(id => id !== categoryId)
       : [...currentIds, categoryId]
-    
+
     setBatchFormData({ ...batchFormData, animal_category_ids: newIds })
+  }
+
+  const handleFeedCategoryToggle = (categoryId: string) => {
+    const currentCategories = batchFormData.feed_type_categories
+    const existingIndex = currentCategories.findIndex(fc => fc.category_id === categoryId)
+    
+    if (existingIndex >= 0) {
+      // Remove the category
+      setBatchFormData({ 
+        ...batchFormData, 
+        feed_type_categories: currentCategories.filter((_, index) => index !== existingIndex)
+      })
+    } else {
+      // Add the category with default values
+      setBatchFormData({ 
+        ...batchFormData, 
+        feed_type_categories: [
+          ...currentCategories, 
+          { category_id: categoryId, quantity_kg: 0, unit: 'kg' }
+        ]
+      })
+    }
+  }
+
+  const handleFeedCategoryQuantityChange = (categoryId: string, quantity: number) => {
+    setBatchFormData(prev => ({
+      ...prev,
+      feed_type_categories: prev.feed_type_categories.map(fc => 
+        fc.category_id === categoryId 
+          ? { ...fc, quantity_kg: quantity }
+          : fc
+      )
+    }))
+  }
+
+  const handleFeedCategoryUnitChange = (categoryId: string, unit: 'kg' | 'grams') => {
+    setBatchFormData(prev => ({
+      ...prev,
+      feed_type_categories: prev.feed_type_categories.map(fc => 
+        fc.category_id === categoryId 
+          ? { ...fc, unit: unit }
+          : fc
+      )
+    }))
   }
 
   const getCategoryNames = (categoryIds: string[]) => {
@@ -287,6 +421,44 @@ export function ConsumptionBatchesManager({
       .map(id => animalCategories.find(cat => cat.id === id)?.name)
       .filter(Boolean)
       .join(', ')
+  }
+
+  const getFeedCategoryNames = (feedCategories: FeedCategoryQuantity[]) => {
+    return feedCategories
+      .map(fc => {
+        const category = feedTypeCategories.find(cat => cat.id === fc.category_id)
+        return category ? `${category.name} (${fc.quantity_kg}${fc.unit})` : null
+      })
+      .filter(Boolean)
+      .join(', ')
+  }
+
+  const getFeedCategoryColors = (feedCategories: FeedCategoryQuantity[]) => {
+    return feedCategories
+      .map(fc => feedTypeCategories.find(cat => cat.id === fc.category_id)?.color)
+      .filter(Boolean)
+  }
+
+  const getFeedCategoryDisplay = (feedCategories: FeedCategoryQuantity[]) => {
+    return feedCategories.map(fc => {
+      const category = feedTypeCategories.find(cat => cat.id === fc.category_id)
+      return category ? {
+        name: category.name,
+        color: category.color,
+        quantity: fc.quantity_kg,
+        unit: fc.unit
+      } : null
+    }).filter(Boolean)
+  }
+
+  const formatFeedingTimes = (times: string[]) => {
+    return times.map(time => {
+      const [hours, minutes] = time.split(':')
+      const hour = parseInt(hours)
+      const period = hour >= 12 ? 'PM' : 'AM'
+      const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour
+      return `${displayHour}:${minutes} ${period}`
+    }).join(', ')
   }
 
   const getFactorsByType = (type: string) => {
@@ -310,7 +482,7 @@ export function ConsumptionBatchesManager({
               Edit
             </DropdownMenuItem>
             {!batch.is_preset && (
-              <DropdownMenuItem 
+              <DropdownMenuItem
                 onClick={() => setDeletingBatch(batch)}
                 className="text-red-600"
               >
@@ -354,22 +526,20 @@ export function ConsumptionBatchesManager({
       <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
         <button
           onClick={() => setActiveSubTab('batches')}
-          className={`flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-            activeSubTab === 'batches'
+          className={`flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors ${activeSubTab === 'batches'
               ? 'bg-white text-gray-900 shadow-sm'
               : 'text-gray-600 hover:text-gray-900'
-          }`}
+            }`}
         >
           <Utensils className="w-4 h-4 inline mr-2" />
           Consumption Batches
         </button>
         <button
           onClick={() => setActiveSubTab('factors')}
-          className={`flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-            activeSubTab === 'factors'
+          className={`flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors ${activeSubTab === 'factors'
               ? 'bg-white text-gray-900 shadow-sm'
               : 'text-gray-600 hover:text-gray-900'
-          }`}
+            }`}
         >
           <Settings className="w-4 h-4 inline mr-2" />
           Batch Factors
@@ -383,7 +553,7 @@ export function ConsumptionBatchesManager({
             <div>
               <h3 className="text-lg font-medium">Consumption Batches</h3>
               <p className="text-sm text-gray-600">
-                Create feeding templates for different animal groups
+                Create feeding templates with specific feed types and schedules
               </p>
             </div>
             {canEdit && (
@@ -398,15 +568,14 @@ export function ConsumptionBatchesManager({
             {batches.map((batch) => (
               <div
                 key={batch.id}
-                className={`p-4 border rounded-lg ${
-                  isMobile ? 'space-y-3' : 'flex items-center justify-between'
-                }`}
+                className={`p-4 border rounded-lg ${isMobile ? 'space-y-3' : 'flex items-center justify-between'
+                  }`}
               >
                 <div className={`flex-1 ${isMobile ? 'space-y-2' : 'flex items-center space-x-4'}`}>
                   <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
                     <Utensils className="w-5 h-5 text-orange-600" />
                   </div>
-                  
+
                   <div className="flex-1">
                     <div className="flex items-center space-x-2 mb-1">
                       <h4 className="font-medium">{batch.batch_name}</h4>
@@ -417,28 +586,62 @@ export function ConsumptionBatchesManager({
                         <Badge variant="outline" className="text-xs">Inactive</Badge>
                       )}
                     </div>
-                    
+
                     {batch.description && (
                       <p className="text-sm text-gray-600 mb-2">{batch.description}</p>
                     )}
-                    
+
                     <div className="flex flex-wrap gap-2 text-xs text-gray-500">
                       <div className="flex items-center space-x-1">
                         <Target className="w-3 h-3" />
                         <span>{batch.default_quantity_kg}kg per feeding</span>
                       </div>
+                      {batch.daily_consumption_per_animal_kg > 0 && (
+                        <div className="flex items-center space-x-1">
+                          <Scale className="w-3 h-3" />
+                          <span>{batch.daily_consumption_per_animal_kg} {batch.consumption_unit}/animal/day</span>
+                        </div>
+                      )}
                       <div className="flex items-center space-x-1">
                         <Clock className="w-3 h-3" />
                         <span>{batch.feeding_frequency_per_day}x daily</span>
                       </div>
-                      {batch.animal_category_ids?.length > 0 && (
+                      {batch.feeding_times?.length > 0 && (
                         <div className="flex items-center space-x-1">
-                          <Users className="w-3 h-3" />
-                          <span>{getCategoryNames(batch.animal_category_ids)}</span>
+                          <Clock className="w-3 h-3" />
+                          <span>{formatFeedingTimes(batch.feeding_times)}</span>
                         </div>
                       )}
                     </div>
-                    
+
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {batch.animal_category_ids?.length > 0 && (
+                        <div className="flex items-center space-x-1">
+                          <Users className="w-3 h-3 text-blue-600" />
+                          <span className="text-xs text-blue-600">{getCategoryNames(batch.animal_category_ids)}</span>
+                        </div>
+                      )}
+                      
+                      {batch.feed_type_categories?.length > 0 && (
+                        <div className="flex items-start space-x-2 mt-1">
+                          <Tags className="w-3 h-3 text-green-600 mt-0.5" />
+                          <div className="flex flex-col space-y-1">
+                            {getFeedCategoryDisplay(batch.feed_type_categories).map((category, index) => (
+                              <div key={index} className="flex items-center space-x-2">
+                                <div 
+                                  className="w-3 h-3 rounded-full"
+                                  style={{ backgroundColor: category?.color || '#gray-200' }}
+                                />
+                                <span className="text-xs text-green-600">
+                                  {category?.name}: {category?.quantity}{category?.unit}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     {batch.batch_factors && Object.keys(batch.batch_factors).length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-2">
                         {Object.entries(batch.batch_factors).map(([key, value]) => (
@@ -450,7 +653,7 @@ export function ConsumptionBatchesManager({
                     )}
                   </div>
                 </div>
-                
+
                 <div className={isMobile ? 'self-end' : ''}>
                   <BatchActionButtons batch={batch} />
                 </div>
@@ -461,7 +664,7 @@ export function ConsumptionBatchesManager({
               <div className="text-center py-8 text-gray-500">
                 <Utensils className="mx-auto h-8 w-8 text-gray-400 mb-3" />
                 <h3 className="font-medium text-gray-900 mb-1">No consumption batches yet</h3>
-                <p className="text-sm">Create feeding templates for efficient batch feeding.</p>
+                <p className="text-sm">Create feeding templates with specific schedules and feed types.</p>
                 {canEdit && (
                   <Button className="mt-4" onClick={handleAddBatch}>
                     <Plus className="w-4 h-4 mr-2" />
@@ -499,7 +702,7 @@ export function ConsumptionBatchesManager({
                 <div key={type.value} className="border rounded-lg p-4">
                   <h4 className="font-medium text-gray-900 mb-2">{type.label}</h4>
                   <p className="text-sm text-gray-600 mb-3">{type.description}</p>
-                  
+
                   {typeFactors.length > 0 ? (
                     <div className="space-y-2">
                       {typeFactors.map((factor) => (
@@ -524,11 +727,10 @@ export function ConsumptionBatchesManager({
       )}
 
       {/* Batch Modal */}
-      <Modal isOpen={showBatchModal} onClose={() => {
-        setShowBatchModal(false)
-        setEditingBatch(null)
-        resetBatchForm()
-      }} className="max-w-2xl">
+      <Modal
+        isOpen={showBatchModal}
+        onClose={handleModalClose}
+        className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <div className="p-6">
           <h3 className="text-lg font-semibold mb-4">
             {editingBatch ? 'Edit Consumption Batch' : 'Add New Consumption Batch'}
@@ -538,56 +740,176 @@ export function ConsumptionBatchesManager({
             {/* Basic Info */}
             <div className="space-y-4">
               <h4 className="font-medium text-gray-900">Basic Information</h4>
-              
-              <div>
-                <Label htmlFor="batch_name">Batch Name *</Label>
-                <Input
-                  id="batch_name"
-                  value={batchFormData.batch_name}
-                  onChange={(e) => setBatchFormData({ ...batchFormData, batch_name: e.target.value })}
-                  placeholder="e.g., High Production Cows"
-                  required
-                />
-              </div>
 
-              <div>
-                <Label htmlFor="description">Description</Label>
-                <textarea
-                  id="description"
-                  value={batchFormData.description}
-                  onChange={(e) => setBatchFormData({ ...batchFormData, description: e.target.value })}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
-                  placeholder="Describe this feeding batch..."
-                />
-              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <Label htmlFor="batch_name">Batch Name *</Label>
+                  <Input
+                    id="batch_name"
+                    key={editingBatch ? editingBatch.id : undefined}
+                    value={batchFormData.batch_name}
+                    onChange={handleBatchNameChange}
+                    placeholder="e.g., High Production Dairy Cows"
+                    required
+                  />
+                </div>
 
-              <div className="grid grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <Label htmlFor="description">Description</Label>
+                  <textarea
+                    id="description"
+                    key={editingBatch ? editingBatch.id : undefined}
+                    value={batchFormData.description}
+                    onChange={handleBatchDescriptionChange}
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+                    placeholder="Describe this feeding batch..."
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Feeding Quantities */}
+            <div className="space-y-4">
+              <h4 className="font-medium text-gray-900">Feeding Quantities</h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <Label htmlFor="default_quantity_kg">Default Quantity (kg)</Label>
+                  <Label htmlFor="default_quantity_kg">Quantity per Feeding (kg)</Label>
                   <Input
                     id="default_quantity_kg"
                     type="number"
                     step="0.1"
                     value={batchFormData.default_quantity_kg}
-                    onChange={(e) => setBatchFormData({ ...batchFormData, default_quantity_kg: e.target.value })}
-                    placeholder="e.g., 25.0"
+                    onChange={handleDefaultQuantityChange}
+                    placeholder="25.0"
                   />
+                  <p className="text-xs text-gray-500 mt-1">Total amount per feeding session</p>
                 </div>
-                
+
+                <div>
+                  <Label htmlFor="daily_consumption">Daily Consumption per Animal</Label>
+                  <div className="flex space-x-2">
+                    <Input
+                      id="daily_consumption"
+                      type="number"
+                      step="0.001"
+                      value={batchFormData.daily_consumption_per_animal_kg}
+                      onChange={handleDailyConsumptionChange}
+                      placeholder="2.5"
+                      className="flex-1"
+                    />
+                    <select
+                      value={batchFormData.consumption_unit}
+                      onChange={handleConsumptionUnitChange}
+                      className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green"
+                    >
+                      <option value="kg">kg</option>
+                      <option value="grams">grams</option>
+                    </select>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">Individual animal daily requirement</p>
+                </div>
+
                 <div>
                   <Label htmlFor="feeding_frequency_per_day">Feedings per Day</Label>
-                  <Input
+                  <select
                     id="feeding_frequency_per_day"
-                    type="number"
-                    min="1"
-                    max="6"
                     value={batchFormData.feeding_frequency_per_day}
-                    onChange={(e) => setBatchFormData({ ...batchFormData, feeding_frequency_per_day: e.target.value })}
-                    placeholder="2"
-                  />
+                    onChange={(e) => handleFeedingFrequencyChange(parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green"
+                  >
+                    <option value="1">1 time daily</option>
+                    <option value="2">2 times daily</option>
+                    <option value="3">3 times daily</option>
+                    <option value="4">4 times daily</option>
+                  </select>
                 </div>
               </div>
+            </div>
+
+            {/* Feeding Schedule */}
+            <div className="space-y-4">
+              <h4 className="font-medium text-gray-900">Feeding Schedule</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {batchFormData.feeding_times.map((time, index) => (
+                  <div key={index}>
+                    <Label htmlFor={`feeding_time_${index}`}>Feeding {index + 1}</Label>
+                    <Input
+                      id={`feeding_time_${index}`}
+                      type="time"
+                      value={time}
+                      onChange={(e) => handleFeedingTimeChange(index, e.target.value)}
+                    />
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500">
+                Set specific times for each daily feeding. This helps with scheduling and notifications.
+              </p>
+            </div>
+
+            {/* Feed Type Categories with Quantities */}
+            <div className="space-y-4">
+              <h4 className="font-medium text-gray-900">Feed Type Categories & Quantities</h4>
+              <div className="space-y-3">
+                {feedTypeCategories.map((category) => {
+                  const isSelected = batchFormData.feed_type_categories.some(fc => fc.category_id === category.id)
+                  const feedCategoryData = batchFormData.feed_type_categories.find(fc => fc.category_id === category.id)
+                  
+                  return (
+                    <div key={category.id} className="border rounded-lg p-4 space-y-3">
+                      <div className="flex items-center space-x-3">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleFeedCategoryToggle(category.id)}
+                          className="h-4 w-4 text-farm-green border-gray-300 rounded focus:ring-farm-green"
+                        />
+                        <div 
+                          className="w-4 h-4 rounded-full"
+                          style={{ backgroundColor: category.color }}
+                        />
+                        <span className="font-medium">{category.name}</span>
+                        {category.description && (
+                          <span className="text-sm text-gray-500">- {category.description}</span>
+                        )}
+                      </div>
+                      
+                      {isSelected && (
+                        <div className="ml-7 grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <Label htmlFor={`quantity_${category.id}`}>Quantity per Feeding</Label>
+                            <Input
+                              id={`quantity_${category.id}`}
+                              type="number"
+                              step="0.001"
+                              value={feedCategoryData?.quantity_kg || ''}
+                              onChange={(e) => handleFeedCategoryQuantityChange(category.id, parseFloat(e.target.value) || 0)}
+                              placeholder="0.0"
+                            />
+                          </div>
+                          
+                          <div>
+                            <Label htmlFor={`unit_${category.id}`}>Unit</Label>
+                            <select
+                              id={`unit_${category.id}`}
+                              value={feedCategoryData?.unit || 'kg'}
+                              onChange={(e) => handleFeedCategoryUnitChange(category.id, e.target.value as 'kg' | 'grams')}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green"
+                            >
+                              <option value="kg">kg</option>
+                              <option value="grams">grams</option>
+                            </select>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+              <p className="text-xs text-gray-500">
+                Select feed categories and specify the amount needed per feeding session. This helps with precise feed preparation and inventory planning.
+              </p>
             </div>
 
             {/* Animal Categories */}
@@ -617,58 +939,54 @@ export function ConsumptionBatchesManager({
                   <Input
                     id="age_factor"
                     value={batchFormData.age_factor}
-                    onChange={(e) => setBatchFormData({ ...batchFormData, age_factor: e.target.value })}
+                    onChange={(e) => setBatchFormData(prev => ({ ...prev, age_factor: e.target.value }))}
                     placeholder="e.g., young, mature, senior"
                   />
                 </div>
-                
+
                 <div>
                   <Label htmlFor="breeding_status">Breeding Status</Label>
                   <Input
                     id="breeding_status"
                     value={batchFormData.breeding_status}
-                    onChange={(e) => setBatchFormData({ ...batchFormData, breeding_status: e.target.value })}
+                    onChange={(e) => setBatchFormData(prev => ({ ...prev, breeding_status: e.target.value }))}
                     placeholder="e.g., pregnant, dry, lactating"
                   />
                 </div>
-                
+
                 <div>
                   <Label htmlFor="milk_production">Milk Production Level</Label>
                   <Input
                     id="milk_production"
                     value={batchFormData.milk_production}
-                    onChange={(e) => setBatchFormData({ ...batchFormData, milk_production: e.target.value })}
+                    onChange={(e) => setBatchFormData(prev => ({ ...prev, milk_production: e.target.value }))}
                     placeholder="e.g., high, medium, low"
                   />
                 </div>
-                
+
                 <div>
                   <Label htmlFor="body_condition">Body Condition</Label>
                   <Input
                     id="body_condition"
                     value={batchFormData.body_condition}
-                    onChange={(e) => setBatchFormData({ ...batchFormData, body_condition: e.target.value })}
+                    onChange={(e) => setBatchFormData(prev => ({ ...prev, body_condition: e.target.value }))}
                     placeholder="e.g., good, thin, fat"
                   />
                 </div>
               </div>
             </div>
 
-            <div className="flex justify-end space-x-3 pt-4">
+            <div className="flex justify-end space-x-3 pt-4 border-t">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => {
-                  setShowBatchModal(false)
-                  setEditingBatch(null)
-                  resetBatchForm()
-                }}
+                onClick={handleModalClose}
                 disabled={loading}
               >
                 Cancel
               </Button>
               <Button type="submit" disabled={loading}>
-                {loading ? <LoadingSpinner size="sm" /> : (editingBatch ? 'Update' : 'Create')}
+                {loading ? <LoadingSpinner size="sm" /> : (editingBatch ? 'Update Batch' : 'Create Batch')}
               </Button>
             </div>
           </form>

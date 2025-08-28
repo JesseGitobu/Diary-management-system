@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
@@ -75,21 +75,21 @@ export function WeightConversionsManager({
     description: ''
   })
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setFormData({
       unit_name: '',
       unit_symbol: '',
       conversion_to_kg: '',
       description: ''
     })
-  }
+  }, [])
 
-  const handleAdd = () => {
+  const handleAdd = useCallback(() => {
     resetForm()
     setShowAddModal(true)
-  }
+  }, [resetForm])
 
-  const handleEdit = (conversion: WeightConversion) => {
+  const handleEdit = useCallback((conversion: WeightConversion) => {
     setFormData({
       unit_name: conversion.unit_name,
       unit_symbol: conversion.unit_symbol,
@@ -98,7 +98,13 @@ export function WeightConversionsManager({
     })
     setEditingConversion(conversion)
     setShowAddModal(true)
-  }
+  }, [])
+
+  const handleModalClose = useCallback(() => {
+    setShowAddModal(false)
+    setEditingConversion(null)
+    resetForm()
+  }, [resetForm])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -114,12 +120,12 @@ export function WeightConversionsManager({
         is_default: false
       }
 
-      const url = editingConversion 
-        ? `/api/settings/feed-management/weight-conversions/${editingConversion.id}`
-        : '/api/settings/feed-management/weight-conversions'
-      
+      const url = editingConversion
+        ? `/api/farms/${farmId}/feed-management/weight-conversions/${editingConversion.id}`
+        : `/api/farms/${farmId}/feed-management/weight-conversions`
+
       const method = editingConversion ? 'PUT' : 'POST'
-      
+
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -132,18 +138,16 @@ export function WeightConversionsManager({
       }
 
       const result = await response.json()
-      
+
       if (editingConversion) {
-        onConversionsUpdate(conversions.map(conv => 
+        onConversionsUpdate(conversions.map(conv =>
           conv.id === editingConversion.id ? result.data : conv
         ))
       } else {
         onConversionsUpdate([...conversions, result.data])
       }
 
-      setShowAddModal(false)
-      setEditingConversion(null)
-      resetForm()
+      handleModalClose()
     } catch (error) {
       console.error('Error saving weight conversion:', error)
       // You might want to show a toast notification here
@@ -157,7 +161,7 @@ export function WeightConversionsManager({
 
     setLoading(true)
     try {
-      const response = await fetch(`/api/settings/feed-management/weight-conversions/${deletingConversion.id}`, {
+      const response = await fetch(`/api/farms/${farmId}/feed-management/weight-conversions/${deletingConversion.id}`, {
         method: 'DELETE'
       })
 
@@ -175,17 +179,38 @@ export function WeightConversionsManager({
     }
   }
 
+
+  // Memoized event handlers to prevent input focus issues
+  const handleUnitNameChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData(prev => ({ ...prev, unit_name: e.target.value }))
+  }, [])
+
+  const handleUnitSymbolChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData(prev => ({ ...prev, unit_symbol: e.target.value }))
+  }, [])
+
+  const handleConversionToKgChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData(prev => ({ ...prev, conversion_to_kg: e.target.value }))
+  }, [])
+
+  const handleDescriptionChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setFormData(prev => ({ ...prev, description: e.target.value }))
+  }, [])
+
+
+
   const calculateConversion = (quantity: number, conversion: WeightConversion) => {
     return (quantity * conversion.conversion_to_kg).toFixed(2)
   }
 
   // Sort conversions: defaults first, then by unit name
-  const sortedConversions = [...conversions].sort((a, b) => {
-    if (a.is_default !== b.is_default) {
-      return a.is_default ? -1 : 1
-    }
-    return a.unit_name.localeCompare(b.unit_name)
-  })
+  const sortedConversions = useMemo(() =>
+    [...conversions].sort((a, b) => {
+      if (a.is_default !== b.is_default) {
+        return a.is_default ? -1 : 1
+      }
+      return a.unit_name.localeCompare(b.unit_name)
+    }), [conversions])
 
   const ActionButtons = ({ conversion }: { conversion: WeightConversion }) => {
     if (!canEdit) return null
@@ -204,7 +229,7 @@ export function WeightConversionsManager({
               Edit
             </DropdownMenuItem>
             {!conversion.is_default && (
-              <DropdownMenuItem 
+              <DropdownMenuItem
                 onClick={() => setDeletingConversion(conversion)}
                 className="text-red-600"
               >
@@ -266,7 +291,7 @@ export function WeightConversionsManager({
           <Calculator className="w-5 h-5 text-blue-600" />
           <h4 className="font-medium text-blue-800">Quick Conversion Calculator</h4>
         </div>
-        
+
         <div className="flex items-center space-x-3 mb-3">
           <Input
             type="number"
@@ -277,7 +302,7 @@ export function WeightConversionsManager({
           />
           <span className="text-sm text-blue-700">units converts to:</span>
         </div>
-        
+
         <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2 lg:grid-cols-3'}`}>
           {sortedConversions.slice(0, 6).map((conversion) => (
             <div key={conversion.id} className="bg-white p-3 rounded border">
@@ -297,15 +322,14 @@ export function WeightConversionsManager({
         {sortedConversions.map((conversion) => (
           <div
             key={conversion.id}
-            className={`flex items-center justify-between p-4 border rounded-lg ${
-              isMobile ? 'flex-col space-y-3' : 'flex-row'
-            }`}
+            className={`flex items-center justify-between p-4 border rounded-lg ${isMobile ? 'flex-col space-y-3' : 'flex-row'
+              }`}
           >
             <div className={`flex items-center space-x-4 ${isMobile ? 'self-start w-full' : 'flex-1'}`}>
               <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
                 <Scale className="w-5 h-5 text-gray-600" />
               </div>
-              
+
               <div className="flex-1">
                 <div className="flex items-center space-x-2 mb-1">
                   <h4 className="font-medium">{conversion.unit_name}</h4>
@@ -316,7 +340,7 @@ export function WeightConversionsManager({
                     <Badge variant="secondary" className="text-xs">Default</Badge>
                   )}
                 </div>
-                
+
                 <div className="text-sm text-gray-600 space-y-1">
                   <div>1 {conversion.unit_symbol} = {conversion.conversion_to_kg} kg</div>
                   {conversion.description && (
@@ -325,7 +349,7 @@ export function WeightConversionsManager({
                 </div>
               </div>
             </div>
-            
+
             <div className={`flex items-center space-x-4 ${isMobile ? 'self-end' : ''}`}>
               <div className="text-right">
                 <div className="text-lg font-bold text-green-600">
@@ -354,11 +378,10 @@ export function WeightConversionsManager({
       </div>
 
       {/* Add/Edit Modal */}
-      <Modal isOpen={showAddModal} onClose={() => {
-        setShowAddModal(false)
-        setEditingConversion(null)
-        resetForm()
-      }} className="max-w-lg">
+      <Modal
+        isOpen={showAddModal}
+        onClose={handleModalClose}
+        className="max-w-lg">
         <div className="p-6">
           <h3 className="text-lg font-semibold mb-4">
             {editingConversion ? 'Edit Weight Unit' : 'Add New Weight Unit'}
@@ -370,19 +393,21 @@ export function WeightConversionsManager({
                 <Label htmlFor="unit_name">Unit Name *</Label>
                 <Input
                   id="unit_name"
+                  key={editingConversion ? editingConversion.id : undefined}
                   value={formData.unit_name}
-                  onChange={(e) => setFormData({ ...formData, unit_name: e.target.value })}
+                  onChange={handleUnitNameChange}
                   placeholder="e.g., Debe, Sack"
                   required
                 />
               </div>
-              
+
               <div>
                 <Label htmlFor="unit_symbol">Symbol *</Label>
                 <Input
                   id="unit_symbol"
+                  key={editingConversion ? editingConversion.id : undefined}
                   value={formData.unit_symbol}
-                  onChange={(e) => setFormData({ ...formData, unit_symbol: e.target.value })}
+                  onChange={handleUnitSymbolChange}
                   placeholder="e.g., debe, sack"
                   required
                 />
@@ -393,10 +418,11 @@ export function WeightConversionsManager({
               <Label htmlFor="conversion_to_kg">Conversion to KG *</Label>
               <Input
                 id="conversion_to_kg"
+                key={editingConversion ? editingConversion.id : undefined}
                 type="number"
                 step="0.0001"
                 value={formData.conversion_to_kg}
-                onChange={(e) => setFormData({ ...formData, conversion_to_kg: e.target.value })}
+                onChange={handleConversionToKgChange}
                 placeholder="e.g., 15.0 (1 unit = 15.0 kg)"
                 required
               />
@@ -409,8 +435,9 @@ export function WeightConversionsManager({
               <Label htmlFor="description">Description</Label>
               <textarea
                 id="description"
+                key={editingConversion ? editingConversion.id : undefined}
                 value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                onChange={handleDescriptionChange}
                 rows={3}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
                 placeholder="Describe this weight unit..."
@@ -433,11 +460,7 @@ export function WeightConversionsManager({
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => {
-                  setShowAddModal(false)
-                  setEditingConversion(null)
-                  resetForm()
-                }}
+                onClick={handleModalClose}
                 disabled={loading}
               >
                 Cancel
@@ -456,7 +479,7 @@ export function WeightConversionsManager({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Weight Unit</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete "{deletingConversion?.unit_name}" ({deletingConversion?.unit_symbol})? 
+              Are you sure you want to delete "{deletingConversion?.unit_name}" ({deletingConversion?.unit_symbol})?
               This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>

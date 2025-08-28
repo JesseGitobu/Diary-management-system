@@ -1,4 +1,4 @@
-// app/api/feed/consumption/route.ts - Fixed timestamp handling
+// app/api/feed/consumption/route.ts - Fixed validation for batch mode
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser, createServerSupabaseClient } from '@/lib/supabase/server'
 
@@ -70,11 +70,31 @@ export async function POST(request: NextRequest) {
 
     // Process each entry
     for (const entry of entries) {
-      const { feedTypeId, quantityKg, animalIds, notes } = entry
+      const { feedTypeId, quantityKg, animalIds, animalCount, notes } = entry
 
-      if (!feedTypeId || !quantityKg || !animalIds || animalIds.length === 0) {
+      // Validate entry based on feeding mode
+      if (!feedTypeId || !quantityKg) {
         return NextResponse.json({ 
-          error: 'Each entry must have feedTypeId, quantityKg, and animalIds' 
+          error: 'Each entry must have feedTypeId and quantityKg' 
+        }, { status: 400 })
+      }
+
+      // Mode-specific validation
+      if (mode === 'individual') {
+        if (!animalIds || !Array.isArray(animalIds) || animalIds.length === 0) {
+          return NextResponse.json({ 
+            error: 'Individual mode requires animalIds array with at least one animal' 
+          }, { status: 400 })
+        }
+      } else if (mode === 'batch') {
+        if (!animalCount || animalCount <= 0) {
+          return NextResponse.json({ 
+            error: 'Batch mode requires animalCount greater than 0' 
+          }, { status: 400 })
+        }
+      } else {
+        return NextResponse.json({ 
+          error: 'Invalid feeding mode. Must be "individual" or "batch"' 
         }, { status: 400 })
       }
 
@@ -106,7 +126,7 @@ export async function POST(request: NextRequest) {
         quantity_kg: parseFloat(quantityKg),
         feeding_time: feedingTimestamp,
         feeding_mode: mode || 'individual',
-        animal_count: animalIds.length,
+        animal_count: mode === 'batch' ? animalCount : (animalIds?.length || 1),
         notes: notes || null,
         recorded_by: user.email || 'Unknown',
         created_by: user.id
@@ -130,8 +150,8 @@ export async function POST(request: NextRequest) {
 
       console.log('Created consumption record:', consumptionRecord)
 
-      // Create animal consumption records
-      if (animalIds.length > 0) {
+      // Create animal consumption records (only for individual mode with specific animals)
+      if (mode === 'individual' && animalIds && animalIds.length > 0) {
         const animalRecords = animalIds.map((animalId: string) => ({
           consumption_id: consumptionRecord.id,
           animal_id: animalId
@@ -146,6 +166,7 @@ export async function POST(request: NextRequest) {
         if (animalError) {
           console.error('Animal consumption insert error:', animalError)
           // Continue processing other entries even if this fails
+          console.warn('Failed to link animals to consumption record, but consumption was recorded')
         }
       }
 

@@ -4,6 +4,7 @@ import { getFeedStats, getFeedTypes, getFeedInventory, getFeedConsumptionRecords
 import { getFarmAnimals } from '@/lib/database/animals'
 import { redirect } from 'next/navigation'
 import { FeedManagementDashboard } from '@/components/feed/FeedManagementDashboard'
+import { getWeightConversions, getFeedTypeCategories, getAnimalCategories, getConsumptionBatches } from '@/lib/database/feedManagementSettings'
 
 export default async function FeedPage() {
   const user = await getCurrentUser()
@@ -19,13 +20,17 @@ export default async function FeedPage() {
   }
   
   // Get feed management data including consumption records and animals
-  const [feedStats, feedTypes, inventory, consumptionRecords, animals] = await Promise.all([
-    getFeedStats(userRole.farm_id, 30), // Last 30 days stats
-    getFeedTypes(userRole.farm_id),
-    getFeedInventory(userRole.farm_id),
-    getFeedConsumptionRecords(userRole.farm_id, 50), // Last 50 consumption records
-    getFarmAnimals(userRole.farm_id) // Animals for feeding modal
-  ])
+  const [feedStats, feedTypes, inventory, consumptionRecords, animals, feedTypeCategories, animalCategories, weightConversions, consumptionBatches] = await Promise.all([
+  getFeedStats(userRole.farm_id, 30),
+  getFeedTypes(userRole.farm_id),
+  getFeedInventory(userRole.farm_id),
+  getFeedConsumptionRecords(userRole.farm_id, 50),
+  getFarmAnimals(userRole.farm_id),
+  getFeedTypeCategories(userRole.farm_id),
+  getAnimalCategories(userRole.farm_id),
+  getWeightConversions(userRole.farm_id),
+  getConsumptionBatches(userRole.farm_id),
+])
   
   return (
     <div className="dashboard-container">
@@ -37,6 +42,10 @@ export default async function FeedPage() {
         consumptionRecords={consumptionRecords}
         animals={animals}
         userRole={userRole.role_type}
+        feedTypeCategories={feedTypeCategories}
+        animalCategories={animalCategories}
+        weightConversions={weightConversions}
+        consumptionBatches={consumptionBatches}
       />
     </div>
   )

@@ -279,6 +279,7 @@ export function FeedManagementSettings({
               <ConsumptionBatchesManager
                 farmId={farmId}
                 batches={consumptionBatches}
+                feedTypeCategories={feedTypeCategories}
                 batchFactors={batchFactors}
                 animalCategories={animalCategories}
                 onBatchesUpdate={setConsumptionBatches}

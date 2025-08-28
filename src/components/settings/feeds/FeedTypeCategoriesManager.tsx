@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
@@ -80,20 +80,20 @@ export function FeedTypeCategoriesManager({
     color: DEFAULT_COLORS[0]
   })
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setFormData({
       name: '',
       description: '',
       color: DEFAULT_COLORS[0]
     })
-  }
+  }, [])
 
-  const handleAdd = () => {
+  const handleAdd = useCallback(() => {
     resetForm()
     setShowAddModal(true)
-  }
+  }, [resetForm])
 
-  const handleEdit = (category: FeedTypeCategory) => {
+  const handleEdit = useCallback((category: FeedTypeCategory) => {
     setFormData({
       name: category.name,
       description: category.description || '',
@@ -101,7 +101,13 @@ export function FeedTypeCategoriesManager({
     })
     setEditingCategory(category)
     setShowAddModal(true)
-  }
+  }, [])
+
+  const handleModalClose = useCallback(() => {
+    setShowAddModal(false)
+    setEditingCategory(null)
+    resetForm()
+  }, [resetForm])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -110,8 +116,8 @@ export function FeedTypeCategoriesManager({
     setLoading(true)
     try {
       const url = editingCategory 
-        ? `/api/settings/feed-management/feed-categories/${editingCategory.id}`
-        : '/api/settings/feed-management/feed-categories'
+        ? `/api/farms/${farmId}/feed-management/feed-categories/${editingCategory.id}`
+        : '/api/farms/${farmId}/feed-management/feed-categories'
       
       const method = editingCategory ? 'PUT' : 'POST'
       
@@ -139,9 +145,7 @@ export function FeedTypeCategoriesManager({
         onCategoriesUpdate([...categories, result.data])
       }
 
-      setShowAddModal(false)
-      setEditingCategory(null)
-      resetForm()
+      handleModalClose()
     } catch (error) {
       console.error('Error saving category:', error)
       // You might want to show a toast notification here
@@ -155,7 +159,7 @@ export function FeedTypeCategoriesManager({
 
     setLoading(true)
     try {
-      const response = await fetch(`/api/settings/feed-management/feed-categories/${deletingCategory.id}`, {
+      const response = await fetch(`/api/farms/${farmId}/feed-management/feed-categories/${deletingCategory.id}`, {
         method: 'DELETE'
       })
 
@@ -180,7 +184,7 @@ export function FeedTypeCategoriesManager({
     const newOrder = direction === 'up' ? category.sort_order - 1 : category.sort_order + 1
     
     try {
-      const response = await fetch(`/api/settings/feed-management/feed-categories/${categoryId}/reorder`, {
+      const response = await fetch(`/api/farms/${farmId}/feed-management/feed-categories/${categoryId}/reorder`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sort_order: newOrder })
@@ -197,7 +201,23 @@ export function FeedTypeCategoriesManager({
     }
   }
 
-  const sortedCategories = [...categories].sort((a, b) => a.sort_order - b.sort_order)
+  const sortedCategories = useMemo(() => 
+    [...categories].sort((a, b) => a.sort_order - b.sort_order),
+    [categories]
+  )
+
+  // Memoize form change handlers to prevent recreating on each render
+  const handleNameChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData(prev => ({ ...prev, name: e.target.value }))
+  }, [])
+
+  const handleDescriptionChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setFormData(prev => ({ ...prev, description: e.target.value }))
+  }, [])
+
+  const handleColorChange = useCallback((color: string) => {
+    setFormData(prev => ({ ...prev, color }))
+  }, [])
 
   const ActionButtons = ({ category }: { category: FeedTypeCategory }) => {
     if (!canEdit) return null
@@ -340,11 +360,11 @@ export function FeedTypeCategoriesManager({
       </div>
 
       {/* Add/Edit Modal */}
-      <Modal isOpen={showAddModal} onClose={() => {
-        setShowAddModal(false)
-        setEditingCategory(null)
-        resetForm()
-      }} className="max-w-md">
+      <Modal 
+        isOpen={showAddModal} 
+        onClose={handleModalClose}
+        className="max-w-md"
+      >
         <div className="p-6">
           <h3 className="text-lg font-semibold mb-4">
             {editingCategory ? 'Edit Category' : 'Add New Category'}
@@ -352,22 +372,25 @@ export function FeedTypeCategoriesManager({
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <Label htmlFor="name">Category Name *</Label>
+              <Label htmlFor="category-name">Category Name *</Label>
               <Input
-                id="name"
+                id="category-name"
+                key={`name-${editingCategory?.id || 'new'}`}
                 value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                onChange={handleNameChange}
                 placeholder="e.g., Roughage, Concentrates"
                 required
+                autoComplete="off"
               />
             </div>
 
             <div>
-              <Label htmlFor="description">Description</Label>
+              <Label htmlFor="category-description">Description</Label>
               <textarea
-                id="description"
+                id="category-description"
+                key={`description-${editingCategory?.id || 'new'}`}
                 value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                onChange={handleDescriptionChange}
                 rows={3}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
                 placeholder="Describe this feed category..."
@@ -381,7 +404,7 @@ export function FeedTypeCategoriesManager({
                   <button
                     key={color}
                     type="button"
-                    onClick={() => setFormData({ ...formData, color })}
+                    onClick={() => handleColorChange(color)}
                     className={`w-8 h-8 rounded-full border-2 ${
                       formData.color === color ? 'border-gray-400' : 'border-gray-200'
                     }`}
@@ -395,11 +418,7 @@ export function FeedTypeCategoriesManager({
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => {
-                  setShowAddModal(false)
-                  setEditingCategory(null)
-                  resetForm()
-                }}
+                onClick={handleModalClose}
                 disabled={loading}
               >
                 Cancel

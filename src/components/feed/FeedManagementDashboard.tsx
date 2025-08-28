@@ -13,10 +13,10 @@ import { FeedInventoryTab } from '@/components/feed/FeedInventoryTab'
 import { FeedConsumptionTab } from '@/components/feed/FeedConsumptionTab'
 import { FeedTypesTab } from '@/components/feed/FeedTypesTab'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
-import { 
-  Plus, 
-  Package, 
-  DollarSign, 
+import {
+  Plus,
+  Package,
+  DollarSign,
   AlertTriangle,
   Wheat,
   MoreVertical
@@ -36,6 +36,10 @@ interface FeedManagementDashboardProps {
   consumptionRecords: any[]
   animals: any[]
   userRole: string
+  feedTypeCategories: any[]
+  animalCategories: any[]
+  weightConversions: any[]
+  consumptionBatches: any[]  // Add this
 }
 
 export function FeedManagementDashboard({
@@ -45,7 +49,11 @@ export function FeedManagementDashboard({
   inventory: initialInventory,
   consumptionRecords: initialConsumptionRecords,
   animals,
-  userRole
+  userRole,
+  feedTypeCategories,
+  animalCategories,
+  weightConversions,
+  consumptionBatches,
 }: FeedManagementDashboardProps) {
   const [activeTab, setActiveTab] = useState('overview')
   const [showAddTypeModal, setShowAddTypeModal] = useState(false)
@@ -54,20 +62,20 @@ export function FeedManagementDashboard({
   const [feedTypes, setFeedTypes] = useState(initialFeedTypes)
   const [inventory, setInventory] = useState(initialInventory)
   const [consumptionRecords, setConsumptionRecords] = useState(initialConsumptionRecords)
-  
+
   const { isMobile, isTablet } = useDeviceInfo()
   const canManageFeed = ['farm_owner', 'farm_manager'].includes(userRole)
   const canRecordFeeding = ['farm_owner', 'farm_manager', 'worker'].includes(userRole)
-  
+
   // Calculate low stock alerts
   const lowStockItems = feedStats.stockLevels?.filter((stock: any) => stock.currentStock < 50) || []
-  
+
   const handleFeedTypeAdded = (newFeedType: any) => {
     setFeedTypes(prev => [...prev, newFeedType])
   }
-  
+
   const handleFeedTypeUpdated = (updatedFeedType: any) => {
-    setFeedTypes(prev => prev.map(ft => 
+    setFeedTypes(prev => prev.map(ft =>
       ft.id === updatedFeedType.id ? updatedFeedType : ft
     ))
   }
@@ -75,7 +83,7 @@ export function FeedManagementDashboard({
   const handleFeedTypeDeleted = (feedTypeId: string) => {
     setFeedTypes(prev => prev.filter(ft => ft.id !== feedTypeId))
   }
-  
+
   const handleInventoryAdded = (newInventory: any) => {
     setInventory(prev => [...prev, newInventory])
     window.location.reload()
@@ -149,7 +157,7 @@ export function FeedManagementDashboard({
               Manage feed inventory, consumption, and costs
             </p>
           </div>
-          
+
           <div className="ml-4">
             {isMobile ? (
               <MobileActionMenu />
@@ -178,7 +186,7 @@ export function FeedManagementDashboard({
           </div>
         </div>
       </div>
-      
+
       {/* Horizontal Scrollable Stats Cards */}
       <div className="px-4 lg:px-0">
         {isMobile || isTablet ? (
@@ -226,7 +234,7 @@ export function FeedManagementDashboard({
                 </p>
               </CardContent>
             </Card>
-            
+
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Total Consumption</CardTitle>
@@ -239,7 +247,7 @@ export function FeedManagementDashboard({
                 </p>
               </CardContent>
             </Card>
-            
+
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Feed Types</CardTitle>
@@ -252,7 +260,7 @@ export function FeedManagementDashboard({
                 </p>
               </CardContent>
             </Card>
-            
+
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Low Stock Alerts</CardTitle>
@@ -268,7 +276,7 @@ export function FeedManagementDashboard({
           </div>
         )}
       </div>
-      
+
       {/* Mobile Low Stock Alerts */}
       {lowStockItems.length > 0 && (
         <div className="px-4 lg:px-0">
@@ -295,55 +303,55 @@ export function FeedManagementDashboard({
           </Card>
         </div>
       )}
-      
+
       {/* Horizontal Tabs - Optimized for both Mobile and Desktop */}
       <div className="px-4 lg:px-0">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           {/* Horizontal Tab Layout for both Mobile and Desktop */}
           <TabsList className={`
-            ${isMobile 
-              ? 'w-full h-12 p-1 grid grid-cols-4 gap-1' 
+            ${isMobile
+              ? 'w-full h-12 p-1 grid grid-cols-4 gap-1'
               : 'h-12 w-auto inline-flex gap-2 justify-start'
             }
           `}>
-            <TabsTrigger 
-              value="overview" 
+            <TabsTrigger
+              value="overview"
               className={`
-                ${isMobile 
-                  ? 'text-xs px-2 py-2 h-10' 
+                ${isMobile
+                  ? 'text-xs px-2 py-2 h-10'
                   : 'text-sm px-6 py-2 h-10 min-w-[120px]'
                 }
               `}
             >
               Overview
             </TabsTrigger>
-            <TabsTrigger 
-              value="inventory" 
+            <TabsTrigger
+              value="inventory"
               className={`
-                ${isMobile 
-                  ? 'text-xs px-2 py-2 h-10' 
+                ${isMobile
+                  ? 'text-xs px-2 py-2 h-10'
                   : 'text-sm px-6 py-2 h-10 min-w-[120px]'
                 }
               `}
             >
               {isMobile ? 'Stock' : 'Inventory'}
             </TabsTrigger>
-            <TabsTrigger 
-              value="consumption" 
+            <TabsTrigger
+              value="consumption"
               className={`
-                ${isMobile 
-                  ? 'text-xs px-2 py-2 h-10' 
+                ${isMobile
+                  ? 'text-xs px-2 py-2 h-10'
                   : 'text-sm px-6 py-2 h-10 min-w-[120px]'
                 }
               `}
             >
               {isMobile ? 'Usage' : 'Consumption'}
             </TabsTrigger>
-            <TabsTrigger 
-              value="types" 
+            <TabsTrigger
+              value="types"
               className={`
-                ${isMobile 
-                  ? 'text-xs px-2 py-2 h-10' 
+                ${isMobile
+                  ? 'text-xs px-2 py-2 h-10'
                   : 'text-sm px-6 py-2 h-10 min-w-[120px]'
                 }
               `}
@@ -351,7 +359,7 @@ export function FeedManagementDashboard({
               Types
             </TabsTrigger>
           </TabsList>
-          
+
           <TabsContent value="overview" className="space-y-4 mt-6">
             <FeedOverviewTab
               feedStats={feedStats}
@@ -361,7 +369,7 @@ export function FeedManagementDashboard({
               onAddFeedType={() => setShowAddTypeModal(true)}
             />
           </TabsContent>
-          
+
           <TabsContent value="inventory" className="mt-6">
             <FeedInventoryTab
               inventory={inventory}
@@ -369,9 +377,11 @@ export function FeedManagementDashboard({
               isMobile={isMobile}
               canManageFeed={canManageFeed}
               onAddInventory={() => setShowAddInventoryModal(true)}
+              weightConversions={weightConversions}  // Add this prop
+               onInventoryUpdated={setInventory}
             />
           </TabsContent>
-          
+
           <TabsContent value="consumption" className="mt-6">
             <FeedConsumptionTab
               consumptionRecords={consumptionRecords}
@@ -381,7 +391,7 @@ export function FeedManagementDashboard({
               onRecordFeeding={() => setShowConsumptionModal(true)}
             />
           </TabsContent>
-          
+
           <TabsContent value="types" className="mt-6">
             <FeedTypesTab
               feedTypes={feedTypes}
@@ -391,36 +401,47 @@ export function FeedManagementDashboard({
               onAddFeedType={() => setShowAddTypeModal(true)}
               onFeedTypeUpdated={handleFeedTypeUpdated}
               onFeedTypeDeleted={handleFeedTypeDeleted}
+              feedTypeCategories={feedTypeCategories}  // Add this
+              animalCategories={animalCategories}      // Add this  
+              weightConversions={weightConversions}    // Add this
             />
           </TabsContent>
         </Tabs>
       </div>
-      
+
       {/* Modals */}
       <AddFeedTypeModal
         farmId={farmId}
         isOpen={showAddTypeModal}
         onClose={() => setShowAddTypeModal(false)}
         onSuccess={handleFeedTypeAdded}
+        feedTypeCategories={feedTypeCategories}  // Add this
+        animalCategories={animalCategories}      // Add this
+        weightConversions={weightConversions}    // Add this
       />
-      
+
       <AddFeedInventoryModal
         farmId={farmId}
-        feedTypes={feedTypes}
+        feedTypes={feedTypes}weightConversions={weightConversions}  // Add this prop
         isOpen={showAddInventoryModal}
         onClose={() => setShowAddInventoryModal(false)}
         onSuccess={handleInventoryAdded}
+
       />
 
       <FeedConsumptionModal
-        farmId={farmId}
-        feedTypes={feedTypes}
-        animals={animals}
-        isOpen={showConsumptionModal}
-        onClose={() => setShowConsumptionModal(false)}
-        onSuccess={handleConsumptionAdded}
-        isMobile={isMobile}
-      />
+  farmId={farmId}
+  feedTypes={feedTypes}
+  animals={animals}
+  inventory={inventory} // Add this line
+  isOpen={showConsumptionModal}
+  onClose={() => setShowConsumptionModal(false)}
+  onSuccess={handleConsumptionAdded}
+  isMobile={isMobile}
+  consumptionBatches={consumptionBatches}
+  feedTypeCategories={feedTypeCategories}
+  animalCategories={animalCategories}
+/>
     </div>
   )
 }
