@@ -9,15 +9,28 @@ import {
   Clock,
   ChevronRight,
   Users,
-  User
+  User,
+  Edit3,
+  Trash2,
+  MoreVertical
 } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/DropdownMenu'
 
 interface FeedConsumptionTabProps {
   consumptionRecords: any[]
   feedStats: any
   isMobile: boolean
   canRecordFeeding: boolean
+  canEditRecords?: boolean
+  canDeleteRecords?: boolean
   onRecordFeeding: () => void
+  onEditRecord?: (record: any) => void
+  onDeleteRecord?: (recordId: string) => void
 }
 
 export function FeedConsumptionTab({
@@ -25,7 +38,11 @@ export function FeedConsumptionTab({
   feedStats,
   isMobile,
   canRecordFeeding,
-  onRecordFeeding
+  canEditRecords = false,
+  canDeleteRecords = false,
+  onRecordFeeding,
+  onEditRecord,
+  onDeleteRecord
 }: FeedConsumptionTabProps) {
   // Format date helper
   const formatDate = (dateString: string) => {
@@ -35,6 +52,18 @@ export function FeedConsumptionTab({
       hour: '2-digit',
       minute: '2-digit'
     })
+  }
+
+  const handleEdit = (record: any) => {
+    if (onEditRecord) {
+      onEditRecord(record)
+    }
+  }
+
+  const handleDelete = (recordId: string) => {
+    if (onDeleteRecord && confirm('Are you sure you want to delete this feeding record?')) {
+      onDeleteRecord(recordId)
+    }
   }
 
   return (
@@ -127,13 +156,75 @@ export function FeedConsumptionTab({
                       )}
                     </p>
                   </div>
-                  <div className={`text-right ${isMobile ? 'self-end' : 'ml-4'}`}>
-                    <p className={`font-bold ${isMobile ? 'text-base' : 'text-lg'} text-green-600`}>
-                      {record.quantity_kg}kg
-                    </p>
-                    <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>
-                      {(record.quantity_kg / record.animal_count).toFixed(1)}kg per animal
-                    </p>
+                  
+                  <div className={`flex items-center ${isMobile ? 'justify-between w-full' : 'space-x-4'}`}>
+                    <div className={`text-right ${isMobile ? 'flex-1' : ''}`}>
+                      <p className={`font-bold ${isMobile ? 'text-base' : 'text-lg'} text-green-600`}>
+                        {record.quantity_kg}kg
+                      </p>
+                      <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>
+                        {(record.quantity_kg / record.animal_count).toFixed(1)}kg per animal
+                      </p>
+                    </div>
+
+                    {/* Action Buttons */}
+                    {(canEditRecords || canDeleteRecords) && (
+                      <div className="flex items-center space-x-1">
+                        {isMobile ? (
+                          // Mobile: Dropdown menu
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              {canEditRecords && (
+                                <DropdownMenuItem onClick={() => handleEdit(record)}>
+                                  <Edit3 className="w-4 h-4 mr-2" />
+                                  Edit
+                                </DropdownMenuItem>
+                              )}
+                              {canDeleteRecords && (
+                                <DropdownMenuItem 
+                                  onClick={() => handleDelete(record.id)}
+                                  className="text-red-600 hover:text-red-700"
+                                >
+                                  <Trash2 className="w-4 h-4 mr-2" />
+                                  Delete
+                                </DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        ) : (
+                          // Desktop: Individual buttons
+                          <>
+                            {canEditRecords && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleEdit(record)}
+                                className="h-8 w-8 p-0 text-gray-500 hover:text-blue-600"
+                                title="Edit record"
+                              >
+                                <Edit3 className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {canDeleteRecords && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDelete(record.id)}
+                                className="h-8 w-8 p-0 text-gray-500 hover:text-red-600"
+                                title="Delete record"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

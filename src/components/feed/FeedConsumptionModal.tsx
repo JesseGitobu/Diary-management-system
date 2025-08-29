@@ -30,7 +30,8 @@ import {
   Utensils,
   TrendingUp,
   TrendingDown,
-  Equal
+  Equal,
+  Edit3
 } from 'lucide-react'
 
 interface FeedCategoryQuantity {
@@ -73,11 +74,12 @@ interface FeedConsumptionModalProps {
   farmId: string
   feedTypes: any[]
   animals: any[]
-  inventory: any[] // Add inventory prop
+  inventory: any[]
   consumptionBatches?: ConsumptionBatch[]
   feedTypeCategories?: FeedTypeCategory[]
   animalCategories?: AnimalCategory[]
   isMobile?: boolean
+  editingRecord?: any
 }
 
 interface ConsumptionEntry {
@@ -107,7 +109,8 @@ export function FeedConsumptionModal({
   consumptionBatches = [],
   feedTypeCategories = [],
   animalCategories = [],
-  isMobile = false
+  isMobile = false,
+  editingRecord
 }: FeedConsumptionModalProps) {
   const [feedingMode, setFeedingMode] = useState<'individual' | 'batch'>('individual')
   const [selectedBatch, setSelectedBatch] = useState<string>('')
@@ -125,6 +128,7 @@ export function FeedConsumptionModal({
 
   const { isMobile: deviceIsMobile } = useDeviceInfo()
   const isMobileView = isMobile || deviceIsMobile
+  const isEditMode = !!editingRecord
 
   // Get available feed types with inventory
   const availableFeedTypes = useMemo(() => {
@@ -137,12 +141,12 @@ export function FeedConsumptionModal({
       return {
         ...feedType,
         totalStock,
-        hasStock: totalStock > 0
+        hasStock: totalStock > 0 || isEditMode // Allow editing even if no stock
       }
-    }).filter(feedType => feedType.hasStock) // Only show feed types with stock
+    }).filter(feedType => feedType.hasStock)
     
     return feedTypesWithStock
-  }, [feedTypes, inventory])
+  }, [feedTypes, inventory, isEditMode])
 
   // Get selected batch and feed type data
   const selectedConsumptionBatch = useMemo(() => 
@@ -236,12 +240,46 @@ export function FeedConsumptionModal({
     )
   }, [animals, selectedConsumptionBatch])
 
-  // Reset form when modal opens
+  // Populate form when editing
   useEffect(() => {
     if (isOpen) {
-      resetForm()
+      if (editingRecord) {
+        // Pre-populate form with editing record data
+        setFeedingMode(editingRecord.feeding_mode || 'individual')
+        setSelectedFeedType(editingRecord.feed_type_id || '')
+        setQuantity(editingRecord.quantity_kg?.toString() || '')
+        setAnimalCount(editingRecord.animal_count || 1)
+        
+        // Calculate per cow quantity for batch mode
+        if (editingRecord.feeding_mode === 'batch' && editingRecord.animal_count > 0) {
+          setPerCowQuantity((editingRecord.quantity_kg / editingRecord.animal_count).toFixed(1))
+        }
+        
+        // Set feeding time
+        if (editingRecord.feeding_time) {
+          const feedingDate = new Date(editingRecord.feeding_time)
+          const timeString = feedingDate.toTimeString().slice(0, 5)
+          setFeedingTime(timeString)
+        }
+        
+        // Set notes
+        setNotes(editingRecord.notes || '')
+        
+        // Set selected animals if individual mode and we have consumption_animals data
+        if (editingRecord.feeding_mode === 'individual' && editingRecord.consumption_animals) {
+          const animalIds = editingRecord.consumption_animals.map((ca: any) => ca.animal_id)
+          setSelectedAnimals(animalIds)
+        }
+        
+        // Set batch if available
+        if (editingRecord.consumption_batch_id) {
+          setSelectedBatch(editingRecord.consumption_batch_id)
+        }
+      } else {
+        resetForm()
+      }
     }
-  }, [isOpen])
+  }, [isOpen, editingRecord])
 
   const resetForm = () => {
     setFeedingMode('individual')
@@ -266,7 +304,7 @@ export function FeedConsumptionModal({
       if (selectedAnimals.length === 0) newErrors.animals = 'Please select at least one animal'
       if (!quantity || parseFloat(quantity) <= 0) {
         newErrors.quantity = 'Please enter a valid quantity'
-      } else if (selectedFeedTypeData && parseFloat(quantity) > selectedFeedTypeData.totalStock) {
+      } else if (!isEditMode && selectedFeedTypeData && parseFloat(quantity) > selectedFeedTypeData.totalStock) {
         newErrors.quantity = `Insufficient stock. Only ${selectedFeedTypeData.totalStock}kg available`
       }
     }
@@ -276,7 +314,7 @@ export function FeedConsumptionModal({
       if (!selectedFeedType) newErrors.feedType = 'Please select a feed type'
       if (!perCowQuantity || parseFloat(perCowQuantity) <= 0) {
         newErrors.perCowQuantity = 'Please enter amount per cow'
-      } else if (selectedFeedTypeData) {
+      } else if (!isEditMode && selectedFeedTypeData) {
         const totalQuantityNeeded = parseFloat(perCowQuantity) * animalCount
         if (totalQuantityNeeded > selectedFeedTypeData.totalStock) {
           newErrors.perCowQuantity = `Insufficient stock. Only ${selectedFeedTypeData.totalStock}kg available (${(selectedFeedTypeData.totalStock / animalCount).toFixed(1)}kg per cow max)`
@@ -351,7 +389,14 @@ export function FeedConsumptionModal({
       today.setHours(parseInt(hours), parseInt(minutes), 0, 0)
       const feedingTimestamp = today.toISOString()
 
-      const consumptionData = {
+      const consumptionData: {
+        farmId: string;
+        feedingTime: string;
+        mode: 'individual' | 'batch';
+        batchId: string | null;
+        entries: any[];
+        recordId?: string;
+      } = {
         farmId,
         feedingTime: feedingTimestamp,
         mode: feedingMode,
@@ -374,25 +419,33 @@ export function FeedConsumptionModal({
             }]
       }
 
+      // Add record ID for updates
+      if (isEditMode) {
+        consumptionData.recordId = editingRecord.id
+      }
+
       console.log('Sending consumption data:', consumptionData)
 
-      const response = await fetch('/api/feed/consumption', {
-        method: 'POST',
+      const url = isEditMode ? `/api/feed/consumption/${editingRecord.id}` : '/api/feed/consumption'
+      const method = isEditMode ? 'PUT' : 'POST'
+
+      const response = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(consumptionData)
       })
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to record consumption')
+        throw new Error(errorData.error || `Failed to ${isEditMode ? 'update' : 'record'} consumption`)
       }
 
       const result = await response.json()
       onSuccess(result)
       onClose()
     } catch (error) {
-      console.error('Error recording consumption:', error)
-      setErrors({ submit: error instanceof Error ? error.message : 'Failed to record consumption. Please try again.' })
+      console.error(`Error ${isEditMode ? 'updating' : 'recording'} consumption:`, error)
+      setErrors({ submit: error instanceof Error ? error.message : `Failed to ${isEditMode ? 'update' : 'record'} consumption. Please try again.` })
     } finally {
       setIsSubmitting(false)
     }
@@ -429,11 +482,18 @@ export function FeedConsumptionModal({
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className={`${isMobileView ? 'text-xl' : 'text-2xl'} font-bold text-gray-900 flex items-center space-x-2`}>
-              <Wheat className={`${isMobileView ? 'w-6 h-6' : 'w-8 h-8'} text-green-600`} />
-              <span>Record Feed Consumption</span>
+              {isEditMode ? (
+                <Edit3 className={`${isMobileView ? 'w-6 h-6' : 'w-8 h-8'} text-blue-600`} />
+              ) : (
+                <Wheat className={`${isMobileView ? 'w-6 h-6' : 'w-8 h-8'} text-green-600`} />
+              )}
+              <span>{isEditMode ? 'Edit Feed Consumption' : 'Record Feed Consumption'}</span>
             </h2>
             <p className={`text-gray-600 mt-1 ${isMobileView ? 'text-sm' : ''}`}>
-              Track individual or batch feeding for your animals
+              {isEditMode 
+                ? 'Update this feeding record'
+                : 'Track individual or batch feeding for your animals'
+              }
             </p>
           </div>
           <Button variant="ghost" onClick={onClose} size="sm">
@@ -554,8 +614,13 @@ export function FeedConsumptionModal({
                         <div className="flex items-center justify-between">
                           <div>
                             <p className={`font-medium ${isMobileView ? 'text-sm' : ''}`}>
-                              {animal.tag_number || animal.name}
+                              {animal.name || `Animal ${animal.tag_number}`}
                             </p>
+                            {animal.tag_number && (
+                              <p className={`text-gray-600 ${isMobileView ? 'text-xs' : 'text-sm'} font-mono`}>
+                                Tag: {animal.tag_number}
+                              </p>
+                            )}
                             <p className={`text-gray-500 ${isMobileView ? 'text-xs' : 'text-sm'}`}>
                               {animal.breed} • {animal.category}
                             </p>
@@ -757,7 +822,7 @@ export function FeedConsumptionModal({
               </Card>
 
               {/* Quantity Analysis - Third */}
-              {quantityAnalysis && (
+              {quantityAnalysis && !isEditMode && (
                 <Card className={`border-2 ${getStatusColor(quantityAnalysis.sessionStatus)}`}>
                   <CardHeader className={`${isMobileView ? 'pb-3' : ''}`}>
                     <CardTitle className={`${isMobileView ? 'text-lg' : ''} flex items-center space-x-2`}>
@@ -901,7 +966,7 @@ export function FeedConsumptionModal({
 
           {/* Summary */}
           {((feedingMode === 'individual' && selectedFeedType && quantity) || 
-            (feedingMode === 'batch' && selectedBatch && selectedFeedType && quantity)) && (
+            (feedingMode === 'batch' && selectedBatch && selectedFeedType && perCowQuantity)) && (
             <Card className="border-green-200 bg-green-50">
               <CardHeader className={`${isMobileView ? 'pb-3' : ''}`}>
                 <CardTitle className={`${isMobileView ? 'text-lg' : ''} text-green-800 flex items-center space-x-2`}>
@@ -965,12 +1030,12 @@ export function FeedConsumptionModal({
               {isSubmitting ? (
                 <div className="flex items-center space-x-2">
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  <span>Recording...</span>
+                  <span>{isEditMode ? 'Updating...' : 'Recording...'}</span>
                 </div>
               ) : (
                 <div className="flex items-center space-x-2">
-                  <CheckCircle className="w-5 h-5" />
-                  <span>Record Feeding</span>
+                  {isEditMode ? <Edit3 className="w-5 h-5" /> : <CheckCircle className="w-5 h-5" />}
+                  <span>{isEditMode ? 'Update Feeding' : 'Record Feeding'}</span>
                 </div>
               )}
             </Button>

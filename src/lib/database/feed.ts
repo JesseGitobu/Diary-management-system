@@ -251,12 +251,27 @@ export async function updateDailyFeedSummary(farmId: string, date: string) {
   const supabase = await createServerSupabaseClient()
   
   try {
-    // Calculate daily totals
-    const { data: dailyConsumption } = await supabase
+    // Calculate daily totals - get consumption with feed type cost information
+    const { data: dailyConsumption, error: consumptionError } = await supabase
       .from('feed_consumption')
-      .select('quantity_kg, cost_per_kg, animal_id, feed_type_id')
+      .select(`
+        id,
+        quantity_kg,
+        feed_type_id,
+        animal_count,
+        feeding_mode,
+        feed_types!inner (
+          typical_cost_per_kg
+        )
+      `)
       .eq('farm_id', farmId)
-      .eq('consumption_date', date)
+      .gte('feeding_time', `${date}T00:00:00`)
+      .lt('feeding_time', `${date}T23:59:59`)
+    
+    if (consumptionError) {
+      console.error('Error fetching daily consumption:', consumptionError)
+      return
+    }
     
     if (!dailyConsumption || dailyConsumption.length === 0) {
       // Delete summary if no consumption
@@ -268,32 +283,62 @@ export async function updateDailyFeedSummary(farmId: string, date: string) {
       return
     }
     
+    // Calculate totals
     const totalQuantity = dailyConsumption.reduce((sum, record) => sum + (record.quantity_kg || 0), 0)
-    const totalCost = dailyConsumption.reduce((sum, record) => 
-      sum + ((record.quantity_kg || 0) * (record.cost_per_kg || 0)), 0)
-    const uniqueAnimals = new Set(dailyConsumption.map(r => r.animal_id).filter(Boolean)).size
+    
+    // Calculate total cost using feed type's typical cost
+    const totalCost = dailyConsumption.reduce((sum, record) => {
+      const costPerKg = record.feed_types?.typical_cost_per_kg || 0
+      return sum + ((record.quantity_kg || 0) * costPerKg)
+    }, 0)
+    
+    // Count unique feed types used
     const uniqueFeedTypes = new Set(dailyConsumption.map(r => r.feed_type_id)).size
-    const costPerAnimal = uniqueAnimals > 0 ? totalCost / uniqueAnimals : 0
+    
+    // Calculate total animals fed
+    let totalAnimalsFed = 0
+    for (const record of dailyConsumption) {
+      if (record.feeding_mode === 'batch') {
+        // For batch feeding, use animal_count
+        totalAnimalsFed += record.animal_count || 0
+      } else if (record.feeding_mode === 'individual') {
+        // For individual feeding, count from junction table
+        const { data: animalAssociations } = await supabase
+          .from('feed_consumption_animals')
+          .select('animal_id')
+          .eq('consumption_id', record.id)
+        
+        totalAnimalsFed += animalAssociations?.length || 1 // Default to 1 if no associations found
+      }
+    }
+    
+    const costPerAnimal = totalAnimalsFed > 0 ? totalCost / totalAnimalsFed : 0
     
     const summaryData = {
       farm_id: farmId,
       summary_date: date,
       total_feed_cost: totalCost,
       total_quantity_kg: totalQuantity,
-      animals_fed: uniqueAnimals,
+      animals_fed: totalAnimalsFed,
       feed_types_used: uniqueFeedTypes,
       cost_per_animal: costPerAnimal,
     }
     
     // Upsert daily summary
-    await supabase
+    const { error: upsertError } = await supabase
       .from('daily_feed_summary')
       .upsert(summaryData, { onConflict: 'farm_id,summary_date' })
+    
+    if (upsertError) {
+      console.error('Error upserting daily summary:', upsertError)
+    }
     
   } catch (error) {
     console.error('Error updating daily feed summary:', error)
   }
 }
+
+// Update your getFeedStats function in lib/database/feed.ts to actually use daily summaries
 
 export async function getFeedStats(farmId: string, days: number = 30) {
   const supabase = await createServerSupabaseClient()
@@ -302,29 +347,126 @@ export async function getFeedStats(farmId: string, days: number = 30) {
   const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   
   try {
-    // Get daily summaries
-    const { data: summaries } = await supabase
+    // Get daily summaries (this uses the data from updateDailyFeedSummary)
+    const { data: summaries, error: summariesError } = await supabase
       .from('daily_feed_summary')
       .select('*')
       .eq('farm_id', farmId)
       .gte('summary_date', startDate)
       .lte('summary_date', endDate)
       .order('summary_date', { ascending: false })
+
+    if (summariesError) {
+      console.error('Error fetching daily summaries:', summariesError)
+    }
+
+    // Get enhanced stock levels with consumption data
+    const { data: feedTypesData, error: feedTypesError } = await supabase
+      .from('feed_types')
+      .select('id, name, description, low_stock_threshold, typical_cost_per_kg')
+      .eq('farm_id', farmId)
+
+    if (feedTypesError) {
+      console.error('Error fetching feed types:', feedTypesError)
+    }
+
+    // Calculate current stock levels per feed type
+    const stockLevels = []
     
-    // Get current stock levels
-    const stockLevels = await getCurrentFeedStock(farmId)
+    for (const feedType of feedTypesData || []) {
+      // Get total inventory for this feed type
+      const { data: inventoryData } = await supabase
+        .from('feed_inventory')
+        .select('quantity_kg, cost_per_kg')
+        .eq('farm_id', farmId)
+        .eq('feed_type_id', feedType.id)
+
+      // Get total consumption for this feed type
+      const { data: consumptionData } = await supabase
+        .from('feed_consumption')
+        .select('id, quantity_kg, animal_count, feeding_mode, feeding_time')
+        .eq('farm_id', farmId)
+        .eq('feed_type_id', feedType.id)
+        .gte('feeding_time', `${startDate}T00:00:00`)
+        .lte('feeding_time', `${endDate}T23:59:59`)
+
+      // Get total all-time consumption for this feed type
+      const { data: allTimeConsumption } = await supabase
+        .from('feed_consumption')
+        .select('quantity_kg')
+        .eq('farm_id', farmId)
+        .eq('feed_type_id', feedType.id)
+
+      const totalPurchased = inventoryData?.reduce((sum, item) => sum + (item.quantity_kg || 0), 0) || 0
+      const totalAllTimeConsumed = allTimeConsumption?.reduce((sum, item) => sum + (item.quantity_kg || 0), 0) || 0
+      const currentStock = totalPurchased - totalAllTimeConsumed
+
+      // Calculate period consumption stats
+      const periodConsumption = consumptionData?.reduce((sum, item) => sum + (item.quantity_kg || 0), 0) || 0
+      const periodSessions = consumptionData?.length || 0
+      
+      // Calculate animals fed in period
+      let periodAnimalsFed = 0
+      for (const record of consumptionData || []) {
+        if (record.feeding_mode === 'batch') {
+          periodAnimalsFed += record.animal_count || 0
+        } else {
+          // For individual feeding, query the junction table
+          const { data: animalAssociations } = await supabase
+            .from('feed_consumption_animals')
+            .select('animal_id')
+            .in('consumption_id', consumptionData?.map(r => r.id) || [])
+          
+          periodAnimalsFed += animalAssociations?.length || consumptionData?.length || 0
+        }
+      }
+
+      const avgCostPerKg = inventoryData?.length ? 
+        inventoryData.reduce((sum, item) => sum + (item.cost_per_kg || 0), 0) / inventoryData.length : 
+        feedType.typical_cost_per_kg || 0
+
+      // Only include feeds that have been consumed or have current stock
+      if (periodConsumption > 0 || currentStock > 0) {
+        stockLevels.push({
+          feedType: {
+            id: feedType.id,
+            name: feedType.name,
+            description: feedType.description
+          },
+          currentStock,
+          avgCostPerKg,
+          totalPurchased,
+          totalAllTimeConsumed,
+          // Period-specific data
+          periodConsumption,
+          periodSessions,
+          periodAnimalsFed,
+          avgPerSession: periodSessions > 0 ? periodConsumption / periodSessions : 0,
+          avgAnimalsPerSession: periodSessions > 0 ? periodAnimalsFed / periodSessions : 0,
+          // Threshold info
+          threshold: feedType.low_stock_threshold || 50,
+          percentageOfThreshold: ((currentStock / (feedType.low_stock_threshold || 50)) * 100),
+          status: currentStock <= (feedType.low_stock_threshold || 50) * 0.2 ? 'critical' :
+                  currentStock < (feedType.low_stock_threshold || 50) ? 'low' : 'good'
+        })
+      }
+    }
     
-    // Calculate totals
+    // Calculate totals from daily summaries
     const totalCost = summaries?.reduce((sum, s) => sum + (s.total_feed_cost || 0), 0) || 0
     const totalQuantity = summaries?.reduce((sum, s) => sum + (s.total_quantity_kg || 0), 0) || 0
     const avgDailyCost = summaries?.length ? totalCost / summaries.length : 0
     const avgDailyQuantity = summaries?.length ? totalQuantity / summaries.length : 0
-    
+    const totalAnimalsFed = summaries?.reduce((sum, s) => sum + (s.animals_fed || 0), 0) || 0
+    const totalSessions = stockLevels.reduce((sum, stock) => sum + stock.periodSessions, 0)
+
     return {
       totalCost,
       totalQuantity,
       avgDailyCost,
       avgDailyQuantity,
+      totalAnimalsFed,
+      totalSessions,
       stockLevels,
       dailySummaries: summaries || [],
       periodDays: days,
@@ -336,12 +478,15 @@ export async function getFeedStats(farmId: string, days: number = 30) {
       totalQuantity: 0,
       avgDailyCost: 0,
       avgDailyQuantity: 0,
+      totalAnimalsFed: 0,
+      totalSessions: 0,
       stockLevels: [],
       dailySummaries: [],
       periodDays: days,
     }
   }
 }
+
 export async function getFeedConsumptionRecords(farmId: string, limit: number = 50) {
   try {
     const supabase = await createServerSupabaseClient()
@@ -516,4 +661,206 @@ export async function getFeedTypeById(farmId: string, feedTypeId: string) {
   }
   
   return data
+}
+// Update Feed Consumption Record
+export async function updateFeedConsumption(
+  farmId: string, 
+  consumptionId: string, 
+  data: {
+    feedTypeId?: string
+    quantityKg?: number
+    animalIds?: string[]
+    animalCount?: number
+    feedingTime?: string
+    notes?: string
+    feedingMode?: string
+    batchId?: string
+  }
+) {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    // First check if the consumption record belongs to the farm
+    const { data: existingRecord, error: checkError } = await supabase
+      .from('feed_consumption')
+      .select('id, farm_id')
+      .eq('id', consumptionId)
+      .eq('farm_id', farmId)
+      .single()
+    
+    if (checkError || !existingRecord) {
+      return { success: false, error: 'Consumption record not found or access denied' }
+    }
+    
+    // Prepare update data
+    const updateData: any = {
+      updated_at: new Date().toISOString()
+    }
+    
+    if (data.feedTypeId) updateData.feed_type_id = data.feedTypeId
+    if (data.quantityKg !== undefined) updateData.quantity_kg = data.quantityKg
+    if (data.animalCount !== undefined) updateData.animal_count = data.animalCount
+    if (data.feedingTime) updateData.feeding_time = data.feedingTime
+    if (data.notes !== undefined) updateData.notes = data.notes
+    if (data.feedingMode) updateData.feeding_mode = data.feedingMode
+    if (data.batchId !== undefined) updateData.batch_id = data.batchId
+    
+    // Update the consumption record
+    const { data: updatedRecord, error: updateError } = await supabase
+      .from('feed_consumption')
+      .update(updateData)
+      .eq('id', consumptionId)
+      .eq('farm_id', farmId)
+      .select(`
+        *,
+        feed_types (
+          id,
+          name,
+          description
+        )
+      `)
+      .single()
+    
+    if (updateError) {
+      console.error('Error updating consumption record:', updateError)
+      return { success: false, error: updateError.message }
+    }
+    
+    // Handle animal associations for individual feeding mode
+    if (data.feedingMode === 'individual' && data.animalIds) {
+      // Delete existing associations
+      const { error: deleteAssociationsError } = await supabase
+        .from('feed_consumption_animals')
+        .delete()
+        .eq('consumption_id', consumptionId)
+      
+      if (deleteAssociationsError) {
+        console.error('Error deleting existing animal associations:', deleteAssociationsError)
+      }
+      
+      // Insert new associations if there are animal IDs
+      if (data.animalIds.length > 0) {
+        const animalAssociations = data.animalIds.map(animalId => ({
+          consumption_id: consumptionId,
+          animal_id: animalId
+        }))
+        
+        const { error: insertAssociationsError } = await supabase
+          .from('feed_consumption_animals')
+          .insert(animalAssociations)
+        
+        if (insertAssociationsError) {
+          console.error('Error inserting new animal associations:', insertAssociationsError)
+          // Continue despite this error as the main record was updated
+        }
+      }
+    }
+    
+    // Update daily summary if feeding time was changed
+    if (data.feedingTime) {
+      const date = new Date(data.feedingTime).toISOString().split('T')[0]
+      await updateDailyFeedSummary(farmId, date)
+    }
+    
+    return { success: true, data: updatedRecord }
+    
+  } catch (error) {
+    console.error('Error in updateFeedConsumption:', error)
+    return { success: false, error: 'An unexpected error occurred while updating the record' }
+  }
+}
+
+// Delete Feed Consumption Record
+export async function deleteFeedConsumption(farmId: string, consumptionId: string) {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    // First check if the consumption record belongs to the farm and get the feeding date
+    const { data: existingRecord, error: checkError } = await supabase
+      .from('feed_consumption')
+      .select('id, farm_id, feeding_time')
+      .eq('id', consumptionId)
+      .eq('farm_id', farmId)
+      .single()
+    
+    if (checkError || !existingRecord) {
+      return { success: false, error: 'Consumption record not found or access denied' }
+    }
+    
+    const feedingDate = existingRecord.feeding_time ? 
+      new Date(existingRecord.feeding_time).toISOString().split('T')[0] : null
+    
+    // Delete associated animal records first (if any)
+    const { error: deleteAssociationsError } = await supabase
+      .from('feed_consumption_animals')
+      .delete()
+      .eq('consumption_id', consumptionId)
+    
+    if (deleteAssociationsError) {
+      console.error('Error deleting animal associations:', deleteAssociationsError)
+      // Continue with deletion even if associations couldn't be deleted
+    }
+    
+    // Delete the consumption record
+    const { error: deleteError } = await supabase
+      .from('feed_consumption')
+      .delete()
+      .eq('id', consumptionId)
+      .eq('farm_id', farmId)
+    
+    if (deleteError) {
+      console.error('Error deleting consumption record:', deleteError)
+      return { success: false, error: deleteError.message }
+    }
+    
+    // Update daily summary if we have a feeding date
+    if (feedingDate) {
+      await updateDailyFeedSummary(farmId, feedingDate)
+    }
+    
+    return { success: true, message: 'Consumption record deleted successfully' }
+    
+  } catch (error) {
+    console.error('Error in deleteFeedConsumption:', error)
+    return { success: false, error: 'An unexpected error occurred while deleting the record' }
+  }
+}
+
+// Get Feed Consumption Record by ID (helper function)
+export async function getFeedConsumptionById(farmId: string, consumptionId: string) {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    const { data, error } = await supabase
+      .from('feed_consumption')
+      .select(`
+        *,
+        feed_types (
+          id,
+          name,
+          description
+        ),
+        feed_consumption_animals (
+          animal_id,
+          animals (
+            id,
+            tag_number,
+            name
+          )
+        )
+      `)
+      .eq('id', consumptionId)
+      .eq('farm_id', farmId)
+      .single()
+    
+    if (error) {
+      console.error('Error fetching consumption record:', error)
+      return null
+    }
+    
+    return data
+  } catch (error) {
+    console.error('Error in getFeedConsumptionById:', error)
+    return null
+  }
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -39,7 +39,7 @@ interface FeedManagementDashboardProps {
   feedTypeCategories: any[]
   animalCategories: any[]
   weightConversions: any[]
-  consumptionBatches: any[]  // Add this
+  consumptionBatches: any[]
 }
 
 export function FeedManagementDashboard({
@@ -62,13 +62,30 @@ export function FeedManagementDashboard({
   const [feedTypes, setFeedTypes] = useState(initialFeedTypes)
   const [inventory, setInventory] = useState(initialInventory)
   const [consumptionRecords, setConsumptionRecords] = useState(initialConsumptionRecords)
+  const [editingRecord, setEditingRecord] = useState<any>(null)
 
   const { isMobile, isTablet } = useDeviceInfo()
   const canManageFeed = ['farm_owner', 'farm_manager'].includes(userRole)
   const canRecordFeeding = ['farm_owner', 'farm_manager', 'worker'].includes(userRole)
+  const canEditRecords = ['farm_owner', 'farm_manager'].includes(userRole)
+  const canDeleteRecords = ['farm_owner', 'farm_manager'].includes(userRole)
 
-  // Calculate low stock alerts
-  const lowStockItems = feedStats.stockLevels?.filter((stock: any) => stock.currentStock < 50) || []
+  // Calculate low stock alerts using individual feed type thresholds
+  const lowStockItems = useMemo(() => {
+    if (!feedStats.stockLevels) return []
+    
+    return feedStats.stockLevels.filter((stock: any) => {
+      // Find the corresponding feed type to get its threshold
+      const feedType = feedTypes.find(ft => ft.id === stock.feedType?.id || ft.id === stock.feed_type_id)
+      
+      if (!feedType) return false
+      
+      // Use the feed type's specific threshold, or default to 50kg if not set
+      const threshold = feedType.low_stock_threshold || 50
+      
+      return stock.currentStock < threshold
+    })
+  }, [feedStats.stockLevels, feedTypes])
 
   const handleFeedTypeAdded = (newFeedType: any) => {
     setFeedTypes(prev => [...prev, newFeedType])
@@ -90,9 +107,59 @@ export function FeedManagementDashboard({
   }
 
   const handleConsumptionAdded = (newConsumption: any) => {
-    setConsumptionRecords(prev => [...newConsumption, ...prev])
+    if (editingRecord) {
+      // Update existing record
+      setConsumptionRecords(prev => prev.map(record => 
+        record.id === editingRecord.id ? newConsumption[0] : record
+      ))
+      setEditingRecord(null)
+    } else {
+      // Add new record
+      setConsumptionRecords(prev => [...newConsumption, ...prev])
+    }
     setShowConsumptionModal(false)
     window.location.reload() // Refresh to update stats
+  }
+
+  const handleEditRecord = (record: any) => {
+    setEditingRecord(record)
+    setShowConsumptionModal(true)
+  }
+
+  const handleDeleteRecord = async (recordId: string) => {
+    try {
+      const response = await fetch(`/api/feed/consumption/${recordId}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to delete record')
+      }
+
+      // Remove from local state
+      setConsumptionRecords(prev => prev.filter(record => record.id !== recordId))
+      
+      // Show success message (you might want to add a toast notification here)
+      console.log('Record deleted successfully')
+      
+      // Optionally refresh to update stats
+      window.location.reload()
+      
+    } catch (error) {
+      console.error('Error deleting record:', error)
+      alert(error instanceof Error ? error.message : 'Failed to delete record')
+    }
+  }
+
+  const handleOpenConsumptionModal = () => {
+    setEditingRecord(null) // Clear any editing state
+    setShowConsumptionModal(true)
+  }
+
+  const handleCloseConsumptionModal = () => {
+    setEditingRecord(null) // Clear editing state when closing
+    setShowConsumptionModal(false)
   }
 
   // Mobile Stats Card Component
@@ -123,7 +190,7 @@ export function FeedManagementDashboard({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">
         {canRecordFeeding && (
-          <DropdownMenuItem onClick={() => setShowConsumptionModal(true)}>
+          <DropdownMenuItem onClick={handleOpenConsumptionModal}>
             <Wheat className="mr-2 h-4 w-4" />
             Record Feeding
           </DropdownMenuItem>
@@ -164,7 +231,7 @@ export function FeedManagementDashboard({
             ) : (
               <div className="flex space-x-3">
                 {canRecordFeeding && (
-                  <Button onClick={() => setShowConsumptionModal(true)}>
+                  <Button onClick={handleOpenConsumptionModal}>
                     <Wheat className="mr-2 h-4 w-4" />
                     Record Feeding
                   </Button>
@@ -282,22 +349,59 @@ export function FeedManagementDashboard({
         <div className="px-4 lg:px-0">
           <Card className="border-yellow-200 bg-yellow-50">
             <CardHeader className="pb-3">
-              <CardTitle className="flex items-center space-x-2 text-yellow-800 text-base">
-                <AlertTriangle className="h-4 w-4" />
-                <span>Low Stock Alerts</span>
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center space-x-2 text-yellow-800 text-base">
+                  <AlertTriangle className="h-4 w-4" />
+                  <span>Low Stock Alerts ({lowStockItems.length})</span>
+                </CardTitle>
+                {canManageFeed && !isMobile && (
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => setShowAddInventoryModal(true)}
+                    className="text-yellow-800 border-yellow-300 hover:bg-yellow-100"
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    Add Stock
+                  </Button>
+                )}
+              </div>
+              <CardDescription className="text-yellow-700">
+                Feed types running low on stock based on their configured thresholds
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className={`${isMobile ? 'space-y-3' : 'grid grid-cols-1 md:grid-cols-3 gap-4'}`}>
-                {lowStockItems.map((item: any, index: number) => (
-                  <div key={index} className="flex items-center justify-between p-3 bg-white rounded-lg">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm truncate">{item.feedType?.name}</p>
-                      <p className="text-xs text-gray-600">{item.currentStock.toFixed(1)}kg remaining</p>
+                {lowStockItems.map((item: any, index: number) => {
+                  const feedType = feedTypes.find(ft => ft.id === item.feedType?.id || ft.id === item.feed_type_id)
+                  const threshold = feedType?.low_stock_threshold || 50
+                  const percentageRemaining = ((item.currentStock / threshold) * 100).toFixed(0)
+                  
+                  return (
+                    <div key={index} className="flex items-center justify-between p-3 bg-white rounded-lg border-l-4 border-red-400">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm truncate">{item.feedType?.name || 'Unknown Feed'}</p>
+                        <p className="text-xs text-gray-600">
+                          {item.currentStock.toFixed(1)}kg remaining of {threshold}kg threshold
+                        </p>
+                        <p className="text-xs text-red-600 font-medium">
+                          {percentageRemaining}% of minimum stock level
+                        </p>
+                      </div>
+                      <div className="ml-2 text-right">
+                        <Badge 
+                          variant="destructive" 
+                          className="text-xs mb-1"
+                        >
+                          {item.currentStock <= threshold * 0.2 ? 'Critical' : 'Low Stock'}
+                        </Badge>
+                        <div className="text-xs text-gray-500">
+                          Need: {Math.max(0, threshold - item.currentStock).toFixed(1)}kg
+                        </div>
+                      </div>
                     </div>
-                    <Badge variant="destructive" className="ml-2 text-xs">Low Stock</Badge>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </CardContent>
           </Card>
@@ -364,6 +468,8 @@ export function FeedManagementDashboard({
             <FeedOverviewTab
               feedStats={feedStats}
               feedTypes={feedTypes}
+                inventory={inventory}           // Add this
+  consumptionRecords={consumptionRecords}  // Add this
               isMobile={isMobile}
               canManageFeed={canManageFeed}
               onAddFeedType={() => setShowAddTypeModal(true)}
@@ -377,8 +483,8 @@ export function FeedManagementDashboard({
               isMobile={isMobile}
               canManageFeed={canManageFeed}
               onAddInventory={() => setShowAddInventoryModal(true)}
-              weightConversions={weightConversions}  // Add this prop
-               onInventoryUpdated={setInventory}
+              weightConversions={weightConversions}
+              onInventoryUpdated={setInventory}
             />
           </TabsContent>
 
@@ -388,7 +494,11 @@ export function FeedManagementDashboard({
               feedStats={feedStats}
               isMobile={isMobile}
               canRecordFeeding={canRecordFeeding}
-              onRecordFeeding={() => setShowConsumptionModal(true)}
+              canEditRecords={canEditRecords}
+              canDeleteRecords={canDeleteRecords}
+              onRecordFeeding={handleOpenConsumptionModal}
+              onEditRecord={handleEditRecord}
+              onDeleteRecord={handleDeleteRecord}
             />
           </TabsContent>
 
@@ -401,9 +511,9 @@ export function FeedManagementDashboard({
               onAddFeedType={() => setShowAddTypeModal(true)}
               onFeedTypeUpdated={handleFeedTypeUpdated}
               onFeedTypeDeleted={handleFeedTypeDeleted}
-              feedTypeCategories={feedTypeCategories}  // Add this
-              animalCategories={animalCategories}      // Add this  
-              weightConversions={weightConversions}    // Add this
+              feedTypeCategories={feedTypeCategories}
+              animalCategories={animalCategories}
+              weightConversions={weightConversions}
             />
           </TabsContent>
         </Tabs>
@@ -415,33 +525,35 @@ export function FeedManagementDashboard({
         isOpen={showAddTypeModal}
         onClose={() => setShowAddTypeModal(false)}
         onSuccess={handleFeedTypeAdded}
-        feedTypeCategories={feedTypeCategories}  // Add this
-        animalCategories={animalCategories}      // Add this
-        weightConversions={weightConversions}    // Add this
+        feedTypeCategories={feedTypeCategories}
+        animalCategories={animalCategories}
+        weightConversions={weightConversions}
       />
 
       <AddFeedInventoryModal
         farmId={farmId}
-        feedTypes={feedTypes}weightConversions={weightConversions}  // Add this prop
+        feedTypes={feedTypes}
+        weightConversions={weightConversions}
         isOpen={showAddInventoryModal}
         onClose={() => setShowAddInventoryModal(false)}
         onSuccess={handleInventoryAdded}
-
       />
 
       <FeedConsumptionModal
-  farmId={farmId}
-  feedTypes={feedTypes}
-  animals={animals}
-  inventory={inventory} // Add this line
-  isOpen={showConsumptionModal}
-  onClose={() => setShowConsumptionModal(false)}
-  onSuccess={handleConsumptionAdded}
-  isMobile={isMobile}
-  consumptionBatches={consumptionBatches}
-  feedTypeCategories={feedTypeCategories}
-  animalCategories={animalCategories}
-/>
+        farmId={farmId}
+        feedTypes={feedTypes}
+        animals={animals}
+        inventory={inventory}
+        isOpen={showConsumptionModal}
+        onClose={handleCloseConsumptionModal}
+        onSuccess={handleConsumptionAdded}
+        isMobile={isMobile}
+        consumptionBatches={consumptionBatches}
+        feedTypeCategories={feedTypeCategories}
+        animalCategories={animalCategories}
+        editingRecord={editingRecord}
+      />
     </div>
   )
 }
+
