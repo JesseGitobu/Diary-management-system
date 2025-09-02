@@ -72,6 +72,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Default quantity cannot be negative' }, { status: 400 })
     }
     
+    // Validate daily consumption per animal
+    if (body.daily_consumption_per_animal_kg && body.daily_consumption_per_animal_kg < 0) {
+      return NextResponse.json({ error: 'Daily consumption per animal cannot be negative' }, { status: 400 })
+    }
+    
+    // Validate consumption unit
+    if (body.consumption_unit && !['kg', 'grams'].includes(body.consumption_unit)) {
+      return NextResponse.json({ error: 'Consumption unit must be kg or grams' }, { status: 400 })
+    }
+    
+    // Validate target mode
+    if (body.target_mode && !['category', 'specific', 'mixed'].includes(body.target_mode)) {
+      return NextResponse.json({ error: 'Target mode must be category, specific, or mixed' }, { status: 400 })
+    }
+    
+    // Validate feeding times array
+    if (body.feeding_times && Array.isArray(body.feeding_times)) {
+      const invalidTimes = body.feeding_times.filter((time: string) => 
+        !/^([01]\d|2[0-3]):([0-5]\d)$/.test(time)
+      )
+      if (invalidTimes.length > 0) {
+        return NextResponse.json({ error: 'Invalid feeding time format. Use HH:MM format' }, { status: 400 })
+      }
+    }
+    
     const result = await createConsumptionBatch(userRole.farm_id, body)
     
     if (!result.success) {

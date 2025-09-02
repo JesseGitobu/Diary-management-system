@@ -1,10 +1,12 @@
-// app/api/settings/feed-management/animal-categories/[id]/route.ts
+// app/api/farms/[farmId]/feed-management/animal-categories/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
+import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { 
   updateAnimalCategory, 
-  deleteAnimalCategory 
+  deleteAnimalCategory,
+  AnimalCategory 
 } from '@/lib/database/feedManagementSettings'
 
 export async function PUT(
@@ -32,7 +34,26 @@ export async function PUT(
     const body = await request.json()
     const { id: categoryId } = await params
     
-    const result = await updateAnimalCategory(categoryId, userRole.farm_id, body)
+    // Validate required fields
+    if (!body.name?.trim()) {
+      return NextResponse.json(
+        { error: 'Category name is required' }, 
+        { status: 400 }
+      )
+    }
+
+    // Prepare update data
+    const updateData: Partial<Omit<AnimalCategory, 'id' | 'farm_id' | 'created_at' | 'updated_at' | 'matching_animals_count'>> = {
+      name: body.name.trim(),
+      description: body.description || null,
+      min_age_days: body.min_age_days || null,
+      max_age_days: body.max_age_days || null,
+      gender: body.gender || null,
+      characteristics: body.characteristics || {},
+      is_default: body.is_default || false
+    }
+    
+    const result = await updateAnimalCategory(categoryId, userRole.farm_id, updateData)
     
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 })
@@ -73,6 +94,22 @@ export async function DELETE(
     }
     
     const { id: categoryId } = await params
+
+    // Check if this is a default category (cannot be deleted)
+    const supabase = await createServerSupabaseClient()
+    const { data: category } = await supabase
+      .from('animal_categories')
+      .select('is_default')
+      .eq('id', categoryId)
+      .eq('farm_id', userRole.farm_id)
+      .single()
+
+    if (category?.is_default) {
+      return NextResponse.json(
+        { error: 'Cannot delete default category' }, 
+        { status: 400 }
+      )
+    }
     
     const result = await deleteAnimalCategory(categoryId, userRole.farm_id)
     

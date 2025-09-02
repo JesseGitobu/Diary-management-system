@@ -23,7 +23,10 @@ import {
   Trash2,
   Users,
   Calendar,
-  MoreVertical
+  MoreVertical,
+  Eye,
+  UserCheck,
+  Zap
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -38,9 +41,24 @@ interface AnimalCategory {
   description: string
   min_age_days?: number
   max_age_days?: number
+  gender?: string
   characteristics: any
   is_default: boolean
   sort_order: number
+  matching_animals_count?: number
+}
+
+interface MatchingAnimal {
+  id: string
+  tag_number: string
+  name: string | null
+  gender: string | null
+  birth_date: string | null
+  production_status: string | null
+  status: string
+  days_in_milk: number | null
+  current_daily_production: number | null
+  age_days: number | null
 }
 
 interface AnimalCategoriesManagerProps {
@@ -56,6 +74,7 @@ interface CategoryFormData {
   description: string
   min_age_days: string
   max_age_days: string
+  gender: string
   lactating: boolean
   pregnant: boolean
   breeding_male: boolean
@@ -69,6 +88,12 @@ const CHARACTERISTIC_OPTIONS = [
   { key: 'growth_phase', label: 'Growth Phase', description: 'Still growing/developing' }
 ]
 
+const GENDER_OPTIONS = [
+  { value: '', label: 'Any Gender' },
+  { value: 'female', label: 'Female' },
+  { value: 'male', label: 'Male' }
+]
+
 export function AnimalCategoriesManager({
   farmId,
   categories,
@@ -79,12 +104,16 @@ export function AnimalCategoriesManager({
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingCategory, setEditingCategory] = useState<AnimalCategory | null>(null)
   const [deletingCategory, setDeletingCategory] = useState<AnimalCategory | null>(null)
+  const [viewingAnimals, setViewingAnimals] = useState<AnimalCategory | null>(null)
+  const [matchingAnimals, setMatchingAnimals] = useState<MatchingAnimal[]>([])
   const [loading, setLoading] = useState(false)
+  const [loadingAnimals, setLoadingAnimals] = useState(false)
   const [formData, setFormData] = useState<CategoryFormData>({
     name: '',
     description: '',
     min_age_days: '',
     max_age_days: '',
+    gender: 'female', // Default to female
     lactating: false,
     pregnant: false,
     breeding_male: false,
@@ -97,6 +126,7 @@ export function AnimalCategoriesManager({
       description: '',
       min_age_days: '',
       max_age_days: '',
+      gender: 'female', // Default to female
       lactating: false,
       pregnant: false,
       breeding_male: false,
@@ -115,6 +145,7 @@ export function AnimalCategoriesManager({
       description: category.description || '',
       min_age_days: category.min_age_days?.toString() || '',
       max_age_days: category.max_age_days?.toString() || '',
+      gender: category.gender || 'female',
       lactating: category.characteristics?.lactating || false,
       pregnant: category.characteristics?.pregnant || false,
       breeding_male: category.characteristics?.breeding_male || false,
@@ -129,6 +160,29 @@ export function AnimalCategoriesManager({
     setEditingCategory(null)
     resetForm()
   }, [resetForm])
+
+  const handleViewAnimals = async (category: AnimalCategory) => {
+    setViewingAnimals(category)
+    setLoadingAnimals(true)
+    
+    try {
+      const response = await fetch(
+        `/api/farms/${farmId}/feed-management/animal-categories/${category.id}/matching-animals`
+      )
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch matching animals')
+      }
+      
+      const result = await response.json()
+      setMatchingAnimals(result.data.animals || [])
+    } catch (error) {
+      console.error('Error fetching matching animals:', error)
+      setMatchingAnimals([])
+    } finally {
+      setLoadingAnimals(false)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -148,6 +202,7 @@ export function AnimalCategoriesManager({
         description: formData.description,
         min_age_days: formData.min_age_days ? parseInt(formData.min_age_days) : null,
         max_age_days: formData.max_age_days ? parseInt(formData.max_age_days) : null,
+        gender: formData.gender || null,
         characteristics,
         is_default: false
       }
@@ -228,6 +283,18 @@ export function AnimalCategoriesManager({
     setFormData(prev => ({ ...prev, max_age_days: e.target.value }))
   }, [])
 
+  const handleGenderChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newGender = e.target.value
+    setFormData(prev => ({ 
+      ...prev, 
+      gender: newGender,
+      // Auto-adjust characteristics based on gender
+      breeding_male: newGender === 'male' && prev.breeding_male,
+      lactating: newGender === 'female' && prev.lactating,
+      pregnant: newGender === 'female' && prev.pregnant
+    }))
+  }, [])
+
   const handleCharacteristicChange = useCallback((key: string, checked: boolean) => {
     setFormData(prev => ({ ...prev, [key]: checked }))
   }, [])
@@ -240,12 +307,22 @@ export function AnimalCategoriesManager({
     return 'Any age'
   }
 
-  const getCharacteristicBadges = (characteristics: any) => {
+  const formatAnimalAge = (ageDays: number | null) => {
+    if (!ageDays) return 'Unknown'
+    if (ageDays < 30) return `${ageDays} days`
+    if (ageDays < 365) return `${Math.floor(ageDays / 30)} months`
+    const years = Math.floor(ageDays / 365)
+    const months = Math.floor((ageDays % 365) / 30)
+    return `${years}y ${months}m`
+  }
+
+  const getCharacteristicBadges = (characteristics: any, gender?: string) => {
     if (!characteristics) return []
     
     return CHARACTERISTIC_OPTIONS
       .filter(option => characteristics[option.key])
       .map(option => option.label)
+      .concat(gender ? [gender === 'male' ? 'Male' : 'Female'] : [])
   }
 
   const sortedCategories = useMemo(() => 
@@ -254,8 +331,6 @@ export function AnimalCategoriesManager({
   )
 
   const ActionButtons = ({ category }: { category: AnimalCategory }) => {
-    if (!canEdit) return null
-
     if (isMobile) {
       return (
         <DropdownMenu>
@@ -265,18 +340,26 @@ export function AnimalCategoriesManager({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => handleEdit(category)}>
-              <Edit className="mr-2 h-4 w-4" />
-              Edit
+            <DropdownMenuItem onClick={() => handleViewAnimals(category)}>
+              <Eye className="mr-2 h-4 w-4" />
+              View Animals ({category.matching_animals_count || 0})
             </DropdownMenuItem>
-            {!category.is_default && (
-              <DropdownMenuItem 
-                onClick={() => setDeletingCategory(category)}
-                className="text-red-600"
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                Delete
-              </DropdownMenuItem>
+            {canEdit && (
+              <>
+                <DropdownMenuItem onClick={() => handleEdit(category)}>
+                  <Edit className="mr-2 h-4 w-4" />
+                  Edit
+                </DropdownMenuItem>
+                {!category.is_default && (
+                  <DropdownMenuItem 
+                    onClick={() => setDeletingCategory(category)}
+                    className="text-red-600"
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete
+                  </DropdownMenuItem>
+                )}
+              </>
             )}
           </DropdownMenuContent>
         </DropdownMenu>
@@ -288,21 +371,33 @@ export function AnimalCategoriesManager({
         <Button
           variant="outline"
           size="sm"
-          onClick={() => handleEdit(category)}
+          onClick={() => handleViewAnimals(category)}
         >
-          <Edit className="h-4 w-4 mr-1" />
-          Edit
+          <Eye className="h-4 w-4 mr-1" />
+          {category.matching_animals_count || 0} Animals
         </Button>
-        {!category.is_default && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setDeletingCategory(category)}
-            className="text-red-600 border-red-200 hover:bg-red-50"
-          >
-            <Trash2 className="h-4 w-4 mr-1" />
-            Delete
-          </Button>
+        {canEdit && (
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleEdit(category)}
+            >
+              <Edit className="h-4 w-4 mr-1" />
+              Edit
+            </Button>
+            {!category.is_default && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setDeletingCategory(category)}
+                className="text-red-600 border-red-200 hover:bg-red-50"
+              >
+                <Trash2 className="h-4 w-4 mr-1" />
+                Delete
+              </Button>
+            )}
+          </>
         )}
       </div>
     )
@@ -341,6 +436,12 @@ export function AnimalCategoriesManager({
                 {category.is_default && (
                   <Badge variant="secondary" className="text-xs">Default</Badge>
                 )}
+                {category.matching_animals_count !== undefined && (
+                  <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700">
+                    <UserCheck className="w-3 h-3 mr-1" />
+                    {category.matching_animals_count} animals
+                  </Badge>
+                )}
               </div>
               
               {category.description && (
@@ -353,7 +454,7 @@ export function AnimalCategoriesManager({
                   <span>{formatAge(category.min_age_days, category.max_age_days)}</span>
                 </div>
                 
-                {getCharacteristicBadges(category.characteristics).map((badge, index) => (
+                {getCharacteristicBadges(category.characteristics, category.gender).map((badge, index) => (
                   <Badge key={index} variant="outline" className="text-xs">
                     {badge}
                   </Badge>
@@ -420,6 +521,24 @@ export function AnimalCategoriesManager({
               />
             </div>
 
+            {/* Gender Selection */}
+            <div>
+              <Label htmlFor="animal-gender">Gender</Label>
+              <select
+                id="animal-gender"
+                value={formData.gender}
+                onChange={handleGenderChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+              >
+                {GENDER_OPTIONS.map(option => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">Select the gender for this category</p>
+            </div>
+
             {/* Age Range */}
             <div>
               <Label>Age Range (days)</Label>
@@ -453,20 +572,35 @@ export function AnimalCategoriesManager({
             <div>
               <Label>Characteristics</Label>
               <div className="space-y-2 mt-2">
-                {CHARACTERISTIC_OPTIONS.map((option) => (
-                  <label key={option.key} className="flex items-start space-x-3 p-2 hover:bg-gray-50 rounded">
-                    <input
-                      type="checkbox"
-                      checked={formData[option.key as keyof CategoryFormData] as boolean}
-                      onChange={(e) => handleCharacteristicChange(option.key, e.target.checked)}
-                      className="mt-1 h-4 w-4 text-farm-green border-gray-300 rounded focus:ring-farm-green"
-                    />
-                    <div className="flex-1">
-                      <span className="text-sm font-medium text-gray-900">{option.label}</span>
-                      <p className="text-xs text-gray-500">{option.description}</p>
-                    </div>
-                  </label>
-                ))}
+                {CHARACTERISTIC_OPTIONS.map((option) => {
+                  // Disable gender-specific options based on selected gender
+                  const isDisabled = (
+                    (option.key === 'lactating' || option.key === 'pregnant') && formData.gender === 'male'
+                  ) || (
+                    option.key === 'breeding_male' && formData.gender === 'female'
+                  )
+                  
+                  return (
+                    <label 
+                      key={option.key} 
+                      className={`flex items-start space-x-3 p-2 rounded ${
+                        isDisabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50 cursor-pointer'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={formData[option.key as keyof CategoryFormData] as boolean}
+                        onChange={(e) => handleCharacteristicChange(option.key, e.target.checked)}
+                        disabled={isDisabled}
+                        className="mt-1 h-4 w-4 text-farm-green border-gray-300 rounded focus:ring-farm-green"
+                      />
+                      <div className="flex-1">
+                        <span className="text-sm font-medium text-gray-900">{option.label}</span>
+                        <p className="text-xs text-gray-500">{option.description}</p>
+                      </div>
+                    </label>
+                  )
+                })}
               </div>
             </div>
 
@@ -484,6 +618,68 @@ export function AnimalCategoriesManager({
               </Button>
             </div>
           </form>
+        </div>
+      </Modal>
+
+      {/* Matching Animals Modal */}
+      <Modal 
+        isOpen={!!viewingAnimals} 
+        onClose={() => setViewingAnimals(null)}
+        className="max-w-4xl"
+      >
+        <div className="p-6">
+          <h3 className="text-lg font-semibold mb-4">
+            Animals matching "{viewingAnimals?.name}"
+          </h3>
+
+          {loadingAnimals ? (
+            <div className="flex items-center justify-center py-8">
+              <LoadingSpinner size="md" />
+            </div>
+          ) : matchingAnimals.length > 0 ? (
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {matchingAnimals.map((animal) => (
+                <div key={animal.id} className="flex items-center justify-between p-3 border rounded-lg">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-3 mb-1">
+                      <span className="font-medium">#{animal.tag_number}</span>
+                      {animal.name && (
+                        <span className="text-gray-600">({animal.name})</span>
+                      )}
+                      <Badge variant="outline" className="text-xs">
+                        {animal.gender || 'Unknown'}
+                      </Badge>
+                      {animal.production_status && (
+                        <Badge variant="secondary" className="text-xs">
+                          {animal.production_status}
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="text-sm text-gray-500 flex items-center space-x-4">
+                      <span>Age: {formatAnimalAge(animal.age_days)}</span>
+                      {animal.days_in_milk && (
+                        <span>DIM: {animal.days_in_milk}</span>
+                      )}
+                      {animal.current_daily_production && (
+                        <span>Production: {animal.current_daily_production}L/day</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              <Users className="mx-auto h-8 w-8 text-gray-400 mb-3" />
+              <p>No animals match this category criteria</p>
+            </div>
+          )}
+
+          <div className="flex justify-end pt-4">
+            <Button onClick={() => setViewingAnimals(null)}>
+              Close
+            </Button>
+          </div>
         </div>
       </Modal>
 

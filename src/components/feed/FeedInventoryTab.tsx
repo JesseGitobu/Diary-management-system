@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -32,7 +32,8 @@ import {
   MoreVertical, 
   PlusCircle,
   Edit,
-  MinusCircle
+  MinusCircle,
+  AlertTriangle
 } from 'lucide-react'
 
 const editInventorySchema = z.object({
@@ -59,15 +60,14 @@ interface FeedInventoryTabProps {
   inventory: Array<{
     id: string;
     feed_type_id: string;
-    quantity_kg: number;
-    initial_quantity_kg?: number;
+    quantity_kg: number; // This should be the remaining quantity after consumption
+    initial_quantity_kg?: number; // Original purchase quantity
     cost_per_kg: number;
     purchase_date: string;
     expiry_date?: string;
     supplier?: string;
     batch_number?: string;
     notes?: string;
-    consumed_quantity_kg?: number;
     feed_types?: {
       id: string;
       name: string;
@@ -76,6 +76,7 @@ interface FeedInventoryTabProps {
     };
   }>
   feedTypes: any[]
+  consumptionRecords: any[] // Add consumption records to calculate actual consumption
   weightConversions: Array<{
     id: string;
     unit_name: string;
@@ -93,6 +94,7 @@ interface FeedInventoryTabProps {
 export function FeedInventoryTab({
   inventory,
   feedTypes,
+  consumptionRecords = [],
   weightConversions,
   isMobile,
   canManageFeed,
@@ -109,6 +111,49 @@ export function FeedInventoryTab({
   const form = useForm<EditInventoryFormData>({
     resolver: zodResolver(editInventorySchema),
   })
+
+  // Calculate enhanced inventory data with consumption information
+  const enhancedInventory = useMemo(() => {
+    return inventory.map(item => {
+      // Find consumption records for this specific inventory batch
+      const itemConsumption = consumptionRecords.filter(record => 
+        record.feed_type_id === item.feed_type_id
+        // Note: In a more sophisticated system, you'd track consumption by specific inventory batch
+        // For now, we're aggregating all consumption for this feed type
+      )
+
+      // Calculate total consumed for this feed type
+      const totalConsumed = itemConsumption.reduce((sum, record) => 
+        sum + (record.quantity_kg || 0), 0
+      )
+
+      // Determine initial quantity (either stored or current + consumed)
+      // If initial_quantity_kg is not stored, calculate it
+      const initialQuantity = item.initial_quantity_kg || (item.quantity_kg + totalConsumed)
+
+      // Calculate consumption metrics
+      const consumedQuantity = totalConsumed
+      const remainingQuantity = item.quantity_kg
+      const consumptionPercentage = initialQuantity > 0 ? (consumedQuantity / initialQuantity) * 100 : 0
+      const remainingPercentage = initialQuantity > 0 ? (remainingQuantity / initialQuantity) * 100 : 100
+
+      // Check if this inventory needs to be updated based on consumption
+      const calculatedRemainingQuantity = Math.max(0, initialQuantity - consumedQuantity)
+      const needsQuantityUpdate = Math.abs(remainingQuantity - calculatedRemainingQuantity) > 0.1
+
+      return {
+        ...item,
+        initialQuantity,
+        consumedQuantity,
+        remainingQuantity,
+        consumptionPercentage,
+        remainingPercentage,
+        needsQuantityUpdate,
+        calculatedRemainingQuantity,
+        consumptionCount: itemConsumption.length
+      }
+    })
+  }, [inventory, consumptionRecords])
 
   // Helper function to get weight conversion info
   const getWeightConversion = (unitId: string) => {
@@ -141,7 +186,7 @@ export function FeedInventoryTab({
   // Check if item is low stock
   const isLowStock = (item: any) => {
     const threshold = item.feed_types?.low_stock_threshold
-    return threshold && item.quantity_kg <= threshold
+    return threshold && item.remainingQuantity <= threshold
   }
 
   // Check if item is expired
@@ -157,13 +202,6 @@ export function FeedInventoryTab({
     const sevenDaysFromNow = new Date()
     sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7)
     return expiryDate <= sevenDaysFromNow && expiryDate >= new Date()
-  }
-
-  // Calculate consumption percentage
-  const getConsumptionPercentage = (item: any) => {
-    const initialQuantity = item.initial_quantity_kg || item.quantity_kg
-    const consumedQuantity = item.consumed_quantity_kg || (initialQuantity - item.quantity_kg)
-    return initialQuantity > 0 ? Math.round((consumedQuantity / initialQuantity) * 100) : 0
   }
 
   // Handle edit inventory
@@ -283,6 +321,8 @@ export function FeedInventoryTab({
           ...data,
           cost_per_kg: finalCostPerKg,
           expiry_date: data.expiry_date || null,
+          // Store initial quantity if updating for the first time
+          initial_quantity_kg: editing.initialQuantity,
           // Remove calculated fields not in database
           total_cost: undefined,
           quantity_in_preferred_unit: undefined,
@@ -298,7 +338,11 @@ export function FeedInventoryTab({
       
       // Update local inventory state
       const updatedInventory = inventory.map(item => 
-        item.id === editing.id ? { ...item, ...result.data } : item
+        item.id === editing.id ? { 
+          ...item, 
+          ...result.data,
+          initial_quantity_kg: editing.initialQuantity 
+        } : item
       )
       
       onInventoryUpdated(updatedInventory)
@@ -324,8 +368,9 @@ export function FeedInventoryTab({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          quantity_kg: 0, // Set to zero
           depleted_at: new Date().toISOString(),
-          notes: `Marked as depleted on ${new Date().toLocaleDateString()}`
+          notes: `${depleting.notes || ''}\nMarked as depleted on ${new Date().toLocaleDateString()}`
         }),
       })
 
@@ -334,7 +379,7 @@ export function FeedInventoryTab({
         throw new Error(errorData.error || 'Failed to mark as depleted')
       }
 
-      // Remove from local inventory or update as depleted
+      // Remove from local inventory (depleted items)
       const updatedInventory = inventory.filter(item => item.id !== depleting.id)
       onInventoryUpdated(updatedInventory)
       setDepleting(null)
@@ -426,9 +471,14 @@ export function FeedInventoryTab({
           Low Stock
         </Badge>
       )}
-      {item.quantity_kg === 0 && (
+      {item.remainingQuantity === 0 && (
         <Badge variant="outline" className="text-xs">
           Depleted
+        </Badge>
+      )}
+      {item.needsQuantityUpdate && (
+        <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-800">
+          Sync Needed
         </Badge>
       )}
     </div>
@@ -438,10 +488,8 @@ export function FeedInventoryTab({
   const QuantityDisplay = ({ item }: { item: any }) => {
     const preferredUnit = item.feed_types?.preferred_measurement_unit
     const unitDisplay = preferredUnit ? getUnitDisplay(preferredUnit) : null
-    const remainingPreferred = preferredUnit ? convertFromKg(item.quantity_kg, preferredUnit) : null
-    const initialQuantity = item.initial_quantity_kg || item.quantity_kg
-    const initialPreferred = preferredUnit ? convertFromKg(initialQuantity, preferredUnit) : null
-    const consumptionPercentage = getConsumptionPercentage(item)
+    const remainingPreferred = preferredUnit ? convertFromKg(item.remainingQuantity, preferredUnit) : null
+    const initialPreferred = preferredUnit ? convertFromKg(item.initialQuantity, preferredUnit) : null
 
     return (
       <div className="space-y-2">
@@ -459,7 +507,7 @@ export function FeedInventoryTab({
           )}
           <div className="text-sm">
             <span className="font-bold text-lg">
-              {item.quantity_kg} kg
+              {item.remainingQuantity} kg
             </span>
             <span className="text-gray-500 text-xs ml-1">
               remaining
@@ -472,9 +520,9 @@ export function FeedInventoryTab({
           <div className="flex items-center justify-between text-xs text-gray-600">
             <span>Initial purchased:</span>
             <span className="font-medium">
-              {initialQuantity} kg
+              {item.initialQuantity.toFixed(1)} kg
               {initialPreferred && unitDisplay && (
-                <span className="ml-1">({initialPreferred} {unitDisplay.symbol})</span>
+                <span className="ml-1">({initialPreferred.toFixed(1)} {unitDisplay.symbol})</span>
               )}
             </span>
           </div>
@@ -483,22 +531,29 @@ export function FeedInventoryTab({
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div 
               className={`h-2 rounded-full ${
-                consumptionPercentage >= 80 ? 'bg-red-500' :
-                consumptionPercentage >= 50 ? 'bg-orange-500' :
+                item.consumptionPercentage >= 80 ? 'bg-red-500' :
+                item.consumptionPercentage >= 50 ? 'bg-orange-500' :
                 'bg-green-500'
               }`}
-              style={{ width: `${Math.min(consumptionPercentage, 100)}%` }}
+              style={{ width: `${Math.min(item.consumptionPercentage, 100)}%` }}
             />
           </div>
           
           <div className="flex items-center justify-between text-xs">
             <span className="text-gray-500">
-              {consumptionPercentage}% consumed
+              {item.consumptionPercentage.toFixed(1)}% consumed ({item.consumedQuantity.toFixed(1)}kg)
             </span>
             <span className="text-gray-500">
-              {Math.max(0, 100 - consumptionPercentage)}% remaining
+              {item.remainingPercentage.toFixed(1)}% remaining
             </span>
           </div>
+
+          {/* Consumption details */}
+          {item.consumptionCount > 0 && (
+            <div className="text-xs text-gray-500 mt-1">
+              {item.consumptionCount} feeding session{item.consumptionCount !== 1 ? 's' : ''} recorded
+            </div>
+          )}
         </div>
 
         {/* Unit conversion info */}
@@ -507,6 +562,20 @@ export function FeedInventoryTab({
             Conversion: 1 {unitDisplay.symbol} = {
               getWeightConversion(preferredUnit)?.conversion_to_kg
             } kg
+          </div>
+        )}
+
+        {/* Data sync warning */}
+        {item.needsQuantityUpdate && (
+          <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
+            <div className="flex items-center space-x-1 text-blue-700">
+              <AlertTriangle className="w-3 h-3" />
+              <span className="font-medium">Quantity mismatch detected</span>
+            </div>
+            <div className="text-blue-600 mt-1">
+              Based on consumption records, remaining should be {item.calculatedRemainingQuantity.toFixed(1)}kg. 
+              Consider updating the inventory quantity.
+            </div>
           </div>
         )}
       </div>
@@ -519,18 +588,19 @@ export function FeedInventoryTab({
         <CardHeader className="pb-3">
           <CardTitle className={isMobile ? 'text-base' : 'text-lg'}>Feed Inventory</CardTitle>
           <CardDescription className={isMobile ? 'text-sm' : ''}>
-            Track your feed purchases and current stock levels
+            Track your feed purchases and current stock levels with consumption integration
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {inventory.length > 0 ? (
+          {enhancedInventory.length > 0 ? (
             <div className="space-y-3">
-              {inventory.map((item: any) => {
+              {enhancedInventory.map((item: any) => {
                 return (
                   <div key={item.id} className={`p-4 border rounded-lg ${
                     isExpired(item) ? 'border-red-200 bg-red-50' : 
                     isExpiringSoon(item) ? 'border-orange-200 bg-orange-50' :
                     isLowStock(item) ? 'border-yellow-200 bg-yellow-50' :
+                    item.needsQuantityUpdate ? 'border-blue-200 bg-blue-50' :
                     'border-gray-200'
                   } ${isMobile ? 'space-y-3' : 'flex items-start justify-between'}`}>
                     
@@ -571,13 +641,13 @@ export function FeedInventoryTab({
                     <div className={`${isMobile ? 'flex justify-between items-center mt-3' : 'flex items-start space-x-4 ml-4'}`}>
                       <div className="text-right">
                         <p className={`font-bold ${isMobile ? 'text-base' : 'text-lg'} text-green-700`}>
-                          KSh{(item.quantity_kg * item.cost_per_kg).toFixed(2)}
+                          KSh{(item.remainingQuantity * item.cost_per_kg).toFixed(2)}
                         </p>
                         <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>
                           Current Value
                         </p>
                         <p className={`text-gray-500 ${isMobile ? 'text-xs' : 'text-xs'}`}>
-                          Total: KSh{((item.initial_quantity_kg || item.quantity_kg) * item.cost_per_kg).toFixed(2)}
+                          Original: KSh{(item.initialQuantity * item.cost_per_kg).toFixed(2)}
                         </p>
                       </div>
                       
@@ -629,9 +699,21 @@ export function FeedInventoryTab({
           )}
 
           <form onSubmit={form.handleSubmit(handleEditSubmit)} className="space-y-6">
+            {/* Consumption Information */}
+            {editing && (
+              <div className="p-3 bg-gray-50 rounded-lg border">
+                <h5 className="font-medium text-gray-800 mb-2">Consumption Summary</h5>
+                <div className="text-sm text-gray-600 space-y-1">
+                  <div>Initial quantity: {editing.initialQuantity.toFixed(1)}kg</div>
+                  <div>Consumed: {editing.consumedQuantity.toFixed(1)}kg ({editing.consumptionPercentage.toFixed(1)}%)</div>
+                  <div>Consumption sessions: {editing.consumptionCount}</div>
+                </div>
+              </div>
+            )}
+
             {/* Quantity Section */}
             <div className="space-y-4">
-              <h4 className="text-md font-medium text-gray-900">Quantity</h4>
+              <h4 className="text-md font-medium text-gray-900">Current Remaining Quantity</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {editing?.feed_types?.preferred_measurement_unit && (
                   <div>
@@ -644,20 +726,20 @@ export function FeedInventoryTab({
                       min="0"
                       value={form.watch('quantity_in_preferred_unit') || ''}
                       onChange={(e) => handlePreferredQuantityChange(e.target.value)}
-                      placeholder="Enter quantity"
+                      placeholder="Enter remaining quantity"
                     />
                   </div>
                 )}
 
                 <div>
-                  <Label>Quantity (KG)</Label>
+                  <Label>Remaining Quantity (KG)</Label>
                   <Input
                     type="number"
                     step="0.1"
                     min="0"
                     value={form.watch('quantity_kg') || ''}
                     onChange={(e) => handleKgQuantityChange(e.target.value)}
-                    placeholder="Quantity in kg"
+                    placeholder="Remaining quantity in kg"
                   />
                 </div>
               </div>
@@ -678,14 +760,14 @@ export function FeedInventoryTab({
               </div>
 
               <div>
-                <Label>Total Cost (KSh)</Label>
+                <Label>Current Value (KSh)</Label>
                 <Input
                   type="number"
                   step="0.01"
                   min="0"
                   value={form.watch('total_cost') || ''}
                   onChange={(e) => handleTotalCostChange(e.target.value)}
-                  placeholder="Total cost"
+                  placeholder="Current total value"
                   className="bg-gray-50"
                   readOnly
                 />
@@ -792,7 +874,9 @@ export function FeedInventoryTab({
             <AlertDialogDescription>
               Are you sure you want to mark "{depleting?.feed_types?.name}" as completely depleted?
               <br /><br />
-              Current remaining: {depleting?.quantity_kg} kg
+              Current remaining: {depleting?.remainingQuantity || depleting?.quantity_kg} kg
+              <br />
+              Consumed so far: {depleting?.consumedQuantity?.toFixed(1) || 0} kg
               <br /><br />
               This action will remove this inventory record from your active stock.
             </AlertDialogDescription>

@@ -131,7 +131,7 @@ export function BreedingCalendar({ farmId, events, canManage }: BreedingCalendar
           {/* Calendar days */}
           {calendarDays.map((day, index) => {
             if (day === null) {
-              return <div key={index} className="p-2 h-24"></div>
+              return <div key={`empty-${index}`} className="p-2 h-24"></div>
             }
             
             const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), day)
@@ -143,7 +143,7 @@ export function BreedingCalendar({ farmId, events, canManage }: BreedingCalendar
             
             return (
               <div
-                key={day}
+                key={date.toISOString()} // ✅ unique key per date
                 className={`p-2 h-24 border rounded-lg ${
                   isToday ? 'bg-farm-green/10 border-farm-green' : 'border-gray-200'
                 }`}
@@ -154,9 +154,9 @@ export function BreedingCalendar({ farmId, events, canManage }: BreedingCalendar
                   {day}
                 </div>
                 <div className="space-y-1">
-                  {eventsForDay.slice(0, 2).map((event, eventIndex) => (
+                  {eventsForDay.slice(0, 2).map((event) => (
                     <div
-                      key={eventIndex}
+                      key={event.id ?? `${event.event_type}-${event.scheduled_date}-${event.animals?.id ?? ''}`} // ✅ stable & unique
                       className={`px-1 py-0.5 rounded text-xs flex items-center space-x-1 ${
                         getEventColor(event.event_type, event.status)
                       }`}

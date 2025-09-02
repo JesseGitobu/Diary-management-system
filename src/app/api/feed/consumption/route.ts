@@ -1,7 +1,16 @@
-// app/api/feed/consumption/route.ts - Fixed validation for batch mode
+// app/api/feed/consumption/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUser, createServerSupabaseClient } from '@/lib/supabase/server'
+import { getCurrentUser } from '@/lib/supabase/server'
+import { getUserRole } from '@/lib/database/auth'
+import {
+  recordFeedConsumption,
+  getFeedConsumptionRecords,
+  getFeedConsumptionStats,
+  validateConsumptionEntry,
+  ConsumptionData
+} from '@/lib/database/feedConsumption'
 
+// GET feed consumption records
 export async function GET(request: NextRequest) {
   try {
     const user = await getCurrentUser()
@@ -9,42 +18,34 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const userRole = await getUserRole(user.id)
+    if (!userRole?.farm_id) {
+      return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
+    }
+
     const { searchParams } = new URL(request.url)
-    const farmId = searchParams.get('farm_id')
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = parseInt(searchParams.get('offset') || '0')
+    const statsOnly = searchParams.get('stats_only') === 'true'
+    const days = parseInt(searchParams.get('days') || '30')
 
-    if (!farmId) {
-      return NextResponse.json({ error: 'farm_id parameter required' }, { status: 400 })
+    if (statsOnly) {
+      // Return consumption statistics
+      const stats = await getFeedConsumptionStats(userRole.farm_id, days)
+      return NextResponse.json(stats)
+    } else {
+      // Return consumption records
+      const records = await getFeedConsumptionRecords(userRole.farm_id, limit, offset)
+      return NextResponse.json(records)
     }
 
-    const supabase = await createServerSupabaseClient()
-    
-    // Get consumption records with related data
-    const { data: records, error } = await supabase
-      .from('feed_consumption')
-      .select(`
-        *,
-        feed_consumption_animals (
-          animal_id
-        )
-      `)
-      .eq('farm_id', farmId)
-      .order('feeding_time', { ascending: false })
-      .range(offset, offset + limit - 1)
-
-    if (error) {
-      console.error('Database error:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-
-    return NextResponse.json(records || [])
   } catch (error) {
-    console.error('API error:', error)
+    console.error('Feed consumption GET API error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
 
+// POST create new feed consumption record
 export async function POST(request: NextRequest) {
   try {
     const user = await getCurrentUser()
@@ -52,135 +53,106 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const body = await request.json()
-    const { farmId, feedingTime, mode, entries } = body
+    const userRole = await getUserRole(user.id)
+    if (!userRole?.farm_id) {
+      return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
+    }
 
-    console.log('Received feeding data:', { farmId, feedingTime, mode, entries })
+    // Check permissions - allow farm_owner, farm_manager, worker
+    if (!['farm_owner', 'farm_manager', 'worker'].includes(userRole.role_type)) {
+      return NextResponse.json({ error: 'Insufficient permissions to record feed consumption' }, { status: 403 })
+    }
+
+    const body = await request.json()
+    console.log('Received consumption request:', body)
 
     // Validate required fields
-    if (!farmId || !entries || !Array.isArray(entries) || entries.length === 0) {
+    if (!body.entries || !Array.isArray(body.entries) || body.entries.length === 0) {
       return NextResponse.json({ 
-        error: 'Missing required fields: farmId, entries' 
+        error: 'Missing required field: entries (must be non-empty array)' 
       }, { status: 400 })
     }
 
-    const supabase = await createServerSupabaseClient()
-    
-    const consumptionRecords = []
+    if (!body.mode || !['individual', 'batch'].includes(body.mode)) {
+      return NextResponse.json({ 
+        error: 'Invalid or missing mode. Must be "individual" or "batch"' 
+      }, { status: 400 })
+    }
 
-    // Process each entry
-    for (const entry of entries) {
-      const { feedTypeId, quantityKg, animalIds, animalCount, notes } = entry
-
-      // Validate entry based on feeding mode
-      if (!feedTypeId || !quantityKg) {
+    // Validate each entry
+    for (let i = 0; i < body.entries.length; i++) {
+      const entry = body.entries[i]
+      
+      if (!entry.feedTypeId || !entry.quantityKg) {
         return NextResponse.json({ 
-          error: 'Each entry must have feedTypeId and quantityKg' 
+          error: `Entry ${i + 1}: Missing required fields (feedTypeId, quantityKg)` 
+        }, { status: 400 })
+      }
+
+      if (entry.quantityKg <= 0) {
+        return NextResponse.json({ 
+          error: `Entry ${i + 1}: Quantity must be greater than 0` 
         }, { status: 400 })
       }
 
       // Mode-specific validation
-      if (mode === 'individual') {
-        if (!animalIds || !Array.isArray(animalIds) || animalIds.length === 0) {
+      if (body.mode === 'individual') {
+        if (!entry.animalIds || !Array.isArray(entry.animalIds) || entry.animalIds.length === 0) {
           return NextResponse.json({ 
-            error: 'Individual mode requires animalIds array with at least one animal' 
+            error: `Entry ${i + 1}: Individual mode requires animalIds array with at least one animal` 
           }, { status: 400 })
         }
-      } else if (mode === 'batch') {
-        if (!animalCount || animalCount <= 0) {
+      } else if (body.mode === 'batch') {
+        if (!entry.animalCount || entry.animalCount <= 0) {
           return NextResponse.json({ 
-            error: 'Batch mode requires animalCount greater than 0' 
+            error: `Entry ${i + 1}: Batch mode requires animalCount greater than 0` 
           }, { status: 400 })
         }
-      } else {
+        // For batch mode, animalIds should be provided to populate feed_consumption_animals table
+        if (!entry.animalIds || !Array.isArray(entry.animalIds) || entry.animalIds.length === 0) {
+          return NextResponse.json({ 
+            error: `Entry ${i + 1}: Batch mode requires animalIds array to track individual animal consumption` 
+          }, { status: 400 })
+        }
+      }
+
+      // Validate the entry against database constraints
+      const validation = await validateConsumptionEntry(userRole.farm_id, entry)
+      if (!validation.valid) {
         return NextResponse.json({ 
-          error: 'Invalid feeding mode. Must be "individual" or "batch"' 
+          error: `Entry ${i + 1}: ${validation.error}` 
         }, { status: 400 })
       }
-
-      // Create proper timestamp from feeding time
-      let feedingTimestamp: string
-      
-      if (feedingTime) {
-        // If feedingTime is just a time (HH:mm), combine with today's date
-        if (feedingTime.match(/^\d{2}:\d{2}$/)) {
-          const today = new Date()
-          const [hours, minutes] = feedingTime.split(':')
-          today.setHours(parseInt(hours), parseInt(minutes), 0, 0)
-          feedingTimestamp = today.toISOString()
-        } else {
-          // If it's already a full timestamp, use it
-          feedingTimestamp = new Date(feedingTime).toISOString()
-        }
-      } else {
-        // Default to current time
-        feedingTimestamp = new Date().toISOString()
-      }
-
-      console.log('Using feeding timestamp:', feedingTimestamp)
-
-      // Create consumption record
-      const insertData = {
-        farm_id: farmId,
-        feed_type_id: feedTypeId,
-        quantity_kg: parseFloat(quantityKg),
-        feeding_time: feedingTimestamp,
-        feeding_mode: mode || 'individual',
-        animal_count: mode === 'batch' ? animalCount : (animalIds?.length || 1),
-        notes: notes || null,
-        recorded_by: user.email || 'Unknown',
-        created_by: user.id
-      }
-
-      console.log('Inserting consumption data:', insertData)
-
-      const { data: consumptionRecord, error: consumptionError } = await supabase
-        .from('feed_consumption')
-        .insert(insertData)
-        .select()
-        .single()
-
-      if (consumptionError) {
-        console.error('Consumption insert error:', consumptionError)
-        return NextResponse.json({ 
-          error: `Failed to create consumption record: ${consumptionError.message}`,
-          details: consumptionError
-        }, { status: 500 })
-      }
-
-      console.log('Created consumption record:', consumptionRecord)
-
-      // Create animal consumption records (only for individual mode with specific animals)
-      if (mode === 'individual' && animalIds && animalIds.length > 0) {
-        const animalRecords = animalIds.map((animalId: string) => ({
-          consumption_id: consumptionRecord.id,
-          animal_id: animalId
-        }))
-
-        console.log('Inserting animal records:', animalRecords)
-
-        const { error: animalError } = await supabase
-          .from('feed_consumption_animals')
-          .insert(animalRecords)
-
-        if (animalError) {
-          console.error('Animal consumption insert error:', animalError)
-          // Continue processing other entries even if this fails
-          console.warn('Failed to link animals to consumption record, but consumption was recorded')
-        }
-      }
-
-      consumptionRecords.push(consumptionRecord)
     }
+
+    // Prepare consumption data
+    const consumptionData: ConsumptionData = {
+      farmId: userRole.farm_id,
+      feedingTime: body.feedingTime || new Date().toISOString(),
+      mode: body.mode,
+      batchId: body.batchId || null,
+      entries: body.entries,
+      recordedBy: user.email || 'Unknown',
+      globalNotes: body.notes
+    }
+
+    // Record consumption using database function
+    const result = await recordFeedConsumption(consumptionData, user.id)
+
+    if (!result.success) {
+      return NextResponse.json({ error: result.error }, { status: 500 })
+    }
+
+    console.log('Successfully recorded consumption:', result.data)
 
     return NextResponse.json({ 
       success: true,
-      records: consumptionRecords,
-      message: `Successfully recorded ${consumptionRecords.length} consumption record(s)`
+      records: result.data,
+      message: `Successfully recorded ${result.data.length} consumption record(s)`
     }, { status: 201 })
 
   } catch (error) {
-    console.error('API error:', error)
+    console.error('Feed consumption POST API error:', error)
     return NextResponse.json({ 
       error: 'Internal server error',
       details: error instanceof Error ? error.message : 'Unknown error'
@@ -188,7 +160,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Get consumption statistics
+// PUT update consumption statistics endpoint (keeping for backward compatibility)
 export async function PUT(request: NextRequest) {
   try {
     const user = await getCurrentUser()
@@ -196,61 +168,20 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const userRole = await getUserRole(user.id)
+    if (!userRole?.farm_id) {
+      return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
+    }
+
     const { searchParams } = new URL(request.url)
-    const farmId = searchParams.get('farm_id')
     const days = parseInt(searchParams.get('days') || '30')
 
-    if (!farmId) {
-      return NextResponse.json({ error: 'farm_id parameter required' }, { status: 400 })
-    }
-
-    const supabase = await createServerSupabaseClient()
+    const stats = await getFeedConsumptionStats(userRole.farm_id, days)
     
-    const endDate = new Date()
-    const startDate = new Date()
-    startDate.setDate(endDate.getDate() - days)
-
-    // Get consumption statistics
-    const { data: stats, error } = await supabase
-      .from('feed_consumption')
-      .select('quantity_kg, feeding_time, feed_type_id')
-      .eq('farm_id', farmId)
-      .gte('feeding_time', startDate.toISOString())
-      .lte('feeding_time', endDate.toISOString())
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-
-    // Calculate statistics
-    const totalQuantity = stats?.reduce((sum, record) => sum + record.quantity_kg, 0) || 0
-    const avgDailyQuantity = totalQuantity / days
-    
-    // Group by date for daily summaries
-    const dailyConsumption = stats?.reduce((acc: any, record) => {
-      const date = new Date(record.feeding_time).toISOString().split('T')[0]
-      if (!acc[date]) {
-        acc[date] = 0
-      }
-      acc[date] += record.quantity_kg
-      return acc
-    }, {}) || {}
-
-    const dailySummaries = Object.entries(dailyConsumption).map(([date, quantity]) => ({
-      date,
-      quantity: quantity as number
-    }))
-
-    return NextResponse.json({
-      totalQuantity,
-      avgDailyQuantity,
-      recordCount: stats?.length || 0,
-      dailySummaries,
-      periodDays: days
-    })
+    return NextResponse.json(stats)
 
   } catch (error) {
-    console.error('Stats API error:', error)
+    console.error('Feed consumption PUT API error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

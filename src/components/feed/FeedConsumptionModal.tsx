@@ -13,6 +13,7 @@ import { Alert, AlertDescription } from '@/components/ui/Alert'
 import { Badge } from '@/components/ui/Badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
 import { Switch } from '@/components/ui/Switch'
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { 
   Plus, 
@@ -31,7 +32,11 @@ import {
   TrendingUp,
   TrendingDown,
   Equal,
-  Edit3
+  Edit3,
+  ChevronDown,
+  ChevronUp,
+  Eye,
+  Info
 } from 'lucide-react'
 
 interface FeedCategoryQuantity {
@@ -52,6 +57,10 @@ interface ConsumptionBatch {
   feeding_times: string[]
   batch_factors: any
   is_active: boolean
+  targeted_animals_count?: number
+  category_animals_count?: number
+  specific_animals_count?: number
+  target_mode?: string
 }
 
 interface FeedTypeCategory {
@@ -65,6 +74,21 @@ interface AnimalCategory {
   id: string
   name: string
   description: string
+}
+
+interface BatchTargetedAnimal {
+  animal_id: string
+  tag_number: string
+  name: string | null
+  gender: string | null
+  birth_date: string | null
+  production_status: string | null
+  status: string
+  days_in_milk: number | null
+  current_daily_production: number | null
+  age_days: number | null
+  source: string // 'category' | 'specific'
+  is_active: boolean
 }
 
 interface FeedConsumptionModalProps {
@@ -126,6 +150,11 @@ export function FeedConsumptionModal({
   const [animalCount, setAnimalCount] = useState<number>(1)
   const [perCowQuantity, setPerCowQuantity] = useState('')
 
+  // New states for batch animal targeting
+  const [batchAnimalsLoading, setBatchAnimalsLoading] = useState(false)
+  const [batchTargetedAnimals, setBatchTargetedAnimals] = useState<BatchTargetedAnimal[]>([])
+  const [showBatchAnimals, setShowBatchAnimals] = useState(false)
+
   const { isMobile: deviceIsMobile } = useDeviceInfo()
   const isMobileView = isMobile || deviceIsMobile
   const isEditMode = !!editingRecord
@@ -158,6 +187,56 @@ export function FeedConsumptionModal({
     availableFeedTypes.find(ft => ft.id === selectedFeedType),
     [availableFeedTypes, selectedFeedType]
   )
+
+  // Fetch batch targeted animals when batch is selected
+  const fetchBatchAnimals = async (batchId: string) => {
+    if (!batchId) {
+      setBatchTargetedAnimals([])
+      return
+    }
+
+    setBatchAnimalsLoading(true)
+    try {
+      const response = await fetch(
+        `/api/farms/${farmId}/feed-management/consumption-batches/${batchId}/animals`
+      )
+
+      if (response.ok) {
+        const result = await response.json()
+        setBatchTargetedAnimals(result.data?.targeted || [])
+      } else {
+        console.error('Failed to fetch batch animals')
+        setBatchTargetedAnimals([])
+      }
+    } catch (error) {
+      console.error('Error fetching batch animals:', error)
+      setBatchTargetedAnimals([])
+    } finally {
+      setBatchAnimalsLoading(false)
+    }
+  }
+
+  // Effect to fetch animals when batch changes
+  useEffect(() => {
+    if (selectedBatch && feedingMode === 'batch') {
+      fetchBatchAnimals(selectedBatch)
+      // Auto-update animal count based on targeted animals count
+      const batch = consumptionBatches.find(b => b.id === selectedBatch)
+      if (batch?.targeted_animals_count) {
+        setAnimalCount(batch.targeted_animals_count)
+      }
+    }
+  }, [selectedBatch, feedingMode, consumptionBatches, farmId])
+
+  // Format age helper function
+  const formatAge = (ageDays: number | null) => {
+    if (!ageDays) return 'Unknown'
+    if (ageDays < 30) return `${ageDays} days`
+    if (ageDays < 365) return `${Math.floor(ageDays / 30)} months`
+    const years = Math.floor(ageDays / 365)
+    const months = Math.floor((ageDays % 365) / 30)
+    return `${years}y ${months}m`
+  }
 
   // Calculate quantity recommendations and status
   const quantityAnalysis = useMemo(() => {
@@ -294,38 +373,55 @@ export function FeedConsumptionModal({
     setMultipleEntries([])
     setShowAdvanced(false)
     setAnimalCount(1)
+    setBatchTargetedAnimals([])
+    setShowBatchAnimals(false)
   }
 
   const validateForm = (): boolean => {
-    const newErrors: Record<string, string> = {}
+  const newErrors: Record<string, string> = {}
 
-    if (feedingMode === 'individual') {
-      if (!selectedFeedType) newErrors.feedType = 'Please select a feed type'
-      if (selectedAnimals.length === 0) newErrors.animals = 'Please select at least one animal'
-      if (!quantity || parseFloat(quantity) <= 0) {
-        newErrors.quantity = 'Please enter a valid quantity'
-      } else if (!isEditMode && selectedFeedTypeData && parseFloat(quantity) > selectedFeedTypeData.totalStock) {
-        newErrors.quantity = `Insufficient stock. Only ${selectedFeedTypeData.totalStock}kg available`
+  if (feedingMode === 'individual') {
+    if (!selectedFeedType) newErrors.feedType = 'Please select a feed type'
+    if (selectedAnimals.length === 0) newErrors.animals = 'Please select at least one animal'
+    if (!quantity || parseFloat(quantity) <= 0) {
+      newErrors.quantity = 'Please enter a valid quantity'
+    } else if (!isEditMode && selectedFeedTypeData && parseFloat(quantity) > selectedFeedTypeData.totalStock) {
+      newErrors.quantity = `Insufficient stock. Only ${selectedFeedTypeData.totalStock}kg available`
+    }
+  }
+  
+  if (feedingMode === 'batch') {
+    if (!selectedBatch || selectedBatch === 'none') newErrors.batch = 'Please select a consumption batch'
+    if (!selectedFeedType) newErrors.feedType = 'Please select a feed type'
+    if (!perCowQuantity || parseFloat(perCowQuantity) <= 0) {
+      newErrors.perCowQuantity = 'Please enter amount per cow'
+    } else if (!isEditMode && selectedFeedTypeData) {
+      const totalQuantityNeeded = parseFloat(perCowQuantity) * animalCount
+      if (totalQuantityNeeded > selectedFeedTypeData.totalStock) {
+        newErrors.perCowQuantity = `Insufficient stock. Only ${selectedFeedTypeData.totalStock}kg available (${(selectedFeedTypeData.totalStock / animalCount).toFixed(1)}kg per cow max)`
       }
+    }
+    if (animalCount <= 0) newErrors.animalCount = 'Please enter a valid animal count'
+    
+    // CRITICAL VALIDATION: Check that animals are loaded for the batch
+    if (batchTargetedAnimals.length === 0 && !batchAnimalsLoading) {
+      newErrors.batch = 'No animals found in selected batch. Please check batch configuration or select a different batch.'
     }
     
-    if (feedingMode === 'batch') {
-      if (!selectedBatch || selectedBatch === 'none') newErrors.batch = 'Please select a consumption batch'
-      if (!selectedFeedType) newErrors.feedType = 'Please select a feed type'
-      if (!perCowQuantity || parseFloat(perCowQuantity) <= 0) {
-        newErrors.perCowQuantity = 'Please enter amount per cow'
-      } else if (!isEditMode && selectedFeedTypeData) {
-        const totalQuantityNeeded = parseFloat(perCowQuantity) * animalCount
-        if (totalQuantityNeeded > selectedFeedTypeData.totalStock) {
-          newErrors.perCowQuantity = `Insufficient stock. Only ${selectedFeedTypeData.totalStock}kg available (${(selectedFeedTypeData.totalStock / animalCount).toFixed(1)}kg per cow max)`
-        }
-      }
-      if (animalCount <= 0) newErrors.animalCount = 'Please enter a valid animal count'
+    // Validate animal count doesn't exceed targeted animals
+    if (batchTargetedAnimals.length > 0 && animalCount > batchTargetedAnimals.length) {
+      newErrors.animalCount = `Animal count cannot exceed the number of targeted animals (${batchTargetedAnimals.length}) in the selected batch.`
     }
-
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
+    
+    // Check if batch animals are still loading
+    if (batchAnimalsLoading) {
+      newErrors.batch = 'Loading batch animals, please wait...'
+    }
   }
+
+  setErrors(newErrors)
+  return Object.keys(newErrors).length === 0
+}
 
   const handleAnimalToggle = (animalId: string) => {
     setSelectedAnimals(prev => 
@@ -377,79 +473,93 @@ export function FeedConsumptionModal({
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    if (!validateForm()) return
+  e.preventDefault()
+  
+  if (!validateForm()) return
 
-    setIsSubmitting(true)
-    try {
-      // Create proper timestamp from feeding time
-      const today = new Date()
-      const [hours, minutes] = feedingTime.split(':')
-      today.setHours(parseInt(hours), parseInt(minutes), 0, 0)
-      const feedingTimestamp = today.toISOString()
+  setIsSubmitting(true)
+  try {
+    // Create proper timestamp from feeding time
+    const today = new Date()
+    const [hours, minutes] = feedingTime.split(':')
+    today.setHours(parseInt(hours), parseInt(minutes), 0, 0)
+    const feedingTimestamp = today.toISOString()
 
-      const consumptionData: {
-        farmId: string;
-        feedingTime: string;
-        mode: 'individual' | 'batch';
-        batchId: string | null;
-        entries: any[];
-        recordId?: string;
-      } = {
-        farmId,
-        feedingTime: feedingTimestamp,
-        mode: feedingMode,
-        batchId: feedingMode === 'batch' ? selectedBatch : null,
-        entries: feedingMode === 'individual' 
-          ? [{
-              feedTypeId: selectedFeedType,
-              quantityKg: parseFloat(quantity),
-              animalIds: selectedAnimals,
-              notes
-            }]
-          : [{
-              feedTypeId: selectedFeedType,
-              quantityKg: getTotalQuantity(),
-              animalIds: [], // Empty array for batch mode since we're using animalCount
-              animalCount: animalCount,
-              perCowQuantityKg: parseFloat(perCowQuantity),
-              batchId: selectedBatch,
-              notes: `Batch: ${selectedConsumptionBatch?.batch_name} - ${parseFloat(perCowQuantity)}kg per cow${notes ? `\n${notes}` : ''}`
-            }]
-      }
-
-      // Add record ID for updates
-      if (isEditMode) {
-        consumptionData.recordId = editingRecord.id
-      }
-
-      console.log('Sending consumption data:', consumptionData)
-
-      const url = isEditMode ? `/api/feed/consumption/${editingRecord.id}` : '/api/feed/consumption'
-      const method = isEditMode ? 'PUT' : 'POST'
-
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(consumptionData)
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || `Failed to ${isEditMode ? 'update' : 'record'} consumption`)
-      }
-
-      const result = await response.json()
-      onSuccess(result)
-      onClose()
-    } catch (error) {
-      console.error(`Error ${isEditMode ? 'updating' : 'recording'} consumption:`, error)
-      setErrors({ submit: error instanceof Error ? error.message : `Failed to ${isEditMode ? 'update' : 'record'} consumption. Please try again.` })
-    } finally {
-      setIsSubmitting(false)
+    let consumptionData: any = {
+      farmId,
+      feedingTime: feedingTimestamp,
+      mode: feedingMode,
+      batchId: feedingMode === 'batch' ? selectedBatch : null
     }
+
+    if (feedingMode === 'individual') {
+      consumptionData.entries = [{
+        feedTypeId: selectedFeedType,
+        quantityKg: parseFloat(quantity),
+        animalIds: selectedAnimals,
+        notes
+      }]
+    } else {
+      // BATCH MODE: Get the actual animal IDs from the batch
+      const batchAnimalIds = batchTargetedAnimals.map(animal => animal.animal_id)
+      
+      // Validate we have animals before proceeding
+      if (batchAnimalIds.length === 0) {
+        throw new Error('No animals found in the selected batch. Please check the batch configuration or select a different batch.')
+      }
+
+      // Validate animal count matches
+      if (animalCount > batchAnimalIds.length) {
+        throw new Error(`Animal count (${animalCount}) cannot exceed the number of targeted animals in the batch (${batchAnimalIds.length}).`)
+      }
+
+      // For batch mode, we can either use all targeted animals or a subset
+      const finalAnimalIds = animalCount < batchAnimalIds.length 
+        ? batchAnimalIds.slice(0, animalCount) // Use first N animals if less than total
+        : batchAnimalIds // Use all animals if count matches or exceeds
+
+      consumptionData.entries = [{
+        feedTypeId: selectedFeedType,
+        quantityKg: getTotalQuantity(),
+        animalIds: finalAnimalIds, // FIXED: Use actual animal IDs
+        animalCount: animalCount,
+        perCowQuantityKg: parseFloat(perCowQuantity),
+        batchId: selectedBatch,
+        notes: `Batch: ${selectedConsumptionBatch?.batch_name} - ${parseFloat(perCowQuantity)}kg per cow${notes ? `\n${notes}` : ''}`
+      }]
+    }
+
+    // Add record ID for updates
+    if (isEditMode) {
+      consumptionData.recordId = editingRecord.id
+    }
+
+    console.log('Sending consumption data:', consumptionData)
+
+    const url = isEditMode ? `/api/feed/consumption/${editingRecord.id}` : '/api/feed/consumption'
+    const method = isEditMode ? 'PUT' : 'POST'
+
+    const response = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(consumptionData)
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.error || `Failed to ${isEditMode ? 'update' : 'record'} consumption`)
+    }
+
+    const result = await response.json()
+    onSuccess(result)
+    onClose()
+  } catch (error) {
+    console.error(`Error ${isEditMode ? 'updating' : 'recording'} consumption:`, error)
+    setErrors({ submit: error instanceof Error ? error.message : `Failed to ${isEditMode ? 'update' : 'record'} consumption. Please try again.` })
+  } finally {
+    setIsSubmitting(false)
   }
+}
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -728,6 +838,12 @@ export function FeedConsumptionModal({
                         className={errors.animalCount ? 'border-red-300' : ''}
                       />
                       {errors.animalCount && <p className="text-sm text-red-600 mt-1">{errors.animalCount}</p>}
+                      {selectedConsumptionBatch?.targeted_animals_count && (
+                        <p className="text-xs text-blue-600 mt-1">
+                          <Info className="w-3 h-3 inline mr-1" />
+                          Batch template targets {selectedConsumptionBatch.targeted_animals_count} animals
+                        </p>
+                      )}
                     </div>
 
                     <div>
@@ -762,7 +878,14 @@ export function FeedConsumptionModal({
                         {consumptionBatches.filter(batch => batch.is_active).map(batch => (
                           <SelectItem key={batch.id} value={batch.id}>
                             <div className="flex flex-col">
-                              <span className="font-medium">{batch.batch_name}</span>
+                              <div className="flex items-center space-x-2">
+                                <span className="font-medium">{batch.batch_name}</span>
+                                {batch.targeted_animals_count && (
+                                  <Badge variant="secondary" className="text-xs">
+                                    {batch.targeted_animals_count} animals
+                                  </Badge>
+                                )}
+                              </div>
                               <span className="text-xs text-gray-500">
                                 {(batch.feed_type_categories || []).length} feed categories • {batch.feeding_frequency_per_day}x daily
                               </span>
@@ -771,6 +894,7 @@ export function FeedConsumptionModal({
                         ))}
                       </SelectContent>
                     </Select>
+                    {errors.batch && <p className="text-sm text-red-600 mt-1">{errors.batch}</p>}
                   </div>
 
                   {/* Batch Details */}
@@ -779,7 +903,29 @@ export function FeedConsumptionModal({
                       <div className="flex items-start space-x-3">
                         <Utensils className="w-5 h-5 text-blue-600 mt-0.5" />
                         <div className="flex-1">
-                          <h4 className="font-medium text-blue-900 mb-2">{selectedConsumptionBatch.batch_name}</h4>
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className="font-medium text-blue-900">{selectedConsumptionBatch.batch_name}</h4>
+                            {selectedConsumptionBatch.targeted_animals_count && (
+                              <div className="flex items-center space-x-2">
+                                <Badge variant="outline" className="text-blue-700 border-blue-300">
+                                  <Users className="w-3 h-3 mr-1" />
+                                  {selectedConsumptionBatch.targeted_animals_count} targeted
+                                </Badge>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setShowBatchAnimals(!showBatchAnimals)}
+                                  className="text-blue-600 hover:text-blue-700 p-1 h-6"
+                                >
+                                  <Eye className="w-4 h-4 mr-1" />
+                                  {showBatchAnimals ? 'Hide' : 'View'} Animals
+                                  {showBatchAnimals ? <ChevronUp className="w-3 h-3 ml-1" /> : <ChevronDown className="w-3 h-3 ml-1" />}
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+
                           {selectedConsumptionBatch.description && (
                             <p className="text-sm text-blue-700 mb-3">{selectedConsumptionBatch.description}</p>
                           )}
@@ -809,14 +955,88 @@ export function FeedConsumptionModal({
                                 <span> at {(selectedConsumptionBatch.feeding_times || []).join(', ')}</span>
                               )}
                             </div>
-                            
-                            <div className="text-sm text-blue-700">
-                              <strong>Target Animals:</strong> {batchAnimals.length} animals match this batch
-                            </div>
+
+                            {/* Animal targeting breakdown */}
+                            {selectedConsumptionBatch.target_mode && (
+                              <div className="text-sm text-blue-700">
+                                <strong>Targeting:</strong>{' '}
+                                {selectedConsumptionBatch.target_mode === 'category' && 'Category-based'}
+                                {selectedConsumptionBatch.target_mode === 'specific' && 'Specific animals'}
+                                {selectedConsumptionBatch.target_mode === 'mixed' && (
+                                  <span>
+                                    Mixed ({selectedConsumptionBatch.category_animals_count || 0} from categories, {selectedConsumptionBatch.specific_animals_count || 0} specific)
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
                     </div>
+                  )}
+
+                  {/* Batch Animals List */}
+                  {showBatchAnimals && selectedConsumptionBatch && (
+                    <Card className="border-blue-200">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm text-blue-900 flex items-center space-x-2">
+                          <Users className="w-4 h-4" />
+                          <span>Targeted Animals ({batchTargetedAnimals.length})</span>
+                          {batchAnimalsLoading && <LoadingSpinner size="sm" />}
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        {batchAnimalsLoading ? (
+                          <div className="flex items-center justify-center py-4">
+                            <LoadingSpinner size="md" />
+                            <span className="ml-2 text-sm text-gray-600">Loading animals...</span>
+                          </div>
+                        ) : batchTargetedAnimals.length > 0 ? (
+                          <div className="space-y-2 max-h-40 overflow-y-auto">
+                            {batchTargetedAnimals.map((animal) => (
+                              <div key={animal.animal_id} className="flex items-center justify-between p-2 bg-white border rounded-lg text-sm">
+                                <div className="flex-1">
+                                  <div className="flex items-center space-x-2">
+                                    <span className="font-medium text-gray-900">#{animal.tag_number}</span>
+                                    {animal.name && (
+                                      <span className="text-gray-600">({animal.name})</span>
+                                    )}
+                                    <Badge 
+                                      variant={animal.source === 'specific' ? 'default' : 'secondary'}
+                                      className="text-xs"
+                                    >
+                                      {animal.source}
+                                    </Badge>
+                                    {animal.gender && (
+                                      <Badge variant="outline" className="text-xs">
+                                        {animal.gender}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center space-x-3 text-xs text-gray-500 mt-1">
+                                    <span>Age: {formatAge(animal.age_days)}</span>
+                                    {animal.production_status && (
+                                      <span>Status: {animal.production_status}</span>
+                                    )}
+                                    {animal.days_in_milk && (
+                                      <span>DIM: {animal.days_in_milk}</span>
+                                    )}
+                                    {animal.current_daily_production && (
+                                      <span>Prod: {animal.current_daily_production}L/day</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-center py-4 text-gray-500">
+                            <Users className="mx-auto h-6 w-6 text-gray-400 mb-2" />
+                            <p className="text-sm">No animals targeted in this batch</p>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
                   )}
                 </CardContent>
               </Card>
@@ -1000,9 +1220,16 @@ export function FeedConsumptionModal({
                 
                 {feedingMode === 'batch' && selectedConsumptionBatch && (
                   <div className="mt-4 pt-4 border-t border-green-200">
-                    <div className="flex items-center space-x-2 text-sm text-green-700">
-                      <Utensils className="w-4 h-4" />
-                      <span>Using batch: <strong>{selectedConsumptionBatch.batch_name}</strong></span>
+                    <div className="flex items-center justify-between text-sm text-green-700">
+                      <div className="flex items-center space-x-2">
+                        <Utensils className="w-4 h-4" />
+                        <span>Using batch: <strong>{selectedConsumptionBatch.batch_name}</strong></span>
+                      </div>
+                      {batchTargetedAnimals.length > 0 && (
+                        <Badge variant="outline" className="text-green-700 border-green-300">
+                          {batchTargetedAnimals.length} targeted animals
+                        </Badge>
+                      )}
                     </div>
                   </div>
                 )}

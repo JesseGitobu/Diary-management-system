@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/Textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select'
 import { Alert, AlertDescription } from '@/components/ui/Alert'
 import { Progress } from '@/components/ui/Progress'
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { cn } from '@/lib/utils/cn'
 import { 
@@ -41,19 +42,18 @@ import { format, parseISO, startOfWeek, endOfWeek, subDays, addDays } from 'date
 interface FeedingRecord {
   id: string
   animal_id: string
-  feeding_date: string
   feeding_time: string
-  feed_type: string
+  feed_type_id: string
   feed_name: string
   quantity_kg: number
   cost_per_kg?: number
   total_cost?: number
-  feeding_method: 'manual' | 'automatic' | 'grazing'
-  feed_quality: 'excellent' | 'good' | 'fair' | 'poor'
+  feeding_mode: 'individual' | 'batch'
+  animal_count?: number
   notes?: string
-  fed_by: string
-  weather_conditions?: string
-  appetite_rating: number // 1-5 scale
+  recorded_by?: string
+  batch_name?: string
+  consumption_batch_id?: string
   created_at: string
   updated_at: string
 }
@@ -62,9 +62,10 @@ interface FeedType {
   id: string
   name: string
   category: 'concentrate' | 'forage' | 'supplement' | 'mineral'
+  feed_category_id?: string
   protein_content?: number
   energy_content?: number
-  cost_per_kg: number
+  typical_cost_per_kg: number
   supplier?: string
   nutritional_info?: string
 }
@@ -93,56 +94,34 @@ interface NutritionalTarget {
 
 interface AnimalFeedingRecordsProps {
   animalId: string
+  farmId: string
   canAddRecords: boolean
 }
 
-export function AnimalFeedingRecords({ animalId, canAddRecords }: AnimalFeedingRecordsProps) {
+export function AnimalFeedingRecords({ animalId, farmId, canAddRecords }: AnimalFeedingRecordsProps) {
   const [activeTab, setActiveTab] = useState('overview')
   const [feedingRecords, setFeedingRecords] = useState<FeedingRecord[]>([])
   const [feedTypes, setFeedTypes] = useState<FeedType[]>([])
   const [feedingSchedules, setFeedingSchedules] = useState<FeedingSchedule[]>([])
   const [nutritionalTargets, setNutritionalTargets] = useState<NutritionalTarget | null>(null)
   const [showAddRecordModal, setShowAddRecordModal] = useState(false)
-  const [showAddScheduleModal, setShowAddScheduleModal] = useState(false)
   const [showNutritionModal, setShowNutritionModal] = useState(false)
   const [selectedRecord, setSelectedRecord] = useState<FeedingRecord | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [dateRange, setDateRange] = useState('week')
+  const [submitting, setSubmitting] = useState(false)
   const { isMobile } = useDeviceInfo()
 
   // Form states
   const [recordForm, setRecordForm] = useState({
     feeding_date: format(new Date(), 'yyyy-MM-dd'),
     feeding_time: format(new Date(), 'HH:mm'),
-    feed_type: '',
-    feed_name: '',
+    feed_type_id: '',
     quantity_kg: '',
     cost_per_kg: '',
-    feeding_method: 'manual' as 'manual' | 'automatic' | 'grazing',
-    feed_quality: 'good' as 'excellent' | 'good' | 'fair' | 'poor',
-    appetite_rating: 4,
     notes: '',
-    fed_by: '',
-    weather_conditions: ''
-  })
-
-  const [scheduleForm, setScheduleForm] = useState<{
-    feed_type_id: string;
-    feed_name: string;
-    scheduled_time: string;
-    quantity_kg: string;
-    frequency: 'daily' | 'twice_daily' | 'weekly' | 'as_needed';
-    start_date: string;
-    end_date: string;
-  }>({
-    feed_type_id: '',
-    feed_name: '',
-    scheduled_time: '07:00',
-    quantity_kg: '',
-    frequency: 'daily',
-    start_date: format(new Date(), 'yyyy-MM-dd'),
-    end_date: ''
+    feeding_mode: 'individual' as 'individual' | 'batch'
   })
 
   const [nutritionForm, setNutritionForm] = useState({
@@ -153,144 +132,91 @@ export function AnimalFeedingRecords({ animalId, canAddRecords }: AnimalFeedingR
     milk_production_target_liters: ''
   })
 
-  // Load data
+  // Load data on component mount
   useEffect(() => {
-    loadFeedingData()
-  }, [animalId])
+    if (animalId && farmId) {
+      loadFeedingData()
+    }
+  }, [animalId, farmId])
 
   const loadFeedingData = async () => {
+  try {
+    setLoading(true)
+    setError(null)
+    
+    // Load feed types
     try {
-      setLoading(true)
-      
-      // Simulate API calls - replace with actual API endpoints
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      
-      // Mock feed types
-      const mockFeedTypes: FeedType[] = [
-        {
-          id: '1',
-          name: 'Dairy Concentrate',
-          category: 'concentrate',
-          protein_content: 18,
-          energy_content: 13.5,
-          cost_per_kg: 0.45,
-          supplier: 'AgriFeeds Ltd',
-          nutritional_info: 'High protein concentrate for lactating cows'
-        },
-        {
-          id: '2',
-          name: 'Alfalfa Hay',
-          category: 'forage',
-          protein_content: 15,
-          energy_content: 9.2,
-          cost_per_kg: 0.25,
-          supplier: 'Local Farm Co-op'
-        },
-        {
-          id: '3',
-          name: 'Mineral Supplement',
-          category: 'mineral',
-          cost_per_kg: 2.50,
-          supplier: 'NutriMin Solutions'
-        },
-        {
-          id: '4',
-          name: 'Silage Corn',
-          category: 'forage',
-          protein_content: 8,
-          energy_content: 11.0,
-          cost_per_kg: 0.15
-        }
-      ]
-
-      // Mock feeding records
-      const mockRecords: FeedingRecord[] = [
-        {
-          id: '1',
-          animal_id: animalId,
-          feeding_date: format(new Date(), 'yyyy-MM-dd'),
-          feeding_time: '07:00',
-          feed_type: 'concentrate',
-          feed_name: 'Dairy Concentrate',
-          quantity_kg: 4.5,
-          cost_per_kg: 0.45,
-          total_cost: 2.03,
-          feeding_method: 'manual',
-          feed_quality: 'excellent',
-          appetite_rating: 5,
-          fed_by: 'John Farmer',
-          weather_conditions: 'Clear',
-          notes: 'Animal showed good appetite',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        },
-        {
-          id: '2',
-          animal_id: animalId,
-          feeding_date: format(subDays(new Date(), 1), 'yyyy-MM-dd'),
-          feeding_time: '17:30',
-          feed_type: 'forage',
-          feed_name: 'Alfalfa Hay',
-          quantity_kg: 8.0,
-          cost_per_kg: 0.25,
-          total_cost: 2.00,
-          feeding_method: 'manual',
-          feed_quality: 'good',
-          appetite_rating: 4,
-          fed_by: 'Mary Worker',
-          created_at: subDays(new Date(), 1).toISOString(),
-          updated_at: subDays(new Date(), 1).toISOString()
-        }
-      ]
-
-      // Mock feeding schedules
-      const mockSchedules: FeedingSchedule[] = [
-        {
-          id: '1',
-          animal_id: animalId,
-          feed_type_id: '1',
-          feed_name: 'Dairy Concentrate',
-          scheduled_time: '07:00',
-          quantity_kg: 4.5,
-          frequency: 'daily',
-          start_date: format(new Date(), 'yyyy-MM-dd'),
-          is_active: true,
-          created_by: 'Farm Manager'
-        },
-        {
-          id: '2',
-          animal_id: animalId,
-          feed_type_id: '2',
-          feed_name: 'Alfalfa Hay',
-          scheduled_time: '17:00',
-          quantity_kg: 8.0,
-          frequency: 'daily',
-          start_date: format(new Date(), 'yyyy-MM-dd'),
-          is_active: true,
-          created_by: 'Farm Manager'
-        }
-      ]
-
-      // Mock nutritional targets
-      const mockTargets: NutritionalTarget = {
-        daily_dry_matter_kg: 22.0,
-        daily_protein_kg: 3.2,
-        daily_energy_mj: 280.0,
-        target_weight_gain_kg_per_day: 0.8,
-        milk_production_target_liters: 25.0
+      const feedTypesResponse = await fetch(`/api/feed/types/`)
+      if (feedTypesResponse.ok) {
+        const feedTypesData = await feedTypesResponse.json()
+        setFeedTypes(Array.isArray(feedTypesData) ? feedTypesData : feedTypesData?.feed_types || [])
+      } else {
+        console.warn('Failed to load feed types:', feedTypesResponse.status)
+        setFeedTypes([])
       }
-
-      setFeedTypes(mockFeedTypes)
-      setFeedingRecords(mockRecords)
-      setFeedingSchedules(mockSchedules)
-      setNutritionalTargets(mockTargets)
     } catch (err) {
-      setError('Failed to load feeding data')
-      console.error('Error loading feeding data:', err)
-    } finally {
-      setLoading(false)
+      console.error('Error loading feed types:', err)
+      setFeedTypes([])
     }
+    
+    // Load feeding records for this animal - FIXED URL
+    try {
+      const feedingResponse = await fetch(
+        `/api/farms/${farmId}/animals/${animalId}/feeding-records?limit=50`
+      )
+      if (feedingResponse.ok) {
+        const feedingData = await feedingResponse.json()
+        setFeedingRecords(Array.isArray(feedingData) ? feedingData : feedingData?.records || [])
+      } else {
+        console.warn('Failed to load feeding records:', feedingResponse.status)
+        setFeedingRecords([])
+      }
+    } catch (err) {
+      console.error('Error loading feeding records:', err)
+      setFeedingRecords([])
+    }
+    
+    // Load feeding schedules for this animal - FIXED URL
+    try {
+      const schedulesResponse = await fetch(
+        `/api/farms/${farmId}/animals/${animalId}/feeding-schedules`
+      )
+      if (schedulesResponse.ok) {
+        const schedulesData = await schedulesResponse.json()
+        setFeedingSchedules(Array.isArray(schedulesData) ? schedulesData : schedulesData?.schedules || [])
+      } else {
+        console.warn('Failed to load feeding schedules:', schedulesResponse.status)
+        setFeedingSchedules([])
+      }
+    } catch (err) {
+      console.error('Error loading feeding schedules:', err)
+      setFeedingSchedules([])
+    }
+    
+    // Load nutritional targets for this animal - FIXED URL
+    try {
+      const targetsResponse = await fetch(
+        `/api/farms/${farmId}/animals/${animalId}/nutrition-targets`
+      )
+      if (targetsResponse.ok) {
+        const targetsData = await targetsResponse.json()
+        setNutritionalTargets(targetsData?.targets || null)
+      } else {
+        console.warn('Failed to load nutritional targets:', targetsResponse.status)
+        setNutritionalTargets(null)
+      }
+    } catch (err) {
+      console.error('Error loading nutritional targets:', err)
+      setNutritionalTargets(null)
+    }
+    
+  } catch (err) {
+    setError('Failed to load feeding data')
+    console.error('Error loading feeding data:', err)
+  } finally {
+    setLoading(false)
   }
+}
 
   const getFilteredRecords = () => {
     const now = new Date()
@@ -311,21 +237,21 @@ export function AnimalFeedingRecords({ animalId, canAddRecords }: AnimalFeedingR
     }
 
     return feedingRecords.filter(record => 
-      parseISO(record.feeding_date) >= startDate
+      parseISO(record.feeding_time) >= startDate
     )
   }
 
   const calculateDailyTotals = () => {
     const today = format(new Date(), 'yyyy-MM-dd')
-    const todayRecords = feedingRecords.filter(record => record.feeding_date === today)
+    const todayRecords = feedingRecords.filter(record => 
+      format(parseISO(record.feeding_time), 'yyyy-MM-dd') === today
+    )
     
     return {
       totalQuantity: todayRecords.reduce((sum, record) => sum + record.quantity_kg, 0),
       totalCost: todayRecords.reduce((sum, record) => sum + (record.total_cost || 0), 0),
       feedingCount: todayRecords.length,
-      averageAppetite: todayRecords.length > 0 
-        ? todayRecords.reduce((sum, record) => sum + record.appetite_rating, 0) / todayRecords.length 
-        : 0
+      averageAppetite: 4.0 // Placeholder - would need appetite rating in records
     }
   }
 
@@ -333,7 +259,7 @@ export function AnimalFeedingRecords({ animalId, canAddRecords }: AnimalFeedingR
     const weekStart = startOfWeek(new Date())
     const weekEnd = endOfWeek(new Date())
     const weekRecords = feedingRecords.filter(record => {
-      const recordDate = parseISO(record.feeding_date)
+      const recordDate = parseISO(record.feeding_time)
       return recordDate >= weekStart && recordDate <= weekEnd
     })
     
@@ -357,98 +283,102 @@ export function AnimalFeedingRecords({ animalId, canAddRecords }: AnimalFeedingR
   }
 
   const handleAddRecord = async () => {
-    try {
-      const totalCost = recordForm.cost_per_kg 
-        ? Number(recordForm.quantity_kg) * Number(recordForm.cost_per_kg)
-        : undefined
+    if (!recordForm.feed_type_id || !recordForm.quantity_kg) {
+      setError('Please fill in all required fields')
+      return
+    }
 
-      const newRecord: FeedingRecord = {
-        id: Date.now().toString(),
-        animal_id: animalId,
-        feeding_date: recordForm.feeding_date,
-        feeding_time: recordForm.feeding_time,
-        feed_type: recordForm.feed_type,
-        feed_name: recordForm.feed_name,
-        quantity_kg: Number(recordForm.quantity_kg),
-        cost_per_kg: recordForm.cost_per_kg ? Number(recordForm.cost_per_kg) : undefined,
-        total_cost: totalCost,
-        feeding_method: recordForm.feeding_method,
-        feed_quality: recordForm.feed_quality,
-        appetite_rating: recordForm.appetite_rating,
-        notes: recordForm.notes || undefined,
-        fed_by: recordForm.fed_by,
-        weather_conditions: recordForm.weather_conditions || undefined,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+    try {
+      setSubmitting(true)
+      setError(null)
+
+      // Create proper timestamp from feeding time
+      const feedingDateTime = new Date(`${recordForm.feeding_date}T${recordForm.feeding_time}`)
+      
+      const feedType = feedTypes.find(ft => ft.id === recordForm.feed_type_id)
+      const costPerKg = recordForm.cost_per_kg ? Number(recordForm.cost_per_kg) : feedType?.typical_cost_per_kg || 0
+      const totalCost = Number(recordForm.quantity_kg) * costPerKg
+
+      const newRecordData = {
+        farmId,
+        feedingTime: feedingDateTime.toISOString(),
+        mode: recordForm.feeding_mode,
+        batchId: null,
+        entries: [{
+          feedTypeId: recordForm.feed_type_id,
+          quantityKg: Number(recordForm.quantity_kg),
+          animalIds: [animalId],
+          notes: recordForm.notes || undefined
+        }]
       }
 
-      setFeedingRecords(prev => [newRecord, ...prev])
+      const response = await fetch('/api/feed/consumption', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newRecordData)
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to record feeding')
+      }
+
+      // Reload feeding data
+      await loadFeedingData()
       setShowAddRecordModal(false)
       resetRecordForm()
+      
     } catch (err) {
-      setError('Failed to add feeding record')
+      setError(err instanceof Error ? err.message : 'Failed to add feeding record')
       console.error('Error adding feeding record:', err)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleDeleteRecord = async (recordId: string) => {
+    if (!confirm('Are you sure you want to delete this feeding record?')) return
+
+    try {
+      setSubmitting(true)
+      const response = await fetch(`/api/feed/consumption/${recordId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ farmId })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to delete record')
+      }
+
+      // Reload feeding data
+      await loadFeedingData()
+      
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete feeding record')
+      console.error('Error deleting feeding record:', err)
+    } finally {
+      setSubmitting(false)
     }
   }
 
   const handleAddSchedule = async () => {
-    try {
-      const newSchedule: FeedingSchedule = {
-        id: Date.now().toString(),
-        animal_id: animalId,
-        feed_type_id: scheduleForm.feed_type_id,
-        feed_name: scheduleForm.feed_name,
-        scheduled_time: scheduleForm.scheduled_time,
-        quantity_kg: Number(scheduleForm.quantity_kg),
-        frequency: scheduleForm.frequency,
-        start_date: scheduleForm.start_date,
-        end_date: scheduleForm.end_date || undefined,
-        is_active: true,
-        created_by: 'Current User'
-      }
-
-      setFeedingSchedules(prev => [newSchedule, ...prev])
-      setShowAddScheduleModal(false)
-      resetScheduleForm()
-    } catch (err) {
-      setError('Failed to add feeding schedule')
-      console.error('Error adding feeding schedule:', err)
-    }
+    // Farm schedules are managed at farm level, not per animal
+    // This functionality would redirect to farm schedule management
+    console.log('Individual animal schedules not supported with current schema')
   }
 
   const resetRecordForm = () => {
     setRecordForm({
       feeding_date: format(new Date(), 'yyyy-MM-dd'),
       feeding_time: format(new Date(), 'HH:mm'),
-      feed_type: '',
-      feed_name: '',
+      feed_type_id: '',
       quantity_kg: '',
       cost_per_kg: '',
-      feeding_method: 'manual',
-      feed_quality: 'good',
-      appetite_rating: 4,
       notes: '',
-      fed_by: '',
-      weather_conditions: ''
+      feeding_mode: 'individual'
     })
-  }
-
-  const resetScheduleForm = () => {
-    setScheduleForm({
-      feed_type_id: '',
-      feed_name: '',
-      scheduled_time: '07:00',
-      quantity_kg: '',
-      frequency: 'daily',
-      start_date: format(new Date(), 'yyyy-MM-dd'),
-      end_date: ''
-    })
-  }
-
-  const getAppetiteColor = (rating: number) => {
-    if (rating >= 4) return 'text-green-600'
-    if (rating >= 3) return 'text-yellow-600'
-    return 'text-red-600'
   }
 
   const getQualityBadge = (quality: string) => {
@@ -458,7 +388,7 @@ export function AnimalFeedingRecords({ animalId, canAddRecords }: AnimalFeedingR
       fair: 'bg-yellow-100 text-yellow-800',
       poor: 'bg-red-100 text-red-800'
     }
-    return <Badge className={colors[quality as keyof typeof colors]}>{quality}</Badge>
+    return <Badge className={colors[quality as keyof typeof colors] || colors.good}>{quality}</Badge>
   }
 
   const dailyTotals = calculateDailyTotals()
@@ -468,7 +398,8 @@ export function AnimalFeedingRecords({ animalId, canAddRecords }: AnimalFeedingR
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <LoadingSpinner size="md" />
+        <span className="ml-2">Loading feeding data...</span>
       </div>
     )
   }
@@ -567,10 +498,10 @@ export function AnimalFeedingRecords({ animalId, canAddRecords }: AnimalFeedingR
               </div>
               <div className="min-w-0 flex-1">
                 <p className={cn("text-gray-600", isMobile ? "text-xs" : "text-sm")}>
-                  Avg Appetite
+                  Weekly Total
                 </p>
-                <p className={cn("font-semibold", isMobile ? "text-sm" : "text-lg", getAppetiteColor(dailyTotals.averageAppetite))}>
-                  {dailyTotals.averageAppetite.toFixed(1)}/5
+                <p className={cn("font-semibold", isMobile ? "text-sm" : "text-lg")}>
+                  {weeklyTotals.totalQuantity.toFixed(1)}kg
                 </p>
               </div>
             </div>
@@ -638,16 +569,16 @@ export function AnimalFeedingRecords({ animalId, canAddRecords }: AnimalFeedingR
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className={cn("grid w-full grid-cols-4", isMobile && "h-10")}>
           <TabsTrigger value="overview" className={cn(isMobile && "text-xs")}>
-            {isMobile ? "Feed" : "Feeding"}
+            {isMobile ? "Records" : "Feeding Records"}
           </TabsTrigger>
           <TabsTrigger value="schedule" className={cn(isMobile && "text-xs")}>
-            {isMobile ? "Schedule" : "Schedule"}
+            Schedule
           </TabsTrigger>
           <TabsTrigger value="nutrition" className={cn(isMobile && "text-xs")}>
-            {isMobile ? "Nutrition" : "Nutrition"}
+            Nutrition
           </TabsTrigger>
           <TabsTrigger value="analysis" className={cn(isMobile && "text-xs")}>
-            {isMobile ? "Analysis" : "Analysis"}
+            Analysis
           </TabsTrigger>
         </TabsList>
 
@@ -692,14 +623,26 @@ export function AnimalFeedingRecords({ animalId, canAddRecords }: AnimalFeedingR
                       <div>
                         <h4 className="font-medium">{record.feed_name}</h4>
                         <p className="text-sm text-gray-600">
-                          {format(parseISO(record.feeding_date), 'MMM dd')} at {record.feeding_time}
+                          {format(parseISO(record.feeding_time), 'MMM dd, yyyy')} at {format(parseISO(record.feeding_time), 'HH:mm')}
                         </p>
+                        {record.feeding_mode === 'batch' && record.batch_name && (
+                          <p className="text-xs text-blue-600 mt-1">
+                            Batch: {record.batch_name}
+                          </p>
+                        )}
                       </div>
                       <div className="flex items-center space-x-2">
-                        {getQualityBadge(record.feed_quality)}
+                        <Badge className="bg-blue-100 text-blue-800">
+                          {record.feeding_mode}
+                        </Badge>
                         {canAddRecords && (
-                          <Button variant="ghost" size="sm">
-                            <Edit className="w-4 h-4" />
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            onClick={() => handleDeleteRecord(record.id)}
+                            className="text-red-600 hover:text-red-700"
+                          >
+                            <Trash2 className="w-4 h-4" />
                           </Button>
                         )}
                       </div>
@@ -711,15 +654,15 @@ export function AnimalFeedingRecords({ animalId, canAddRecords }: AnimalFeedingR
                         <p className="text-sm font-semibold">{record.quantity_kg}kg</p>
                       </div>
                       <div>
-                        <p className="text-xs font-medium text-gray-700">Method</p>
-                        <p className="text-sm capitalize">{record.feeding_method}</p>
+                        <p className="text-xs font-medium text-gray-700">Mode</p>
+                        <p className="text-sm capitalize">{record.feeding_mode}</p>
                       </div>
-                      <div>
-                        <p className="text-xs font-medium text-gray-700">Appetite</p>
-                        <p className={cn("text-sm font-semibold", getAppetiteColor(record.appetite_rating))}>
-                          {record.appetite_rating}/5
-                        </p>
-                      </div>
+                      {record.animal_count && record.feeding_mode === 'batch' && (
+                        <div>
+                          <p className="text-xs font-medium text-gray-700">Animals</p>
+                          <p className="text-sm font-semibold">{record.animal_count}</p>
+                        </div>
+                      )}
                       {record.total_cost && (
                         <div>
                           <p className="text-xs font-medium text-gray-700">Cost</p>
@@ -734,12 +677,11 @@ export function AnimalFeedingRecords({ animalId, canAddRecords }: AnimalFeedingR
                       </div>
                     )}
 
-                    <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
-                      <span>Fed by: {record.fed_by}</span>
-                      {record.weather_conditions && (
-                        <span>Weather: {record.weather_conditions}</span>
-                      )}
-                    </div>
+                    {record.recorded_by && (
+                      <div className="mt-3 text-xs text-gray-500">
+                        Recorded by: {record.recorded_by}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               ))
@@ -749,17 +691,10 @@ export function AnimalFeedingRecords({ animalId, canAddRecords }: AnimalFeedingR
 
         <TabsContent value="schedule" className="space-y-4">
           <div className="flex items-center justify-between">
-            <h4 className="font-medium">Feeding Schedule</h4>
-            {canAddRecords && (
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => setShowAddScheduleModal(true)}
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Add Schedule
-              </Button>
-            )}
+            <h4 className="font-medium">Active Feeding Schedules</h4>
+            <div className="text-sm text-gray-500">
+              Farm-wide schedules affecting this animal
+            </div>
           </div>
 
           <div className="space-y-3">
@@ -777,26 +712,21 @@ export function AnimalFeedingRecords({ animalId, canAddRecords }: AnimalFeedingR
                       <Badge className={schedule.is_active ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"}>
                         {schedule.is_active ? "Active" : "Inactive"}
                       </Badge>
-                      {canAddRecords && (
-                        <Button variant="ghost" size="sm">
-                          <Edit className="w-4 h-4" />
-                        </Button>
-                      )}
                     </div>
                   </div>
 
                   <div className={cn("grid gap-3", isMobile ? "grid-cols-2" : "grid-cols-3")}>
                     <div>
-                      <p className="text-xs font-medium text-gray-700">Quantity</p>
+                      <p className="text-xs font-medium text-gray-700">Planned Quantity</p>
                       <p className="text-sm">{schedule.quantity_kg}kg</p>
                     </div>
                     <div>
-                      <p className="text-xs font-medium text-gray-700">Start Date</p>
-                      <p className="text-sm">{format(parseISO(schedule.start_date), 'MMM dd, yyyy')}</p>
+                      <p className="text-xs font-medium text-gray-700">Schedule Type</p>
+                      <p className="text-sm capitalize">{schedule.frequency}</p>
                     </div>
                     <div>
-                      <p className="text-xs font-medium text-gray-700">Created By</p>
-                      <p className="text-sm">{schedule.created_by}</p>
+                      <p className="text-xs font-medium text-gray-700">Status</p>
+                      <p className="text-sm">Farm Schedule</p>
                     </div>
                   </div>
                 </CardContent>
@@ -807,13 +737,10 @@ export function AnimalFeedingRecords({ animalId, canAddRecords }: AnimalFeedingR
               <Card>
                 <CardContent className="text-center py-8">
                   <Clock className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-                  <p className="text-gray-500 mb-4">No feeding schedules set</p>
-                  {canAddRecords && (
-                    <Button onClick={() => setShowAddScheduleModal(true)}>
-                      <Plus className="w-4 h-4 mr-2" />
-                      Create Schedule
-                    </Button>
-                  )}
+                  <p className="text-gray-500 mb-4">No active schedules found</p>
+                  <p className="text-sm text-gray-400">
+                    This animal is not included in any current feeding schedules.
+                  </p>
                 </CardContent>
               </Card>
             )}
@@ -842,7 +769,7 @@ export function AnimalFeedingRecords({ animalId, canAddRecords }: AnimalFeedingR
                           {feed.category}
                         </Badge>
                       </div>
-                      <p className="text-sm font-semibold">${feed.cost_per_kg}/kg</p>
+                      <p className="text-sm font-semibold">${feed.typical_cost_per_kg}/kg</p>
                     </div>
 
                     <div className={cn("grid gap-2", isMobile ? "grid-cols-2" : "grid-cols-3")}>
@@ -992,7 +919,10 @@ export function AnimalFeedingRecords({ animalId, canAddRecords }: AnimalFeedingR
             <CardContent>
               <div className="space-y-3">
                 {['concentrate', 'forage', 'supplement', 'mineral'].map((type) => {
-                  const typeRecords = feedingRecords.filter(r => r.feed_type === type)
+                  const typeRecords = feedingRecords.filter(r => {
+                    const feedType = feedTypes.find(ft => ft.id === r.feed_type_id)
+                    return feedType?.category === type
+                  })
                   const totalQuantity = typeRecords.reduce((sum, r) => sum + r.quantity_kg, 0)
                   const percentage = weeklyTotals.totalQuantity > 0 
                     ? (totalQuantity / weeklyTotals.totalQuantity) * 100 
@@ -1019,19 +949,19 @@ export function AnimalFeedingRecords({ animalId, canAddRecords }: AnimalFeedingR
             </CardContent>
           </Card>
 
-          {/* Appetite Trends */}
+          {/* Feeding Trends */}
           <Card>
             <CardHeader>
               <CardTitle className={cn(isMobile ? "text-base" : "text-lg")}>
-                Appetite Trends
+                Feeding Trends
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-center py-8">
                 <BarChart3 className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-                <p className="text-gray-500 mb-2">Appetite trend charts coming soon</p>
+                <p className="text-gray-500 mb-2">Feeding trend charts coming soon</p>
                 <p className="text-sm text-gray-400">
-                  Track appetite patterns and feeding behavior over time
+                  Track feeding patterns and consumption over time
                 </p>
               </div>
             </CardContent>
@@ -1068,43 +998,25 @@ export function AnimalFeedingRecords({ animalId, canAddRecords }: AnimalFeedingR
             </div>
 
             <div>
-              <Label htmlFor="feed_type">Feed Type *</Label>
+              <Label htmlFor="feed_type_id">Feed Type *</Label>
               <Select
-                value={recordForm.feed_type}
-                onValueChange={(value) => setRecordForm(prev => ({ ...prev, feed_type: value }))}
+                value={recordForm.feed_type_id}
+                onValueChange={(value) => {
+                  const selectedFeed = feedTypes.find(f => f.id === value)
+                  setRecordForm(prev => ({ 
+                    ...prev, 
+                    feed_type_id: value,
+                    cost_per_kg: selectedFeed?.typical_cost_per_kg.toString() || ''
+                  }))
+                }}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select feed type" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="concentrate">Concentrate</SelectItem>
-                  <SelectItem value="forage">Forage</SelectItem>
-                  <SelectItem value="supplement">Supplement</SelectItem>
-                  <SelectItem value="mineral">Mineral</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label htmlFor="feed_name">Feed Name *</Label>
-              <Select
-                value={recordForm.feed_name}
-                onValueChange={(value) => {
-                  const selectedFeed = feedTypes.find(f => f.name === value)
-                  setRecordForm(prev => ({ 
-                    ...prev, 
-                    feed_name: value,
-                    cost_per_kg: selectedFeed?.cost_per_kg.toString() || ''
-                  }))
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select feed" />
-                </SelectTrigger>
-                <SelectContent>
                   {feedTypes.map((feed) => (
-                    <SelectItem key={feed.id} value={feed.name}>
-                      {feed.name} (${feed.cost_per_kg}/kg)
+                    <SelectItem key={feed.id} value={feed.id}>
+                      {feed.name} (${feed.typical_cost_per_kg}/kg)
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1138,87 +1050,6 @@ export function AnimalFeedingRecords({ animalId, canAddRecords }: AnimalFeedingR
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="feeding_method">Feeding Method</Label>
-                <Select
-                  value={recordForm.feeding_method}
-                  onValueChange={(value: 'manual' | 'automatic' | 'grazing') => 
-                    setRecordForm(prev => ({ ...prev, feeding_method: value }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="manual">Manual</SelectItem>
-                    <SelectItem value="automatic">Automatic</SelectItem>
-                    <SelectItem value="grazing">Grazing</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="feed_quality">Feed Quality</Label>
-                <Select
-                  value={recordForm.feed_quality}
-                  onValueChange={(value: 'excellent' | 'good' | 'fair' | 'poor') => 
-                    setRecordForm(prev => ({ ...prev, feed_quality: value }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="excellent">Excellent</SelectItem>
-                    <SelectItem value="good">Good</SelectItem>
-                    <SelectItem value="fair">Fair</SelectItem>
-                    <SelectItem value="poor">Poor</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div>
-              <Label htmlFor="appetite_rating">Appetite Rating (1-5)</Label>
-              <Select
-                value={recordForm.appetite_rating.toString()}
-                onValueChange={(value) => 
-                  setRecordForm(prev => ({ ...prev, appetite_rating: parseInt(value) }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1">1 - Very Poor</SelectItem>
-                  <SelectItem value="2">2 - Poor</SelectItem>
-                  <SelectItem value="3">3 - Average</SelectItem>
-                  <SelectItem value="4">4 - Good</SelectItem>
-                  <SelectItem value="5">5 - Excellent</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label htmlFor="fed_by">Fed By *</Label>
-              <Input
-                id="fed_by"
-                value={recordForm.fed_by}
-                onChange={(e) => setRecordForm(prev => ({ ...prev, fed_by: e.target.value }))}
-                placeholder="Person who fed the animal"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="weather_conditions">Weather Conditions</Label>
-              <Input
-                id="weather_conditions"
-                value={recordForm.weather_conditions}
-                onChange={(e) => setRecordForm(prev => ({ ...prev, weather_conditions: e.target.value }))}
-                placeholder="e.g., Clear, Rainy, Hot"
-              />
-            </div>
-
             <div>
               <Label htmlFor="notes">Notes</Label>
               <Textarea
@@ -1244,131 +1075,22 @@ export function AnimalFeedingRecords({ animalId, canAddRecords }: AnimalFeedingR
             <Button 
               variant="outline" 
               onClick={() => setShowAddRecordModal(false)}
+              disabled={submitting}
             >
               Cancel
             </Button>
             <Button 
               onClick={handleAddRecord}
-              disabled={!recordForm.feeding_date || !recordForm.feed_name || !recordForm.quantity_kg || !recordForm.fed_by}
+              disabled={!recordForm.feed_type_id || !recordForm.quantity_kg || submitting}
             >
-              Record Feeding
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Add Schedule Modal */}
-      <Modal isOpen={showAddScheduleModal} onClose={() => setShowAddScheduleModal(false)}>
-        <div className="p-6">
-          <h2 className="text-xl font-semibold mb-4">Create Feeding Schedule</h2>
-          
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="schedule_feed_name">Feed *</Label>
-              <Select
-                value={scheduleForm.feed_name}
-                onValueChange={(value) => {
-                  const selectedFeed = feedTypes.find(f => f.name === value)
-                  setScheduleForm(prev => ({ 
-                    ...prev, 
-                    feed_name: value,
-                    feed_type_id: selectedFeed?.id || ''
-                  }))
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select feed" />
-                </SelectTrigger>
-                <SelectContent>
-                  {feedTypes.map((feed) => (
-                    <SelectItem key={feed.id} value={feed.name}>
-                      {feed.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="scheduled_time">Time *</Label>
-                <Input
-                  id="scheduled_time"
-                  type="time"
-                  value={scheduleForm.scheduled_time}
-                  onChange={(e) => setScheduleForm(prev => ({ ...prev, scheduled_time: e.target.value }))}
-                />
-              </div>
-              <div>
-                <Label htmlFor="schedule_quantity">Quantity (kg) *</Label>
-                <Input
-                  id="schedule_quantity"
-                  type="number"
-                  value={scheduleForm.quantity_kg}
-                  onChange={(e) => setScheduleForm(prev => ({ ...prev, quantity_kg: e.target.value }))}
-                  placeholder="0.0"
-                  min="0"
-                  step="0.1"
-                />
-              </div>
-            </div>
-
-            <div>
-              <Label htmlFor="frequency">Frequency *</Label>
-              <Select
-                value={scheduleForm.frequency}
-                onValueChange={(value: 'daily' | 'twice_daily' | 'weekly' | 'as_needed') => 
-                  setScheduleForm(prev => ({ ...prev, frequency: value }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="daily">Daily</SelectItem>
-                  <SelectItem value="twice_daily">Twice Daily</SelectItem>
-                  <SelectItem value="weekly">Weekly</SelectItem>
-                  <SelectItem value="as_needed">As Needed</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="start_date">Start Date *</Label>
-                <Input
-                  id="start_date"
-                  type="date"
-                  value={scheduleForm.start_date}
-                  onChange={(e) => setScheduleForm(prev => ({ ...prev, start_date: e.target.value }))}
-                  min={format(new Date(), 'yyyy-MM-dd')}
-                />
-              </div>
-              <div>
-                <Label htmlFor="end_date">End Date (Optional)</Label>
-                <Input
-                  id="end_date"
-                  type="date"
-                  value={scheduleForm.end_date}
-                  onChange={(e) => setScheduleForm(prev => ({ ...prev, end_date: e.target.value }))}
-                  min={scheduleForm.start_date}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="flex justify-end space-x-2 mt-6">
-            <Button 
-              variant="outline" 
-              onClick={() => setShowAddScheduleModal(false)}
-            >
-              Cancel
-            </Button>
-            <Button 
-              onClick={handleAddSchedule}
-              disabled={!scheduleForm.feed_name || !scheduleForm.quantity_kg}
-            >
-              Create Schedule
+              {submitting ? (
+                <>
+                  <LoadingSpinner size="sm" />
+                  <span className="ml-2">Recording...</span>
+                </>
+              ) : (
+                'Record Feeding'
+              )}
             </Button>
           </div>
         </div>
@@ -1450,6 +1172,7 @@ export function AnimalFeedingRecords({ animalId, canAddRecords }: AnimalFeedingR
             <Button 
               variant="outline" 
               onClick={() => setShowNutritionModal(false)}
+              disabled={submitting}
             >
               Cancel
             </Button>
@@ -1458,7 +1181,7 @@ export function AnimalFeedingRecords({ animalId, canAddRecords }: AnimalFeedingR
                 // Handle saving nutrition targets
                 setShowNutritionModal(false)
               }}
-              disabled={!nutritionForm.daily_dry_matter_kg || !nutritionForm.daily_protein_kg || !nutritionForm.daily_energy_mj}
+              disabled={!nutritionForm.daily_dry_matter_kg || !nutritionForm.daily_protein_kg || !nutritionForm.daily_energy_mj || submitting}
             >
               Save Targets
             </Button>

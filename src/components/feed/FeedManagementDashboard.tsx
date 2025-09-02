@@ -19,7 +19,9 @@ import {
   DollarSign,
   AlertTriangle,
   Wheat,
-  MoreVertical
+  MoreVertical,
+  Clock,
+  Users
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -70,22 +72,85 @@ export function FeedManagementDashboard({
   const canEditRecords = ['farm_owner', 'farm_manager'].includes(userRole)
   const canDeleteRecords = ['farm_owner', 'farm_manager'].includes(userRole)
 
-  // Calculate low stock alerts using individual feed type thresholds
-  const lowStockItems = useMemo(() => {
-    if (!feedStats.stockLevels) return []
+  // Calculate enhanced stats for Kenyan dairy farmers
+  const enhancedStats = useMemo(() => {
+    // Calculate current inventory value
+    const currentInventoryValue = inventory.reduce((sum, item) => 
+      sum + (item.quantity_kg * item.cost_per_kg), 0
+    )
+
+    // Calculate active animals being fed
+    const activeAnimalsFed = consumptionRecords.length > 0 ? 
+      Math.max(...consumptionRecords.map(record => record.animal_count || 1)) : 0
+
+    // Calculate cost per animal per day
+    const costPerAnimalPerDay = feedStats.avgDailyCost && activeAnimalsFed > 0 ? 
+      feedStats.avgDailyCost / activeAnimalsFed : 0
+
+    // Calculate average days remaining across all feed types
+    let totalDaysRemaining = 0
+    let feedTypesWithData = 0
     
-    return feedStats.stockLevels.filter((stock: any) => {
-      // Find the corresponding feed type to get its threshold
-      const feedType = feedTypes.find(ft => ft.id === stock.feedType?.id || ft.id === stock.feed_type_id)
-      
-      if (!feedType) return false
-      
-      // Use the feed type's specific threshold, or default to 50kg if not set
-      const threshold = feedType.low_stock_threshold || 50
-      
-      return stock.currentStock < threshold
-    })
-  }, [feedStats.stockLevels, feedTypes])
+    if (feedStats.stockLevels) {
+      feedStats.stockLevels.forEach((stock: any) => {
+        const feedConsumption = consumptionRecords.filter(record => 
+          record.feed_type_id === stock.feedType?.id
+        )
+        
+        if (feedConsumption.length > 0) {
+          const dates = feedConsumption.map(record => new Date(record.feeding_time)).sort()
+          const oldestDate = dates[0]
+          const newestDate = dates[dates.length - 1]
+          const daysDifference = Math.max(1, Math.ceil((newestDate.getTime() - oldestDate.getTime()) / (1000 * 60 * 60 * 24)))
+          
+          const totalFed = feedConsumption.reduce((sum, record) => sum + (record.quantity_kg || 0), 0)
+          const avgDailyConsumption = totalFed / daysDifference
+          
+          if (avgDailyConsumption > 0) {
+            const daysRemaining = Math.floor(stock.currentStock / avgDailyConsumption)
+            totalDaysRemaining += daysRemaining
+            feedTypesWithData++
+          }
+        }
+      })
+    }
+
+    const averageDaysRemaining = feedTypesWithData > 0 ? Math.floor(totalDaysRemaining / feedTypesWithData) : 0
+
+    // Calculate low stock and critical alerts
+    const alertCounts = {
+      critical: 0,
+      low: 0,
+      total: 0
+    }
+    
+    if (feedStats.stockLevels) {
+      feedStats.stockLevels.forEach((stock: any) => {
+        const feedType = feedTypes.find(ft => ft.id === stock.feedType?.id || ft.id === stock.feed_type_id)
+        if (feedType) {
+          const threshold = feedType.low_stock_threshold || 50
+          if (stock.currentStock < threshold * 0.5) {
+            alertCounts.critical++
+            alertCounts.total++
+          } else if (stock.currentStock < threshold) {
+            alertCounts.low++
+            alertCounts.total++
+          }
+        }
+      })
+    }
+
+    return {
+      currentInventoryValue,
+      activeAnimalsFed,
+      costPerAnimalPerDay,
+      averageDaysRemaining,
+      alertCounts
+    }
+  }, [feedStats, inventory, consumptionRecords, feedTypes])
+
+  // Calculate low stock alerts for backward compatibility
+  const lowStockItems = enhancedStats.alertCounts.total
 
   const handleFeedTypeAdded = (newFeedType: any) => {
     setFeedTypes(prev => [...prev, newFeedType])
@@ -260,83 +325,107 @@ export function FeedManagementDashboard({
           <div className="overflow-x-auto scrollbar-hide">
             <div className="flex space-x-4 pb-4">
               <MobileStatsCard
-                title="Monthly Cost"
-                value={`KSh${feedStats.totalCost?.toFixed(2) || '0.00'}`}
-                subtitle={`${feedStats.avgDailyCost?.toFixed(2) || '0.00'} daily average`}
+                title="Daily Feed Cost"
+                value={`KSh${feedStats.avgDailyCost?.toFixed(0) || '0'}`}
+                subtitle={`KSh${enhancedStats.costPerAnimalPerDay.toFixed(0)}/animal/day`}
                 icon={DollarSign}
               />
               <MobileStatsCard
-                title="Total Consumption"
-                value={`${feedStats.totalQuantity?.toFixed(1) || '0.0'}kg`}
-                subtitle={`${feedStats.avgDailyQuantity?.toFixed(1) || '0.0'}kg daily average`}
-                icon={Wheat}
-              />
-              <MobileStatsCard
-                title="Feed Types"
-                value={feedTypes.length}
-                subtitle="Active feed types"
+                title="Current Stock Value"
+                value={`KSh${(enhancedStats.currentInventoryValue / 1000).toFixed(0)}k`}
+                subtitle={`${inventory.length} inventory items`}
                 icon={Package}
               />
               <MobileStatsCard
-                title="Low Stock Alerts"
-                value={lowStockItems.length}
-                subtitle="Items need restocking"
+                title="Feed Days Left"
+                value={enhancedStats.averageDaysRemaining > 0 ? `${enhancedStats.averageDaysRemaining}d` : 'N/A'}
+                subtitle={enhancedStats.averageDaysRemaining > 0 ? 'Average across feeds' : 'Start feeding to calculate'}
+                icon={Clock}
+                className={enhancedStats.averageDaysRemaining < 14 && enhancedStats.averageDaysRemaining > 0 ? "border-orange-200 bg-orange-50" : ""}
+              />
+              <MobileStatsCard
+                title="Animals Fed"
+                value={enhancedStats.activeAnimalsFed || animals.length}
+                subtitle={`${feedStats.totalSessions || consumptionRecords.length} sessions this month`}
+                icon={Users}
+              />
+              <MobileStatsCard
+                title="Stock Alerts"
+                value={enhancedStats.alertCounts.total}
+                subtitle={`${enhancedStats.alertCounts.critical} critical, ${enhancedStats.alertCounts.low} low`}
                 icon={AlertTriangle}
-                className={lowStockItems.length > 0 ? "border-red-200 bg-red-50" : ""}
+                className={enhancedStats.alertCounts.total > 0 ? "border-red-200 bg-red-50" : ""}
               />
             </div>
           </div>
         ) : (
           // Desktop Grid Layout
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Monthly Cost</CardTitle>
+                <CardTitle className="text-sm font-medium">Daily Feed Cost</CardTitle>
                 <DollarSign className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">KSh{feedStats.totalCost?.toFixed(2) || '0.00'}</div>
+                <div className="text-2xl font-bold">KSh{feedStats.avgDailyCost?.toFixed(0) || '0'}</div>
                 <p className="text-xs text-muted-foreground">
-                  KSh{feedStats.avgDailyCost?.toFixed(2) || '0.00'} daily average
+                  KSh{enhancedStats.costPerAnimalPerDay.toFixed(0)} per animal daily
                 </p>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Consumption</CardTitle>
-                <Wheat className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{feedStats.totalQuantity?.toFixed(1) || '0.0'}kg</div>
-                <p className="text-xs text-muted-foreground">
-                  {feedStats.avgDailyQuantity?.toFixed(1) || '0.0'}kg daily average
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Feed Types</CardTitle>
+                <CardTitle className="text-sm font-medium">Current Stock Value</CardTitle>
                 <Package className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{feedTypes.length}</div>
+                <div className="text-2xl font-bold">KSh{(enhancedStats.currentInventoryValue / 1000).toFixed(0)}k</div>
                 <p className="text-xs text-muted-foreground">
-                  Active feed types
+                  {inventory.length} inventory items
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className={enhancedStats.averageDaysRemaining < 14 && enhancedStats.averageDaysRemaining > 0 ? "border-orange-200 bg-orange-50" : ""}>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Feed Days Left</CardTitle>
+                <Clock className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className={`text-2xl font-bold ${enhancedStats.averageDaysRemaining < 7 && enhancedStats.averageDaysRemaining > 0 ? 'text-red-600' : enhancedStats.averageDaysRemaining < 14 && enhancedStats.averageDaysRemaining > 0 ? 'text-orange-600' : ''}`}>
+                  {enhancedStats.averageDaysRemaining > 0 ? `${enhancedStats.averageDaysRemaining}d` : 'N/A'}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {enhancedStats.averageDaysRemaining > 0 ? 'Average across feeds' : 'Start feeding to calculate'}
                 </p>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Low Stock Alerts</CardTitle>
+                <CardTitle className="text-sm font-medium">Animals Fed</CardTitle>
+                <Users className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{enhancedStats.activeAnimalsFed || animals.length}</div>
+                <p className="text-xs text-muted-foreground">
+                  {feedStats.totalSessions || consumptionRecords.length} sessions this month
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className={enhancedStats.alertCounts.total > 0 ? "border-red-200 bg-red-50" : ""}>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Stock Alerts</CardTitle>
                 <AlertTriangle className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-red-600">{lowStockItems.length}</div>
+                <div className={`text-2xl font-bold ${enhancedStats.alertCounts.total > 0 ? 'text-red-600' : ''}`}>
+                  {enhancedStats.alertCounts.total}
+                </div>
                 <p className="text-xs text-muted-foreground">
-                  Items need restocking
+                  {enhancedStats.alertCounts.critical} critical, {enhancedStats.alertCounts.low} low stock
                 </p>
               </CardContent>
             </Card>
@@ -344,15 +433,15 @@ export function FeedManagementDashboard({
         )}
       </div>
 
-      {/* Mobile Low Stock Alerts */}
-      {lowStockItems.length > 0 && (
+      {/* Enhanced Low Stock Alerts */}
+      {enhancedStats.alertCounts.total > 0 && (
         <div className="px-4 lg:px-0">
           <Card className="border-yellow-200 bg-yellow-50">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="flex items-center space-x-2 text-yellow-800 text-base">
                   <AlertTriangle className="h-4 w-4" />
-                  <span>Low Stock Alerts ({lowStockItems.length})</span>
+                  <span>Stock Alerts ({enhancedStats.alertCounts.total})</span>
                 </CardTitle>
                 {canManageFeed && !isMobile && (
                   <Button 
@@ -367,15 +456,21 @@ export function FeedManagementDashboard({
                 )}
               </div>
               <CardDescription className="text-yellow-700">
-                Feed types running low on stock based on their configured thresholds
+                {enhancedStats.alertCounts.critical} critical alerts, {enhancedStats.alertCounts.low} low stock warnings
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className={`${isMobile ? 'space-y-3' : 'grid grid-cols-1 md:grid-cols-3 gap-4'}`}>
-                {lowStockItems.map((item: any, index: number) => {
+                {feedStats.stockLevels?.filter((stock: any) => {
+                  const feedType = feedTypes.find(ft => ft.id === stock.feedType?.id || ft.id === stock.feed_type_id)
+                  if (!feedType) return false
+                  const threshold = feedType.low_stock_threshold || 50
+                  return stock.currentStock < threshold
+                }).map((item: any, index: number) => {
                   const feedType = feedTypes.find(ft => ft.id === item.feedType?.id || ft.id === item.feed_type_id)
                   const threshold = feedType?.low_stock_threshold || 50
                   const percentageRemaining = ((item.currentStock / threshold) * 100).toFixed(0)
+                  const isCritical = item.currentStock <= threshold * 0.2
                   
                   return (
                     <div key={index} className="flex items-center justify-between p-3 bg-white rounded-lg border-l-4 border-red-400">
@@ -393,7 +488,7 @@ export function FeedManagementDashboard({
                           variant="destructive" 
                           className="text-xs mb-1"
                         >
-                          {item.currentStock <= threshold * 0.2 ? 'Critical' : 'Low Stock'}
+                          {isCritical ? 'Critical' : 'Low Stock'}
                         </Badge>
                         <div className="text-xs text-gray-500">
                           Need: {Math.max(0, threshold - item.currentStock).toFixed(1)}kg
@@ -468,8 +563,8 @@ export function FeedManagementDashboard({
             <FeedOverviewTab
               feedStats={feedStats}
               feedTypes={feedTypes}
-                inventory={inventory}           // Add this
-  consumptionRecords={consumptionRecords}  // Add this
+              inventory={inventory}
+              consumptionRecords={consumptionRecords}
               isMobile={isMobile}
               canManageFeed={canManageFeed}
               onAddFeedType={() => setShowAddTypeModal(true)}
@@ -485,6 +580,7 @@ export function FeedManagementDashboard({
               onAddInventory={() => setShowAddInventoryModal(true)}
               weightConversions={weightConversions}
               onInventoryUpdated={setInventory}
+              consumptionRecords={consumptionRecords}
             />
           </TabsContent>
 
@@ -556,4 +652,3 @@ export function FeedManagementDashboard({
     </div>
   )
 }
-

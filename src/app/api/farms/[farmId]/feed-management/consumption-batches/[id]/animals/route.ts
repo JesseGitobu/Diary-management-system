@@ -1,14 +1,17 @@
-// app/api/farms/[farmId]/feed-management/animal-categories/route.ts
+// app/api/farms/[farmId]/feed-management/consumption-batches/[id]/animals/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { 
-  getAnimalCategories, 
-  createAnimalCategory,
-  AnimalCategory 
+  getBatchTargetedAnimals,
+  addAnimalToBatch,
+  getAvailableAnimalsForBatch
 } from '@/lib/database/feedManagementSettings'
 
-export async function GET(request: NextRequest) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
     const user = await getCurrentUser()
     
@@ -22,20 +25,36 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
     }
     
-    const categories = await getAnimalCategories(userRole.farm_id)
+    const { id: batchId } = await params
+    const { searchParams } = new URL(request.url)
+    const includeAvailable = searchParams.get('include_available') === 'true'
+    
+    // Get targeted animals
+    const targetedAnimals = await getBatchTargetedAnimals(userRole.farm_id, batchId)
+
+    let availableAnimals: any[] = []
+    if (includeAvailable) {
+      availableAnimals = await getAvailableAnimalsForBatch(userRole.farm_id, batchId)
+    }
     
     return NextResponse.json({ 
       success: true, 
-      data: categories 
+      data: {
+        targeted: targetedAnimals,
+        available: availableAnimals
+      }
     })
     
   } catch (error) {
-    console.error('Animal categories GET API error:', error)
+    console.error('Batch animals GET API error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
     const user = await getCurrentUser()
     
@@ -55,28 +74,19 @@ export async function POST(request: NextRequest) {
     }
     
     const body = await request.json()
+    const { id: batchId } = await params
     
-    // Validate required fields
-    if (!body.name?.trim()) {
-      return NextResponse.json(
-        { error: 'Category name is required' }, 
-        { status: 400 }
-      )
-    }
-
-    // Prepare category data
-    const categoryData: Omit<AnimalCategory, 'id' | 'farm_id' | 'created_at' | 'updated_at' | 'matching_animals_count'> = {
-      name: body.name.trim(),
-      description: body.description || null,
-      min_age_days: body.min_age_days || null,
-      max_age_days: body.max_age_days || null,
-      gender: body.gender || null,
-      characteristics: body.characteristics || {},
-      is_default: body.is_default || false,
-      sort_order: body.sort_order || null
+    if (!body.animal_id) {
+      return NextResponse.json({ error: 'Animal ID is required' }, { status: 400 })
     }
     
-    const result = await createAnimalCategory(userRole.farm_id, categoryData)
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    if (!uuidRegex.test(body.animal_id)) {
+      return NextResponse.json({ error: 'Invalid animal ID format' }, { status: 400 })
+    }
+    
+    const result = await addAnimalToBatch(userRole.farm_id, batchId, body.animal_id)
     
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 })
@@ -85,11 +95,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ 
       success: true, 
       data: result.data,
-      message: 'Animal category created successfully'
+      message: 'Animal added to batch successfully'
     })
     
   } catch (error) {
-    console.error('Animal categories POST API error:', error)
+    console.error('Add animal to batch API error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
