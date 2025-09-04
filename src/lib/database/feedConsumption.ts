@@ -22,6 +22,7 @@ export interface FeedConsumptionAnimal {
   id: string
   consumption_id: string
   animal_id: string
+  quantity_kg?: number
   created_at: string
 }
 
@@ -63,7 +64,7 @@ export async function recordFeedConsumption(
   userId: string
 ): Promise<{ success: boolean; data?: any; error?: string }> {
   const supabase = await createServerSupabaseClient()
-  
+
   try {
     const consumptionRecords = []
 
@@ -108,11 +109,11 @@ export async function recordFeedConsumption(
         feeding_time: feedingTimestamp,
         feeding_mode: data.mode,
         animal_count: data.mode === 'batch' ? entry.animalCount : (entry.animalIds?.length || 1),
-        // consumption_batch_id: entry.batchId || data.batchId || undefined,
+        consumption_batch_id: entry.batchId || data.batchId || undefined,
         notes: entry.notes || data.globalNotes || undefined,
         recorded_by: data.recordedBy || 'Unknown',
         created_by: userId
-      }
+      } as const
 
       const { data: consumptionRecord, error: consumptionError } = await supabase
         .from('feed_consumption')
@@ -122,9 +123,9 @@ export async function recordFeedConsumption(
 
       if (consumptionError) {
         console.error('Consumption insert error:', consumptionError)
-        return { 
-          success: false, 
-          error: `Failed to create consumption record: ${consumptionError.message}` 
+        return {
+          success: false,
+          error: `Failed to create consumption record: ${consumptionError.message}`
         }
       }
 
@@ -140,7 +141,8 @@ export async function recordFeedConsumption(
 
         const animalRecords = entry.animalIds.map(animalId => ({
           consumption_id: consumptionRecord.id,
-          animal_id: animalId
+          animal_id: animalId,
+          quantity_kg: quantityPerAnimal
         }))
 
         const { error: animalError } = await supabase
@@ -163,9 +165,9 @@ export async function recordFeedConsumption(
     return { success: true, data: consumptionRecords }
   } catch (error) {
     console.error('Error recording feed consumption:', error)
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Failed to record consumption' 
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to record consumption'
     }
   }
 }
@@ -178,7 +180,7 @@ export async function updateFeedConsumption(
   userId: string
 ): Promise<{ success: boolean; data?: any; error?: string }> {
   const supabase = await createServerSupabaseClient()
-  
+
   try {
     // Get the original record for inventory adjustment
     const { data: originalRecord, error: fetchError } = await supabase
@@ -231,9 +233,9 @@ export async function updateFeedConsumption(
 
     if (updateError) {
       console.error('Consumption update error:', updateError)
-      return { 
-        success: false, 
-        error: `Failed to update consumption record: ${updateError.message}` 
+      return {
+        success: false,
+        error: `Failed to update consumption record: ${updateError.message}`
       }
     }
 
@@ -254,7 +256,9 @@ export async function updateFeedConsumption(
 
       const animalRecords = entry.animalIds.map(animalId => ({
         consumption_id: recordId,
-        animal_id: animalId
+        animal_id: animalId,
+        quantity_kg: quantityPerAnimal,
+        feeding_time: feedingTimestamp
       }))
 
       const { error: animalError } = await supabase
@@ -282,9 +286,9 @@ export async function updateFeedConsumption(
     return { success: true, data: updatedRecord }
   } catch (error) {
     console.error('Error updating feed consumption:', error)
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Failed to update consumption' 
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to update consumption'
     }
   }
 }
@@ -296,7 +300,7 @@ export async function deleteFeedConsumption(
   farmId: string
 ): Promise<{ success: boolean; error?: string }> {
   const supabase = await createServerSupabaseClient()
-  
+
   try {
     // Get the record for inventory restoration
     const { data: record, error: fetchError } = await supabase
@@ -334,9 +338,9 @@ export async function deleteFeedConsumption(
     return { success: true }
   } catch (error) {
     console.error('Error deleting feed consumption:', error)
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Failed to delete consumption' 
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to delete consumption'
     }
   }
 }
@@ -349,7 +353,7 @@ export async function getFeedConsumptionRecords(
   offset: number = 0
 ): Promise<FeedConsumptionRecord[]> {
   const supabase = await createServerSupabaseClient()
-  
+
   try {
     const { data, error } = await supabase
       .from('feed_consumption')
@@ -371,7 +375,7 @@ export async function getFeedConsumptionRecords(
         )
       `)
       .eq('farm_id', farmId)
-      .order('created_at', { ascending: false })
+      .order('feeding_time', { ascending: false })
       .range(offset, offset + limit - 1)
 
     if (error) {
@@ -379,10 +383,7 @@ export async function getFeedConsumptionRecords(
       return []
     }
 
-    return (data?.map(record => ({
-      ...record,
-      feeding_mode: record.feeding_mode as 'individual' | 'batch'
-    })) || []) as FeedConsumptionRecord[]
+    return (data as FeedConsumptionRecord[]) || []
   } catch (error) {
     console.error('Error in getFeedConsumptionRecords:', error)
     return []
@@ -396,7 +397,7 @@ export async function getFeedConsumptionStats(
   days: number = 30
 ): Promise<FeedConsumptionStats> {
   const supabase = await createServerSupabaseClient()
-  
+
   try {
     const endDate = new Date()
     const startDate = new Date()
@@ -423,7 +424,7 @@ export async function getFeedConsumptionStats(
     // Calculate statistics
     const totalQuantity = data?.reduce((sum, record) => sum + record.quantity_kg, 0) || 0
     const avgDailyQuantity = totalQuantity / days
-    
+
     // Group by date for daily summaries
     const dailyConsumption = data?.reduce((acc: any, record) => {
       const date = new Date(record.feeding_time).toISOString().split('T')[0]
@@ -466,37 +467,103 @@ export async function getAnimalConsumptionRecords(
   limit: number = 50
 ): Promise<any[]> {
   const supabase = await createServerSupabaseClient()
-  
-  try {
-    const { data, error } = await supabase
-      .from('feed_consumption_animals')
-      .select(`
-        *,
-        feed_consumption (
-          feeding_time,
-          feeding_mode,
-          notes,
-          recorded_by,
-          feed_types (
-            name,
-            category
-          ),
-          consumption_batches (
-            batch_name
-          )
-        )
-      `)
-      .eq('animal_id', animalId)
-      .eq('feed_consumption.farm_id', farmId)
-      .order('created_at', { ascending: false })
-      .limit(limit)
 
-    if (error) {
-      console.error('Error fetching animal consumption records:', error)
+  try {
+    // Add validation
+    if (!farmId || !animalId) {
+      console.error('Missing required parameters:', { farmId, animalId })
       return []
     }
 
-    return data || []
+    console.log('Querying consumption records:', { farmId, animalId, limit })
+    // First, get the consumption records for this animal
+    const { data: consumptionData, error: consumptionError } = await supabase
+      .from('feed_consumption')
+      .select(`
+        id,
+        feeding_time,
+        feeding_mode,
+        notes,
+        recorded_by,
+        quantity_kg,
+        animal_count,
+        consumption_batch_id,
+        feed_type_id,
+        appetite_score,
+    approximate_waste_kg,
+    observational_notes,
+        feed_types (
+          name,
+          category_id,
+          typical_cost_per_kg,
+          feed_type_categories (
+            name,
+            color
+          )
+        ),
+        consumption_batches (
+          batch_name
+        ),
+        feed_consumption_animals!inner (
+          id,
+          animal_id,
+          created_at
+        )
+      `)
+      .eq('farm_id', farmId)
+      .eq('feed_consumption_animals.animal_id', animalId)
+      .order('feeding_time', { ascending: false })
+      .limit(limit)
+
+    if (consumptionError) {
+      console.error('Error fetching animal consumption records:', consumptionError)
+      return []
+    }
+
+    // Get unique feed type IDs from the consumption data
+    const feedTypeIds = [...new Set(consumptionData?.map(record => record.feed_type_id) || [])]
+
+    // Get the most recent inventory cost for each feed type
+    const { data: inventoryData } = await supabase
+      .from('feed_inventory')
+      .select('feed_type_id, cost_per_kg, purchase_date')
+      .eq('farm_id', farmId)
+      .in('feed_type_id', feedTypeIds)
+      .not('cost_per_kg', 'is', null)
+      .order('purchase_date', { ascending: false })
+
+    // Create a map of feed_type_id to most recent cost
+    const costMap = new Map()
+    inventoryData?.forEach(item => {
+      if (!costMap.has(item.feed_type_id)) {
+        costMap.set(item.feed_type_id, item.cost_per_kg)
+      }
+    })
+
+
+    // Transform the data to match expected format
+    return consumptionData?.map(record => ({
+      ...record.feed_consumption_animals[0], // Get the animal consumption record
+      feed_consumption: {
+        id: record.id,
+        feeding_time: record.feeding_time,
+        feeding_mode: record.feeding_mode,
+        notes: record.notes,
+        recorded_by: record.recorded_by,
+        quantity_kg: record.quantity_kg,
+        animal_count: record.animal_count,
+        consumption_batch_id: record.consumption_batch_id,
+        feed_types: record.feed_types,
+        consumption_batches: record.consumption_batches,
+        appetite_score: record.appetite_score,
+        approximate_waste_kg: record.approximate_waste_kg,
+        observational_notes: record.observational_notes,
+        cost_per_kg: costMap.get(record.feed_type_id) || record.feed_types?.typical_cost_per_kg || 0,
+        total_cost: (costMap.get(record.feed_type_id) || record.feed_types?.typical_cost_per_kg || 0) * record.quantity_kg
+
+      }
+    })) || []
+
   } catch (error) {
     console.error('Error in getAnimalConsumptionRecords:', error)
     return []
@@ -506,12 +573,12 @@ export async function getAnimalConsumptionRecords(
 // ============ INVENTORY UPDATE HELPER ============
 
 async function updateFeedInventory(
-  farmId: string, 
-  feedTypeId: string, 
+  farmId: string,
+  feedTypeId: string,
   quantityChange: number
 ): Promise<void> {
   const supabase = await createServerSupabaseClient()
-  
+
   try {
     if (quantityChange === 0) return
 
@@ -531,21 +598,21 @@ async function updateFeedInventory(
       }
 
       let remainingToDeduct = Math.abs(quantityChange)
-      
+
       for (const item of inventoryItems) {
         if (remainingToDeduct <= 0) break
-        
+
         const deductFromThisItem = Math.min(remainingToDeduct, item.quantity_kg)
         const newQuantity = item.quantity_kg - deductFromThisItem
-        
+
         await supabase
           .from('feed_inventory')
           .update({ quantity_kg: newQuantity })
           .eq('id', item.id)
-        
+
         remainingToDeduct -= deductFromThisItem
       }
-      
+
       if (remainingToDeduct > 0) {
         console.warn(`Insufficient inventory to fulfill ${Math.abs(quantityChange)}kg consumption. ${remainingToDeduct}kg short.`)
       }
@@ -583,7 +650,7 @@ export async function getAnimalsByBatch(
   batchId: string
 ): Promise<string[]> {
   const supabase = await createServerSupabaseClient()
-  
+
   try {
     // This would use the getBatchTargetedAnimals function from feedManagementSettings
     // For now, return empty array if no batch targeting is implemented
@@ -599,7 +666,7 @@ export async function validateConsumptionEntry(
   entry: FeedConsumptionEntry
 ): Promise<{ valid: boolean; error?: string }> {
   const supabase = await createServerSupabaseClient()
-  
+
   try {
     // Validate feed type exists and has sufficient inventory
     const { data: feedType, error: feedError } = await supabase
@@ -622,11 +689,11 @@ export async function validateConsumptionEntry(
       .gt('quantity_kg', 0)
 
     const totalAvailable = inventory?.reduce((sum, item) => sum + item.quantity_kg, 0) || 0
-    
+
     if (totalAvailable < entry.quantityKg) {
-      return { 
-        valid: false, 
-        error: `Insufficient inventory. Available: ${totalAvailable}kg, Required: ${entry.quantityKg}kg` 
+      return {
+        valid: false,
+        error: `Insufficient inventory. Available: ${totalAvailable}kg, Required: ${entry.quantityKg}kg`
       }
     }
 
