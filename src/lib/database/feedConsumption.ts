@@ -142,7 +142,7 @@ export async function recordFeedConsumption(
         const animalRecords = entry.animalIds.map(animalId => ({
           consumption_id: consumptionRecord.id,
           animal_id: animalId,
-          quantity_kg: quantityPerAnimal
+          //quantity_kg: quantityPerAnimal
         }))
 
         const { error: animalError } = await supabase
@@ -641,6 +641,40 @@ async function updateFeedInventory(
     console.error('Error updating feed inventory:', error)
     // Don't throw error as this shouldn't fail the main operation
   }
+}
+
+export async function getFeedInventory(farmId: string) {
+  const supabase = await createServerSupabaseClient()
+  
+  const { data, error } = await supabase
+    .from('feed_inventory')
+    .select(`
+      *,
+      feed_types (
+        id,
+        name,
+        description,
+        category_id,
+        typical_cost_per_kg,
+        supplier,
+        nutritional_info,
+        feed_type_categories (
+          id,
+          name,
+          color,
+          description
+        )
+      )
+    `)
+    .eq('farm_id', farmId)
+    .order('purchase_date', { ascending: false })
+  
+  if (error) {
+    console.error('Error fetching feed inventory:', error)
+    return []
+  }
+  
+  return data || []
 }
 
 // ============ BATCH CONSUMPTION HELPERS ============

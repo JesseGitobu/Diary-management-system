@@ -74,17 +74,21 @@ interface FeedInventoryItem {
   notes: string
   created_at: string
   updated_at: string
-  // Include feed type information via join
+  // Include feed type information via join - UPDATED to match your schema
   feed_types: {
     id: string
     name: string
-    category: string
-    feed_category_id: string
-    protein_content: number
-    energy_content: number
+    description: string
+    category_id: string  // Changed from feed_category_id
     typical_cost_per_kg: number
     supplier: string
     nutritional_info: any
+    feed_type_categories?: {  // Made optional since it might not exist
+      id: string
+      name: string
+      color: string
+      description: string
+    }
   }
 }
 
@@ -207,18 +211,55 @@ export function AnimalFeedingRecords({ animalId, farmId, canAddRecords, feedType
 
       // Load feed types
       try {
-        const inventoryResponse = await fetch(`/api/feed/inventory`)
-        if (inventoryResponse.ok) {
-          const inventoryData = await inventoryResponse.json()
-          setFeedInventory(inventoryData.data || [])
-        } else {
-          console.warn('Failed to load feed inventory:', inventoryResponse.status)
-          setFeedInventory([])
+      console.log('🔍 Fetching feed inventory from:', `/api/farms/[farmId]/animals/[id]/feeding-records/inventory/`)
+      const inventoryResponse = await fetch(`/api/farms/${farmId}/animals/${animalId}/feeding-records/inventory/`)
+      console.log('📊 Inventory response status:', inventoryResponse.status)
+      console.log('📊 Inventory response headers:', Object.fromEntries(inventoryResponse.headers.entries()))
+      
+      if (inventoryResponse.ok) {
+        const inventoryData = await inventoryResponse.json()
+        console.log('📊 Raw inventory response:', inventoryData)
+        console.log('📊 Inventory data structure:', {
+          hasData: !!inventoryData.data,
+          dataLength: inventoryData.data?.length,
+          firstItem: inventoryData.data?.[0],
+          firstItemFeedTypes: inventoryData.data?.[0]?.feed_types
+        })
+        
+        // Check if each inventory item has the required structure
+        if (inventoryData.data && inventoryData.data.length > 0) {
+          interface InventoryItem {
+            id: string;
+            feed_type_id: string;
+            quantity_kg: number;
+            feed_types?: {
+              id: string;
+              name: string;
+            };
+          }
+
+          inventoryData.data.forEach((item: InventoryItem, index: number) => {
+            console.log(`📦 Inventory item ${index}:`, {
+              id: item.id,
+              feed_type_id: item.feed_type_id,
+              quantity_kg: item.quantity_kg,
+              hasFeedTypes: !!item.feed_types,
+              feedTypesId: item.feed_types?.id,
+              feedTypesName: item.feed_types?.name
+            })
+          })
         }
-      } catch (err) {
-        console.error('Error loading feed inventory:', err)
+        
+        setFeedInventory(inventoryData.data || [])
+      } else {
+        const errorText = await inventoryResponse.text()
+        console.error('❌ Failed to load feed inventory:', inventoryResponse.status, errorText)
         setFeedInventory([])
       }
+    } catch (err) {
+      console.error('❌ Error loading feed inventory:', err)
+      setFeedInventory([])
+    }
 
       // Still load feed types for nutrition tab display
       try {
@@ -324,60 +365,109 @@ export function AnimalFeedingRecords({ animalId, farmId, canAddRecords, feedType
 
   // Create processed feed options from inventory
   const availableFeedOptions = useMemo(() => {
-    // Group inventory by feed type
-    const groupedInventory = feedInventory.reduce((acc, item) => {
-      const feedTypeId = item.feed_type_id
-      if (!acc[feedTypeId]) {
-        acc[feedTypeId] = {
-          feedType: item.feed_types,
-          inventoryItems: [],
-          totalStock: 0,
-          averageCost: 0,
-          oldestExpiry: null
-        }
-      }
+  console.log('=== Computing availableFeedOptions ===')
+  console.log('feedInventory length:', feedInventory.length)
+  
+  if (!feedInventory || feedInventory.length === 0) {
+    console.log('No feed inventory available')
+    return []
+  }
 
-      acc[feedTypeId].inventoryItems.push(item)
-      acc[feedTypeId].totalStock += item.quantity_kg
+  interface GroupedInventoryItem {
+    feedType: {
+      id: string;
+      name: string;
+      description: string;
+      category_id: string;  // Updated
+      nutritional_info: any;
+    };
+    inventoryItems: FeedInventoryItem[];
+    totalStock: number;
+    averageCost: number;
+    oldestExpiry: Date | null;
+  }
 
-      // Calculate weighted average cost
-      interface InventoryItem {
-        quantity_kg: number;
-        cost_per_kg: number;
-      }
-
-      const totalValue: number = acc[feedTypeId].inventoryItems.reduce((sum: number, inv: InventoryItem) =>
-        sum + (inv.quantity_kg * inv.cost_per_kg), 0);
-      acc[feedTypeId].averageCost = totalValue / acc[feedTypeId].totalStock
-
-      // Track oldest expiry date
-      if (item.expiry_date) {
-        const expiryDate = new Date(item.expiry_date)
-        if (!acc[feedTypeId].oldestExpiry || expiryDate < acc[feedTypeId].oldestExpiry) {
-          acc[feedTypeId].oldestExpiry = expiryDate
-        }
-      }
-
+  // Group inventory by feed type
+  const groupedInventory = feedInventory.reduce<Record<string, GroupedInventoryItem>>((acc, item, index) => {
+    console.log(`Processing inventory item ${index}:`, item)
+    
+    const feedTypeId = item.feed_type_id
+    if (!feedTypeId) {
+      console.warn('Inventory item missing feed_type_id:', item)
       return acc
-    }, {} as Record<string, any>)
+    }
+    
+    if (!item.feed_types) {
+      console.warn('Inventory item missing feed_types:', item)
+      return acc
+    }
 
-    // Convert to array and filter out items with no stock
-    return Object.values(groupedInventory)
-      .filter((group: any) => group.totalStock > 0)
-      .map((group: any) => ({
+    if (!item.feed_types.id) {
+      console.warn('Feed type missing ID:', item.feed_types)
+      return acc
+    }
+
+    if (!acc[feedTypeId]) {
+      acc[feedTypeId] = {
+        feedType: item.feed_types,
+        inventoryItems: [],
+        totalStock: 0,
+        averageCost: 0,
+        oldestExpiry: null
+      }
+    }
+
+    acc[feedTypeId].inventoryItems.push(item)
+    acc[feedTypeId].totalStock += Number(item.quantity_kg) || 0
+
+    // Calculate weighted average cost
+    const totalValue = acc[feedTypeId].inventoryItems.reduce((sum, inv) =>
+      sum + ((Number(inv.quantity_kg) || 0) * (Number(inv.cost_per_kg) || 0)), 0)
+    
+    if (acc[feedTypeId].totalStock > 0) {
+      acc[feedTypeId].averageCost = totalValue / acc[feedTypeId].totalStock
+    }
+
+    // Track oldest expiry date
+    if (item.expiry_date) {
+      const expiryDate = new Date(item.expiry_date)
+      if (!acc[feedTypeId].oldestExpiry || expiryDate < acc[feedTypeId].oldestExpiry) {
+        acc[feedTypeId].oldestExpiry = expiryDate
+      }
+    }
+
+    return acc
+  }, {})
+
+  console.log('Grouped inventory:', groupedInventory)
+
+  // Convert to array and filter out items with no stock or invalid IDs
+  const result = Object.values(groupedInventory)
+    .filter((group) => {
+      const hasStock = group.totalStock > 0
+      const hasValidId = group.feedType && group.feedType.id
+      console.log(`Feed ${group.feedType?.name} - hasStock:`, hasStock, 'hasValidId:', hasValidId, 'totalStock:', group.totalStock)
+      return hasStock && hasValidId
+    })
+    .map((group) => {
+      const feedOption = {
         id: group.feedType.id,
         name: group.feedType.name,
-        category: group.feedType.category,
-        feed_category_id: group.feedType.feed_category_id,
+        description: group.feedType.description,
+        feed_category_id: group.feedType.category_id,  // Updated mapping
         totalStock: group.totalStock,
         averageCost: group.averageCost,
         inventoryItems: group.inventoryItems,
         oldestExpiry: group.oldestExpiry,
-        protein_content: group.feedType.protein_content,
-        energy_content: group.feedType.energy_content,
         nutritional_info: group.feedType.nutritional_info
-      }))
-  }, [feedInventory])
+      }
+      console.log('Created feed option:', feedOption)
+      return feedOption
+    })
+
+  console.log('Final availableFeedOptions result:', result)
+  return result
+}, [feedInventory])
 
   const getFilteredRecords = () => {
     const now = new Date()
@@ -468,11 +558,33 @@ export function AnimalFeedingRecords({ animalId, farmId, canAddRecords, feedType
       setSubmitting(true)
       setError(null)
 
+      console.log('=== Debug handleAddRecord ===')
+      console.log('recordForm.feed_type_id:', recordForm.feed_type_id)
+      console.log('availableFeedOptions:', availableFeedOptions)
+      console.log('availableFeedOptions length:', availableFeedOptions.length)
+
+      // Check if we have any feed options at all
+      if (availableFeedOptions.length === 0) {
+        throw new Error('No feed inventory available. Please add feed inventory before recording feeding.')
+      }
+
       // Find the selected feed option from available inventory
-      const selectedFeedOption = availableFeedOptions.find(option => option.id === recordForm.feed_type_id)
+      const selectedFeedOption = availableFeedOptions.find(option => {
+        console.log('Comparing option.id:', option.id, 'with recordForm.feed_type_id:', recordForm.feed_type_id)
+        return option.id === recordForm.feed_type_id
+      })
+
+      console.log('selectedFeedOption found:', selectedFeedOption)
 
       if (!selectedFeedOption) {
-        throw new Error('Selected feed type not found in inventory')
+        console.error('Available feed option IDs:', availableFeedOptions.map(f => f.id))
+        console.error('Searching for ID:', recordForm.feed_type_id)
+        throw new Error(`Selected feed type not found in inventory. Available options: ${availableFeedOptions.map(f => f.name).join(', ')}`)
+      }
+
+      // Validate feed type ID is not a fallback value
+      if (recordForm.feed_type_id.startsWith('feed-') || recordForm.feed_type_id === 'no-inventory') {
+        throw new Error('Invalid feed selection. Please select a valid feed type from the list.')
       }
 
       // Check if enough stock is available
@@ -502,6 +614,8 @@ export function AnimalFeedingRecords({ animalId, farmId, canAddRecords, feedType
           notes: recordForm.notes || undefined
         }]
       }
+
+      console.log('Sending newRecordData:', newRecordData)
 
       const response = await fetch('/api/feed/consumption', {
         method: 'POST',
@@ -1409,48 +1523,57 @@ export function AnimalFeedingRecords({ animalId, farmId, canAddRecords, feedType
                     <SelectValue placeholder="Select feed type from inventory" />
                   </SelectTrigger>
                   <SelectContent>
-                    {availableFeedOptions.map((feed, index) => (
-                      <SelectItem
-                        key={feed.id || `feed-${index}`}
-                        value={feed.id || `feed-${index}`}
-                      >
-                        <div className="flex items-center space-x-2 w-full">
-                          <div className="flex-1">
-                            <div className="flex items-center space-x-2">
-                              <span className="font-medium">{feed.name}</span>
-                              {feed.feed_category_id && localFeedTypeCategories.find(cat => cat.id === feed.feed_category_id) && (
-                                <div
-                                  className="w-3 h-3 rounded-full"
-                                  style={{
-                                    backgroundColor: localFeedTypeCategories.find(cat => cat.id === feed.feed_category_id)?.color || '#gray'
-                                  }}
-                                />
-                              )}
-                              <Badge variant="outline" className="text-xs">
-                                {feed.totalStock.toFixed(1)}kg available
-                              </Badge>
+                    {availableFeedOptions.length > 0 ? (
+                      availableFeedOptions.map((feed, index) => {
+                        // Only use real feed IDs, not fallback values
+                        if (!feed.id) {
+                          console.warn('Feed option missing ID:', feed)
+                          return null
+                        }
+
+                        return (
+                          <SelectItem
+                            key={feed.id}
+                            value={feed.id}
+                          >
+                            <div className="flex items-center space-x-2 w-full">
+                              <div className="flex-1">
+                                <div className="flex items-center space-x-2">
+                                  <span className="font-medium">{feed.name}</span>
+                                  {feed.feed_category_id && localFeedTypeCategories.find(cat => cat.id === feed.feed_category_id) && (
+                                    <div
+                                      className="w-3 h-3 rounded-full"
+                                      style={{
+                                        backgroundColor: localFeedTypeCategories.find(cat => cat.id === feed.feed_category_id)?.color || '#gray'
+                                      }}
+                                    />
+                                  )}
+                                  <Badge variant="outline" className="text-xs">
+                                    {feed.totalStock.toFixed(1)}kg available
+                                  </Badge>
+                                </div>
+                                <div className="flex items-center space-x-2 text-xs text-gray-500">
+                                  <span>Avg: ${feed.averageCost.toFixed(2)}/kg</span>
+                                  {feed.oldestExpiry && (
+                                    <span className={cn(
+                                      "px-1.5 py-0.5 rounded text-xs font-medium",
+                                      isExpired(feed.oldestExpiry) ? "bg-red-100 text-red-700" :
+                                        isExpiringSoon(feed.oldestExpiry) ? "bg-yellow-100 text-yellow-700" :
+                                          "bg-green-100 text-green-700"
+                                    )}>
+                                      {isExpired(feed.oldestExpiry) ? "Expired" :
+                                        isExpiringSoon(feed.oldestExpiry) ? "Expiring Soon" :
+                                          "Fresh"
+                                      }
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
                             </div>
-                            <div className="flex items-center space-x-2 text-xs text-gray-500">
-                              <span>Avg: ${feed.averageCost.toFixed(2)}/kg</span>
-                              {feed.oldestExpiry && (
-                                <span className={cn(
-                                  "px-1.5 py-0.5 rounded text-xs font-medium",
-                                  isExpired(feed.oldestExpiry) ? "bg-red-100 text-red-700" :
-                                    isExpiringSoon(feed.oldestExpiry) ? "bg-yellow-100 text-yellow-700" :
-                                      "bg-green-100 text-green-700"
-                                )}>
-                                  {isExpired(feed.oldestExpiry) ? "Expired" :
-                                    isExpiringSoon(feed.oldestExpiry) ? "Expiring Soon" :
-                                      "Fresh"
-                                  }
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </SelectItem>
-                    ))}
-                    {availableFeedOptions.length === 0 && (
+                          </SelectItem>
+                        )
+                      }).filter(Boolean) // Remove null entries
+                    ) : (
                       <SelectItem key="no-inventory" value="no-inventory" disabled>
                         No feed inventory available
                       </SelectItem>
