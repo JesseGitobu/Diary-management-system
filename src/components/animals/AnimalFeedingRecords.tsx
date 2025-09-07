@@ -14,6 +14,7 @@ import { Alert, AlertDescription } from '@/components/ui/Alert'
 import { Progress } from '@/components/ui/Progress'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
+import { ScheduleTabContent } from '@/components/animals/ScheduleTabContent'
 import { cn } from '@/lib/utils/cn'
 import {
   Plus,
@@ -35,7 +36,8 @@ import {
   FileText,
   Leaf,
   Droplet,
-  Zap
+  Zap,
+  AlertTriangle
 } from 'lucide-react'
 import { format, parseISO, startOfWeek, endOfWeek, subDays, addDays } from 'date-fns'
 
@@ -211,55 +213,55 @@ export function AnimalFeedingRecords({ animalId, farmId, canAddRecords, feedType
 
       // Load feed types
       try {
-      console.log('🔍 Fetching feed inventory from:', `/api/farms/[farmId]/animals/[id]/feeding-records/inventory/`)
-      const inventoryResponse = await fetch(`/api/farms/${farmId}/animals/${animalId}/feeding-records/inventory/`)
-      console.log('📊 Inventory response status:', inventoryResponse.status)
-      console.log('📊 Inventory response headers:', Object.fromEntries(inventoryResponse.headers.entries()))
-      
-      if (inventoryResponse.ok) {
-        const inventoryData = await inventoryResponse.json()
-        console.log('📊 Raw inventory response:', inventoryData)
-        console.log('📊 Inventory data structure:', {
-          hasData: !!inventoryData.data,
-          dataLength: inventoryData.data?.length,
-          firstItem: inventoryData.data?.[0],
-          firstItemFeedTypes: inventoryData.data?.[0]?.feed_types
-        })
-        
-        // Check if each inventory item has the required structure
-        if (inventoryData.data && inventoryData.data.length > 0) {
-          interface InventoryItem {
-            id: string;
-            feed_type_id: string;
-            quantity_kg: number;
-            feed_types?: {
+        console.log('🔍 Fetching feed inventory from:', `/api/farms/[farmId]/animals/[id]/feeding-records/inventory/`)
+        const inventoryResponse = await fetch(`/api/farms/${farmId}/animals/${animalId}/feeding-records/inventory/`)
+        console.log('📊 Inventory response status:', inventoryResponse.status)
+        console.log('📊 Inventory response headers:', Object.fromEntries(inventoryResponse.headers.entries()))
+
+        if (inventoryResponse.ok) {
+          const inventoryData = await inventoryResponse.json()
+          console.log('📊 Raw inventory response:', inventoryData)
+          console.log('📊 Inventory data structure:', {
+            hasData: !!inventoryData.data,
+            dataLength: inventoryData.data?.length,
+            firstItem: inventoryData.data?.[0],
+            firstItemFeedTypes: inventoryData.data?.[0]?.feed_types
+          })
+
+          // Check if each inventory item has the required structure
+          if (inventoryData.data && inventoryData.data.length > 0) {
+            interface InventoryItem {
               id: string;
-              name: string;
-            };
+              feed_type_id: string;
+              quantity_kg: number;
+              feed_types?: {
+                id: string;
+                name: string;
+              };
+            }
+
+            inventoryData.data.forEach((item: InventoryItem, index: number) => {
+              console.log(`📦 Inventory item ${index}:`, {
+                id: item.id,
+                feed_type_id: item.feed_type_id,
+                quantity_kg: item.quantity_kg,
+                hasFeedTypes: !!item.feed_types,
+                feedTypesId: item.feed_types?.id,
+                feedTypesName: item.feed_types?.name
+              })
+            })
           }
 
-          inventoryData.data.forEach((item: InventoryItem, index: number) => {
-            console.log(`📦 Inventory item ${index}:`, {
-              id: item.id,
-              feed_type_id: item.feed_type_id,
-              quantity_kg: item.quantity_kg,
-              hasFeedTypes: !!item.feed_types,
-              feedTypesId: item.feed_types?.id,
-              feedTypesName: item.feed_types?.name
-            })
-          })
+          setFeedInventory(inventoryData.data || [])
+        } else {
+          const errorText = await inventoryResponse.text()
+          console.error('❌ Failed to load feed inventory:', inventoryResponse.status, errorText)
+          setFeedInventory([])
         }
-        
-        setFeedInventory(inventoryData.data || [])
-      } else {
-        const errorText = await inventoryResponse.text()
-        console.error('❌ Failed to load feed inventory:', inventoryResponse.status, errorText)
+      } catch (err) {
+        console.error('❌ Error loading feed inventory:', err)
         setFeedInventory([])
       }
-    } catch (err) {
-      console.error('❌ Error loading feed inventory:', err)
-      setFeedInventory([])
-    }
 
       // Still load feed types for nutrition tab display
       try {
@@ -365,109 +367,109 @@ export function AnimalFeedingRecords({ animalId, farmId, canAddRecords, feedType
 
   // Create processed feed options from inventory
   const availableFeedOptions = useMemo(() => {
-  console.log('=== Computing availableFeedOptions ===')
-  console.log('feedInventory length:', feedInventory.length)
-  
-  if (!feedInventory || feedInventory.length === 0) {
-    console.log('No feed inventory available')
-    return []
-  }
+    console.log('=== Computing availableFeedOptions ===')
+    console.log('feedInventory length:', feedInventory.length)
 
-  interface GroupedInventoryItem {
-    feedType: {
-      id: string;
-      name: string;
-      description: string;
-      category_id: string;  // Updated
-      nutritional_info: any;
-    };
-    inventoryItems: FeedInventoryItem[];
-    totalStock: number;
-    averageCost: number;
-    oldestExpiry: Date | null;
-  }
-
-  // Group inventory by feed type
-  const groupedInventory = feedInventory.reduce<Record<string, GroupedInventoryItem>>((acc, item, index) => {
-    console.log(`Processing inventory item ${index}:`, item)
-    
-    const feedTypeId = item.feed_type_id
-    if (!feedTypeId) {
-      console.warn('Inventory item missing feed_type_id:', item)
-      return acc
-    }
-    
-    if (!item.feed_types) {
-      console.warn('Inventory item missing feed_types:', item)
-      return acc
+    if (!feedInventory || feedInventory.length === 0) {
+      console.log('No feed inventory available')
+      return []
     }
 
-    if (!item.feed_types.id) {
-      console.warn('Feed type missing ID:', item.feed_types)
-      return acc
+    interface GroupedInventoryItem {
+      feedType: {
+        id: string;
+        name: string;
+        description: string;
+        category_id: string;  // Updated
+        nutritional_info: any;
+      };
+      inventoryItems: FeedInventoryItem[];
+      totalStock: number;
+      averageCost: number;
+      oldestExpiry: Date | null;
     }
 
-    if (!acc[feedTypeId]) {
-      acc[feedTypeId] = {
-        feedType: item.feed_types,
-        inventoryItems: [],
-        totalStock: 0,
-        averageCost: 0,
-        oldestExpiry: null
+    // Group inventory by feed type
+    const groupedInventory = feedInventory.reduce<Record<string, GroupedInventoryItem>>((acc, item, index) => {
+      console.log(`Processing inventory item ${index}:`, item)
+
+      const feedTypeId = item.feed_type_id
+      if (!feedTypeId) {
+        console.warn('Inventory item missing feed_type_id:', item)
+        return acc
       }
-    }
 
-    acc[feedTypeId].inventoryItems.push(item)
-    acc[feedTypeId].totalStock += Number(item.quantity_kg) || 0
-
-    // Calculate weighted average cost
-    const totalValue = acc[feedTypeId].inventoryItems.reduce((sum, inv) =>
-      sum + ((Number(inv.quantity_kg) || 0) * (Number(inv.cost_per_kg) || 0)), 0)
-    
-    if (acc[feedTypeId].totalStock > 0) {
-      acc[feedTypeId].averageCost = totalValue / acc[feedTypeId].totalStock
-    }
-
-    // Track oldest expiry date
-    if (item.expiry_date) {
-      const expiryDate = new Date(item.expiry_date)
-      if (!acc[feedTypeId].oldestExpiry || expiryDate < acc[feedTypeId].oldestExpiry) {
-        acc[feedTypeId].oldestExpiry = expiryDate
+      if (!item.feed_types) {
+        console.warn('Inventory item missing feed_types:', item)
+        return acc
       }
-    }
 
-    return acc
-  }, {})
-
-  console.log('Grouped inventory:', groupedInventory)
-
-  // Convert to array and filter out items with no stock or invalid IDs
-  const result = Object.values(groupedInventory)
-    .filter((group) => {
-      const hasStock = group.totalStock > 0
-      const hasValidId = group.feedType && group.feedType.id
-      console.log(`Feed ${group.feedType?.name} - hasStock:`, hasStock, 'hasValidId:', hasValidId, 'totalStock:', group.totalStock)
-      return hasStock && hasValidId
-    })
-    .map((group) => {
-      const feedOption = {
-        id: group.feedType.id,
-        name: group.feedType.name,
-        description: group.feedType.description,
-        feed_category_id: group.feedType.category_id,  // Updated mapping
-        totalStock: group.totalStock,
-        averageCost: group.averageCost,
-        inventoryItems: group.inventoryItems,
-        oldestExpiry: group.oldestExpiry,
-        nutritional_info: group.feedType.nutritional_info
+      if (!item.feed_types.id) {
+        console.warn('Feed type missing ID:', item.feed_types)
+        return acc
       }
-      console.log('Created feed option:', feedOption)
-      return feedOption
-    })
 
-  console.log('Final availableFeedOptions result:', result)
-  return result
-}, [feedInventory])
+      if (!acc[feedTypeId]) {
+        acc[feedTypeId] = {
+          feedType: item.feed_types,
+          inventoryItems: [],
+          totalStock: 0,
+          averageCost: 0,
+          oldestExpiry: null
+        }
+      }
+
+      acc[feedTypeId].inventoryItems.push(item)
+      acc[feedTypeId].totalStock += Number(item.quantity_kg) || 0
+
+      // Calculate weighted average cost
+      const totalValue = acc[feedTypeId].inventoryItems.reduce((sum, inv) =>
+        sum + ((Number(inv.quantity_kg) || 0) * (Number(inv.cost_per_kg) || 0)), 0)
+
+      if (acc[feedTypeId].totalStock > 0) {
+        acc[feedTypeId].averageCost = totalValue / acc[feedTypeId].totalStock
+      }
+
+      // Track oldest expiry date
+      if (item.expiry_date) {
+        const expiryDate = new Date(item.expiry_date)
+        if (!acc[feedTypeId].oldestExpiry || expiryDate < acc[feedTypeId].oldestExpiry) {
+          acc[feedTypeId].oldestExpiry = expiryDate
+        }
+      }
+
+      return acc
+    }, {})
+
+    console.log('Grouped inventory:', groupedInventory)
+
+    // Convert to array and filter out items with no stock or invalid IDs
+    const result = Object.values(groupedInventory)
+      .filter((group) => {
+        const hasStock = group.totalStock > 0
+        const hasValidId = group.feedType && group.feedType.id
+        console.log(`Feed ${group.feedType?.name} - hasStock:`, hasStock, 'hasValidId:', hasValidId, 'totalStock:', group.totalStock)
+        return hasStock && hasValidId
+      })
+      .map((group) => {
+        const feedOption = {
+          id: group.feedType.id,
+          name: group.feedType.name,
+          description: group.feedType.description,
+          feed_category_id: group.feedType.category_id,  // Updated mapping
+          totalStock: group.totalStock,
+          averageCost: group.averageCost,
+          inventoryItems: group.inventoryItems,
+          oldestExpiry: group.oldestExpiry,
+          nutritional_info: group.feedType.nutritional_info
+        }
+        console.log('Created feed option:', feedOption)
+        return feedOption
+      })
+
+    console.log('Final availableFeedOptions result:', result)
+    return result
+  }, [feedInventory])
 
   const getFilteredRecords = () => {
     const now = new Date()
@@ -549,97 +551,95 @@ export function AnimalFeedingRecords({ animalId, farmId, canAddRecords, feedType
   }
 
   const handleAddRecord = async () => {
-    if (!recordForm.feed_type_id || !recordForm.quantity_kg) {
-      setError('Please fill in all required fields')
-      return
-    }
-
-    try {
-      setSubmitting(true)
-      setError(null)
-
-      console.log('=== Debug handleAddRecord ===')
-      console.log('recordForm.feed_type_id:', recordForm.feed_type_id)
-      console.log('availableFeedOptions:', availableFeedOptions)
-      console.log('availableFeedOptions length:', availableFeedOptions.length)
-
-      // Check if we have any feed options at all
-      if (availableFeedOptions.length === 0) {
-        throw new Error('No feed inventory available. Please add feed inventory before recording feeding.')
-      }
-
-      // Find the selected feed option from available inventory
-      const selectedFeedOption = availableFeedOptions.find(option => {
-        console.log('Comparing option.id:', option.id, 'with recordForm.feed_type_id:', recordForm.feed_type_id)
-        return option.id === recordForm.feed_type_id
-      })
-
-      console.log('selectedFeedOption found:', selectedFeedOption)
-
-      if (!selectedFeedOption) {
-        console.error('Available feed option IDs:', availableFeedOptions.map(f => f.id))
-        console.error('Searching for ID:', recordForm.feed_type_id)
-        throw new Error(`Selected feed type not found in inventory. Available options: ${availableFeedOptions.map(f => f.name).join(', ')}`)
-      }
-
-      // Validate feed type ID is not a fallback value
-      if (recordForm.feed_type_id.startsWith('feed-') || recordForm.feed_type_id === 'no-inventory') {
-        throw new Error('Invalid feed selection. Please select a valid feed type from the list.')
-      }
-
-      // Check if enough stock is available
-      const requestedQuantity = Number(recordForm.quantity_kg)
-      if (requestedQuantity > selectedFeedOption.totalStock) {
-        throw new Error(`Insufficient stock. Only ${selectedFeedOption.totalStock}kg available`)
-      }
-
-      // Create proper timestamp from feeding time
-      const feedingDateTime = new Date(`${recordForm.feeding_date}T${recordForm.feeding_time}`)
-
-      // Use provided cost or average inventory cost
-      const costPerKg = recordForm.cost_per_kg ?
-        Number(recordForm.cost_per_kg) :
-        selectedFeedOption.averageCost
-
-      const newRecordData = {
-        farmId,
-        feedingTime: feedingDateTime.toISOString(),
-        mode: recordForm.feeding_mode,
-        batchId: null,
-        entries: [{
-          feedTypeId: recordForm.feed_type_id,
-          quantityKg: requestedQuantity,
-          animalIds: [animalId],
-          costPerKg: costPerKg,
-          notes: recordForm.notes || undefined
-        }]
-      }
-
-      console.log('Sending newRecordData:', newRecordData)
-
-      const response = await fetch('/api/feed/consumption', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newRecordData)
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to record feeding')
-      }
-
-      // Reload feeding data
-      await loadFeedingData()
-      setShowAddRecordModal(false)
-      resetRecordForm()
-
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add feeding record')
-      console.error('Error adding feeding record:', err)
-    } finally {
-      setSubmitting(false)
-    }
+  if (!recordForm.feed_type_id || !recordForm.quantity_kg) {
+    setError('Please fill in all required fields')
+    return
   }
+
+  try {
+    setSubmitting(true)
+    setError(null)
+
+    // Create proper timestamp from feeding time
+    const feedingDateTime = new Date(`${recordForm.feeding_date}T${recordForm.feeding_time}`)
+    const now = new Date()
+    const timeDifferenceHours = (feedingDateTime.getTime() - now.getTime()) / (1000 * 60 * 60)
+
+    // Validate feed selection and prepare data
+    const selectedFeedOption = availableFeedOptions.find(option => option.id === recordForm.feed_type_id)
+    if (!selectedFeedOption) {
+      throw new Error('Selected feed type not found in inventory')
+    }
+
+    const requestedQuantity = Number(recordForm.quantity_kg)
+    if (requestedQuantity > selectedFeedOption.totalStock) {
+      throw new Error(`Insufficient stock. Only ${selectedFeedOption.totalStock}kg available`)
+    }
+
+    const costPerKg = recordForm.cost_per_kg ? Number(recordForm.cost_per_kg) : selectedFeedOption.averageCost
+
+    const newRecordData = {
+      farmId,
+      feedingTime: feedingDateTime.toISOString(),
+      mode: recordForm.feeding_mode,
+      batchId: null,
+      entries: [{
+        feedTypeId: recordForm.feed_type_id,
+        quantityKg: requestedQuantity,
+        animalIds: [animalId],
+        costPerKg: costPerKg,
+        notes: recordForm.notes || undefined
+      }]
+    }
+
+    // Determine if this should be scheduled or immediate
+    let responseMessage = ''
+    if (timeDifferenceHours > 1) {
+      responseMessage = 'Feeding scheduled successfully'
+    } else {
+      responseMessage = 'Feeding recorded successfully'
+    }
+
+    const response = await fetch('/api/feed/consumption', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newRecordData)
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.error || 'Failed to record feeding')
+    }
+
+    const result = await response.json()
+    
+    // Show different messages based on type
+    if (result.type === 'scheduled') {
+      // Show scheduled message and switch to schedule tab
+      setActiveTab('schedule')
+      // Could show a toast notification here
+    }
+
+    // Reload feeding data
+    await loadFeedingData()
+    setShowAddRecordModal(false)
+    resetRecordForm()
+
+  } catch (err) {
+    setError(err instanceof Error ? err.message : 'Failed to add feeding record')
+    console.error('Error adding feeding record:', err)
+  } finally {
+    setSubmitting(false)
+  }
+}
+
+  // Update the tabs configuration to handle scheduling callback
+  const handleFeedingCompleted = () => {
+  // Reload feeding data when a scheduled feeding is completed
+  loadFeedingData()
+  // Switch to overview tab to show the new record
+  setActiveTab('overview')
+}
 
   // Helper function to check if inventory is expiring soon
   const isExpiringSoon = (expiryDate: Date | null) => {
@@ -1173,61 +1173,12 @@ export function AnimalFeedingRecords({ animalId, farmId, canAddRecords, feedType
         </TabsContent>
 
         <TabsContent value="schedule" className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h4 className="font-medium">Active Feeding Schedules</h4>
-            <div className="text-sm text-gray-500">
-              Farm-wide schedules affecting this animal
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            {feedingSchedules.map((schedule) => (
-              <Card key={schedule.id}>
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <h5 className="font-medium">{schedule.feed_name}</h5>
-                      <p className="text-sm text-gray-600">
-                        {schedule.scheduled_time} • {schedule.frequency}
-                      </p>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Badge className={schedule.is_active ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"}>
-                        {schedule.is_active ? "Active" : "Inactive"}
-                      </Badge>
-                    </div>
-                  </div>
-
-                  <div className={cn("grid gap-3", isMobile ? "grid-cols-2" : "grid-cols-3")}>
-                    <div>
-                      <p className="text-xs font-medium text-gray-700">Planned Quantity</p>
-                      <p className="text-sm">{schedule.quantity_kg}kg</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-medium text-gray-700">Schedule Type</p>
-                      <p className="text-sm capitalize">{schedule.frequency}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-medium text-gray-700">Status</p>
-                      <p className="text-sm">Farm Schedule</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-
-            {feedingSchedules.length === 0 && (
-              <Card>
-                <CardContent className="text-center py-8">
-                  <Clock className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-                  <p className="text-gray-500 mb-4">No active schedules found</p>
-                  <p className="text-sm text-gray-400">
-                    This animal is not included in any current feeding schedules.
-                  </p>
-                </CardContent>
-              </Card>
-            )}
-          </div>
+          <ScheduleTabContent
+            animalId={animalId}
+            farmId={farmId}
+            canAddRecords={canAddRecords}
+            onFeedingCompleted={handleFeedingCompleted}
+          />
         </TabsContent>
 
         <TabsContent value="nutrition" className="space-y-4">
@@ -1503,8 +1454,42 @@ export function AnimalFeedingRecords({ animalId, farmId, canAddRecords, feedType
                     onChange={(e) => handleRecordFormChange('feeding_time', e.target.value)}
                     autoComplete="off"
                   />
+                  
                 </div>
               </div>
+
+              {(() => {
+                    if (!recordForm.feeding_date || !recordForm.feeding_time) return null
+
+                    const feedingDateTime = new Date(`${recordForm.feeding_date}T${recordForm.feeding_time}`)
+                    const now = new Date()
+                    const timeDifferenceHours = (feedingDateTime.getTime() - now.getTime()) / (1000 * 60 * 60)
+
+                    if (timeDifferenceHours > 1) {
+                      return (
+                        <Alert className="border-blue-200 bg-blue-50">
+                          <Clock className="h-4 w-4 text-blue-600" />
+                          <AlertDescription className="text-blue-800">
+                            <strong>Scheduled Feeding:</strong> This feeding is more than 1 hour in the future and will be added to your schedule.
+                            You can confirm it when the feeding time approaches.
+                          </AlertDescription>
+                        </Alert>
+                      )
+                    } else if (timeDifferenceHours < 0) {
+                      const hoursLate = Math.abs(timeDifferenceHours)
+                      return (
+                        <Alert className="border-orange-200 bg-orange-50">
+                          <AlertTriangle className="h-4 w-4 text-orange-600" />
+                          <AlertDescription className="text-orange-800">
+                            <strong>Past Feeding:</strong> This feeding time is {hoursLate.toFixed(1)} hours ago.
+                            It will be recorded as a historical feeding.
+                          </AlertDescription>
+                        </Alert>
+                      )
+                    }
+
+                    return null
+                  })()}
 
               <div>
                 <Label htmlFor="feed_type_id">Feed Type *</Label>

@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
+import { format } from 'date-fns'
 import {
   recordFeedConsumption,
   getFeedConsumptionRecords,
@@ -9,6 +10,7 @@ import {
   validateConsumptionEntry,
   ConsumptionData
 } from '@/lib/database/feedConsumption'
+import { createScheduledFeeding } from '@/lib/database/scheduledFeedings'
 
 // GET feed consumption records
 export async function GET(request: NextRequest) {
@@ -45,7 +47,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST create new feed consumption record
+// POST create new feed consumption record or scheduled feeding
 export async function POST(request: NextRequest) {
   try {
     const user = await getCurrentUser()
@@ -58,7 +60,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
     }
 
-    // Check permissions - allow farm_owner, farm_manager, worker
+    // Check permissions
     if (!['farm_owner', 'farm_manager', 'worker'].includes(userRole.role_type)) {
       return NextResponse.json({ error: 'Insufficient permissions to record feed consumption' }, { status: 403 })
     }
@@ -66,7 +68,12 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     console.log('Received consumption request:', body)
 
-    // Validate required fields
+    // Calculate time difference between feeding time and now
+    const now = new Date()
+    const feedingDate = new Date(body.feedingTime || now)
+    const timeDifferenceHours = (feedingDate.getTime() - now.getTime()) / (1000 * 60 * 60)
+
+    // Validate required fields (existing validation code...)
     if (!body.entries || !Array.isArray(body.entries) || body.entries.length === 0) {
       return NextResponse.json({ 
         error: 'Missing required field: entries (must be non-empty array)' 
@@ -79,7 +86,7 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Validate each entry
+    // Validate each entry (existing validation...)
     for (let i = 0; i < body.entries.length; i++) {
       const entry = body.entries[i]
       
@@ -95,7 +102,7 @@ export async function POST(request: NextRequest) {
         }, { status: 400 })
       }
 
-      // Mode-specific validation
+      // Mode-specific validation...
       if (body.mode === 'individual') {
         if (!entry.animalIds || !Array.isArray(entry.animalIds) || entry.animalIds.length === 0) {
           return NextResponse.json({ 
@@ -108,7 +115,6 @@ export async function POST(request: NextRequest) {
             error: `Entry ${i + 1}: Batch mode requires animalCount greater than 0` 
           }, { status: 400 })
         }
-        // For batch mode, animalIds should be provided to populate feed_consumption_animals table
         if (!entry.animalIds || !Array.isArray(entry.animalIds) || entry.animalIds.length === 0) {
           return NextResponse.json({ 
             error: `Entry ${i + 1}: Batch mode requires animalIds array to track individual animal consumption` 
@@ -125,31 +131,52 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Prepare consumption data
-    const consumptionData: ConsumptionData = {
-      farmId: userRole.farm_id,
-      feedingTime: body.feedingTime || new Date().toISOString(),
-      mode: body.mode,
-      batchId: body.batchId || null,
-      entries: body.entries,
-      recordedBy: user.email || 'Unknown',
-      globalNotes: body.notes
+    // SCHEDULING LOGIC: If feeding time is more than 1 hour in the future, create scheduled feeding
+    if (timeDifferenceHours > 1) {
+      // Import the scheduled feeding function
+      const { createScheduledFeeding } = await import('@/lib/database/scheduledFeedings')
+      
+      const result = await createScheduledFeeding(body, user.id)
+      
+      if (!result.success) {
+        return NextResponse.json({ error: result.error }, { status: 500 })
+      }
+
+      console.log('Successfully created scheduled feeding:', result.data)
+
+      return NextResponse.json({ 
+        success: true,
+        records: result.data,
+        type: 'scheduled',
+        message: `Successfully scheduled ${result.data.length} feeding(s) for ${format(feedingDate, 'MMM dd, HH:mm')}`
+      }, { status: 201 })
+    } else {
+      // IMMEDIATE FEEDING: Record consumption using existing function
+      const consumptionData: ConsumptionData = {
+        farmId: userRole.farm_id,
+        feedingTime: body.feedingTime || new Date().toISOString(),
+        mode: body.mode,
+        batchId: body.batchId || null,
+        entries: body.entries,
+        recordedBy: user.email || 'Unknown',
+        globalNotes: body.notes
+      }
+
+      const result = await recordFeedConsumption(consumptionData, user.id)
+
+      if (!result.success) {
+        return NextResponse.json({ error: result.error }, { status: 500 })
+      }
+
+      console.log('Successfully recorded consumption:', result.data)
+
+      return NextResponse.json({ 
+        success: true,
+        records: result.data,
+        type: 'immediate',
+        message: `Successfully recorded ${result.data.length} consumption record(s)`
+      }, { status: 201 })
     }
-
-    // Record consumption using database function
-    const result = await recordFeedConsumption(consumptionData, user.id)
-
-    if (!result.success) {
-      return NextResponse.json({ error: result.error }, { status: 500 })
-    }
-
-    console.log('Successfully recorded consumption:', result.data)
-
-    return NextResponse.json({ 
-      success: true,
-      records: result.data,
-      message: `Successfully recorded ${result.data.length} consumption record(s)`
-    }, { status: 201 })
 
   } catch (error) {
     console.error('Feed consumption POST API error:', error)
