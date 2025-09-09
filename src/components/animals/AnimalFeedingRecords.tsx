@@ -37,7 +37,9 @@ import {
   Leaf,
   Droplet,
   Zap,
-  AlertTriangle
+  AlertTriangle,
+  Package,
+  Info
 } from 'lucide-react'
 import { format, parseISO, startOfWeek, endOfWeek, subDays, addDays } from 'date-fns'
 
@@ -128,6 +130,43 @@ interface FeedTypeCategory {
   updated_at: string
 }
 
+interface AnimalDetails {
+  id: string
+  tag_number: string
+  name: string | null
+  birth_date: string | null
+  gender: string | null
+  production_status: string | null
+  health_status: string | null
+  weight: number | null
+  age_days: number | null
+}
+
+interface AnimalCategory {
+  id: string
+  name: string
+  description: string | null
+  min_age_days: number | null
+  max_age_days: number | null
+  gender: string | null
+  characteristics: any
+}
+
+interface SuitableFeedType {
+  id: string
+  name: string
+  description: string | null
+  typical_cost_per_kg: number
+  nutritional_info: any
+  supplier: string | null
+  category_name: string | null
+  category_color: string | null
+  available_stock: number
+  total_inventory_value: number
+  inventory_items: any[]
+  animal_categories: string[]
+}
+
 interface AnimalFeedingRecordsProps {
   animalId: string
   farmId: string
@@ -161,6 +200,12 @@ export function AnimalFeedingRecords({ animalId, farmId, canAddRecords, feedType
   const [showEditModal, setShowEditModal] = useState(false)
   const [editingRecord, setEditingRecord] = useState<FeedingRecord | null>(null)
 
+  const [animalDetails, setAnimalDetails] = useState<AnimalDetails | null>(null)
+  const [animalCategory, setAnimalCategory] = useState<AnimalCategory | null>(null)
+  const [suitableFeedTypes, setSuitableFeedTypes] = useState<SuitableFeedType[]>([])
+  const [loadingNutrition, setLoadingNutrition] = useState(false)
+
+
   // Form states
   const [recordForm, setRecordForm] = useState({
     feeding_date: format(new Date(), 'yyyy-MM-dd'),
@@ -184,8 +229,302 @@ export function AnimalFeedingRecords({ animalId, farmId, canAddRecords, feedType
   useEffect(() => {
     if (animalId && farmId) {
       loadFeedingData()
+      loadAnimalDetailsAndNutrition()
     }
   }, [animalId, farmId])
+
+  const loadAnimalDetailsAndNutrition = async () => {
+  setLoadingNutrition(true)
+  console.log('🔍 Starting loadAnimalDetailsAndNutrition for:', { animalId, farmId })
+
+  try {
+    // 1. Load animal details
+    console.log('📊 Fetching animal details from:', `/api/animals/${animalId}`)
+    const animalResponse = await fetch(`/api/animals/${animalId}`)
+
+    console.log('📊 Animal response status:', animalResponse.status)
+    if (!animalResponse.ok) {
+      const errorText = await animalResponse.text()
+      console.error('❌ Failed to load animal details:', animalResponse.status, errorText)
+      throw new Error(`Failed to load animal details: ${animalResponse.status}`)
+    }
+
+    const animalData = await animalResponse.json()
+    console.log('📊 Raw animal response:', animalData)
+    
+    // Handle multiple response formats: { animal: {...} }, { data: {...} }, or direct object
+    const animal = animalData.animal || animalData.data || animalData
+    console.log('📊 Processed animal data:', animal)
+    
+    // Validate required fields with better error message
+    if (!animal) {
+      console.error('❌ No animal data found in response:', animalData)
+      throw new Error('No animal data found in API response')
+    }
+    
+    if (!animal.id) {
+      console.error('❌ Animal data missing ID field:', animal)
+      throw new Error('Animal data is missing required ID field')
+    }
+    
+    // Log all available fields for debugging
+    console.log('📊 Available animal fields:', Object.keys(animal))
+    
+    setAnimalDetails(animal)
+
+    // Calculate age in days if birth_date exists
+    let ageDays = null
+    if (animal.birth_date) {
+      try {
+        const birthDate = new Date(animal.birth_date)
+        const now = new Date()
+        
+        // Validate birth date
+        if (isNaN(birthDate.getTime())) {
+          console.warn('📊 Invalid birth date:', animal.birth_date)
+        } else {
+          ageDays = Math.floor((now.getTime() - birthDate.getTime()) / (1000 * 60 * 60 * 24))
+          console.log('📊 Calculated age in days:', ageDays)
+        }
+      } catch (error) {
+        console.warn('📊 Error calculating age:', error)
+      }
+    } else {
+      console.log('📊 No birth_date provided for age calculation')
+    }
+
+    // 2. Find matching animal category
+    console.log('📊 Fetching animal categories from:', `/api/farms/${farmId}/feed-management/animal-categories`)
+    const categoriesResponse = await fetch(`/api/farms/${farmId}/feed-management/animal-categories`)
+
+    console.log('📊 Categories response status:', categoriesResponse.status)
+    if (!categoriesResponse.ok) {
+      const errorText = await categoriesResponse.text()
+      console.error('❌ Failed to load animal categories:', categoriesResponse.status, errorText)
+      // Don't throw here - continue without categories
+      console.log('📊 Continuing without categories, will show all feed types')
+      await loadSuitableFeedTypes(null)
+      return
+    }
+
+    const categoriesData = await categoriesResponse.json()
+    console.log('📊 Categories data received:', categoriesData)
+    const categories = categoriesData.data || categoriesData || []
+    console.log('📊 Available categories:', categories.length)
+
+    // Debug: Log animal matching criteria
+    console.log('📊 Animal matching criteria:', {
+      gender: animal.gender,
+      production_status: animal.production_status,
+      age_days: ageDays,
+      birth_date: animal.birth_date
+    })
+
+    // Debug: Log each category
+    categories.forEach((cat: AnimalCategory, index: number) => {
+      console.log(`📊 Category ${index}:`, {
+        id: cat.id,
+        name: cat.name,
+        gender: cat.gender,
+        min_age_days: cat.min_age_days,
+        max_age_days: cat.max_age_days,
+        characteristics: cat.characteristics
+      })
+    })
+
+    // Find the best matching category for this animal
+    const matchingCategory = findBestMatchingCategory(animal, categories, ageDays)
+    console.log('📊 Matched category:', matchingCategory)
+    setAnimalCategory(matchingCategory)
+
+    if (matchingCategory) {
+      console.log('📊 Loading suitable feed types for category:', matchingCategory.id)
+      await loadSuitableFeedTypes(matchingCategory.id)
+    } else {
+      console.log('📊 No category match, loading all feed types')
+      await loadSuitableFeedTypes(null)
+    }
+
+  } catch (error) {
+    console.error('❌ Error loading animal nutrition data:', error)
+    setError(`Failed to load nutrition data: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    setSuitableFeedTypes([])
+  } finally {
+    setLoadingNutrition(false)
+  }
+}
+
+  // Function to find the best matching animal category
+  const findBestMatchingCategory = (animal: any, categories: AnimalCategory[], ageDays: number | null): AnimalCategory | null => {
+    const matchingCategories = categories.filter(category => {
+      // Check gender match
+      if (category.gender && animal.gender && category.gender !== animal.gender) {
+        return false
+      }
+
+      // Check age range
+      if (ageDays !== null) {
+        if (category.min_age_days && ageDays < category.min_age_days) {
+          return false
+        }
+        if (category.max_age_days && ageDays > category.max_age_days) {
+          return false
+        }
+      }
+
+      // Check characteristics if available
+      if (category.characteristics && animal.production_status) {
+        const characteristics = category.characteristics
+
+        // Check lactating status
+        if (characteristics.lactating && animal.production_status !== 'lactating') {
+          return false
+        }
+
+        // Check pregnant status
+        if (characteristics.pregnant && animal.production_status !== 'pregnant') {
+          return false
+        }
+
+        // Check breeding male status
+        if (characteristics.breeding_male && (animal.gender !== 'male' || animal.production_status !== 'breeding')) {
+          return false
+        }
+      }
+
+      return true
+    })
+
+    // Return the most specific matching category (with most criteria)
+    if (matchingCategories.length > 0) {
+      return matchingCategories.reduce((best, current) => {
+        const bestScore = getCategorySpecificity(best)
+        const currentScore = getCategorySpecificity(current)
+        return currentScore > bestScore ? current : best
+      })
+    }
+
+    return null
+  }
+
+  // Helper function to calculate category specificity score
+  const getCategorySpecificity = (category: AnimalCategory): number => {
+    let score = 0
+    if (category.gender) score += 1
+    if (category.min_age_days || category.max_age_days) score += 1
+    if (category.characteristics) {
+      const chars = category.characteristics
+      if (chars.lactating || chars.pregnant || chars.breeding_male || chars.growth_phase) {
+        score += 1
+      }
+    }
+    return score
+  }
+
+  // Function to load suitable feed types based on animal category
+  const loadSuitableFeedTypes = async (categoryId: string | null) => {
+    console.log('🔍 Starting loadSuitableFeedTypes for category:', categoryId)
+
+    try {
+      // Load feed types that are suitable for this animal category
+      const params = new URLSearchParams()
+      if (categoryId) {
+        params.append('animal_category_id', categoryId)
+      }
+      params.append('include_inventory', 'true')
+
+      const apiUrl = `/api/farms/${farmId}/feed-management/feed-types/suitable?${params.toString()}`
+      console.log('📊 Fetching suitable feed types from:', apiUrl)
+
+      const feedTypesResponse = await fetch(apiUrl)
+      console.log('📊 Feed types response status:', feedTypesResponse.status)
+      console.log('📊 Feed types response headers:', Object.fromEntries(feedTypesResponse.headers.entries()))
+
+      if (!feedTypesResponse.ok) {
+        const errorText = await feedTypesResponse.text()
+        console.error('❌ Failed to load suitable feed types:', feedTypesResponse.status, errorText)
+        throw new Error(`Failed to load suitable feed types: ${feedTypesResponse.status} - ${errorText}`)
+      }
+
+      const feedTypesData = await feedTypesResponse.json()
+      console.log('📊 Feed types data received:', feedTypesData)
+      const suitableTypes = feedTypesData.data || []
+      console.log('📊 Number of suitable feed types:', suitableTypes.length)
+
+      // Log each feed type for debugging
+      suitableTypes.forEach((feedType: any, index: number) => {
+        console.log(`📦 Feed type ${index}:`, {
+          id: feedType.id,
+          name: feedType.name,
+          animal_categories: feedType.animal_categories,
+          inventory_count: feedType.feed_inventory?.length || 0,
+          total_stock: feedType.feed_inventory?.reduce((sum: number, inv: any) => sum + (inv.quantity_kg || 0), 0) || 0
+        })
+      })
+
+      // Transform the data to include nutritional information and inventory details
+      const transformedFeedTypes: SuitableFeedType[] = suitableTypes.map((feedType: any) => {
+        // Calculate total available stock from inventory
+        const totalStock = feedType.feed_inventory?.reduce(
+          (sum: number, inv: any) => sum + (inv.quantity_kg || 0), 0
+        ) || 0
+
+        // Calculate total inventory value
+        const totalValue = feedType.feed_inventory?.reduce(
+          (sum: number, inv: any) => sum + ((inv.quantity_kg || 0) * (inv.cost_per_kg || 0)), 0
+        ) || 0
+
+        // Get category information - use localFeedTypeCategories instead of feedTypeCategories prop
+        const category = localFeedTypeCategories.find(cat => cat.id === feedType.category_id)
+
+        // Extract nutritional information with defaults
+        const nutritionalInfo = feedType.nutritional_info || {}
+        const defaultedNutrition = {
+          protein_content: nutritionalInfo.protein_content || 0,
+          energy_content: nutritionalInfo.energy_content || 0,
+          fat_content: nutritionalInfo.fat_content || 0,
+          fiber_content: nutritionalInfo.fiber_content || 0,
+          moisture_content: nutritionalInfo.moisture_content || 0,
+          ash_content: nutritionalInfo.ash_content || 0,
+          calcium: nutritionalInfo.calcium || 0,
+          phosphorus: nutritionalInfo.phosphorus || 0,
+          vitamins: nutritionalInfo.vitamins || {},
+          minerals: nutritionalInfo.minerals || {}
+        }
+
+        console.log(`📦 Transformed feed type ${feedType.name}:`, {
+          totalStock,
+          totalValue,
+          category: category?.name,
+          nutritionalInfo: defaultedNutrition
+        })
+
+        return {
+          id: feedType.id,
+          name: feedType.name,
+          description: feedType.description,
+          typical_cost_per_kg: feedType.typical_cost_per_kg || 0,
+          nutritional_info: defaultedNutrition,
+          supplier: feedType.supplier,
+          category_name: category?.name || null,
+          category_color: category?.color || null,
+          available_stock: totalStock,
+          total_inventory_value: totalValue,
+          inventory_items: feedType.feed_inventory || [],
+          animal_categories: feedType.animal_categories || []
+        }
+      })
+
+      console.log('📊 Final transformed feed types:', transformedFeedTypes.length)
+      setSuitableFeedTypes(transformedFeedTypes)
+
+    } catch (error) {
+      console.error('❌ Error loading suitable feed types:', error)
+      setError(`Failed to load suitable feed types: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      setSuitableFeedTypes([])
+    }
+  }
+
 
   const loadFeedingData = async () => {
     try {
@@ -551,95 +890,95 @@ export function AnimalFeedingRecords({ animalId, farmId, canAddRecords, feedType
   }
 
   const handleAddRecord = async () => {
-  if (!recordForm.feed_type_id || !recordForm.quantity_kg) {
-    setError('Please fill in all required fields')
-    return
+    if (!recordForm.feed_type_id || !recordForm.quantity_kg) {
+      setError('Please fill in all required fields')
+      return
+    }
+
+    try {
+      setSubmitting(true)
+      setError(null)
+
+      // Create proper timestamp from feeding time
+      const feedingDateTime = new Date(`${recordForm.feeding_date}T${recordForm.feeding_time}`)
+      const now = new Date()
+      const timeDifferenceHours = (feedingDateTime.getTime() - now.getTime()) / (1000 * 60 * 60)
+
+      // Validate feed selection and prepare data
+      const selectedFeedOption = availableFeedOptions.find(option => option.id === recordForm.feed_type_id)
+      if (!selectedFeedOption) {
+        throw new Error('Selected feed type not found in inventory')
+      }
+
+      const requestedQuantity = Number(recordForm.quantity_kg)
+      if (requestedQuantity > selectedFeedOption.totalStock) {
+        throw new Error(`Insufficient stock. Only ${selectedFeedOption.totalStock}kg available`)
+      }
+
+      const costPerKg = recordForm.cost_per_kg ? Number(recordForm.cost_per_kg) : selectedFeedOption.averageCost
+
+      const newRecordData = {
+        farmId,
+        feedingTime: feedingDateTime.toISOString(),
+        mode: recordForm.feeding_mode,
+        batchId: null,
+        entries: [{
+          feedTypeId: recordForm.feed_type_id,
+          quantityKg: requestedQuantity,
+          animalIds: [animalId],
+          costPerKg: costPerKg,
+          notes: recordForm.notes || undefined
+        }]
+      }
+
+      // Determine if this should be scheduled or immediate
+      let responseMessage = ''
+      if (timeDifferenceHours > 1) {
+        responseMessage = 'Feeding scheduled successfully'
+      } else {
+        responseMessage = 'Feeding recorded successfully'
+      }
+
+      const response = await fetch('/api/feed/consumption', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newRecordData)
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to record feeding')
+      }
+
+      const result = await response.json()
+
+      // Show different messages based on type
+      if (result.type === 'scheduled') {
+        // Show scheduled message and switch to schedule tab
+        setActiveTab('schedule')
+        // Could show a toast notification here
+      }
+
+      // Reload feeding data
+      await loadFeedingData()
+      setShowAddRecordModal(false)
+      resetRecordForm()
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add feeding record')
+      console.error('Error adding feeding record:', err)
+    } finally {
+      setSubmitting(false)
+    }
   }
-
-  try {
-    setSubmitting(true)
-    setError(null)
-
-    // Create proper timestamp from feeding time
-    const feedingDateTime = new Date(`${recordForm.feeding_date}T${recordForm.feeding_time}`)
-    const now = new Date()
-    const timeDifferenceHours = (feedingDateTime.getTime() - now.getTime()) / (1000 * 60 * 60)
-
-    // Validate feed selection and prepare data
-    const selectedFeedOption = availableFeedOptions.find(option => option.id === recordForm.feed_type_id)
-    if (!selectedFeedOption) {
-      throw new Error('Selected feed type not found in inventory')
-    }
-
-    const requestedQuantity = Number(recordForm.quantity_kg)
-    if (requestedQuantity > selectedFeedOption.totalStock) {
-      throw new Error(`Insufficient stock. Only ${selectedFeedOption.totalStock}kg available`)
-    }
-
-    const costPerKg = recordForm.cost_per_kg ? Number(recordForm.cost_per_kg) : selectedFeedOption.averageCost
-
-    const newRecordData = {
-      farmId,
-      feedingTime: feedingDateTime.toISOString(),
-      mode: recordForm.feeding_mode,
-      batchId: null,
-      entries: [{
-        feedTypeId: recordForm.feed_type_id,
-        quantityKg: requestedQuantity,
-        animalIds: [animalId],
-        costPerKg: costPerKg,
-        notes: recordForm.notes || undefined
-      }]
-    }
-
-    // Determine if this should be scheduled or immediate
-    let responseMessage = ''
-    if (timeDifferenceHours > 1) {
-      responseMessage = 'Feeding scheduled successfully'
-    } else {
-      responseMessage = 'Feeding recorded successfully'
-    }
-
-    const response = await fetch('/api/feed/consumption', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newRecordData)
-    })
-
-    if (!response.ok) {
-      const errorData = await response.json()
-      throw new Error(errorData.error || 'Failed to record feeding')
-    }
-
-    const result = await response.json()
-    
-    // Show different messages based on type
-    if (result.type === 'scheduled') {
-      // Show scheduled message and switch to schedule tab
-      setActiveTab('schedule')
-      // Could show a toast notification here
-    }
-
-    // Reload feeding data
-    await loadFeedingData()
-    setShowAddRecordModal(false)
-    resetRecordForm()
-
-  } catch (err) {
-    setError(err instanceof Error ? err.message : 'Failed to add feeding record')
-    console.error('Error adding feeding record:', err)
-  } finally {
-    setSubmitting(false)
-  }
-}
 
   // Update the tabs configuration to handle scheduling callback
   const handleFeedingCompleted = () => {
-  // Reload feeding data when a scheduled feeding is completed
-  loadFeedingData()
-  // Switch to overview tab to show the new record
-  setActiveTab('overview')
-}
+    // Reload feeding data when a scheduled feeding is completed
+    loadFeedingData()
+    // Switch to overview tab to show the new record
+    setActiveTab('overview')
+  }
 
   // Helper function to check if inventory is expiring soon
   const isExpiringSoon = (expiryDate: Date | null) => {
@@ -796,6 +1135,333 @@ export function AnimalFeedingRecords({ animalId, farmId, canAddRecords, feedType
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const renderNutritionTab = () => {
+    console.log('🎨 Rendering nutrition tab:', {
+      loadingNutrition,
+      animalDetails: !!animalDetails,
+      animalCategory: !!animalCategory,
+      suitableFeedTypesCount: suitableFeedTypes.length,
+      error
+    })
+
+    if (loadingNutrition) {
+      return (
+        <div className="flex items-center justify-center py-8">
+          <LoadingSpinner size="md" />
+          <span className="ml-2">Loading nutrition information...</span>
+        </div>
+      )
+    }
+
+    // Show error if there's one
+    if (error && activeTab === 'nutrition') {
+      return (
+        <div className="space-y-4">
+          <Alert className="border-red-200 bg-red-50">
+            <AlertCircle className="h-4 w-4 text-red-600" />
+            <AlertDescription className="text-red-800">
+              {error}
+            </AlertDescription>
+          </Alert>
+          <Button
+            onClick={() => {
+              setError(null)
+              loadAnimalDetailsAndNutrition()
+            }}
+            variant="outline"
+          >
+            Try Again
+          </Button>
+        </div>
+      )
+    }
+
+    return (
+      <div className="space-y-4">
+        
+
+        {/* Suitable Feed Types with Inventory */}
+        <Card>
+          <CardHeader>
+            <CardTitle className={cn(isMobile ? "text-base" : "text-lg")}>
+              Suitable Feed Types & Inventory
+              {suitableFeedTypes.length > 0 && (
+                <Badge variant="outline" className="ml-2">
+                  {suitableFeedTypes.length} found
+                </Badge>
+              )}
+            </CardTitle>
+            <CardDescription>
+              Feed types available in inventory that are suitable for this animal's category
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {suitableFeedTypes.length > 0 ? (
+              <div className="space-y-4">
+                {suitableFeedTypes.map((feed) => (
+                  <div key={feed.id} className="border rounded-lg p-4">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2 mb-1">
+                          <h5 className="font-medium">{feed.name}</h5>
+                          {feed.category_name && (
+                            <div className="flex items-center space-x-1">
+                              <div
+                                className="w-3 h-3 rounded-full"
+                                style={{ backgroundColor: feed.category_color || '#gray' }}
+                              />
+                              <Badge variant="outline" className="text-xs">
+                                {feed.category_name}
+                              </Badge>
+                            </div>
+                          )}
+                        </div>
+
+                        {feed.description && (
+                          <p className="text-sm text-gray-600 mb-2">{feed.description}</p>
+                        )}
+
+                        <div className="flex items-center space-x-4 text-sm">
+                          <div className="flex items-center space-x-1">
+                            <Package className="w-4 h-4 text-green-600" />
+                            <span className="font-medium text-green-700">
+                              {feed.available_stock.toFixed(1)}kg available
+                            </span>
+                          </div>
+
+                          <div className="flex items-center space-x-1">
+                            <DollarSign className="w-4 h-4 text-blue-600" />
+                            <span>KSh{feed.typical_cost_per_kg}/kg</span>
+                          </div>
+
+                          {feed.supplier && (
+                            <div className="text-gray-500">
+                              Supplier: {feed.supplier}
+                            </div>
+                          )}
+                        </div>
+
+                        {feed.available_stock === 0 && (
+                          <Alert className="mt-2">
+                            <AlertTriangle className="h-4 w-4" />
+                            <AlertDescription>
+                              This feed type is currently out of stock
+                            </AlertDescription>
+                          </Alert>
+                        )}
+                      </div>
+
+                      <div className="text-right">
+                        <p className="font-semibold text-lg text-green-700">
+                          KSh{feed.total_inventory_value.toFixed(2)}
+                        </p>
+                        <p className="text-sm text-gray-600">Total Value</p>
+                      </div>
+                    </div>
+
+                    {/* Nutritional Information */}
+                    <div className="mt-4">
+                      <h6 className="font-medium text-gray-900 mb-3">Nutritional Information (per kg)</h6>
+                      <div className={cn("grid gap-3", isMobile ? "grid-cols-2" : "grid-cols-4")}>
+                        <div className="flex items-center space-x-2">
+                          <div className="bg-blue-100 rounded-lg p-2">
+                            <Leaf className="w-4 h-4 text-blue-600" />
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-600">Protein</p>
+                            <p className="font-medium">{feed.nutritional_info.protein_content}%</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center space-x-2">
+                          <div className="bg-orange-100 rounded-lg p-2">
+                            <Zap className="w-4 h-4 text-orange-600" />
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-600">Energy</p>
+                            <p className="font-medium">{feed.nutritional_info.energy_content} MJ</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center space-x-2">
+                          <div className="bg-yellow-100 rounded-lg p-2">
+                            <Droplet className="w-4 h-4 text-yellow-600" />
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-600">Fat</p>
+                            <p className="font-medium">{feed.nutritional_info.fat_content}%</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center space-x-2">
+                          <div className="bg-green-100 rounded-lg p-2">
+                            <Wheat className="w-4 h-4 text-green-600" />
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-600">Fiber</p>
+                            <p className="font-medium">{feed.nutritional_info.fiber_content}%</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Additional nutritional details */}
+                      {(feed.nutritional_info.calcium > 0 || feed.nutritional_info.phosphorus > 0) && (
+                        <div className="mt-3 pt-3 border-t">
+                          <h6 className="text-sm font-medium text-gray-700 mb-2">Minerals</h6>
+                          <div className="grid grid-cols-2 gap-2 text-sm">
+                            {feed.nutritional_info.calcium > 0 && (
+                              <div>Calcium: {feed.nutritional_info.calcium}%</div>
+                            )}
+                            {feed.nutritional_info.phosphorus > 0 && (
+                              <div>Phosphorus: {feed.nutritional_info.phosphorus}%</div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Inventory breakdown */}
+                      {feed.inventory_items.length > 1 && (
+                        <div className="mt-3 pt-3 border-t">
+                          <h6 className="text-sm font-medium text-gray-700 mb-2">
+                            Inventory Batches ({feed.inventory_items.length})
+                          </h6>
+                          <div className="space-y-1 text-xs text-gray-600">
+                            {feed.inventory_items.slice(0, 3).map((item: any, index: number) => (
+                              <div key={index} className="flex justify-between">
+                                <span>
+                                  {item.quantity_kg}kg
+                                  {item.batch_number && ` (${item.batch_number})`}
+                                </span>
+                                <span>KSh{item.cost_per_kg}/kg</span>
+                              </div>
+                            ))}
+                            {feed.inventory_items.length > 3 && (
+                              <div className="text-gray-500">
+                                +{feed.inventory_items.length - 3} more batches
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <Package className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                <p className="text-gray-500 mb-2">No suitable feed types found in inventory</p>
+                <p className="text-sm text-gray-400">
+                  {animalCategory
+                    ? `No feed types are configured for "${animalCategory.name}" category or no inventory available`
+                    : 'No feed inventory available for this animal'
+                  }
+                </p>
+
+                {/* Debug info for empty state */}
+                {process.env.NODE_ENV === 'development' && (
+                  <div className="mt-4 p-3 bg-gray-100 rounded text-xs text-left">
+                    <div className="font-medium mb-2">Debug Info:</div>
+                    <div>Animal Category ID: {animalCategory?.id || 'None'}</div>
+                    <div>Loading: {loadingNutrition ? 'Yes' : 'No'}</div>
+                    <div>Error: {error || 'None'}</div>
+                  </div>
+                )}
+
+                {canAddRecords && (
+                  <Button className="mt-4" onClick={() => {/* Navigate to feed management */ }}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Feed Inventory
+                  </Button>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Nutritional Targets (existing code remains the same) */}
+        {nutritionalTargets && (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className={cn(isMobile ? "text-base" : "text-lg")}>
+                  Nutritional Targets
+                </CardTitle>
+                {canAddRecords && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowNutritionModal(true)}
+                  >
+                    <Edit className="w-4 h-4 mr-2" />
+                    Edit
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className={cn("grid gap-4", isMobile ? "grid-cols-1" : "grid-cols-2 md:grid-cols-3")}>
+                <div className="flex items-center space-x-3">
+                  <div className="bg-green-100 rounded-lg p-2">
+                    <Wheat className="w-5 h-5 text-green-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Daily Dry Matter</p>
+                    <p className="font-semibold">{nutritionalTargets.daily_dry_matter_kg}kg</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-3">
+                  <div className="bg-blue-100 rounded-lg p-2">
+                    <Leaf className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Daily Protein</p>
+                    <p className="font-semibold">{nutritionalTargets.daily_protein_kg}kg</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-3">
+                  <div className="bg-yellow-100 rounded-lg p-2">
+                    <Zap className="w-5 h-5 text-yellow-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Daily Energy</p>
+                    <p className="font-semibold">{nutritionalTargets.daily_energy_mj}MJ</p>
+                  </div>
+                </div>
+
+                {nutritionalTargets.target_weight_gain_kg_per_day && (
+                  <div className="flex items-center space-x-3">
+                    <div className="bg-purple-100 rounded-lg p-2">
+                      <TrendingUp className="w-5 h-5 text-purple-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">Target Weight Gain</p>
+                      <p className="font-semibold">{nutritionalTargets.target_weight_gain_kg_per_day}kg/day</p>
+                    </div>
+                  </div>
+                )}
+
+                {nutritionalTargets.milk_production_target_liters && (
+                  <div className="flex items-center space-x-3">
+                    <div className="bg-indigo-100 rounded-lg p-2">
+                      <Droplet className="w-5 h-5 text-indigo-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">Milk Target</p>
+                      <p className="font-semibold">{nutritionalTargets.milk_production_target_liters}L/day</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    )
   }
 
   return (
@@ -1183,161 +1849,7 @@ export function AnimalFeedingRecords({ animalId, farmId, canAddRecords, feedType
 
         <TabsContent value="nutrition" className="space-y-4">
           {/* Feed Types Available */}
-          <Card>
-            <CardHeader>
-              <CardTitle className={cn(isMobile ? "text-base" : "text-lg")}>
-                Available Feed Types
-              </CardTitle>
-              <CardDescription>
-                Nutritional information and costs for feed types
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {feedTypes.map((feed) => (
-                  <div key={feed.id} className="border rounded-lg p-3">
-                    <div className="flex items-start justify-between mb-2">
-                      <div>
-                        <h5 className="font-medium">{feed.name}</h5>
-                        <Badge variant="outline" className="text-xs">
-                          {feed.category}
-                        </Badge>
-                      </div>
-                      <p className="text-sm font-semibold">${feed.typical_cost_per_kg}/kg</p>
-                    </div>
-
-                    <div className={cn("grid gap-2", isMobile ? "grid-cols-2" : "grid-cols-3")}>
-                      {feed.protein_content && (
-                        <div>
-                          <p className="text-xs text-gray-600">Protein</p>
-                          <p className="text-sm font-medium">{feed.protein_content}%</p>
-                        </div>
-                      )}
-                      {feed.energy_content && (
-                        <div>
-                          <p className="text-xs text-gray-600">Energy</p>
-                          <p className="text-sm font-medium">{feed.energy_content} MJ/kg</p>
-                        </div>
-                      )}
-                      {feed.supplier && (
-                        <div>
-                          <p className="text-xs text-gray-600">Supplier</p>
-                          <p className="text-sm">{feed.supplier}</p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Fixed nutritional_info display */}
-                    {feed.nutritional_info && (
-                      <div className="mt-2">
-                        {typeof feed.nutritional_info === 'string' ? (
-                          <p className="text-xs text-gray-600">{feed.nutritional_info}</p>
-                        ) : (
-                          <div className="text-xs text-gray-600">
-                            <p className="font-medium mb-1">Nutritional Details:</p>
-                            <div className="grid grid-cols-2 gap-1">
-                              {feed.nutritional_info.fat_content && (
-                                <span>Fat: {feed.nutritional_info.fat_content}%</span>
-                              )}
-                              {feed.nutritional_info.fiber_content && (
-                                <span>Fiber: {feed.nutritional_info.fiber_content}%</span>
-                              )}
-                              {feed.nutritional_info.energy_content && (
-                                <span>Energy: {feed.nutritional_info.energy_content} MJ/kg</span>
-                              )}
-                              {feed.nutritional_info.protein_content && (
-                                <span>Protein: {feed.nutritional_info.protein_content}%</span>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Nutritional Targets */}
-          {nutritionalTargets && (
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className={cn(isMobile ? "text-base" : "text-lg")}>
-                    Nutritional Targets
-                  </CardTitle>
-                  {canAddRecords && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setShowNutritionModal(true)}
-                    >
-                      <Edit className="w-4 h-4 mr-2" />
-                      Edit
-                    </Button>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className={cn("grid gap-4", isMobile ? "grid-cols-1" : "grid-cols-2 md:grid-cols-3")}>
-                  <div className="flex items-center space-x-3">
-                    <div className="bg-green-100 rounded-lg p-2">
-                      <Wheat className="w-5 h-5 text-green-600" />
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Daily Dry Matter</p>
-                      <p className="font-semibold">{nutritionalTargets.daily_dry_matter_kg}kg</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center space-x-3">
-                    <div className="bg-blue-100 rounded-lg p-2">
-                      <Leaf className="w-5 h-5 text-blue-600" />
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Daily Protein</p>
-                      <p className="font-semibold">{nutritionalTargets.daily_protein_kg}kg</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center space-x-3">
-                    <div className="bg-yellow-100 rounded-lg p-2">
-                      <Zap className="w-5 h-5 text-yellow-600" />
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Daily Energy</p>
-                      <p className="font-semibold">{nutritionalTargets.daily_energy_mj}MJ</p>
-                    </div>
-                  </div>
-
-                  {nutritionalTargets.target_weight_gain_kg_per_day && (
-                    <div className="flex items-center space-x-3">
-                      <div className="bg-purple-100 rounded-lg p-2">
-                        <TrendingUp className="w-5 h-5 text-purple-600" />
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-600">Target Weight Gain</p>
-                        <p className="font-semibold">{nutritionalTargets.target_weight_gain_kg_per_day}kg/day</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {nutritionalTargets.milk_production_target_liters && (
-                    <div className="flex items-center space-x-3">
-                      <div className="bg-indigo-100 rounded-lg p-2">
-                        <Droplet className="w-5 h-5 text-indigo-600" />
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-600">Milk Target</p>
-                        <p className="font-semibold">{nutritionalTargets.milk_production_target_liters}L/day</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          {renderNutritionTab()}
         </TabsContent>
 
         <TabsContent value="analysis" className="space-y-4">
@@ -1454,42 +1966,42 @@ export function AnimalFeedingRecords({ animalId, farmId, canAddRecords, feedType
                     onChange={(e) => handleRecordFormChange('feeding_time', e.target.value)}
                     autoComplete="off"
                   />
-                  
+
                 </div>
               </div>
 
               {(() => {
-                    if (!recordForm.feeding_date || !recordForm.feeding_time) return null
+                if (!recordForm.feeding_date || !recordForm.feeding_time) return null
 
-                    const feedingDateTime = new Date(`${recordForm.feeding_date}T${recordForm.feeding_time}`)
-                    const now = new Date()
-                    const timeDifferenceHours = (feedingDateTime.getTime() - now.getTime()) / (1000 * 60 * 60)
+                const feedingDateTime = new Date(`${recordForm.feeding_date}T${recordForm.feeding_time}`)
+                const now = new Date()
+                const timeDifferenceHours = (feedingDateTime.getTime() - now.getTime()) / (1000 * 60 * 60)
 
-                    if (timeDifferenceHours > 1) {
-                      return (
-                        <Alert className="border-blue-200 bg-blue-50">
-                          <Clock className="h-4 w-4 text-blue-600" />
-                          <AlertDescription className="text-blue-800">
-                            <strong>Scheduled Feeding:</strong> This feeding is more than 1 hour in the future and will be added to your schedule.
-                            You can confirm it when the feeding time approaches.
-                          </AlertDescription>
-                        </Alert>
-                      )
-                    } else if (timeDifferenceHours < 0) {
-                      const hoursLate = Math.abs(timeDifferenceHours)
-                      return (
-                        <Alert className="border-orange-200 bg-orange-50">
-                          <AlertTriangle className="h-4 w-4 text-orange-600" />
-                          <AlertDescription className="text-orange-800">
-                            <strong>Past Feeding:</strong> This feeding time is {hoursLate.toFixed(1)} hours ago.
-                            It will be recorded as a historical feeding.
-                          </AlertDescription>
-                        </Alert>
-                      )
-                    }
+                if (timeDifferenceHours > 1) {
+                  return (
+                    <Alert className="border-blue-200 bg-blue-50">
+                      <Clock className="h-4 w-4 text-blue-600" />
+                      <AlertDescription className="text-blue-800">
+                        <strong>Scheduled Feeding:</strong> This feeding is more than 1 hour in the future and will be added to your schedule.
+                        You can confirm it when the feeding time approaches.
+                      </AlertDescription>
+                    </Alert>
+                  )
+                } else if (timeDifferenceHours < 0) {
+                  const hoursLate = Math.abs(timeDifferenceHours)
+                  return (
+                    <Alert className="border-orange-200 bg-orange-50">
+                      <AlertTriangle className="h-4 w-4 text-orange-600" />
+                      <AlertDescription className="text-orange-800">
+                        <strong>Past Feeding:</strong> This feeding time is {hoursLate.toFixed(1)} hours ago.
+                        It will be recorded as a historical feeding.
+                      </AlertDescription>
+                    </Alert>
+                  )
+                }
 
-                    return null
-                  })()}
+                return null
+              })()}
 
               <div>
                 <Label htmlFor="feed_type_id">Feed Type *</Label>

@@ -8,7 +8,7 @@ import { updateAnimal, getAnimalById, getAnimalByTagNumber } from '@/lib/databas
 // GET single animal
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getCurrentUser()
@@ -23,7 +23,7 @@ export async function GET(
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
     }
     
-    const animalId = params.id
+    const { id: animalId } = await params
     const animal = await getAnimalById(animalId)
     
     if (!animal) {
@@ -44,7 +44,7 @@ export async function GET(
 // UPDATE animal
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getCurrentUser()
@@ -65,7 +65,7 @@ export async function PUT(
     }
     
     const body = await request.json()
-    const animalId = params.id
+    const { id: animalId } = await params
     
     // Validate required fields
     if (!body.tag_number || !body.breed || !body.gender) {
@@ -103,7 +103,7 @@ export async function PUT(
 // DELETE animal (soft delete - sets status to inactive)
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getCurrentUser()
@@ -123,7 +123,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Only farm owners can delete animals' }, { status: 403 })
     }
     
-    const animalId = params.id
+    const { id: animalId } = await params
     
     const result = await updateAnimal(animalId, userRole.farm_id, { 
       status: 'inactive',
@@ -144,4 +144,3 @@ export async function DELETE(
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
-

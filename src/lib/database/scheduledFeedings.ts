@@ -140,120 +140,165 @@ export async function getAnimalScheduledFeedings(
 
 // Complete a scheduled feeding (convert to actual feeding record)
 export async function completeScheduledFeeding(
-    scheduledFeedingId: string,
-    userId: string,
-    actualFeedingTime?: string,
-    lateReason?: string
+  scheduledFeedingId: string,
+  userId: string,
+  actualFeedingTime?: string,
+  lateReason?: string
 ): Promise<{ success: boolean; data?: any; error?: string }> {
-    const supabase = await createServerSupabaseClient()
+  const supabase = await createServerSupabaseClient()
 
-    try {
-        // Get the scheduled feeding details
-        const { data: scheduledFeeding, error: fetchError } = await supabase
-            .from('scheduled_feedings')
-            .select(`
+  try {
+    // Get the scheduled feeding details
+    const { data: scheduledFeeding, error: fetchError } = await supabase
+      .from('scheduled_feedings')
+      .select(`
         *,
         scheduled_feeding_animals (
           animal_id
         )
       `)
-            .eq('id', scheduledFeedingId)
-            .single()
+      .eq('id', scheduledFeedingId)
+      .single()
 
-        if (fetchError || !scheduledFeeding) {
-            return { success: false, error: 'Scheduled feeding not found' }
-        }
-
-        if (scheduledFeeding.status !== 'pending' && scheduledFeeding.status !== 'overdue') {
-            return { success: false, error: 'Scheduled feeding is not pending or overdue' }
-        }
-
-        const now = new Date()
-        const completionTime = actualFeedingTime ? new Date(actualFeedingTime) : now
-        const scheduledTime = new Date(scheduledFeeding.scheduled_time)
-
-        // Calculate if feeding was late
-        const lateByMinutes = Math.max(0, Math.floor((completionTime.getTime() - scheduledTime.getTime()) / (1000 * 60)))
-
-        // Prepare notes with lateness information
-        let completionNotes = scheduledFeeding.notes || ''
-
-        if (lateByMinutes > 0) {
-            const lateInfo = `Late by ${lateByMinutes} minutes`
-            const reasonInfo = lateReason ? ` - Reason: ${lateReason}` : ''
-            completionNotes += completionNotes ? `\n${lateInfo}${reasonInfo}` : `${lateInfo}${reasonInfo}`
-        } else {
-            completionNotes += completionNotes ? '\nCompleted on time' : 'Completed on time'
-        }
-
-        // Create the actual feeding record
-        const feedingData = {
-            farm_id: scheduledFeeding.farm_id,
-            feed_type_id: scheduledFeeding.feed_type_id,
-            quantity_kg: scheduledFeeding.quantity_kg,
-            feeding_time: completionTime.toISOString(),
-            feeding_mode: scheduledFeeding.feeding_mode,
-            animal_count: scheduledFeeding.animal_count,
-            consumption_batch_id: scheduledFeeding.consumption_batch_id,
-            notes: completionNotes,
-            recorded_by: 'System (from schedule)',
-            created_by: userId
-        }
-
-        const { data: feedingRecord, error: feedingError } = await supabase
-            .from('feed_consumption')
-            .insert(feedingData)
-            .select()
-            .single()
-
-        if (feedingError) {
-            return { success: false, error: `Failed to create feeding record: ${feedingError.message}` }
-        }
-
-        // Link animals to the feeding record
-        if (scheduledFeeding.scheduled_feeding_animals && scheduledFeeding.scheduled_feeding_animals.length > 0) {
-            const animalRecords = scheduledFeeding.scheduled_feeding_animals.map((sa: any) => ({
-                consumption_id: feedingRecord.id,
-                animal_id: sa.animal_id
-            }))
-
-            await supabase
-                .from('feed_consumption_animals')
-                .insert(animalRecords)
-        }
-
-        // Update the scheduled feeding status
-        await supabase
-            .from('scheduled_feedings')
-            .update({
-                status: 'completed',
-                completed_at: completionTime.toISOString(),
-                completed_by: userId,
-                late_by_minutes: lateByMinutes > 0 ? lateByMinutes : null,
-                late_reason: lateByMinutes > 0 && lateReason ? lateReason : null,
-                updated_at: now.toISOString()
-            })
-            .eq('id', scheduledFeedingId)
-
-        // Update inventory
-        await updateFeedInventory(scheduledFeeding.farm_id, scheduledFeeding.feed_type_id, -scheduledFeeding.quantity_kg)
-
-        return {
-            success: true,
-            data: {
-                feedingRecord,
-                lateByMinutes,
-                wasLate: lateByMinutes > 0,
-                lateReason: lateReason || null
-            }
-        }
-    } catch (error) {
-        console.error('Error completing scheduled feeding:', error)
-        return {
-            success: false,
-            error: error instanceof Error ? error.message : 'Failed to complete scheduled feeding'
-        }
+    if (fetchError || !scheduledFeeding) {
+      return { success: false, error: 'Scheduled feeding not found' }
     }
+
+    if (scheduledFeeding.status !== 'pending' && scheduledFeeding.status !== 'overdue') {
+      return { success: false, error: 'Scheduled feeding is not pending or overdue' }
+    }
+
+    const now = new Date()
+    const scheduledTime = new Date(scheduledFeeding.scheduled_time)
+    
+    // Use provided actual feeding time or current time if not specified
+    const actualCompletionTime = actualFeedingTime ? new Date(actualFeedingTime) : now
+    
+    // Validate actual feeding time is not in the future
+    if (actualCompletionTime > now) {
+      return { success: false, error: 'Actual feeding time cannot be in the future' }
+    }
+
+    // Calculate lateness based on actual feeding time vs scheduled time
+    const lateByMinutes = Math.max(0, Math.floor((actualCompletionTime.getTime() - scheduledTime.getTime()) / (1000 * 60)))
+    const wasActuallyLate = lateByMinutes > 0
+
+    // If feeding was actually late but no reason provided, require reason
+    if (wasActuallyLate && !lateReason?.trim()) {
+      return { success: false, error: 'Late reason is required for feedings completed after scheduled time' }
+    }
+
+    // Prepare notes with timing information
+    let completionNotes = scheduledFeeding.notes || ''
+    
+    if (wasActuallyLate) {
+      const lateInfo = `Actually fed ${lateByMinutes} minutes late`
+      const reasonInfo = lateReason ? ` - Reason: ${lateReason}` : ''
+      completionNotes += completionNotes ? `\n${lateInfo}${reasonInfo}` : `${lateInfo}${reasonInfo}`
+    } else {
+      // Check if this is a late recording of an on-time feeding
+      const recordingDelay = Math.floor((now.getTime() - actualCompletionTime.getTime()) / (1000 * 60))
+      if (recordingDelay > 30) {
+        completionNotes += completionNotes 
+          ? `\nFed on time, recorded ${recordingDelay} minutes later` 
+          : `Fed on time, recorded ${recordingDelay} minutes later`
+      } else {
+        completionNotes += completionNotes ? '\nCompleted on time' : 'Completed on time'
+      }
+    }
+
+    // Create the actual feeding record using the actual feeding time
+    const feedingData = {
+      farm_id: scheduledFeeding.farm_id,
+      feed_type_id: scheduledFeeding.feed_type_id,
+      quantity_kg: scheduledFeeding.quantity_kg,
+      feeding_time: actualCompletionTime.toISOString(), // Use actual feeding time
+      feeding_mode: scheduledFeeding.feeding_mode,
+      animal_count: scheduledFeeding.animal_count,
+      consumption_batch_id: scheduledFeeding.consumption_batch_id,
+      notes: completionNotes,
+      recorded_by: actualFeedingTime 
+        ? 'System (from schedule - actual time specified)' 
+        : 'System (from schedule)',
+      created_by: userId
+    }
+
+    const { data: feedingRecord, error: feedingError } = await supabase
+      .from('feed_consumption')
+      .insert(feedingData)
+      .select()
+      .single()
+
+    if (feedingError) {
+      console.error('Error creating feeding record:', feedingError)
+      return { success: false, error: `Failed to create feeding record: ${feedingError.message}` }
+    }
+
+    // Link animals to the feeding record
+    if (scheduledFeeding.scheduled_feeding_animals && scheduledFeeding.scheduled_feeding_animals.length > 0) {
+      const animalRecords = scheduledFeeding.scheduled_feeding_animals.map((sa: any) => ({
+        consumption_id: feedingRecord.id,
+        animal_id: sa.animal_id
+      }))
+
+      const { error: animalLinkError } = await supabase
+        .from('feed_consumption_animals')
+        .insert(animalRecords)
+
+      if (animalLinkError) {
+        console.warn('Warning: Could not link animals to consumption record:', animalLinkError)
+        // Continue execution - this is not critical
+      }
+    }
+
+    // Update the scheduled feeding status with enhanced tracking
+    const { error: updateError } = await supabase
+      .from('scheduled_feedings')
+      .update({
+        status: 'completed',
+        completed_at: now.toISOString(), // When it was recorded as complete
+        completed_by: userId,
+        late_by_minutes: wasActuallyLate ? lateByMinutes : null,
+        late_reason: wasActuallyLate && lateReason ? lateReason : null,
+        updated_at: now.toISOString(),
+        // Add new fields to track the difference between actual and recorded time
+        actual_feeding_time: actualCompletionTime.toISOString(),
+        recording_delay_minutes: Math.floor((now.getTime() - actualCompletionTime.getTime()) / (1000 * 60))
+      })
+      .eq('id', scheduledFeedingId)
+
+    if (updateError) {
+      console.error('Error updating scheduled feeding:', updateError)
+      // This is not critical, continue
+    }
+
+    // Update inventory
+    try {
+      await updateFeedInventory(scheduledFeeding.farm_id, scheduledFeeding.feed_type_id, -scheduledFeeding.quantity_kg)
+    } catch (inventoryError) {
+      console.warn('Warning: Could not update inventory:', inventoryError)
+      // Continue - inventory update failure shouldn't fail the whole operation
+    }
+
+    return {
+      success: true,
+      data: {
+        feedingRecord,
+        lateByMinutes: wasActuallyLate ? lateByMinutes : 0,
+        wasLate: wasActuallyLate,
+        wasRecordedLate: now.getTime() - actualCompletionTime.getTime() > 30 * 60 * 1000, // More than 30 min delay
+        lateReason: wasActuallyLate ? lateReason : null,
+        actualFeedingTime: actualCompletionTime.toISOString(),
+        recordedAt: now.toISOString()
+      }
+    }
+  } catch (error) {
+    console.error('Error completing scheduled feeding:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to complete scheduled feeding'
+    }
+  }
 }
 
 // Cancel a scheduled feeding
