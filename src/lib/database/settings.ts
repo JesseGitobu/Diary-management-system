@@ -341,4 +341,63 @@ export async function getFinancialSettings(farmId: string) {
   }
 }
 
+export async function getAnimalTaggingSettings(farmId: string) {
+  const supabase = await createServerSupabaseClient()
+  
+  const { data: settings, error } = await supabase
+    .from('animal_tagging_settings')
+    .select('*')
+    .eq('farm_id', farmId)
+    .single()
+
+  if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+    console.error('Error fetching animal tagging settings:', error)
+    return getDefaultTaggingSettings()
+  }
+
+  if (!settings) {
+    return getDefaultTaggingSettings()
+  }
+
+  return settings
+}
+
+function getDefaultTaggingSettings() {
+  return {
+    method: 'basic',
+    tagPrefix: 'COW',
+    tagNumbering: 'sequential',
+    enablePhotoTags: true,
+    enableColorCoding: true,
+    customAttributes: [
+      { name: 'Breed Group', values: ['Holstein', 'Jersey', 'Friesian', 'Cross'] },
+      { name: 'Production Stage', values: ['Calf', 'Heifer', 'Lactating', 'Dry'] }
+    ],
+    enableHierarchicalTags: false,
+    enableBatchTagging: true,
+    enableQRCodes: false,
+    enableSmartAlerts: true,
+    qrCodeSize: 'medium',
+    enableRFID: false,
+    enableNFC: false,
+    enableGPS: false,
+    enableBiometric: false,
+    rfidFrequency: '134.2khz',
+    gpsUpdateInterval: 30,
+    smartAlerts: {
+      healthReminders: true,
+      breedingReminders: true,
+      vaccinationReminders: true,
+      productionAlerts: true
+    },
+    colorCoding: [
+      { name: 'Healthy', color: 'bg-green-500', value: 'healthy' },
+      { name: 'Sick', color: 'bg-red-500', value: 'sick' },
+      { name: 'Under Observation', color: 'bg-yellow-500', value: 'observation' },
+      { name: 'Pregnant', color: 'bg-blue-500', value: 'pregnant' },
+      { name: 'High Yield', color: 'bg-purple-500', value: 'high_yield' },
+      { name: 'Due for Service', color: 'bg-orange-500', value: 'service_due' }
+    ]
+  }
+}
 

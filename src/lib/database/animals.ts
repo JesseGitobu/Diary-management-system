@@ -24,7 +24,7 @@ export async function getFarmAnimals(
     limit?: number;
     offset?: number;
   } = {}
-) {
+): Promise<Animal[]> {
   const supabase = await createServerSupabaseClient()
   
   let query = supabase
@@ -47,11 +47,13 @@ export async function getFarmAnimals(
     .eq('farm_id', farmId)
     .order('created_at', { ascending: false })
   
-  // Apply filters
+  // Modified status filtering to include quarantined animals
   if (!options.includeInactive) {
-    query = query.eq('status', 'active')
+    // Show both active and quarantined animals by default
+    query = query.in('status', ['active', 'quarantined'])
   }
   
+  // Rest of your filtering logic...
   if (options.animalSource) {
     query = query.eq('animal_source', options.animalSource)
   }

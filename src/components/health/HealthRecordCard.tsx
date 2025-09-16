@@ -1,10 +1,11 @@
-// src/components/health/HealthRecordCard.tsx
+// Updated src/components/health/HealthRecordCard.tsx
 
 'use client'
 
 import { Card, CardContent, CardHeader } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { 
   Calendar, 
   DollarSign, 
@@ -12,7 +13,9 @@ import {
   Trash2, 
   User, 
   Clock,
-  AlertTriangle 
+  AlertTriangle,
+  Activity,
+  CheckCircle
 } from 'lucide-react'
 import { format } from 'date-fns'
 
@@ -34,14 +37,28 @@ interface HealthRecordCardProps {
       name?: string
       breed?: string
     }
+    created_at?: string
+    updated_at?: string
   }
   onEdit: (recordId: string) => void
   onDelete: (recordId: string) => void
+  onFollowUp?: (record: any) => void
   canEdit: boolean
   isMobile?: boolean
+  isDeleting?: boolean
+  showFollowUp?: boolean
 }
 
-export function HealthRecordCard({ record, onEdit, onDelete, canEdit }: HealthRecordCardProps) {
+export function HealthRecordCard({ 
+  record, 
+  onEdit, 
+  onDelete, 
+  onFollowUp,
+  canEdit,
+  isMobile = false,
+  isDeleting = false,
+  showFollowUp = false
+}: HealthRecordCardProps) {
   const getRecordTypeIcon = (type: string) => {
     switch (type) {
       case 'vaccination': return '💉'
@@ -73,7 +90,16 @@ export function HealthRecordCard({ record, onEdit, onDelete, canEdit }: HealthRe
     }
   }
 
-  // ✅ Consistent date formatting everywhere
+  const getSeverityIcon = (severity?: string) => {
+    switch (severity) {
+      case 'low': return '🟢'
+      case 'medium': return '🟡'
+      case 'high': return '🔴'
+      default: return ''
+    }
+  }
+
+  // Consistent date formatting everywhere
   const formatDate = (dateString?: string) => {
     if (!dateString) return ''
     return format(new Date(dateString), 'MM/dd/yyyy')
@@ -83,20 +109,37 @@ export function HealthRecordCard({ record, onEdit, onDelete, canEdit }: HealthRe
   const isDueSoon = record.next_due_date && 
     new Date(record.next_due_date) <= new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) &&
     new Date(record.next_due_date) >= new Date()
+
+  // Determine if follow-up should be shown based on record type
+  const shouldShowFollowUp = showFollowUp || ['illness', 'injury', 'treatment'].includes(record.record_type)
   
   return (
-    <Card className={`hover:shadow-lg transition-shadow ${isOverdue ? 'ring-2 ring-red-200' : ''}`}>
+    <Card className={`hover:shadow-lg transition-shadow border-l-4 border-l-farm-green ${
+      isOverdue ? 'ring-2 ring-red-200' : ''
+    }`}>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex items-center space-x-2">
             <span className="text-lg">{getRecordTypeIcon(record.record_type)}</span>
-            <div>
+            <div className="flex flex-wrap items-center gap-2">
               <Badge className={getRecordTypeColor(record.record_type)}>
                 {record.record_type.charAt(0).toUpperCase() + record.record_type.slice(1)}
               </Badge>
               {record.severity && (
-                <Badge variant="outline" className={`ml-2 ${getSeverityColor(record.severity)}`}>
-                  {record.severity.toUpperCase()}
+                <Badge variant="outline" className={`${getSeverityColor(record.severity)}`}>
+                  {getSeverityIcon(record.severity)} {record.severity.toUpperCase()}
+                </Badge>
+              )}
+              {isOverdue && (
+                <Badge variant="destructive" className="text-xs">
+                  <AlertTriangle className="w-3 h-3 mr-1" />
+                  Overdue
+                </Badge>
+              )}
+              {isDueSoon && !isOverdue && (
+                <Badge variant="outline" className="text-xs border-orange-300 text-orange-700">
+                  <Clock className="w-3 h-3 mr-1" />
+                  Due Soon
                 </Badge>
               )}
             </div>
@@ -108,7 +151,7 @@ export function HealthRecordCard({ record, onEdit, onDelete, canEdit }: HealthRe
                 variant="ghost"
                 size="sm"
                 onClick={() => onEdit(record.id)}
-                className="h-8 w-8 p-0"
+                className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
               >
                 <Edit className="h-4 w-4" />
               </Button>
@@ -116,9 +159,14 @@ export function HealthRecordCard({ record, onEdit, onDelete, canEdit }: HealthRe
                 variant="ghost"
                 size="sm"
                 onClick={() => onDelete(record.id)}
-                className="h-8 w-8 p-0 text-red-600 hover:text-red-700"
+                disabled={isDeleting}
+                className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
               >
-                <Trash2 className="h-4 w-4" />
+                {isDeleting ? (
+                  <LoadingSpinner size="sm" />
+                ) : (
+                  <Trash2 className="h-4 w-4" />
+                )}
               </Button>
             </div>
           )}
@@ -139,7 +187,7 @@ export function HealthRecordCard({ record, onEdit, onDelete, canEdit }: HealthRe
         {/* Record Details */}
         <div>
           <p className="text-sm font-medium text-gray-900 mb-1">Description:</p>
-          <p className="text-sm text-gray-700">{record.description}</p>
+          <p className="text-sm text-gray-700 bg-gray-50 p-2 rounded">{record.description}</p>
         </div>
         
         {/* Medication (for treatments) */}
@@ -185,7 +233,7 @@ export function HealthRecordCard({ record, onEdit, onDelete, canEdit }: HealthRe
             {isOverdue ? (
               <AlertTriangle className="w-4 h-4" />
             ) : (
-              <Clock className="w-4 h-4" />
+              <CheckCircle className="w-4 h-4" />
             )}
             <span>
               {isOverdue ? 'Overdue: ' : 'Next due: '}
@@ -197,7 +245,47 @@ export function HealthRecordCard({ record, onEdit, onDelete, canEdit }: HealthRe
         {/* Notes */}
         {record.notes && (
           <div className="pt-2 border-t">
+            <p className="text-sm font-medium text-gray-900 mb-1">Notes:</p>
             <p className="text-xs text-gray-600 italic">{record.notes}</p>
+          </div>
+        )}
+
+        {/* Action Buttons for Follow-up */}
+        {canEdit && shouldShowFollowUp && onFollowUp && (
+          <div className="pt-3 border-t">
+            <div className="flex items-center justify-between">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => onFollowUp(record)}
+                className="text-green-600 hover:text-green-700 hover:bg-green-50 flex items-center space-x-1"
+              >
+                <Activity className="w-3 h-3" />
+                <span>Add Follow-up</span>
+              </Button>
+              
+              <div className="text-xs text-gray-500">
+                Track recovery progress
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Metadata */}
+        {(record.created_at || record.updated_at) && (
+          <div className="text-xs text-gray-400 pt-2 border-t">
+            <div className="flex items-center justify-between">
+              {record.created_at && (
+                <span>
+                  Created: {formatDate(record.created_at)}
+                </span>
+              )}
+              {record.updated_at && record.updated_at !== record.created_at && (
+                <span>
+                  Updated: {formatDate(record.updated_at)}
+                </span>
+              )}
+            </div>
           </div>
         )}
       </CardContent>

@@ -1,11 +1,11 @@
-// Health Records API Route
+// Fixed Health Records API Route
 // src/app/api/health/records/route.ts
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
-import { createHealthRecord } from '@/lib/database/health'
+import { createHealthRecord, getAnimalHealthRecords } from '@/lib/database/health'
 
 export async function POST(request: NextRequest) {
   try {
@@ -82,38 +82,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'No farm associated' }, { status: 400 })
     }
 
-    const supabase = await createServerSupabaseClient()
-    
-    // First, get the animal IDs for the user's farm
-    const { data: animalIdsData, error: animalIdsError } = await supabase
-      .from('animals')
-      .select('id')
-      .eq('farm_id', userRole.farm_id);
-
-    if (animalIdsError) {
-      console.error('Error fetching animal IDs:', animalIdsError);
-      return NextResponse.json({ error: 'Failed to fetch animal IDs' }, { status: 500 });
-    }
-
-    const animalIds = (animalIdsData ?? []).map((a: { id: string }) => a.id);
-
-    const { data: healthRecords, error } = await supabase
-      .from('animal_health_records')
-      .select(`
-        *,
-        animals (
-          id,
-          name,
-          tag_number
-        )
-      `)
-      .in('animal_id', animalIds)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('Error fetching health records:', error)
-      return NextResponse.json({ error: 'Failed to fetch health records' }, { status: 500 })
-    }
+    // Use the fixed function instead of direct Supabase query
+    const healthRecords = await getAnimalHealthRecords(userRole.farm_id)
 
     return NextResponse.json({ 
       success: true, 

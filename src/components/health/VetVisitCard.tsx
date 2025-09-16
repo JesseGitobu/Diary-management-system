@@ -1,11 +1,12 @@
 // =============================================================================
-// VetVisitCard.tsx
+// VetVisitCard.tsx - Updated with loading states
 // =============================================================================
 'use client'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { 
   CalendarCheck, 
   Clock, 
@@ -24,9 +25,10 @@ interface VetVisitCardProps {
   onEdit: () => void
   onDelete: () => void
   canEdit: boolean
+  isDeleting?: boolean
 }
 
-export function VetVisitCard({ visit, onEdit, onDelete, canEdit }: VetVisitCardProps) {
+export function VetVisitCard({ visit, onEdit, onDelete, canEdit, isDeleting = false }: VetVisitCardProps) {
   const getStatusColor = (status: string) => {
     switch (status?.toLowerCase()) {
       case 'scheduled': return 'bg-blue-100 text-blue-800'
@@ -34,6 +36,7 @@ export function VetVisitCard({ visit, onEdit, onDelete, canEdit }: VetVisitCardP
       case 'completed': return 'bg-gray-100 text-gray-800'
       case 'cancelled': return 'bg-red-100 text-red-800'
       case 'rescheduled': return 'bg-yellow-100 text-yellow-800'
+      case 'in_progress': return 'bg-orange-100 text-orange-800'
       default: return 'bg-gray-100 text-gray-800'
     }
   }
@@ -55,7 +58,7 @@ export function VetVisitCard({ visit, onEdit, onDelete, canEdit }: VetVisitCardP
     <Card className={`hover:shadow-lg transition-shadow border-l-4 ${
       isUpcoming ? 'border-l-blue-500' : 
       isPast ? 'border-l-gray-400' : 'border-l-orange-500'
-    }`}>
+    } ${isDeleting ? 'opacity-50' : ''}`}>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex-1">
@@ -64,7 +67,7 @@ export function VetVisitCard({ visit, onEdit, onDelete, canEdit }: VetVisitCardP
                 isUpcoming ? 'text-blue-600' : 
                 isPast ? 'text-gray-600' : 'text-orange-600'
               }`} />
-              <span>{visit.purpose || 'Veterinary Visit'}</span>
+              <span>{visit.purpose || visit.visit_purpose || 'Veterinary Visit'}</span>
             </CardTitle>
             <div className="flex items-center space-x-2 mt-2">
               <Badge className={getStatusColor(visit.status)}>
@@ -75,6 +78,11 @@ export function VetVisitCard({ visit, onEdit, onDelete, canEdit }: VetVisitCardP
                   {visit.priority?.toUpperCase()}
                 </Badge>
               )}
+              {visit.priority_level && (
+                <Badge className={getPriorityColor(visit.priority_level)}>
+                  {visit.priority_level?.toUpperCase()}
+                </Badge>
+              )}
               {visit.is_emergency && (
                 <Badge className="bg-red-100 text-red-800">Emergency</Badge>
               )}
@@ -83,11 +91,26 @@ export function VetVisitCard({ visit, onEdit, onDelete, canEdit }: VetVisitCardP
           
           {canEdit && (
             <div className="flex space-x-1">
-              <Button variant="ghost" size="sm" onClick={onEdit}>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={onEdit}
+                disabled={isDeleting}
+              >
                 <Edit className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="sm" onClick={onDelete} className="text-red-600">
-                <Trash2 className="w-4 h-4" />
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={onDelete} 
+                className="text-red-600"
+                disabled={isDeleting}
+              >
+                {isDeleting ? (
+                  <LoadingSpinner size="sm" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
               </Button>
             </div>
           )}
@@ -114,10 +137,10 @@ export function VetVisitCard({ visit, onEdit, onDelete, canEdit }: VetVisitCardP
             </div>
           )}
           
-          {visit.location && (
+          {(visit.location || visit.location_details) && (
             <div className="flex items-center space-x-2">
               <MapPin className="w-4 h-4 text-gray-400" />
-              <span className="truncate">{visit.location}</span>
+              <span className="truncate">{visit.location || visit.location_details}</span>
             </div>
           )}
           
@@ -127,18 +150,34 @@ export function VetVisitCard({ visit, onEdit, onDelete, canEdit }: VetVisitCardP
               <span>{visit.animals_involved.length} animals involved</span>
             </div>
           )}
+          
+          {visit.visit_animals?.length > 0 && (
+            <div className="flex items-center space-x-2">
+              <Users className="w-4 h-4 text-gray-400" />
+              <span>{visit.visit_animals.length} animals involved</span>
+            </div>
+          )}
         </div>
         
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div>
             <span className="font-medium">Duration: </span>
-            <span className="text-gray-600">{visit.duration_minutes || 60} mins</span>
+            <span className="text-gray-600">
+              {visit.duration_minutes ? `${visit.duration_minutes} mins` : 
+               visit.duration_hours ? `${visit.duration_hours} hours` : '60 mins'}
+            </span>
           </div>
           
-          {visit.estimated_cost && (
+          {(visit.estimated_cost || visit.actual_cost) && (
             <div className="flex items-center space-x-1">
               <DollarSign className="w-4 h-4 text-gray-400" />
-              <span>${visit.estimated_cost}</span>
+              <span>
+                {visit.status === 'completed' && visit.actual_cost 
+                  ? `$${visit.actual_cost}` 
+                  : visit.estimated_cost 
+                    ? `~$${visit.estimated_cost}` 
+                    : 'TBD'}
+              </span>
             </div>
           )}
         </div>
@@ -168,10 +207,12 @@ export function VetVisitCard({ visit, onEdit, onDelete, canEdit }: VetVisitCardP
           </div>
         )}
         
-        {visit.notes && (
+        {(visit.notes || visit.special_instructions) && (
           <div className="text-sm">
             <span className="font-medium">Notes: </span>
-            <span className="text-gray-600 line-clamp-2">{visit.notes}</span>
+            <span className="text-gray-600 line-clamp-2">
+              {visit.notes || visit.special_instructions}
+            </span>
           </div>
         )}
         

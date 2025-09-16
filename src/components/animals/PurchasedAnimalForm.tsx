@@ -17,10 +17,11 @@ import {
 } from '@/components/ui/Select'
 import { Card, CardContent } from '@/components/ui/Card'
 import { Info, Heart, Calendar, Droplets } from 'lucide-react'
+import { TagGenerationSection } from './TagGenerationSection' // Import the component
 
-// Validation schema for purchased animal
+// Updated validation schema - tag_number now optional since it can be auto-generated
 const purchasedAnimalSchema = z.object({
-  tag_number: z.string().min(1, 'Tag number is required'),
+  tag_number: z.string().optional(), // Now optional since auto-generation is available
   name: z.string().optional(),
   breed: z.string().min(1, 'Breed is required'),
   gender: z.enum(['male', 'female'], {
@@ -49,6 +50,9 @@ const purchasedAnimalSchema = z.object({
   current_daily_production: z.number().positive().optional(),
   days_in_milk: z.number().positive().optional(),
   lactation_number: z.number().positive().optional(),
+  
+  // Add for tag generation
+  autoGenerateTag: z.boolean().optional(),
 })
 
 type PurchasedAnimalFormData = z.infer<typeof purchasedAnimalSchema>
@@ -88,83 +92,139 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
       current_daily_production: undefined,
       days_in_milk: undefined,
       lactation_number: undefined,
+      autoGenerateTag: true, // Default to auto-generation
     },
   })
   
+  // Watch form data for tag generation context
+  const formData = form.watch()
+  
   // Watch production status changes
-  useEffect(() => {
-    const subscription = form.watch((value, { name }) => {
-      if (name === 'production_status') {
-        setProductionStatus(value.production_status || 'heifer')
-        // Clear conditional fields when production status changes
-        form.setValue('mother_daily_production', undefined)
-        form.setValue('mother_lactation_number', undefined)
-        form.setValue('mother_peak_production', undefined)
-        form.setValue('service_date', '')
-        form.setValue('service_method', '')
-        form.setValue('expected_calving_date', '')
-        form.setValue('current_daily_production', undefined)
-        form.setValue('days_in_milk', undefined)
-        form.setValue('lactation_number', undefined)
-      }
-    })
-    return () => subscription.unsubscribe()
-  }, [form])
+  const productionStatusValue = form.watch('production_status')
+
+useEffect(() => {
+  if (productionStatusValue && productionStatusValue !== productionStatus) {
+    setProductionStatus(productionStatusValue)
+    
+    // Clear conditional fields when production status changes
+    form.setValue('mother_daily_production', undefined)
+    form.setValue('mother_lactation_number', undefined)
+    form.setValue('mother_peak_production', undefined)
+    form.setValue('service_date', '')
+    form.setValue('service_method', '')
+    form.setValue('expected_calving_date', '')
+    form.setValue('current_daily_production', undefined)
+    form.setValue('days_in_milk', undefined)
+    form.setValue('lactation_number', undefined)
+  }
+}, [productionStatusValue, productionStatus, form])
+
+  // Handle tag changes from TagGenerationSection
+  const handleTagChange = (tagNumber: string, autoGenerate: boolean) => {
+  console.log('🏷️ [Form] Tag change:', { tagNumber, autoGenerate })
+  
+  // Update form with new tag
+  form.setValue('tag_number', tagNumber, { 
+    shouldValidate: true, 
+    shouldDirty: true,
+    shouldTouch: true
+  })
+  form.setValue('autoGenerateTag', autoGenerate)
+  
+  // Clear any previous tag-related errors
+  form.clearErrors('tag_number')
+}
+
+  // Prepare custom attributes for tag generation based on form data
+  const getCustomAttributesForTag = () => {
+    return [
+      { name: 'Breed Group', value: formData.breed || 'Unknown' },
+      { name: 'Production Stage', value: formData.production_status || 'Unknown' },
+      { name: 'Source', value: 'Purchased' },
+      { name: 'Gender', value: formData.gender || 'Unknown' },
+      ...(formData.seller_info ? [{ name: 'Seller', value: formData.seller_info.substring(0, 10) }] : [])
+    ]
+  }
   
   const handleSubmit = async (data: PurchasedAnimalFormData) => {
-    setLoading(true)
-    setError(null)
-    
-    try {
-      // Prepare conditional data based on production status
-      const conditionalData: any = {}
-      
-      if (data.production_status === 'heifer') {
-        if (data.mother_daily_production || data.mother_lactation_number || data.mother_peak_production) {
-          conditionalData.mother_production_info = {
-            daily_production: data.mother_daily_production,
-            lactation_number: data.mother_lactation_number,
-            peak_production: data.mother_peak_production,
-          }
-        }
-      } else if (data.production_status === 'served') {
-        conditionalData.service_date = data.service_date
-        conditionalData.service_method = data.service_method
-        conditionalData.expected_calving_date = data.expected_calving_date
-      } else if (data.production_status === 'lactating') {
-        conditionalData.current_daily_production = data.current_daily_production
-        conditionalData.days_in_milk = data.days_in_milk
-        conditionalData.lactation_number = data.lactation_number
-      }
-      
-      const response = await fetch('/api/animals', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json' 
-        },
-        body: JSON.stringify({
-          ...data,
-          ...conditionalData,
-          farm_id: farmId,
-          animal_source: 'purchased_animal',
-          weight: data.purchase_weight,
-          status: 'active',
-        }),
-      })
-      
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to add purchased animal')
-      }
-      
-      const result = await response.json()
-      onSuccess(result.animal)
-    } catch (err: any) {
-      setError(err.message)
-    } finally {
-      setLoading(false)
-    }
+  console.log('📝 [Form] Submitting with data:', data)
+  
+  // Validate that we have a tag number (either auto-generated or manual)
+  if (!data.tag_number || data.tag_number.trim().length === 0) {
+    console.error('❌ [Form] No tag number provided')
+    setError('Tag number is required. Please enable auto-generation or enter a manual tag number.')
+    return
   }
+
+  console.log('🏷️ [Form] Final tag number:', data.tag_number)
+  setLoading(true)
+  setError(null)
+  
+  try {
+    // Prepare conditional data based on production status
+    const conditionalData: any = {}
+    
+    if (data.production_status === 'heifer') {
+      if (data.mother_daily_production || data.mother_lactation_number || data.mother_peak_production) {
+        conditionalData.mother_production_info = {
+          daily_production: data.mother_daily_production,
+          lactation_number: data.mother_lactation_number,
+          peak_production: data.mother_peak_production,
+        }
+      }
+    } else if (data.production_status === 'served') {
+      conditionalData.service_date = data.service_date
+      conditionalData.service_method = data.service_method
+      conditionalData.expected_calving_date = data.expected_calving_date
+    } else if (data.production_status === 'lactating') {
+      conditionalData.current_daily_production = data.current_daily_production
+      conditionalData.days_in_milk = data.days_in_milk
+      conditionalData.lactation_number = data.lactation_number
+    }
+    
+    const requestData = {
+      ...data,
+      ...conditionalData,
+      farm_id: farmId,
+      animal_source: 'purchased_animal',
+      weight: data.purchase_weight,
+      status: 'active',
+      autoGenerateTag: data.autoGenerateTag,
+      tag_number: data.tag_number.trim()
+    }
+    
+    console.log('📤 [Form] Request data:', requestData)
+    
+    const response = await fetch('/api/animals', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json' 
+      },
+      body: JSON.stringify(requestData),
+    })
+    
+    const result = await response.json()
+    console.log('📥 [Form] API Response:', result)
+    
+    if (!response.ok) {
+      throw new Error(result.error || 'Failed to add purchased animal')
+    }
+    
+    // Show success message with generated tag if applicable
+    if (result.generatedTagNumber) {
+      console.log(`✅ [Form] Animal registered successfully with auto-generated tag: ${result.generatedTagNumber}`)
+    }
+    
+    // Pass the API RESULT (not the form data) to the success handler
+    onSuccess(result) // ← This should be the API response, not form data
+    
+  } catch (err: any) {
+    console.error('❌ [Form] Submit error:', err)
+    setError(err.message)
+  } finally {
+    setLoading(false)
+  }
+}
   
   return (
     <div className="space-y-6">
@@ -180,22 +240,19 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
       )}
       
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+        {/* Tag Generation Section - Now at the top */}
+        <TagGenerationSection
+          farmId={farmId}
+          formData={formData}
+          onTagChange={handleTagChange}
+          customAttributes={getCustomAttributesForTag()}
+        />
+
         {/* Basic Information */}
         <div className="space-y-4">
           <h4 className="text-md font-medium text-gray-900 border-b pb-2">Basic Information</h4>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="tag_number">Tag Number *</Label>
-              <Input
-                id="tag_number"
-                {...form.register('tag_number')}
-                error={form.formState.errors.tag_number?.message}
-                placeholder="e.g., P001, PF24-001"
-              />
-              <p className="text-xs text-gray-500">Unique identifier for this animal</p>
-            </div>
-            
             <div className="space-y-2">
               <Label htmlFor="name">Animal Name (Optional)</Label>
               <Input
@@ -204,9 +261,20 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
                 placeholder="e.g., Bella, Queen"
               />
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="birth_date">Birth Date</Label>
+              <Input
+                id="birth_date"
+                type="date"
+                {...form.register('birth_date')}
+                error={form.formState.errors.birth_date?.message}
+              />
+              <p className="text-xs text-gray-500">If known</p>
+            </div>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="breed">Breed *</Label>
               <Select
@@ -248,17 +316,6 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
               {form.formState.errors.gender && (
                 <p className="text-sm text-red-600">{form.formState.errors.gender.message}</p>
               )}
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="birth_date">Birth Date</Label>
-              <Input
-                id="birth_date"
-                type="date"
-                {...form.register('birth_date')}
-                error={form.formState.errors.birth_date?.message}
-              />
-              <p className="text-xs text-gray-500">If known</p>
             </div>
           </div>
         </div>
@@ -572,11 +629,11 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
             Cancel
           </Button>
           <Button
-          variant="primary"
+            variant="primary"
             size="default"
             primary={true}
             type="submit"
-            disabled={loading}
+            disabled={loading || !formData.tag_number}
           >
             {loading ? (
               <>

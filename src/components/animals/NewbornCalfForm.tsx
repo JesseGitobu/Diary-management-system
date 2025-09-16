@@ -15,10 +15,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/Select'
+import { TagGenerationSection } from './TagGenerationSection' // Import the component we created
 
-// Validation schema for newborn calf
+// Updated validation schema - tag_number now optional since it can be auto-generated
 const newbornCalfSchema = z.object({
-  tag_number: z.string().min(1, 'Tag number is required'),
+  tag_number: z.string().optional(), // Now optional since auto-generation is available
   name: z.string().optional(),
   breed: z.string().min(1, 'Breed is required'),
   gender: z.enum(['male', 'female'], {
@@ -32,6 +33,8 @@ const newbornCalfSchema = z.object({
   }),
   birth_weight: z.number().positive().optional(),
   notes: z.string().optional(),
+  // Add these for tag generation
+  autoGenerateTag: z.boolean().optional(),
 })
 
 type NewbornCalfFormData = z.infer<typeof newbornCalfSchema>
@@ -70,8 +73,12 @@ export function NewbornCalfForm({ farmId, onSuccess, onCancel }: NewbornCalfForm
       father_info: '',
       birth_weight: undefined,
       notes: '',
+      autoGenerateTag: true, // Default to auto-generation
     },
   })
+
+  // Watch form data for tag generation context
+  const formData = form.watch()
 
   // Load available mothers (female animals that could be mothers)
   useEffect(() => {
@@ -99,39 +106,75 @@ export function NewbornCalfForm({ farmId, onSuccess, onCancel }: NewbornCalfForm
     }
   }, [farmId])
 
-  const handleSubmit = async (data: NewbornCalfFormData) => {
-    setLoading(true)
-    setError(null)
-
-    try {
-      const response = await fetch('/api/animals', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          ...data,
-          farm_id: farmId,
-          animal_source: 'newborn_calf',
-          production_status: 'calf',
-          weight: data.birth_weight,
-          status: 'active',
-        }),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to add calf')
-      }
-
-      const result = await response.json()
-      onSuccess(result.animal)
-    } catch (err: any) {
-      setError(err.message)
-    } finally {
-      setLoading(false)
-    }
+  // Handle tag changes from TagGenerationSection
+  const handleTagChange = (tagNumber: string, autoGenerate: boolean) => {
+    form.setValue('tag_number', tagNumber)
+    form.setValue('autoGenerateTag', autoGenerate)
   }
+
+  // Prepare custom attributes for tag generation based on form data
+  const getCustomAttributesForTag = () => {
+    const selectedMother = availableMothers.find(m => m.id === formData.mother_id)
+
+    return [
+      { name: 'Breed Group', value: formData.breed || 'Unknown' },
+      { name: 'Production Stage', value: 'Calf' },
+      { name: 'Gender', value: formData.gender || 'Unknown' },
+      { name: 'Source', value: 'Born Here' },
+      ...(selectedMother ? [{ name: 'Mother', value: selectedMother.tag_number }] : [])
+    ]
+  }
+
+  const handleSubmit = async (data: NewbornCalfFormData) => {
+  // Validate that we have a tag number (either auto-generated or manual)
+  if (!data.tag_number || data.tag_number.trim().length === 0) {
+    setError('Tag number is required. Please enable auto-generation or enter a manual tag number.')
+    return
+  }
+
+  setLoading(true)
+  setError(null)
+
+  try {
+    const requestData = {
+      ...data,
+      farm_id: farmId,
+      animal_source: 'newborn_calf',
+      production_status: 'calf',
+      weight: data.birth_weight,
+      status: 'active',
+      autoGenerateTag: data.autoGenerateTag,
+    }
+
+    const response = await fetch('/api/animals', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(requestData),
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.error || 'Failed to add calf')
+    }
+
+    const result = await response.json()
+
+    // Show success message with generated tag if applicable
+    if (result.generatedTagNumber) {
+      console.log(`Calf registered successfully with auto-generated tag: ${result.generatedTagNumber}`)
+    }
+
+    // Pass the API RESULT (not the form data) to the success handler
+    onSuccess(result) // ← This should be the API response, not form data
+
+  } catch (err: any) {
+    setError(err.message)
+  } finally {
+    setLoading(false)
+  }
+}
 
   return (
     <div className="space-y-6">
@@ -147,22 +190,19 @@ export function NewbornCalfForm({ farmId, onSuccess, onCancel }: NewbornCalfForm
       )}
 
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+        {/* Tag Generation Section - Now at the top */}
+        <TagGenerationSection
+          farmId={farmId}
+          formData={formData}
+          onTagChange={handleTagChange}
+          customAttributes={getCustomAttributesForTag()}
+        />
+
         {/* Basic Information */}
         <div className="space-y-4">
           <h4 className="text-md font-medium text-gray-900 border-b pb-2">Basic Information</h4>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="tag_number">Tag Number *</Label>
-              <Input
-                id="tag_number"
-                {...form.register('tag_number')}
-                error={form.formState.errors.tag_number?.message}
-                placeholder="e.g., C001, CF24-001"
-              />
-              <p className="text-xs text-gray-500">Unique identifier for this calf</p>
-            </div>
-
             <div className="space-y-2">
               <Label htmlFor="name">Calf Name (Optional)</Label>
               <Input
@@ -172,9 +212,19 @@ export function NewbornCalfForm({ farmId, onSuccess, onCancel }: NewbornCalfForm
               />
               <p className="text-xs text-gray-500">Give your calf a name</p>
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="birth_date">Birth Date *</Label>
+              <Input
+                id="birth_date"
+                type="date"
+                {...form.register('birth_date')}
+                error={form.formState.errors.birth_date?.message}
+              />
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="breed">Breed *</Label>
               <Select
@@ -217,16 +267,6 @@ export function NewbornCalfForm({ farmId, onSuccess, onCancel }: NewbornCalfForm
                 <p className="text-sm text-red-600">{form.formState.errors.gender.message}</p>
               )}
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="birth_date">Birth Date *</Label>
-              <Input
-                id="birth_date"
-                type="date"
-                {...form.register('birth_date')}
-                error={form.formState.errors.birth_date?.message}
-              />
-            </div>
           </div>
         </div>
 
@@ -252,7 +292,10 @@ export function NewbornCalfForm({ farmId, onSuccess, onCancel }: NewbornCalfForm
                   </SelectTrigger>
                   <SelectContent>
                     {availableMothers.length === 0 ? (
-                      <SelectItem value="" disabled>No available mothers found</SelectItem>
+                      // Option 1: Don't render any SelectItem when no mothers available
+                      <div className="px-2 py-1.5 text-sm text-gray-500">
+                        No available mothers found
+                      </div>
                     ) : (
                       availableMothers.map(mother => (
                         <SelectItem key={mother.id} value={mother.id}>
@@ -357,7 +400,7 @@ export function NewbornCalfForm({ farmId, onSuccess, onCancel }: NewbornCalfForm
             size="default"
             primary={true}
             type="submit"
-            disabled={loading || loadingMothers}
+            disabled={loading || loadingMothers || !formData.tag_number}
           >
             {loading ? (
               <>

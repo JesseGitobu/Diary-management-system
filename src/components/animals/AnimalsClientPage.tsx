@@ -5,11 +5,13 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { AnimalsList } from '@/components/animals/AnimalsList'
-import { AddAnimalModal } from '@/components/animals/AddAnimalModal'
+import AddAnimalModal from '@/components/animals/AddAnimalModal'
 import { ImportAnimalsModal } from '@/components/animals/ImportAnimalsModal'
 import { MobileStatsCarousel } from '@/components/mobile/MobileStatsCarousel'
 import { QuickActionButton } from '@/components/mobile/QuickActionButton'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
+import HealthNotificationBanner from '@/components/health/HealthNotificationBanner'
+import CompleteHealthRecordModal from '@/components/health/CompleteHealthRecordModal'
 import { 
   Plus, 
   Users, 
@@ -66,14 +68,43 @@ export function AnimalsClientPage({
   const canExportData = ['farm_owner', 'farm_manager'].includes(userRole)
   const canImportData = ['farm_owner', 'farm_manager'].includes(userRole)
 
+  const [showHealthRecordModal, setShowHealthRecordModal] = useState(false)
+  const [selectedHealthRecord, setSelectedHealthRecord] = useState<any>(null)
+  const [healthRecordsNeedingCompletion, setHealthRecordsNeedingCompletion] = useState<any[]>([])
+
   const handleAnimalAdded = (newAnimal: Animal) => {
     // Update local state with new animal
     setAnimals(prev => [newAnimal, ...prev])
-    
-    // Update stats
     updateStatsForNewAnimal(newAnimal)
     setShowAddModal(false)
   }
+
+  const handleHealthRecordCreated = (healthRecord: any) => {
+    // Add to the list of records needing completion
+    setHealthRecordsNeedingCompletion(prev => [healthRecord, ...prev])
+    
+    // Refresh the notification banner
+    // This will be handled by the HealthNotificationBanner component
+  }
+
+  const handleHealthRecordClick = (recordId: string) => {
+    // Find the record and open completion modal
+    const record = healthRecordsNeedingCompletion.find(r => r.id === recordId)
+    if (record) {
+      setSelectedHealthRecord(record)
+      setShowHealthRecordModal(true)
+    }
+  }
+
+  const handleHealthRecordCompleted = (completedRecord: any) => {
+    // Remove from incomplete list
+    setHealthRecordsNeedingCompletion(prev => 
+      prev.filter(r => r.id !== completedRecord.id)
+    )
+    setShowHealthRecordModal(false)
+    setSelectedHealthRecord(null)
+  }
+
 
   const handleAnimalsImported = (importedAnimals: Animal[]) => {
     // Update local state with imported animals
@@ -240,6 +271,12 @@ export function AnimalsClientPage({
       ${isMobile ? 'px-4 py-4' : 'dashboard-container'} 
       pb-20 lg:pb-6
     `}>
+      {/* Health Notifications - Show at the top */}
+      <HealthNotificationBanner
+        farmId={farmId}
+        onRecordClick={handleHealthRecordClick}
+        className="mb-6"
+      />
       {/* Mobile Header */}
       {isMobile ? (
         <div className="mb-6">
@@ -505,6 +542,7 @@ export function AnimalsClientPage({
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}
         onAnimalAdded={handleAnimalAdded}
+        onHealthRecordCreated={handleHealthRecordCreated}
       />
 
       {/* Import Animals Modal */}
@@ -514,6 +552,16 @@ export function AnimalsClientPage({
         onClose={() => setShowImportModal(false)}
         onAnimalsImported={handleAnimalsImported}
       />
+
+    {showHealthRecordModal && selectedHealthRecord && (
+        <CompleteHealthRecordModal
+          isOpen={showHealthRecordModal}
+          onClose={() => setShowHealthRecordModal(false)}
+          healthRecord={selectedHealthRecord}
+          animal={animals.find(a => a.id === selectedHealthRecord.animal_id)}
+          onHealthRecordUpdated={handleHealthRecordCompleted}
+        />
+      )}  
     </div>
   )
 }

@@ -17,6 +17,8 @@ export default async function AnimalsPage() {
   if (!userRole?.farm_id) {
     redirect('/dashboard')
   }
+
+  console.log('Fetching animals for farm:', userRole.farm_id)
   
   // Get animals and enhanced statistics
   const [animals, stats] = await Promise.all([

@@ -23,7 +23,7 @@ export function DashboardHeader() {
               </span>
             </div>
             
-            <Button
+            {/* <Button
               variant="outline"
               size="sm"
               onClick={() => signOut()}
@@ -31,7 +31,7 @@ export function DashboardHeader() {
             >
               <LogOut className="w-4 h-4" />
               <span>Sign Out</span>
-            </Button>
+            </Button> */}
           </div>
         </div>
       </div>

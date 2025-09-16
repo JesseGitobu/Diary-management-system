@@ -120,7 +120,7 @@ export async function generateVaccinationSchedule(animalId: string, protocolId: 
     return { success: true, data }
   } catch (error) {
     console.error('Error generating vaccination schedule:', error)
-    return { success: false, error: error.message }
+    return { success: false, error: error instanceof Error ? error.message : 'An unknown error occurred' }
   }
 }
 

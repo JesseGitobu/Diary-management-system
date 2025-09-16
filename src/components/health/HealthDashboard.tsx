@@ -35,10 +35,17 @@ import { VaccinationCard } from '@/components/health/VaccinationCard'
 import { VetVisitCard } from '@/components/health/VetVisitCard'
 
 // Mobile-specific components
-import { MobileStatsScroller } from '@/components/mobile/MobileStatsScroller'
 import { MobileActionSheet } from '@/components/mobile/MobileActionSheet'
 import { MobileTabBar } from '@/components/mobile/MobileTabBar'
 import { MobileSearchFilter } from '@/components/mobile/MobileSearchFilter'
+
+import { EditHealthRecordModal } from '@/components/health/EditHealthRecordModal'
+import { FollowUpHealthRecordModal } from '@/components/health/FollowUpHealthRecordModal'
+import { EditVeterinarianModal } from '@/components/health/EditVeterinarianModal'
+import { EditProtocolModal } from '@/components/health/EditProtocolModal'
+import { EditOutbreakModal } from '@/components/health/EditOutbreakModal'
+import { EditVaccinationModal } from '@/components/health/EditVaccinationModal'
+import { EditVetVisitModal } from '@/components/health/EditVetVisitModal'
 
 import {
   Plus,
@@ -156,6 +163,33 @@ export function HealthRecordsContent({
   // Filter states
   const [selectedRecordType, setSelectedRecordType] = useState('')
   const [selectedAnimalFilter, setSelectedAnimalFilter] = useState('')
+
+  const [editingRecord, setEditingRecord] = useState<any>(null)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [showFollowUpModal, setShowFollowUpModal] = useState(false)
+  const [followUpRecord, setFollowUpRecord] = useState<any>(null)
+  const [deletingRecordId, setDeletingRecordId] = useState<string | null>(null)
+
+  const [editingVeterinarian, setEditingVeterinarian] = useState<any>(null)
+  const [showEditVeterinarianModal, setShowEditVeterinarianModal] = useState(false)
+  const [deletingVeterinarianId, setDeletingVeterinarianId] = useState<string | null>(null)
+
+  const [editingProtocol, setEditingProtocol] = useState<any>(null)
+  const [showEditProtocolModal, setShowEditProtocolModal] = useState(false)
+  const [deletingProtocolId, setDeletingProtocolId] = useState<string | null>(null)
+
+  const [editingOutbreak, setEditingOutbreak] = useState<any>(null)
+  const [showEditOutbreakModal, setShowEditOutbreakModal] = useState(false)
+  const [deletingOutbreakId, setDeletingOutbreakId] = useState<string | null>(null)
+
+  const [editingVaccination, setEditingVaccination] = useState<any>(null)
+  const [showEditVaccinationModal, setShowEditVaccinationModal] = useState(false)
+  const [deletingVaccinationId, setDeletingVaccinationId] = useState<string | null>(null)
+
+  const [editingVetVisit, setEditingVetVisit] = useState<any>(null)
+  const [showEditVetVisitModal, setShowEditVetVisitModal] = useState(false)
+  const [deletingVetVisitId, setDeletingVetVisitId] = useState<string | null>(null)
+
 
   // Permission checks
   const canAddRecords = userRole?.role_type &&
@@ -391,6 +425,71 @@ export function HealthRecordsContent({
     await refreshHealthData()
   }
 
+
+  const handleEditRecord = (record: any) => {
+    setEditingRecord(record)
+    setShowEditModal(true)
+  }
+
+  const handleRecordUpdated = async (updatedRecord: any) => {
+    if (updatedRecord) {
+      setHealthRecords(prev =>
+        prev.map(record =>
+          record.id === updatedRecord.id ? updatedRecord : record
+        )
+      )
+    }
+    setShowEditModal(false)
+    setEditingRecord(null)
+    toast.success('Health record updated successfully!')
+    await refreshHealthData()
+  }
+
+  const handleDeleteRecord = async (recordId: string) => {
+    if (!confirm('Are you sure you want to delete this health record? This action cannot be undone.')) {
+      return
+    }
+
+    setDeletingRecordId(recordId)
+
+    try {
+      const response = await fetch(`/api/health/records/${recordId}`, {
+        method: 'DELETE',
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to delete health record')
+      }
+
+      setHealthRecords(prev => prev.filter(record => record.id !== recordId))
+      toast.success('Health record deleted successfully!')
+      await refreshHealthData()
+    } catch (error) {
+      console.error('Error deleting health record:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to delete health record')
+    } finally {
+      setDeletingRecordId(null)
+    }
+  }
+
+  const handleFollowUpRecord = (record: any) => {
+    setFollowUpRecord(record)
+    setShowFollowUpModal(true)
+  }
+
+  const handleFollowUpAdded = async (followUp: any) => {
+    if (followUp) {
+      // Add the follow-up as a new health record
+      setHealthRecords(prev => [followUp, ...prev])
+    }
+    setShowFollowUpModal(false)
+    setFollowUpRecord(null)
+    toast.success('Follow-up record added successfully!')
+    await refreshHealthData()
+  }
+
   const handleProtocolAdded = async (newProtocol: any) => {
     if (newProtocol) {
       setProtocols(prev => [newProtocol, ...prev])
@@ -398,6 +497,54 @@ export function HealthRecordsContent({
     setShowProtocolModal(false)
     toast.success('Health protocol created successfully!')
     await refreshHealthData()
+  }
+
+  const handleEditProtocol = (protocol: any) => {
+    setEditingProtocol(protocol)
+    setShowEditProtocolModal(true)
+  }
+
+  const handleProtocolUpdated = async (updatedProtocol: any) => {
+    if (updatedProtocol) {
+      setProtocols(prev =>
+        prev.map(protocol =>
+          protocol.id === updatedProtocol.id ? updatedProtocol : protocol
+        )
+      )
+    }
+    setShowEditProtocolModal(false)
+    setEditingProtocol(null)
+    toast.success('Protocol updated successfully!')
+    await refreshHealthData()
+  }
+
+  const handleDeleteProtocol = async (protocolId: string) => {
+    if (!confirm('Are you sure you want to delete this protocol? This action cannot be undone.')) {
+      return
+    }
+
+    setDeletingProtocolId(protocolId)
+
+    try {
+      const response = await fetch(`/api/health/protocols/${protocolId}`, {
+        method: 'DELETE',
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to delete protocol')
+      }
+
+      setProtocols(prev => prev.filter(protocol => protocol.id !== protocolId))
+      toast.success('Protocol deleted successfully!')
+      await refreshHealthData()
+    } catch (error) {
+      console.error('Error deleting protocol:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to delete protocol')
+    } finally {
+      setDeletingProtocolId(null)
+    }
   }
 
   const handleOutbreakCreated = async (newOutbreak: any) => {
@@ -413,6 +560,54 @@ export function HealthRecordsContent({
     await refreshHealthData()
   }
 
+  const handleEditOutbreak = (outbreak: any) => {
+    setEditingOutbreak(outbreak)
+    setShowEditOutbreakModal(true)
+  }
+
+  const handleOutbreakUpdated = async (updatedOutbreak: any) => {
+    if (updatedOutbreak) {
+      setOutbreaks(prev =>
+        prev.map(outbreak =>
+          outbreak.id === updatedOutbreak.id ? updatedOutbreak : outbreak
+        )
+      )
+    }
+    setShowEditOutbreakModal(false)
+    setEditingOutbreak(null)
+    toast.success('Outbreak updated successfully!')
+    await refreshHealthData()
+  }
+
+  const handleDeleteOutbreak = async (outbreakId: string) => {
+    if (!confirm('Are you sure you want to delete this outbreak record? This action cannot be undone and will also remove related health records.')) {
+      return
+    }
+
+    setDeletingOutbreakId(outbreakId)
+
+    try {
+      const response = await fetch(`/api/health/outbreaks/${outbreakId}`, {
+        method: 'DELETE',
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to delete outbreak')
+      }
+
+      setOutbreaks(prev => prev.filter(outbreak => outbreak.id !== outbreakId))
+      toast.success('Outbreak deleted successfully!')
+      await refreshHealthData()
+    } catch (error) {
+      console.error('Error deleting outbreak:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to delete outbreak')
+    } finally {
+      setDeletingOutbreakId(null)
+    }
+  }
+
   const handleVaccinationScheduled = async (vaccination: any) => {
     if (vaccination) {
       setVaccinations(prev => [vaccination, ...prev])
@@ -424,6 +619,54 @@ export function HealthRecordsContent({
       await createVaccinationHealthRecords(vaccination)
     }
     await refreshHealthData()
+  }
+
+  const handleEditVaccination = (vaccination: any) => {
+    setEditingVaccination(vaccination)
+    setShowEditVaccinationModal(true)
+  }
+
+  const handleVaccinationUpdated = async (updatedVaccination: any) => {
+    if (updatedVaccination) {
+      setVaccinations(prev =>
+        prev.map(vaccination =>
+          vaccination.id === updatedVaccination.id ? updatedVaccination : vaccination
+        )
+      )
+    }
+    setShowEditVaccinationModal(false)
+    setEditingVaccination(null)
+    toast.success('Vaccination updated successfully!')
+    await refreshHealthData()
+  }
+
+  const handleDeleteVaccination = async (vaccinationId: string) => {
+    if (!confirm('Are you sure you want to delete this vaccination record? This action cannot be undone and will also remove related health records.')) {
+      return
+    }
+
+    setDeletingVaccinationId(vaccinationId)
+
+    try {
+      const response = await fetch(`/api/health/vaccinations/${vaccinationId}`, {
+        method: 'DELETE',
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to delete vaccination')
+      }
+
+      setVaccinations(prev => prev.filter(vaccination => vaccination.id !== vaccinationId))
+      toast.success('Vaccination deleted successfully!')
+      await refreshHealthData()
+    } catch (error) {
+      console.error('Error deleting vaccination:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to delete vaccination')
+    } finally {
+      setDeletingVaccinationId(null)
+    }
   }
 
   const handleVisitScheduled = async (visit: any) => {
@@ -439,6 +682,55 @@ export function HealthRecordsContent({
     await refreshHealthData()
   }
 
+  const handleEditVetVisit = (visit: any) => {
+    setEditingVetVisit(visit)
+    setShowEditVetVisitModal(true)
+  }
+
+  const handleVetVisitUpdated = async (updatedVisit: any) => {
+    if (updatedVisit) {
+      setVetVisits(prev =>
+        prev.map(visit =>
+          visit.id === updatedVisit.id ? updatedVisit : visit
+        )
+      )
+    }
+    setShowEditVetVisitModal(false)
+    setEditingVetVisit(null)
+    toast.success('Veterinary visit updated successfully!')
+    await refreshHealthData()
+  }
+
+  const handleDeleteVetVisit = async (visitId: string) => {
+    if (!confirm('Are you sure you want to delete this veterinary visit? This action cannot be undone.')) {
+      return
+    }
+
+    setDeletingVetVisitId(visitId)
+
+    try {
+      const response = await fetch(`/api/health/visits/${visitId}`, {
+        method: 'DELETE',
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to delete veterinary visit')
+      }
+
+      setVetVisits(prev => prev.filter(visit => visit.id !== visitId))
+      toast.success('Veterinary visit deleted successfully!')
+      await refreshHealthData()
+    } catch (error) {
+      console.error('Error deleting veterinary visit:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to delete veterinary visit')
+    } finally {
+      setDeletingVetVisitId(null)
+    }
+  }
+
+
   const handleVeterinarianAdded = async (newVeterinarian: any) => {
     if (newVeterinarian) {
       setVeterinarians(prev => [newVeterinarian, ...prev])
@@ -448,60 +740,108 @@ export function HealthRecordsContent({
     await refreshHealthData()
   }
 
+  const handleEditVeterinarian = (veterinarian: any) => {
+    setEditingVeterinarian(veterinarian)
+    setShowEditVeterinarianModal(true)
+  }
+
+  const handleVeterinarianUpdated = async (updatedVeterinarian: any) => {
+    if (updatedVeterinarian) {
+      setVeterinarians(prev =>
+        prev.map(vet =>
+          vet.id === updatedVeterinarian.id ? updatedVeterinarian : vet
+        )
+      )
+    }
+    setShowEditVeterinarianModal(false)
+    setEditingVeterinarian(null)
+    toast.success('Veterinarian updated successfully!')
+    await refreshHealthData()
+  }
+
+  const handleDeleteVeterinarian = async (veterinarianId: string) => {
+    if (!confirm('Are you sure you want to remove this veterinarian? This action cannot be undone.')) {
+      return
+    }
+
+    setDeletingVeterinarianId(veterinarianId)
+
+    try {
+      const response = await fetch(`/api/health/veterinarians?id=${veterinarianId}`, {
+        method: 'DELETE',
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to delete veterinarian')
+      }
+
+      setVeterinarians(prev => prev.filter(vet => vet.id !== veterinarianId))
+      toast.success('Veterinarian removed successfully!')
+      await refreshHealthData()
+    } catch (error) {
+      console.error('Error deleting veterinarian:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to delete veterinarian')
+    } finally {
+      setDeletingVeterinarianId(null)
+    }
+  }
+
   // Data refresh functions (same as original)
   const refreshHealthData = async () => {
-  setLoading(true)
-  try {
-    // Fetch all data in parallel using Promise.all
-    const [
-      healthRecordsRes,
-      veterinariansRes,
-      protocolsRes,
-      outbreaksRes,
-      vaccinationsRes,
-      vetVisitsRes
-    ] = await Promise.all([
-      fetch('/api/health/records'),
-      fetch('/api/health/veterinarians'),
-      fetch('/api/health/protocols'),
-      fetch('/api/health/outbreaks'),
-      fetch('/api/health/vaccinations'),
-      fetch('/api/health/visits')
-    ])
+    setLoading(true)
+    try {
+      // Fetch all data in parallel using Promise.all
+      const [
+        healthRecordsRes,
+        veterinariansRes,
+        protocolsRes,
+        outbreaksRes,
+        vaccinationsRes,
+        vetVisitsRes
+      ] = await Promise.all([
+        fetch('/api/health/records'),
+        fetch('/api/health/veterinarians'),
+        fetch('/api/health/protocols'),
+        fetch('/api/health/outbreaks'),
+        fetch('/api/health/vaccinations'),
+        fetch('/api/health/visits')
+      ])
 
-    // Process all responses in parallel
-    const [
-      healthData,
-      veterinariansData,
-      protocolsData,
-      outbreaksData,
-      vaccinationsData,
-      vetVisitsData
-    ] = await Promise.all([
-      healthRecordsRes.ok ? healthRecordsRes.json() : { HealthRecords: [] },
-      veterinariansRes.ok ? veterinariansRes.json() : { Veterinarians: [] },
-      protocolsRes.ok ? protocolsRes.json() : { Protocols: [] },
-      outbreaksRes.ok ? outbreaksRes.json() : { Outbreaks: [] },
-      vaccinationsRes.ok ? vaccinationsRes.json() : { Vaccinations: [] },
-      vetVisitsRes.ok ? vetVisitsRes.json() : { VetVisits: [] }
-    ])
+      // Process all responses in parallel
+      const [
+        healthData,
+        veterinariansData,
+        protocolsData,
+        outbreaksData,
+        vaccinationsData,
+        vetVisitsData
+      ] = await Promise.all([
+        healthRecordsRes.ok ? healthRecordsRes.json() : { HealthRecords: [] },
+        veterinariansRes.ok ? veterinariansRes.json() : { Veterinarians: [] },
+        protocolsRes.ok ? protocolsRes.json() : { Protocols: [] },
+        outbreaksRes.ok ? outbreaksRes.json() : { Outbreaks: [] },
+        vaccinationsRes.ok ? vaccinationsRes.json() : { Vaccinations: [] },
+        vetVisitsRes.ok ? vetVisitsRes.json() : { VetVisits: [] }
+      ])
 
-    // Update all state variables
-    setHealthRecords(healthData.healthRecords || [])
-    setVeterinarians(veterinariansData.veterinarians || [])
-    setProtocols(protocolsData.protocols || [])
-    setOutbreaks(outbreaksData.outbreaks || [])
-    setVaccinations(vaccinationsData.vaccinations || [])
-    setVetVisits(vetVisitsData.visits || [])
-  } catch (error) {
-    console.error('Error refreshing health data:', error)
-    toast.error('Failed to refresh data')
-  } finally {
-    setLoading(false)
+      // Update all state variables
+      setHealthRecords(healthData.healthRecords || [])
+      setVeterinarians(veterinariansData.veterinarians || [])
+      setProtocols(protocolsData.protocols || [])
+      setOutbreaks(outbreaksData.outbreaks || [])
+      setVaccinations(vaccinationsData.vaccinations || [])
+      setVetVisits(vetVisitsData.visits || [])
+    } catch (error) {
+      console.error('Error refreshing health data:', error)
+      toast.error('Failed to refresh data')
+    } finally {
+      setLoading(false)
+    }
   }
-}
 
-  
+
 
   // Helper functions (same as original - truncated for brevity)
   const createVisitReminder = async (visit: any) => {
@@ -892,9 +1232,12 @@ export function HealthRecordsContent({
                     <HealthRecordCard
                       key={record.id}
                       record={record}
-                      onEdit={() => {/* Handle edit */ }}
-                      onDelete={() => {/* Handle delete */ }}
+                      onEdit={() => handleEditRecord(record)}
+                      onDelete={() => handleDeleteRecord(record.id)}
+                      onFollowUp={() => handleFollowUpRecord(record)}
                       canEdit={canAddRecords}
+                      isDeleting={deletingRecordId === record.id}
+                      showFollowUp={['illness', 'injury', 'treatment'].includes(record.record_type)}
                     />
                   ))}
                 </div>
@@ -955,9 +1298,10 @@ export function HealthRecordsContent({
                     <VeterinarianCard
                       key={veterinarian.id}
                       veterinarian={veterinarian}
-                      onEdit={() => {/* Handle edit */ }}
-                      onDelete={() => {/* Handle delete */ }}
+                      onEdit={() => handleEditVeterinarian(veterinarian)}
+                      onDelete={() => handleDeleteVeterinarian(veterinarian.id)}
                       canEdit={canManageProtocols}
+                      isDeleting={deletingVeterinarianId === veterinarian.id}
                     />
                   ))}
                 </div>
@@ -1018,9 +1362,10 @@ export function HealthRecordsContent({
                     <ProtocolCard
                       key={protocol.id}
                       protocol={protocol}
-                      onEdit={() => {/* Handle edit */ }}
-                      onDelete={() => {/* Handle delete */ }}
+                      onEdit={() => handleEditProtocol(protocol)}
+                      onDelete={() => handleDeleteProtocol(protocol.id)}
                       canEdit={canManageProtocols}
+                      isDeleting={deletingProtocolId === protocol.id}
                     />
                   ))}
                 </div>
@@ -1057,7 +1402,6 @@ export function HealthRecordsContent({
                   </Button>
                 )}
               </div>
-              
 
               {filteredOutbreaks.length === 0 ? (
                 <div className="text-center py-12">
@@ -1078,9 +1422,10 @@ export function HealthRecordsContent({
                     <OutbreakCard
                       key={outbreak.id}
                       outbreak={outbreak}
-                      onEdit={() => {/* Handle edit */ }}
-                      onDelete={() => {/* Handle delete */ }}
+                      onEdit={() => handleEditOutbreak(outbreak)}
+                      onDelete={() => handleDeleteOutbreak(outbreak.id)}
                       canEdit={canManageProtocols}
+                      isDeleting={deletingOutbreakId === outbreak.id}
                     />
                   ))}
                 </div>
@@ -1142,9 +1487,10 @@ export function HealthRecordsContent({
                     <VaccinationCard
                       key={vaccination.id}
                       vaccination={vaccination}
-                      onEdit={() => {/* Handle edit */ }}
-                      onDelete={() => {/* Handle delete */ }}
+                      onEdit={() => handleEditVaccination(vaccination)}
+                      onDelete={() => handleDeleteVaccination(vaccination.id)}
                       canEdit={canAddRecords}
+                      isDeleting={deletingVaccinationId === vaccination.id}
                     />
                   ))}
                 </div>
@@ -1206,9 +1552,10 @@ export function HealthRecordsContent({
                     <VetVisitCard
                       key={visit.id}
                       visit={visit}
-                      onEdit={() => {/* Handle edit */ }}
-                      onDelete={() => {/* Handle delete */ }}
+                      onEdit={() => handleEditVetVisit(visit)}
+                      onDelete={() => handleDeleteVetVisit(visit.id)}
                       canEdit={canAddRecords}
+                      isDeleting={deletingVetVisitId === visit.id}
                     />
                   ))}
                 </div>
@@ -1243,6 +1590,35 @@ export function HealthRecordsContent({
         />
       )}
 
+      {/* New Edit Modal */}
+      {showEditModal && editingRecord && (
+        <EditHealthRecordModal
+          farmId={userRole?.farm_id}
+          animals={animals}
+          record={editingRecord}
+          isOpen={showEditModal}
+          onClose={() => {
+            setShowEditModal(false)
+            setEditingRecord(null)
+          }}
+          onRecordUpdated={handleRecordUpdated}
+        />
+      )}
+
+      {/* New Follow-up Modal */}
+      {showFollowUpModal && followUpRecord && (
+        <FollowUpHealthRecordModal
+          farmId={userRole?.farm_id}
+          originalRecord={followUpRecord}
+          isOpen={showFollowUpModal}
+          onClose={() => {
+            setShowFollowUpModal(false)
+            setFollowUpRecord(null)
+          }}
+          onFollowUpAdded={handleFollowUpAdded}
+        />
+      )}
+
       {showProtocolModal && (
         <AddProtocolModal
           farmId={userRole?.farm_id}
@@ -1250,6 +1626,20 @@ export function HealthRecordsContent({
           isOpen={showProtocolModal}
           onClose={() => setShowProtocolModal(false)}
           onProtocolCreated={handleProtocolAdded}
+        />
+      )}
+
+      {showEditProtocolModal && editingProtocol && (
+        <EditProtocolModal
+          farmId={userRole?.farm_id}
+          protocol={editingProtocol}
+          animals={animals}
+          isOpen={showEditProtocolModal}
+          onClose={() => {
+            setShowEditProtocolModal(false)
+            setEditingProtocol(null)
+          }}
+          onProtocolUpdated={handleProtocolUpdated}
         />
       )}
 
@@ -1263,6 +1653,20 @@ export function HealthRecordsContent({
         />
       )}
 
+      {showEditOutbreakModal && editingOutbreak && (
+        <EditOutbreakModal
+          farmId={userRole?.farm_id}
+          animals={animals}
+          outbreak={editingOutbreak}
+          isOpen={showEditOutbreakModal}
+          onClose={() => {
+            setShowEditOutbreakModal(false)
+            setEditingOutbreak(null)
+          }}
+          onOutbreakUpdated={handleOutbreakUpdated}
+        />
+      )}
+
       {showVaccinationModal && (
         <VaccinationModal
           farmId={userRole?.farm_id}
@@ -1270,6 +1674,20 @@ export function HealthRecordsContent({
           isOpen={showVaccinationModal}
           onClose={() => setShowVaccinationModal(false)}
           onVaccinationRecorded={handleVaccinationScheduled}
+        />
+      )}
+
+      {showEditVaccinationModal && editingVaccination && (
+        <EditVaccinationModal
+          farmId={userRole?.farm_id}
+          animals={animals}
+          vaccination={editingVaccination}
+          isOpen={showEditVaccinationModal}
+          onClose={() => {
+            setShowEditVaccinationModal(false)
+            setEditingVaccination(null)
+          }}
+          onVaccinationUpdated={handleVaccinationUpdated}
         />
       )}
 
@@ -1283,6 +1701,20 @@ export function HealthRecordsContent({
         />
       )}
 
+      {showEditVetVisitModal && editingVetVisit && (
+        <EditVetVisitModal
+          farmId={userRole?.farm_id}
+          visit={editingVetVisit}
+          animals={animals}
+          isOpen={showEditVetVisitModal}
+          onClose={() => {
+            setShowEditVetVisitModal(false)
+            setEditingVetVisit(null)
+          }}
+          onVisitUpdated={handleVetVisitUpdated}
+        />
+      )}
+
       {showVeterinarianModal && (
         <AddVeterinarianModal
           farmId={userRole?.farm_id}
@@ -1293,14 +1725,28 @@ export function HealthRecordsContent({
         />
       )}
 
-      
+      {showEditVeterinarianModal && editingVeterinarian && (
+        <EditVeterinarianModal
+          farmId={userRole?.farm_id}
+          veterinarian={editingVeterinarian}
+          isOpen={showEditVeterinarianModal}
+          onClose={() => {
+            setShowEditVeterinarianModal(false)
+            setEditingVeterinarian(null)
+          }}
+          onVeterinarianUpdated={handleVeterinarianUpdated}
+          existingVeterinarians={veterinarians}
+        />
+      )}
+
+
       {loading && (
         <div className="fixed top-4 right-4 z-50 bg-white rounded-lg shadow-lg p-4 flex items-center space-x-2">
           <LoadingSpinner size="sm" />
           <span className="text-sm text-gray-600">Updating stats...</span>
         </div>
       )}
-      
+
     </div>
   )
 }
