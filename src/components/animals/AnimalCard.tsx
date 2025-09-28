@@ -1,13 +1,14 @@
 // src/components/animals/AnimalCard.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Animal } from '@/types/database'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { EditAnimalModal } from '@/components/animals/EditAnimalModal'
+import { HealthStatusBadge } from './HealthStatusBadge'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { cn } from '@/lib/utils/cn'
 import { 
@@ -31,16 +32,40 @@ interface AnimalCardProps {
   farmId: string
   userRole: string
   onAnimalUpdated?: (updatedAnimal: Animal) => void
+  onHealthStatusChange?: (animalId: string, healthStatus: string) => void
   isMobile?: boolean
 }
 
-export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, isMobile }: AnimalCardProps) {
+export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealthStatusChange, isMobile }: AnimalCardProps) {
   const [showEditModal, setShowEditModal] = useState(false)
   const [animalData, setAnimalData] = useState(animal)
+   const [healthStatusHistory, setHealthStatusHistory] = useState([])
   const [showAllInfo, setShowAllInfo] = useState(false)
 
   const { isMobile: isMobileDevice, isTouch } = useDeviceInfo()
   const canEdit = ['farm_owner', 'farm_manager'].includes(userRole)
+
+    useEffect(() => {
+    setAnimalData(animal)
+  }, [animal])
+
+  useEffect(() => {
+    if (animalData.health_status !== animal.health_status && animalData.health_status) {
+      onHealthStatusChange?.(animalData.id, animalData.health_status)
+    }
+  }, [animalData.health_status])
+
+   const fetchHealthStatusHistory = async () => {
+    try {
+      const response = await fetch(`/api/health/animals/${animalData.id}/status-history`)
+      if (response.ok) {
+        const data = await response.json()
+        setHealthStatusHistory(data.history || [])
+      }
+    } catch (error) {
+      console.error('Error fetching health status history:', error)
+    }
+  }
   
   const handleAnimalUpdated = (updatedAnimal: Animal) => {
     setAnimalData(updatedAnimal)
@@ -107,28 +132,32 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, isMobile
     
     const statusConfig = {
       healthy: {
-        color: 'bg-green-100 text-green-800',
+        color: 'bg-green-100 text-green-800 border-green-200',
         icon: Shield,
-        label: 'Healthy'
+        label: 'Healthy',
+        pulse: false
       },
       sick: {
-        color: 'bg-red-100 text-red-800',
+        color: 'bg-red-100 text-red-800 border-red-200',
         icon: AlertTriangle,
-        label: 'Sick'
+        label: 'Sick',
+        pulse: true // Add visual indication for urgent status
       },
       requires_attention: {
-        color: 'bg-yellow-100 text-yellow-800',
+        color: 'bg-yellow-100 text-yellow-800 border-yellow-200',
         icon: Activity,
-        label: isMobile ? 'Attention' : 'Needs Attention'
+        label: isMobile ? 'Attention' : 'Needs Attention',
+        pulse: false
       },
       quarantined: {
-        color: 'bg-orange-100 text-orange-800',
+        color: 'bg-orange-100 text-orange-800 border-orange-200',
         icon: AlertTriangle,
-        label: 'Quarantined'
+        label: 'Quarantined',
+        pulse: true
       }
     }
     
-    const config = statusConfig[animalData.health_status]
+    const config = statusConfig[animalData.health_status as keyof typeof statusConfig]
     if (!config) return null
     
     const IconComponent = config.icon
@@ -136,7 +165,8 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, isMobile
     return (
       <Badge className={cn(
         config.color,
-        isMobile ? "text-xs px-2 py-1" : "text-xs"
+        isMobile ? "text-xs px-2 py-1" : "text-xs",
+        config.pulse && "animate-pulse" // Add pulsing animation for urgent statuses
       )}>
         <IconComponent className={cn("mr-1", isMobile ? "w-3 h-3" : "w-3 h-3")} />
         {config.label}
@@ -317,7 +347,12 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, isMobile
               isMobile ? "gap-1" : "gap-2"
             )}>
               {getProductionStatusBadge()}
-              {getHealthStatusBadge()}
+               <HealthStatusBadge 
+              healthStatus={animalData.health_status || undefined}
+              size={isMobile ? "sm" : "md"}
+              showIcon={true}
+              showPulse={true}
+            />
             </div>
             
             {/* Primary Information - Always Visible */}

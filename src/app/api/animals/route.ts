@@ -1,6 +1,6 @@
 // app/api/animals/route.ts - Updated with auto tag generation
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUser } from '@/lib/supabase/server'
+import { getCurrentUser, createServerSupabaseClient } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { createAnimal } from '@/lib/database/animals'
 import { createHealthRecord } from '@/lib/database/health'
@@ -12,24 +12,23 @@ export async function POST(request: NextRequest) {
     console.log('🔍 [API] Animals POST request received')
     
     const user = await getCurrentUser()
+    console.log('🔍 [API] Current user:', user?.email || 'No user')
+    
     if (!user) {
       console.error('❌ [API] Unauthorized - no user')
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
     const userRole = await getUserRole(user.id)
+    console.log('🔍 [API] User role:', userRole)
+    
     if (!userRole?.farm_id) {
       console.error('❌ [API] No farm associated with user')
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
     }
     
     const body = await request.json()
-    console.log('🔍 [API] Request body received:', {
-      ...body,
-      tag_number: body.tag_number,
-      autoGenerateTag: body.autoGenerateTag,
-      animal_source: body.animal_source
-    })
+    console.log('🔍 [API] Request body:', body)
     
     const { farm_id, ...animalData } = body
     
@@ -42,36 +41,23 @@ export async function POST(request: NextRequest) {
     // Get tagging settings for the farm
     console.log('🔍 [API] Fetching tagging settings for farm:', farm_id)
     const taggingSettings = await getTaggingSettings(farm_id)
+    console.log('🔍 [API] Tagging settings:', taggingSettings)
 
-    // Auto-generate tag number if requested or if no tag provided
-    let finalTagNumber = animalData.tag_number?.trim()
+    // Auto-generate tag number if not provided or if user wants auto-generation
+    let finalTagNumber = animalData.tag_number
     
     if (!finalTagNumber || animalData.autoGenerateTag) {
-      console.log('🔍 [API] Auto-generating tag number...', { 
-        hasExistingTag: !!finalTagNumber,
-        autoGenerateRequested: animalData.autoGenerateTag
-      })
+      console.log('🔍 [API] Auto-generating tag number...')
       
       try {
-        const generationContext = {
-          animalSource: animalData.animal_source || 'purchased_animal',
-          animalData: {
-            breed: animalData.breed,
-            gender: animalData.gender,
-            production_status: animalData.production_status,
-            health_status: animalData.health_status,
-            purchase_date: animalData.purchase_date,
-            seller_info: animalData.seller_info
-          },
-          customAttributes: animalData.customAttributes || []
-        }
-        
-        console.log('🔍 [API] Generation context:', generationContext)
-        
         finalTagNumber = await generateAnimalTagNumber(
           farm_id, 
           taggingSettings, 
-          generationContext
+          {
+            animalSource: animalData.animal_source,
+            animalData: animalData,
+            customAttributes: animalData.customAttributes || []
+          }
         )
         console.log('✅ [API] Generated tag number:', finalTagNumber)
       } catch (tagError) {
@@ -82,28 +68,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Validate the final tag number
+    // Validate the tag number
     if (!finalTagNumber || finalTagNumber.trim().length === 0) {
-      console.error('❌ [API] No valid tag number after generation/validation')
       return NextResponse.json({ error: 'Tag number is required' }, { status: 400 })
     }
 
-    console.log('🔍 [API] Using final tag number:', finalTagNumber)
-
-    // Prepare final animal data
+    // Prepare final animal data with generated/provided tag number
     const finalAnimalData = {
       ...animalData,
       tag_number: finalTagNumber.trim()
     }
     
-    // Remove the autoGenerateTag flag as it's not needed in database
-    delete finalAnimalData.autoGenerateTag
-    delete finalAnimalData.customAttributes
-    
-    console.log('🔍 [API] Final animal data for database:', finalAnimalData)
-    
+    console.log('🔍 [API] Creating animal with final data:', finalAnimalData)
     const result = await createAnimal(userRole.farm_id, finalAnimalData)
-    console.log('🔍 [API] Database result:', result)
+    console.log('🔍 [API] Create animal result:', result)
     
     if (!result.success) {
       console.error('❌ [API] Failed to create animal:', result.error)
@@ -111,23 +89,73 @@ export async function POST(request: NextRequest) {
     }
     
     const createdAnimal = result.data
+    let healthRecordCreated = false
+    let healthRecord = null
     
-    // Handle health record creation if needed...
-    // (existing health record logic remains the same)
+    // Check if health status requires immediate health record
+    const concerningStatuses = ['sick', 'requires_attention', 'quarantined']
+    
+    // In the health record creation section:
+if (animalData.health_status && concerningStatuses.includes(animalData.health_status)) {
+  console.log('🔍 [API] Health status requires health record:', animalData.health_status)
+  
+  // The trigger should handle inserting into animals_requiring_health_attention
+  // Now create the health record
+  const healthRecordData = {
+    animal_id: createdAnimal.id,
+    farm_id: userRole.farm_id,
+    record_date: new Date().toISOString().split('T')[0],
+    record_type: getRecordTypeFromHealthStatus(animalData.health_status),
+    description: generateHealthDescription(animalData.health_status, createdAnimal),
+    severity: getSeverityFromHealthStatus(animalData.health_status),
+    notes: animalData.notes ? `Animal notes: ${animalData.notes}` : null,
+    created_by: user.id,
+    is_auto_generated: true,
+    completion_status: 'pending',
+    original_health_status: animalData.health_status,
+    requires_record_type_selection: needsUserRecordTypeChoice(animalData.health_status),
+    available_record_types: needsUserRecordTypeChoice(animalData.health_status) 
+      ? getRecordTypeChoices(animalData.health_status) 
+      : undefined
+  }
+  
+  const healthResult = await createHealthRecord(healthRecordData)
+  
+  if (healthResult.success) {
+    healthRecordCreated = true
+    healthRecord = healthResult.data
+    
+    // Update the tracking record with the health record ID
+    const supabase = await createServerSupabaseClient()
+    await supabase
+      .from('animals_requiring_health_attention')
+      .update({
+        health_record_id: healthRecord?.id || null,
+        health_record_created: true
+      })
+      .eq('animal_id', createdAnimal.id)
+      .eq('farm_id', userRole.farm_id)
+      
+    console.log('✅ [API] Created health record and updated tracking')
+  }
+}
     
     console.log('✅ [API] Animal created successfully with tag:', finalTagNumber)
     return NextResponse.json({ 
       success: true, 
       animal: createdAnimal,
+      healthRecordCreated,
+      healthRecord,
+      requiresHealthDetails: healthRecordCreated,
       generatedTagNumber: finalTagNumber !== animalData.tag_number ? finalTagNumber : undefined,
-      message: `Animal added successfully with tag ${finalTagNumber}`
+      message: healthRecordCreated 
+        ? `Animal added successfully with tag ${finalTagNumber}. Health record created - please add additional details.`
+        : `Animal added successfully with tag ${finalTagNumber}`
     })
     
   } catch (error) {
     console.error('❌ [API] Animals API error:', error)
-    return NextResponse.json({ 
-      error: 'Internal server error: ' + (error instanceof Error ? error.message : 'Unknown error')
-    }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
 
@@ -137,12 +165,27 @@ function getRecordTypeFromHealthStatus(healthStatus: string): "treatment" | "vac
     case 'sick':
       return 'illness'
     case 'requires_attention':
-      return 'checkup'
+      return 'checkup'  // Changed from pending_selection
     case 'quarantined':
-      return 'illness'
+      return 'checkup'  // Changed from pending_selection
     default:
       return 'checkup'
   }
+}
+
+function getRecordTypeChoices(healthStatus: string): string[] {
+  switch (healthStatus) {
+    case 'requires_attention':
+      return ['injury', 'checkup']
+    case 'quarantined':
+      return ['checkup', 'vaccination', 'illness', 'treatment']
+    default:
+      return []
+  }
+}
+
+function needsUserRecordTypeChoice(healthStatus: string): boolean {
+  return ['requires_attention', 'quarantined'].includes(healthStatus)
 }
 
 function getSeverityFromHealthStatus(healthStatus: string): 'low' | 'medium' | 'high' {

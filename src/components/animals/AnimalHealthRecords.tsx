@@ -5,7 +5,10 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { AddHealthRecordModal } from '@/components/animals/AddHealthRecordModal'
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { AddHealthRecordModal } from '@/components/health/AddHealthRecordModal'
+import { FollowUpHealthRecordModal } from '@/components/health/FollowUpHealthRecordModal'
+import { EditHealthRecordModal } from '@/components/health/EditHealthRecordModal'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { cn } from '@/lib/utils/cn'
 import { 
@@ -21,30 +24,52 @@ import {
   ChevronDown,
   ChevronUp,
   Filter,
-  Search
+  Search,
+  Edit,
+  Trash2,
+  Activity,
+  CheckCircle,
+  Clock,
+  X
 } from 'lucide-react'
 
 interface AnimalHealthRecordsProps {
   animalId: string
+  farmId: string
+  animals: any[]
   canAddRecords: boolean
 }
 
 interface HealthRecord {
   id: string
   record_date: string
-  record_type: string
+  record_type: "vaccination" | "treatment" | "checkup" | "injury" | "illness"
   description: string
   veterinarian?: string
   cost?: number
   notes?: string
+  next_due_date?: string
+  medication?: string
+  severity?: "high" | "medium" | "low"
   created_at: string
+  updated_at?: string
+  animal_id: string
+  animals?: {
+    id: string
+    tag_number: string
+    name?: string
+    breed?: string
+  }
 }
 
-export function AnimalHealthRecords({ animalId, canAddRecords }: AnimalHealthRecordsProps) {
+export function AnimalHealthRecords({ animalId, farmId, animals, canAddRecords }: AnimalHealthRecordsProps) {
   const [healthRecords, setHealthRecords] = useState<HealthRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
-  const [expandedRecords, setExpandedRecords] = useState<Set<string>>(new Set())
+  const [showFollowUpModal, setShowFollowUpModal] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [selectedRecord, setSelectedRecord] = useState<HealthRecord | null>(null)
+  const [deletingRecordId, setDeletingRecordId] = useState<string | null>(null)
   const [filterType, setFilterType] = useState<string>('all')
   const [showFilters, setShowFilters] = useState(false)
   
@@ -72,17 +97,55 @@ export function AnimalHealthRecords({ animalId, canAddRecords }: AnimalHealthRec
     setHealthRecords(prev => [newRecord, ...prev])
     setShowAddModal(false)
   }
+
+  const handleFollowUpAdded = (followUpRecord: HealthRecord) => {
+    setHealthRecords(prev => [followUpRecord, ...prev])
+    setShowFollowUpModal(false)
+    setSelectedRecord(null)
+  }
+
+  const handleRecordUpdated = (updatedRecord: HealthRecord) => {
+    setHealthRecords(prev => 
+      prev.map(record => 
+        record.id === updatedRecord.id ? updatedRecord : record
+      )
+    )
+    setShowEditModal(false)
+    setSelectedRecord(null)
+  }
   
-  const toggleRecordExpansion = (recordId: string) => {
-    setExpandedRecords(prev => {
-      const newSet = new Set(prev)
-      if (newSet.has(recordId)) {
-        newSet.delete(recordId)
+  const handleEdit = (record: HealthRecord) => {
+    setSelectedRecord(record)
+    setShowEditModal(true)
+  }
+
+  const handleFollowUp = (record: HealthRecord) => {
+    setSelectedRecord(record)
+    setShowFollowUpModal(true)
+  }
+  
+  const handleDelete = async (recordId: string) => {
+    if (!window.confirm('Are you sure you want to delete this health record? This action cannot be undone.')) {
+      return
+    }
+
+    setDeletingRecordId(recordId)
+    try {
+      const response = await fetch(`/api/health/records/${recordId}`, {
+        method: 'DELETE',
+      })
+      
+      if (response.ok) {
+        setHealthRecords(prev => prev.filter(record => record.id !== recordId))
       } else {
-        newSet.add(recordId)
+        throw new Error('Failed to delete health record')
       }
-      return newSet
-    })
+    } catch (error) {
+      console.error('Error deleting health record:', error)
+      // You might want to show a toast notification here
+    } finally {
+      setDeletingRecordId(null)
+    }
   }
   
   const getRecordTypeIcon = (type: string, className?: string) => {
@@ -100,13 +163,13 @@ export function AnimalHealthRecords({ animalId, canAddRecords }: AnimalHealthRec
   
   const getRecordTypeBadge = (type: string) => {
     const colors: Record<string, string> = {
-      vaccination: 'bg-blue-100 text-blue-800',
-      treatment: 'bg-green-100 text-green-800',
-      checkup: 'bg-purple-100 text-purple-800',
-      injury: 'bg-orange-100 text-orange-800',
-      illness: 'bg-red-100 text-red-800',
+      vaccination: 'bg-blue-100 text-blue-800 border-blue-200',
+      treatment: 'bg-green-100 text-green-800 border-green-200',
+      checkup: 'bg-purple-100 text-purple-800 border-purple-200',
+      injury: 'bg-orange-100 text-orange-800 border-orange-200',
+      illness: 'bg-red-100 text-red-800 border-red-200',
     }
-    return colors[type] || 'bg-gray-100 text-gray-800'
+    return colors[type] || 'bg-gray-100 text-gray-800 border-gray-200'
   }
   
   const getRecordTypeLabel = (type: string) => {
@@ -118,6 +181,29 @@ export function AnimalHealthRecords({ animalId, canAddRecords }: AnimalHealthRec
       illness: 'Illness',
     }
     return labels[type] || type
+  }
+
+  const getSeverityColor = (severity?: string) => {
+    switch (severity) {
+      case 'high': return 'text-red-600'
+      case 'medium': return 'text-yellow-600'
+      case 'low': return 'text-green-600'
+      default: return 'text-gray-600'
+    }
+  }
+
+  const getSeverityIcon = (severity?: string) => {
+    switch (severity) {
+      case 'low': return '🟢'
+      case 'medium': return '🟡'
+      case 'high': return '🔴'
+      default: return ''
+    }
+  }
+
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return ''
+    return new Date(dateString).toLocaleDateString()
   }
   
   const filteredRecords = healthRecords.filter(record => 
@@ -417,122 +503,182 @@ export function AnimalHealthRecords({ animalId, canAddRecords }: AnimalHealthRec
           ) : (
             <div className={cn(isMobile ? "space-y-3" : "space-y-4")}>
               {filteredRecords.map((record) => {
-                const isExpanded = expandedRecords.has(record.id)
-                const hasAdditionalInfo = record.notes || record.veterinarian
+                const isOverdue = record.next_due_date && new Date(record.next_due_date) < new Date()
+                const isDueSoon = record.next_due_date && 
+                  new Date(record.next_due_date) <= new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) &&
+                  new Date(record.next_due_date) >= new Date()
+                const shouldShowFollowUp = ['illness', 'injury', 'treatment'].includes(record.record_type)
                 
                 return (
                   <div 
                     key={record.id} 
                     className={cn(
-                      "border border-gray-200 rounded-lg transition-colors",
+                      "border border-gray-200 rounded-lg transition-colors hover:shadow-lg border-l-4 border-l-farm-green",
                       isMobile ? "p-3" : "p-4",
+                      isOverdue ? "ring-2 ring-red-200" : "",
                       isTouch ? "active:bg-gray-50" : "hover:bg-gray-50"
                     )}
                   >
-                    <div className={cn(
-                      "flex items-start",
-                      isMobile ? "space-x-3" : "space-x-4"
-                    )}>
-                      <div className="flex-shrink-0 mt-1">
-                        {getRecordTypeIcon(record.record_type)}
-                      </div>
-                      
-                      <div className="flex-1 min-w-0">
-                        {/* Header Row */}
-                        <div className={cn(
-                          "flex justify-between mb-2",
-                          isMobile ? "flex-col space-y-1" : "items-center"
-                        )}>
-                          <div className={cn(
-                            "flex items-center",
-                            isMobile ? "flex-wrap gap-1" : "space-x-2"
-                          )}>
-                            <Badge className={cn(
-                              getRecordTypeBadge(record.record_type),
-                              isMobile ? "text-xs px-2 py-0.5" : ""
-                            )}>
+                    <div className="space-y-3">
+                      {/* Header */}
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center space-x-2">
+                          {getRecordTypeIcon(record.record_type)}
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge className={getRecordTypeBadge(record.record_type)}>
                               {getRecordTypeLabel(record.record_type)}
                             </Badge>
-                            <span className={cn(
-                              "text-gray-500",
-                              isMobile ? "text-xs" : "text-sm"
-                            )}>
-                              {new Date(record.record_date).toLocaleDateString()}
-                            </span>
-                          </div>
-                          
-                          <div className={cn(
-                            "flex items-center",
-                            isMobile ? "justify-between w-full" : "space-x-2"
-                          )}>
-                            {record.cost && (
-                              <span className={cn(
-                                "font-medium text-gray-900",
-                                isMobile ? "text-sm" : "text-sm"
-                              )}>
-                                ${record.cost.toFixed(2)}
-                              </span>
+                            {record.severity && (
+                              <Badge variant="outline" className={getSeverityColor(record.severity)}>
+                                {getSeverityIcon(record.severity)} {record.severity.toUpperCase()}
+                              </Badge>
                             )}
-                            
-                            {/* Mobile: Expand button for additional info */}
-                            {isMobile && hasAdditionalInfo && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => toggleRecordExpansion(record.id)}
-                                className="h-6 w-6 p-0"
-                              >
-                                {isExpanded ? 
-                                  <ChevronUp className="w-4 h-4" /> : 
-                                  <ChevronDown className="w-4 h-4" />
-                                }
-                              </Button>
+                            {isOverdue && (
+                              <Badge variant="destructive" className="text-xs">
+                                <AlertTriangle className="w-3 h-3 mr-1" />
+                                Overdue
+                              </Badge>
+                            )}
+                            {isDueSoon && !isOverdue && (
+                              <Badge variant="outline" className="text-xs border-orange-300 text-orange-700">
+                                <Clock className="w-3 h-3 mr-1" />
+                                Due Soon
+                              </Badge>
                             )}
                           </div>
                         </div>
                         
-                        {/* Description */}
-                        <h4 className={cn(
-                          "font-medium text-gray-900 mb-1",
-                          isMobile ? "text-sm" : "text-base"
-                        )}>
-                          {record.description}
-                        </h4>
-                        
-                        {/* Additional Info - Always visible on desktop, collapsible on mobile */}
-                        {((!isMobile) || (isMobile && isExpanded)) && (
-                          <div className={cn(isMobile ? "space-y-1 mt-2" : "space-y-1")}>
-                            {record.veterinarian && (
-                              <p className={cn(
-                                "text-gray-600 flex items-center",
-                                isMobile ? "text-xs" : "text-sm"
-                              )}>
-                                <User className="w-3 h-3 mr-1 flex-shrink-0" />
-                                Dr. {record.veterinarian}
-                              </p>
-                            )}
-                            
-                            {record.notes && (
-                              <p className={cn(
-                                "text-gray-600",
-                                isMobile ? "text-xs" : "text-sm"
-                              )}>
-                                {record.notes}
-                              </p>
-                            )}
+                        {canAddRecords && (
+                          <div className="flex space-x-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleEdit(record)}
+                              className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDelete(record.id)}
+                              disabled={deletingRecordId === record.id}
+                              className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                            >
+                              {deletingRecordId === record.id ? (
+                                <LoadingSpinner size="sm" />
+                              ) : (
+                                <Trash2 className="h-4 w-4" />
+                              )}
+                            </Button>
                           </div>
                         )}
+                      </div>
+                      
+                      {/* Description */}
+                      <div>
+                        <p className="text-sm font-medium text-gray-900 mb-1">Description:</p>
+                        <p className="text-sm text-gray-700 bg-gray-50 p-2 rounded">{record.description}</p>
+                      </div>
+                      
+                      {/* Medication */}
+                      {record.medication && (
+                        <div>
+                          <p className="text-sm font-medium text-gray-900 mb-1">Medication:</p>
+                          <p className="text-sm text-gray-700">{record.medication}</p>
+                        </div>
+                      )}
+                      
+                      {/* Date and Veterinarian */}
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center space-x-1 text-gray-600">
+                          <Calendar className="w-4 h-4" />
+                          <span>{formatDate(record.record_date)}</span>
+                        </div>
                         
-                        {/* Mobile: Show hint for expandable content */}
-                        {isMobile && hasAdditionalInfo && !isExpanded && (
-                          <button
-                            onClick={() => toggleRecordExpansion(record.id)}
-                            className="text-xs text-blue-600 hover:text-blue-800 mt-1"
-                          >
-                            Show details
-                          </button>
+                        {record.veterinarian && (
+                          <div className="flex items-center space-x-1 text-gray-600">
+                            <User className="w-4 h-4" />
+                            <span className="truncate max-w-[120px]">{record.veterinarian}</span>
+                          </div>
                         )}
                       </div>
+                      
+                      {/* Cost */}
+                      {record.cost && record.cost > 0 && (
+                        <div className="flex items-center space-x-1 text-sm text-gray-600">
+                          <DollarSign className="w-4 h-4" />
+                          <span>${record.cost.toFixed(2)}</span>
+                        </div>
+                      )}
+                      
+                      {/* Next Due Date */}
+                      {record.next_due_date && (
+                        <div className={`flex items-center space-x-1 text-sm p-2 rounded ${
+                          isOverdue 
+                            ? 'bg-red-50 text-red-700' 
+                            : isDueSoon 
+                              ? 'bg-yellow-50 text-yellow-700'
+                              : 'bg-green-50 text-green-700'
+                        }`}>
+                          {isOverdue ? (
+                            <AlertTriangle className="w-4 h-4" />
+                          ) : (
+                            <CheckCircle className="w-4 h-4" />
+                          )}
+                          <span>
+                            {isOverdue ? 'Overdue: ' : 'Next due: '}
+                            {formatDate(record.next_due_date)}
+                          </span>
+                        </div>
+                      )}
+                      
+                      {/* Notes */}
+                      {record.notes && (
+                        <div className="pt-2 border-t">
+                          <p className="text-sm font-medium text-gray-900 mb-1">Notes:</p>
+                          <p className="text-xs text-gray-600 italic">{record.notes}</p>
+                        </div>
+                      )}
+
+                      {/* Action Buttons for Follow-up */}
+                      {canAddRecords && shouldShowFollowUp && (
+                        <div className="pt-3 border-t">
+                          <div className="flex items-center justify-between">
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              onClick={() => handleFollowUp(record)}
+                              className="text-green-600 hover:text-green-700 hover:bg-green-50 flex items-center space-x-1"
+                            >
+                              <Activity className="w-3 h-3" />
+                              <span>Add Follow-up</span>
+                            </Button>
+                            
+                            <div className="text-xs text-gray-500">
+                              Track recovery progress
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Metadata */}
+                      {(record.created_at || record.updated_at) && (
+                        <div className="text-xs text-gray-400 pt-2 border-t">
+                          <div className="flex items-center justify-between">
+                            {record.created_at && (
+                              <span>
+                                Created: {formatDate(record.created_at)}
+                              </span>
+                            )}
+                            {record.updated_at && record.updated_at !== record.created_at && (
+                              <span>
+                                Updated: {formatDate(record.updated_at)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )
@@ -542,13 +688,42 @@ export function AnimalHealthRecords({ animalId, canAddRecords }: AnimalHealthRec
         </CardContent>
       </Card>
       
-      {/* Add Record Modal */}
+      {/* Modals */}
       {showAddModal && (
         <AddHealthRecordModal
-          animalId={animalId}
+          farmId={farmId}
+          animals={animals}
           isOpen={showAddModal}
           onClose={() => setShowAddModal(false)}
           onRecordAdded={handleRecordAdded}
+          preSelectedAnimalId={animalId}
+        />
+      )}
+
+      {showFollowUpModal && selectedRecord && (
+        <FollowUpHealthRecordModal
+          farmId={farmId}
+          originalRecord={selectedRecord}
+          isOpen={showFollowUpModal}
+          onClose={() => {
+            setShowFollowUpModal(false)
+            setSelectedRecord(null)
+          }}
+          onFollowUpAdded={handleFollowUpAdded}
+        />
+      )}
+
+      {showEditModal && selectedRecord && (
+        <EditHealthRecordModal
+          record={selectedRecord}
+          farmId={farmId}
+          animals={animals}
+          isOpen={showEditModal}
+          onClose={() => {
+            setShowEditModal(false)
+            setSelectedRecord(null)
+          }}
+          onRecordUpdated={handleRecordUpdated}
         />
       )}
     </div>

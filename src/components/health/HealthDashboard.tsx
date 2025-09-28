@@ -93,7 +93,7 @@ interface HealthRecordsContentProps {
   outbreaks?: any[]
   vaccinations?: any[]
   vetVisits?: any[]
-
+  onAnimalUpdated?: (animal: any) => void
 }
 
 export function HealthRecordsContent({
@@ -107,7 +107,8 @@ export function HealthRecordsContent({
   protocols: initialProtocols = [],
   outbreaks: initialOutbreaks = [],
   vaccinations: initialVaccinations = [],
-  vetVisits: initialVetVisits = []
+  vetVisits: initialVetVisits = [],
+  onAnimalUpdated
 }: HealthRecordsContentProps) {
   // Get device info for responsive behavior
   const { isMobile, isTablet, } = useDeviceInfo()
@@ -480,16 +481,53 @@ export function HealthRecordsContent({
   }
 
   const handleFollowUpAdded = async (followUp: any) => {
-    if (followUp) {
-      // Add the follow-up as a new health record
-      setHealthRecords(prev => [followUp, ...prev])
-    }
-    setShowFollowUpModal(false)
-    setFollowUpRecord(null)
-    toast.success('Follow-up record added successfully!')
-    await refreshHealthData()
-  }
+  if (followUp) {
+    // Update health records with the follow-up
+    setHealthRecords(prev =>
+      prev.map(record => {
+        if (record.id === followUp.original_record_id) {
+          return {
+            ...record,
+            follow_ups: [followUp, ...(record.follow_ups || [])],
+            is_resolved: followUp.is_resolved || record.is_resolved,
+            resolved_date: followUp.is_resolved ? followUp.record_date : record.resolved_date
+          }
+        }
+        return record
+      })
+    )
 
+    // Handle animal health status update
+    if (followUp.animalHealthStatusUpdated && onAnimalUpdated && followUp.updatedAnimal) {
+      onAnimalUpdated(followUp.updatedAnimal)
+      
+      // Show appropriate message based on status change
+      type HealthStatus = 'healthy' | 'sick' | 'requires_attention' | 'quarantined';
+      
+      const statusMessages: Record<HealthStatus, string> = {
+        'healthy': 'recovered and is now healthy! 🎉',
+        'sick': 'condition has worsened and is now marked as sick',
+        'requires_attention': 'still requires medical attention',
+        'quarantined': 'has been quarantined for safety'
+      }
+      
+      const message = statusMessages[followUp.newHealthStatus as HealthStatus] || `status updated to ${followUp.newHealthStatus}`
+      const isGoodNews = followUp.newHealthStatus === 'healthy'
+      
+      if (isGoodNews) {
+        toast.success(`${followUp.updatedAnimal.name || 'Animal'} ${message}`)
+      } else {
+        toast.error(`${followUp.updatedAnimal.name || 'Animal'} ${message}`)
+      }
+    } else {
+      toast.success('Follow-up record added successfully!')
+    }
+  }
+  
+  setShowFollowUpModal(false)
+  setFollowUpRecord(null)
+  await refreshHealthData()
+}
   const handleProtocolAdded = async (newProtocol: any) => {
     if (newProtocol) {
       setProtocols(prev => [newProtocol, ...prev])
@@ -801,7 +839,7 @@ export function HealthRecordsContent({
         vaccinationsRes,
         vetVisitsRes
       ] = await Promise.all([
-        fetch('/api/health/records'),
+        fetch('/api/health/records?includeFollowUps=true'), // Add flag to include follow-ups
         fetch('/api/health/veterinarians'),
         fetch('/api/health/protocols'),
         fetch('/api/health/outbreaks'),
@@ -818,12 +856,12 @@ export function HealthRecordsContent({
         vaccinationsData,
         vetVisitsData
       ] = await Promise.all([
-        healthRecordsRes.ok ? healthRecordsRes.json() : { HealthRecords: [] },
-        veterinariansRes.ok ? veterinariansRes.json() : { Veterinarians: [] },
-        protocolsRes.ok ? protocolsRes.json() : { Protocols: [] },
-        outbreaksRes.ok ? outbreaksRes.json() : { Outbreaks: [] },
-        vaccinationsRes.ok ? vaccinationsRes.json() : { Vaccinations: [] },
-        vetVisitsRes.ok ? vetVisitsRes.json() : { VetVisits: [] }
+        healthRecordsRes.ok ? healthRecordsRes.json() : { healthRecords: [] },
+        veterinariansRes.ok ? veterinariansRes.json() : { veterinarians: [] },
+        protocolsRes.ok ? protocolsRes.json() : { protocols: [] },
+        outbreaksRes.ok ? outbreaksRes.json() : { outbreaks: [] },
+        vaccinationsRes.ok ? vaccinationsRes.json() : { vaccinations: [] },
+        vetVisitsRes.ok ? vetVisitsRes.json() : { visits: [] }
       ])
 
       // Update all state variables
@@ -946,6 +984,33 @@ export function HealthRecordsContent({
       return dataLength > 6 ? 'grid-cols-3' : 'grid-cols-2'
     }
   }
+
+  const handleHealthRecordAdded = async (newRecord: any) => {
+  if (newRecord) {
+    setHealthRecords(prev => [newRecord, ...prev])
+    
+    // Check if animal health status was updated
+    if (newRecord.animalHealthStatusUpdated) {
+      // Notify parent component about the animal update
+      if (onAnimalUpdated && newRecord.updatedAnimal) {
+        onAnimalUpdated(newRecord.updatedAnimal)
+      }
+      
+      // Show success message with status update info
+      toast.success(
+        `Health record added. ${newRecord.updatedAnimal?.name || 'Animal'} status updated to ${newRecord.newHealthStatus}`,
+        { duration: 5000 }
+      )
+    } else {
+      toast.success('Health record added successfully!')
+    }
+  }
+  setShowAddModal(false)
+  await refreshHealthData()
+}
+
+
+
 
   return (
     <div className="space-y-4 pb-safe">

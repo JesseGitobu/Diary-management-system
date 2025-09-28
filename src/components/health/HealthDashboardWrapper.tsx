@@ -1,8 +1,7 @@
-// src/components/health/HealthDashboardWrapper.tsx (New Client Component)
+// src/components/health/HealthDashboardWrapper.tsx
 'use client'
 import { useState, useEffect } from 'react'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
-
 import { HealthRecordsContent } from '@/components/health/HealthDashboard'
 
 interface HealthDashboardWrapperProps {
@@ -21,16 +20,18 @@ interface HealthDashboardWrapperProps {
   }
   upcomingTasks?: any[]
 }
+
 export function HealthDashboardWrapper({
   farmId,
   userRole,
   user,
-  animals,
+  animals: initialAnimals,
   healthRecords,
   initialHealthStats,
   upcomingTasks
 }: HealthDashboardWrapperProps) {
   const [healthStats, setHealthStats] = useState(initialHealthStats)
+  const [animals, setAnimals] = useState(initialAnimals ?? [])
   const [loading, setLoading] = useState(false)
 
   const refreshData = async () => {
@@ -45,11 +46,19 @@ export function HealthDashboardWrapper({
       setHealthStats(data.healthStats)
     } catch (error) {
       console.error('Error refreshing health data:', error)
-      // Could show toast notification here
     } finally {
       setLoading(false)
     }
   }
+
+  const handleAnimalUpdated = (updatedAnimal: any) => {
+    setAnimals(prev => 
+      prev.map(animal => 
+        animal.id === updatedAnimal.id ? updatedAnimal : animal
+      )
+    )
+  }
+
   return (
     <>
       {loading && (
@@ -61,11 +70,12 @@ export function HealthDashboardWrapper({
       <HealthRecordsContent
         user={user}
         userRole={userRole}
-        animals={animals ?? []}
+        animals={animals}
         healthRecords={healthRecords ?? []}
         healthStats={healthStats}
         upcomingTasks={upcomingTasks ?? []}
+        onAnimalUpdated={handleAnimalUpdated}
       />
     </>
   )
-} 
+}

@@ -8,7 +8,7 @@ import { HealthStats } from '@/types/database'
 export interface HealthRecordData {
   animal_id: string
   record_date: string
-  record_type: 'vaccination' | 'treatment' | 'checkup' | 'injury' | 'illness'
+  record_type: 'vaccination' | 'treatment' | 'checkup' | 'injury' | 'illness' | 'reproductive' | 'deworming'
   description: string
   veterinarian?: string | null
   cost?: number
@@ -18,9 +18,66 @@ export interface HealthRecordData {
   severity?: 'low' | 'medium' | 'high' | null
   created_by: string
   farm_id: string
+  original_health_status?: string | null
+  requires_record_type_selection?: boolean
+  available_record_types?: string[]
+  
+  // General checkup fields
+  body_condition_score?: number | null
+  weight?: number | null
+  temperature?: number | null
+  pulse?: number | null
+  respiration?: number | null
+  physical_exam_notes?: string | null
+  
+  // Vaccination fields
+  vaccine_name?: string | null
+  vaccine_batch_number?: string | null
+  vaccine_dose?: string | null
+  route_of_administration?: string | null
+  administered_by?: string | null
+  
+  // Treatment fields
+  diagnosis?: string | null
+  medication_name?: string | null
+  medication_dosage?: string | null
+  medication_duration?: string | null
+  treatment_route?: string | null
+  withdrawal_period?: string | null
+  response_notes?: string | null
+  treating_personnel?: string | null
+  
+  // Injury fields
+  injury_cause?: string | null
+  injury_type?: string | null
+  treatment_given?: string | null
+  follow_up_required?: boolean
+  
+  // Illness fields
+  illness_diagnosis?: string | null
+  illness_severity?: 'mild' | 'moderate' | 'severe' | null
+  lab_test_results?: string | null
+  treatment_plan?: string | null
+  recovery_outcome?: string | null
+  
+  // Reproductive health fields
+  reproductive_type?: string | null
+  sire_id?: string | null
+  pregnancy_result?: 'yes' | 'no' | 'pending' | null
+  calving_outcome?: string | null
+  complications?: string | null
+  
+  // Deworming fields
+  product_used?: string | null
+  deworming_dose?: string | null
+  next_deworming_date?: string | null
+  deworming_administered_by?: string | null
 }
 
-export async function createHealthRecord(data: HealthRecordData) {
+export async function createHealthRecord(data: HealthRecordData & { 
+  is_auto_generated?: boolean 
+  completion_status?: string 
+}) {
   const supabase = await createServerSupabaseClient()
 
   try {
@@ -37,7 +94,7 @@ export async function createHealthRecord(data: HealthRecordData) {
       return { success: false, error: 'Animal not found or access denied' }
     }
     
-    // Create the health record
+    // Create the health record with ALL comprehensive fields
     const { data: record, error: recordError } = await supabase
       .from('animal_health_records')
       .insert({
@@ -52,11 +109,67 @@ export async function createHealthRecord(data: HealthRecordData) {
         next_due_date: data.next_due_date,
         medication: data.medication,
         severity: data.severity,
-        created_by: data.created_by
+        created_by: data.created_by,
+        is_auto_generated: data.is_auto_generated || false,
+        completion_status: data.completion_status || 'pending',
+        original_health_status: data.original_health_status,
+        requires_record_type_selection: data.requires_record_type_selection,
+        available_record_types: data.available_record_types,
+        
+        // General checkup fields
+        body_condition_score: data.body_condition_score,
+        weight: data.weight,
+        temperature: data.temperature,
+        pulse: data.pulse,
+        respiration: data.respiration,
+        physical_exam_notes: data.physical_exam_notes,
+        
+        // Vaccination fields
+        vaccine_name: data.vaccine_name,
+        vaccine_batch_number: data.vaccine_batch_number,
+        vaccine_dose: data.vaccine_dose,
+        route_of_administration: data.route_of_administration,
+        administered_by: data.administered_by,
+        
+        // Treatment fields
+        diagnosis: data.diagnosis,
+        medication_name: data.medication_name,
+        medication_dosage: data.medication_dosage,
+        medication_duration: data.medication_duration,
+        treatment_route: data.treatment_route,
+        withdrawal_period: data.withdrawal_period,
+        response_notes: data.response_notes,
+        treating_personnel: data.treating_personnel,
+        
+        // Injury fields
+        injury_cause: data.injury_cause,
+        injury_type: data.injury_type,
+        treatment_given: data.treatment_given,
+        follow_up_required: data.follow_up_required,
+        
+        // Illness fields
+        illness_diagnosis: data.illness_diagnosis,
+        illness_severity: data.illness_severity,
+        lab_test_results: data.lab_test_results,
+        treatment_plan: data.treatment_plan,
+        recovery_outcome: data.recovery_outcome,
+        
+        // Reproductive health fields
+        reproductive_type: data.reproductive_type,
+        sire_id: data.sire_id,
+        pregnancy_result: data.pregnancy_result,
+        calving_outcome: data.calving_outcome,
+        complications: data.complications,
+        
+        // Deworming fields
+        product_used: data.product_used,
+        deworming_dose: data.deworming_dose,
+        next_deworming_date: data.next_deworming_date,
+        deworming_administered_by: data.deworming_administered_by
       })
       .select(`
         *,
-        animals (
+        animals!animal_health_records_animal_id_fkey (
           id,
           tag_number,
           name,
@@ -69,11 +182,53 @@ export async function createHealthRecord(data: HealthRecordData) {
       console.error('Error creating health record:', recordError)
       return { success: false, error: recordError.message }
     }
+
+    // Update the health attention tracking table
+    if (data.is_auto_generated) {
+      await supabase
+        .from('animals_requiring_health_attention')
+        .update({
+          health_record_id: record.id,
+          health_record_created: true,
+          health_record_completed: false
+        })
+        .eq('animal_id', data.animal_id)
+        .eq('farm_id', data.farm_id)
+    }
     
     return { success: true, data: record }
   } catch (error) {
     console.error('Error in createHealthRecord:', error)
     return { success: false, error: 'Failed to create health record' }
+  }
+}
+
+// Add this function to your health.ts file
+export async function markHealthAttentionCompleted(animalId: string, farmId: string) {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    const { data, error } = await supabase
+      .from('animals_requiring_health_attention')
+      .update({
+        health_record_completed: true,
+        resolved_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('animal_id', animalId)
+      .eq('farm_id', farmId)
+      .select()
+      .single()
+    
+    if (error) {
+      console.error('Error marking health attention completed:', error)
+      return { success: false, error: error.message }
+    }
+    
+    return { success: true, data }
+  } catch (error) {
+    console.error('Error in markHealthAttentionCompleted:', error)
+    return { success: false, error: 'Failed to mark health attention as completed' }
   }
 }
 
@@ -88,7 +243,7 @@ export async function getAnimalHealthRecords(
   const supabase = await createServerSupabaseClient()
 
   try {
-    // First get animals for the farm to ensure we only get records for farm animals
+    // Get farm animals first to ensure we only get records for farm animals
     const { data: farmAnimals, error: animalError } = await supabase
       .from('animals')
       .select('id')
@@ -110,7 +265,7 @@ export async function getAnimalHealthRecords(
       .from('animal_health_records')
       .select(`
         *,
-        animals (
+        animals!animal_health_records_animal_id_fkey (
           id,
           tag_number,
           name,
@@ -154,7 +309,7 @@ export async function getHealthRecordById(recordId: string, farmId: string) {
     .from('animal_health_records')
     .select(`
       *,
-      animals (
+      animals!animal_health_records_animal_id_fkey (
         id,
         tag_number,
         name,
@@ -272,7 +427,7 @@ export async function getUpcomingHealthTasks(farmId: string, days: number = 30) 
       .from('animal_health_records')
       .select(`
         *,
-        animals (
+        animals!animal_health_records_animal_id_fkey (
           id,
           tag_number,
           name,
@@ -387,7 +542,7 @@ export async function getHealthRecordsByAnimal(animalId: string, farmId: string)
     .from('animal_health_records')
     .select(`
       *,
-      animals!inner (
+      animals!animal_health_records_animal_id_fkey (
         id,
         tag_number,
         name,
@@ -844,53 +999,139 @@ export async function scheduleVisitReminder(visitId: string, daysBefore: number)
 // Additional Database Operations for Follow-up functionality
 // Add these functions to your existing src/lib/database/health.ts
 
-export async function createFollowUpRecord(data: HealthRecordData & {
-  original_record_id: string
-  follow_up_status: string
-  treatment_effectiveness?: string
-  is_resolved: boolean
-}) {
+export async function createFollowUpRecord(
+  originalRecordId: string,
+  farmId: string,
+  followUpData: {
+    record_date: string
+    status: 'improving' | 'stable' | 'worsening' | 'recovered' | 'requires_attention'
+    description: string
+    veterinarian?: string
+    cost?: number
+    notes?: string
+    next_followup_date?: string
+    medication_changes?: string
+    treatment_effectiveness?: 'very_effective' | 'effective' | 'somewhat_effective' | 'not_effective'
+    resolved?: boolean
+    
+    // Allow all comprehensive fields in follow-ups too
+    body_condition_score?: number
+    weight?: number
+    temperature?: number
+    pulse?: number
+    respiration?: number
+    physical_exam_notes?: string
+    vaccine_name?: string
+    vaccine_batch_number?: string
+    vaccine_dose?: string
+    route_of_administration?: string
+    administered_by?: string
+    diagnosis?: string
+    medication_name?: string
+    medication_dosage?: string
+    medication_duration?: string
+    treatment_route?: string
+    withdrawal_period?: string
+    response_notes?: string
+    treating_personnel?: string
+    injury_cause?: string
+    injury_type?: string
+    treatment_given?: string
+    follow_up_required?: boolean
+    illness_diagnosis?: string
+    illness_severity?: 'mild' | 'moderate' | 'severe'
+    lab_test_results?: string
+    treatment_plan?: string
+    recovery_outcome?: string
+    reproductive_type?: string
+    sire_id?: string
+    pregnancy_result?: 'yes' | 'no' | 'pending'
+    calving_outcome?: string
+    complications?: string
+    product_used?: string
+    deworming_dose?: string
+    next_deworming_date?: string
+    deworming_administered_by?: string
+  },
+  userId: string
+) {
   const supabase = await createServerSupabaseClient()
 
   try {
-    // Verify the original record exists and belongs to the farm
+    // First verify the original record exists and belongs to the farm
     const { data: originalRecord, error: originalError } = await supabase
       .from('animal_health_records')
       .select('id, farm_id, animal_id')
-      .eq('id', data.original_record_id)
-      .eq('farm_id', data.farm_id)
+      .eq('id', originalRecordId)
+      .eq('farm_id', farmId)
       .single()
     
     if (originalError || !originalRecord) {
       return { success: false, error: 'Original record not found or access denied' }
     }
     
-    // Create the follow-up record
+    // Create the follow-up record with comprehensive fields
     const { data: record, error: recordError } = await supabase
       .from('animal_health_records')
       .insert({
-        farm_id: data.farm_id,
-        animal_id: data.animal_id,
-        record_date: data.record_date,
-        record_type: data.record_type,
-        description: data.description,
-        veterinarian: data.veterinarian,
-        cost: data.cost,
-        notes: data.notes,
-        next_due_date: data.next_due_date,
-        medication: data.medication,
-        severity: data.severity,
-        created_by: data.created_by,
-        // Follow-up specific fields
-        original_record_id: data.original_record_id,
-        follow_up_status: data.follow_up_status,
-        treatment_effectiveness: data.treatment_effectiveness,
+        farm_id: farmId,
+        animal_id: originalRecord.animal_id,
+        record_date: followUpData.record_date,
+        record_type: 'treatment', // Follow-ups are typically treatments/checkups
+        description: followUpData.description,
+        veterinarian: followUpData.veterinarian || null,
+        cost: followUpData.cost || 0,
+        notes: followUpData.notes || null,
+        next_due_date: followUpData.next_followup_date || null,
+        medication: followUpData.medication_changes || null,
+        treatment: followUpData.medication_changes || null,
+        created_by: userId,
         is_follow_up: true,
-        is_resolved: data.is_resolved
+        is_resolved: followUpData.resolved || false,
+        resolved_date: followUpData.resolved ? followUpData.record_date : null,
+        
+        // Include comprehensive fields
+        body_condition_score: followUpData.body_condition_score,
+        weight: followUpData.weight,
+        temperature: followUpData.temperature,
+        pulse: followUpData.pulse,
+        respiration: followUpData.respiration,
+        physical_exam_notes: followUpData.physical_exam_notes,
+        vaccine_name: followUpData.vaccine_name,
+        vaccine_batch_number: followUpData.vaccine_batch_number,
+        vaccine_dose: followUpData.vaccine_dose,
+        route_of_administration: followUpData.route_of_administration,
+        administered_by: followUpData.administered_by,
+        diagnosis: followUpData.diagnosis,
+        medication_name: followUpData.medication_name,
+        medication_dosage: followUpData.medication_dosage,
+        medication_duration: followUpData.medication_duration,
+        treatment_route: followUpData.treatment_route,
+        withdrawal_period: followUpData.withdrawal_period,
+        response_notes: followUpData.response_notes,
+        treating_personnel: followUpData.treating_personnel,
+        injury_cause: followUpData.injury_cause,
+        injury_type: followUpData.injury_type,
+        treatment_given: followUpData.treatment_given,
+        follow_up_required: followUpData.follow_up_required,
+        illness_diagnosis: followUpData.illness_diagnosis,
+        illness_severity: followUpData.illness_severity,
+        lab_test_results: followUpData.lab_test_results,
+        treatment_plan: followUpData.treatment_plan,
+        recovery_outcome: followUpData.recovery_outcome,
+        reproductive_type: followUpData.reproductive_type,
+        sire_id: followUpData.sire_id,
+        pregnancy_result: followUpData.pregnancy_result,
+        calving_outcome: followUpData.calving_outcome,
+        complications: followUpData.complications,
+        product_used: followUpData.product_used,
+        deworming_dose: followUpData.deworming_dose,
+        next_deworming_date: followUpData.next_deworming_date,
+        deworming_administered_by: followUpData.deworming_administered_by
       })
       .select(`
         *,
-        animals (
+        animals!animal_health_records_animal_id_fkey (
           id,
           tag_number,
           name,
@@ -904,22 +1145,230 @@ export async function createFollowUpRecord(data: HealthRecordData & {
       return { success: false, error: recordError.message }
     }
     
-    // Create a follow-up relationship record for tracking
-    await supabase
+    // Create the relationship in the junction table
+    const { error: relationError } = await supabase
       .from('health_record_follow_ups')
       .insert({
-        original_record_id: data.original_record_id,
+        original_record_id: originalRecordId,
         follow_up_record_id: record.id,
-        status: data.follow_up_status,
-        treatment_effectiveness: data.treatment_effectiveness,
-        is_resolved: data.is_resolved,
-        created_at: new Date().toISOString()
+        status: followUpData.status,
+        treatment_effectiveness: followUpData.treatment_effectiveness || null,
+        is_resolved: followUpData.resolved || false
       })
     
-    return { success: true, data: record }
+    if (relationError) {
+      console.error('Error creating follow-up relationship:', relationError)
+      // Clean up the follow-up record if relationship creation fails
+      await supabase
+        .from('animal_health_records')
+        .delete()
+        .eq('id', record.id)
+      
+      return { success: false, error: 'Failed to create follow-up relationship' }
+    }
+    
+    // If this follow-up marks the record as resolved, update the original record
+    if (followUpData.resolved) {
+      await supabase
+        .from('animal_health_records')
+        .update({
+          is_resolved: true,
+          resolved_date: followUpData.record_date,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', originalRecordId)
+        .eq('farm_id', farmId)
+    }
+    
+    // If there's a next follow-up date, update the original record's next_due_date
+    if (followUpData.next_followup_date && !followUpData.resolved) {
+      await supabase
+        .from('animal_health_records')
+        .update({
+          next_due_date: followUpData.next_followup_date,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', originalRecordId)
+        .eq('farm_id', farmId)
+    }
+    
+    // Return the follow-up with additional metadata
+    const enrichedFollowUp = {
+      ...record,
+      follow_up_status: followUpData.status,
+      treatment_effectiveness: followUpData.treatment_effectiveness || null,
+      is_resolved: followUpData.resolved || false
+    }
+    
+    return { success: true, data: enrichedFollowUp }
   } catch (error) {
     console.error('Error in createFollowUpRecord:', error)
     return { success: false, error: 'Failed to create follow-up record' }
+  }
+}
+
+export async function deleteHealthRecordWithFollowUps(recordId: string, farmId: string) {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    // Verify the record belongs to the farm
+    const existingRecord = await getHealthRecordById(recordId, farmId)
+    
+    if (!existingRecord) {
+      return { success: false, error: 'Health record not found or access denied' }
+    }
+    
+    // Get all follow-up records to delete them as well
+    const { data: followUpRelations } = await supabase
+      .from('health_record_follow_ups')
+      .select('follow_up_record_id')
+      .eq('original_record_id', recordId)
+    
+    const followUpIds = followUpRelations?.map(rel => rel.follow_up_record_id) || []
+    
+    // Delete follow-up relationships first
+    await supabase
+      .from('health_record_follow_ups')
+      .delete()
+      .eq('original_record_id', recordId)
+    
+    // Delete follow-up records
+    if (followUpIds.length > 0) {
+      await supabase
+        .from('animal_health_records')
+        .delete()
+        .in('id', followUpIds)
+    }
+    
+    // Delete the original record
+    const { error } = await supabase
+      .from('animal_health_records')
+      .delete()
+      .eq('id', recordId)
+      .eq('farm_id', farmId)
+    
+    if (error) {
+      return { success: false, error: error.message }
+    }
+    
+    return { success: true }
+  } catch (error) {
+    console.error('Error deleting health record with follow-ups:', error)
+    return { success: false, error: 'Failed to delete health record' }
+  }
+}
+
+export async function getUnresolvedHealthRecords(farmId: string) {
+  const supabase = await createServerSupabaseClient()
+
+  try {
+    // Get farm animals first
+    const { data: farmAnimals, error: animalError } = await supabase
+      .from('animals')
+      .select('id')
+      .eq('farm_id', farmId)
+      .eq('status', 'active')
+
+    if (animalError) {
+      console.error('Error fetching farm animals:', animalError)
+      return []
+    }
+
+    const animalIds = (farmAnimals || []).map(animal => animal.id)
+    
+    if (animalIds.length === 0) {
+      return []
+    }
+
+    const { data, error } = await supabase
+      .from('animal_health_records')
+      .select(`
+        *,
+        animals!animal_health_records_animal_id_fkey (
+          id,
+          tag_number,
+          name,
+          breed
+        )
+      `)
+      .in('animal_id', animalIds)
+      .in('record_type', ['illness', 'injury', 'treatment'])
+      .eq('is_follow_up', false) // Only original records, not follow-ups
+      .or('is_resolved.is.null,is_resolved.eq.false')
+      .order('record_date', { ascending: false })
+    
+    if (error) {
+      console.error('Error fetching unresolved health records:', error)
+      return []
+    }
+    
+    return data || []
+  } catch (error) {
+    console.error('Error in getUnresolvedHealthRecords:', error)
+    return []
+  }
+}
+
+export async function getHealthStatsWithFollowUps(farmId: string) {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    // Get basic stats
+    const basicStats = await getHealthStats(farmId)
+    
+    // Get farm animals first
+    const { data: farmAnimals, error: animalError } = await supabase
+      .from('animals')
+      .select('id')
+      .eq('farm_id', farmId)
+      .eq('status', 'active')
+
+    if (animalError) {
+      console.error('Error fetching farm animals for stats:', animalError)
+    }
+
+    const animalIds = (farmAnimals || []).map(animal => animal.id)
+    
+    // Get additional follow-up stats
+    const { data: followUpData } = await supabase
+      .from('animal_health_records')
+      .select('id, is_resolved, is_follow_up, record_type')
+      .in('animal_id', animalIds)
+    
+    // Get follow-up relationships count
+    const { count: totalFollowUpRelations } = await supabase
+      .from('health_record_follow_ups')
+      .select('*', { count: 'exact', head: true })
+      .in('original_record_id', 
+        followUpData?.filter(r => !r.is_follow_up).map(r => r.id) || []
+      )
+    
+    const followUpStats = {
+      totalFollowUps: totalFollowUpRelations || 0,
+      unresolvedIssues: followUpData?.filter(r => 
+        ['illness', 'injury', 'treatment'].includes(r.record_type) && 
+        !r.is_follow_up &&
+        !r.is_resolved
+      ).length || 0,
+      resolvedIssues: followUpData?.filter(r => 
+        !r.is_follow_up && r.is_resolved
+      ).length || 0,
+      recordsWithFollowUps: followUpData?.filter(r => !r.is_follow_up).length || 0
+    }
+    
+    return {
+      ...basicStats,
+      ...followUpStats
+    }
+  } catch (error) {
+    console.error('Error in getHealthStatsWithFollowUps:', error)
+    return {
+      ...(await getHealthStats(farmId)),
+      totalFollowUps: 0,
+      unresolvedIssues: 0,
+      resolvedIssues: 0,
+      recordsWithFollowUps: 0
+    }
   }
 }
 
@@ -927,36 +1376,149 @@ export async function getFollowUpRecords(originalRecordId: string, farmId: strin
   const supabase = await createServerSupabaseClient()
 
   try {
-    const { data, error } = await supabase
-      .from('animal_health_records')
+    // Get follow-up relationships first
+    const { data: followUpRelations, error: relationsError } = await supabase
+      .from('health_record_follow_ups')
       .select(`
-        *,
-        animals (
-          id,
-          tag_number,
-          name,
-          breed
-        ),
-        health_record_follow_ups!follow_up_record_id (
-          status,
-          treatment_effectiveness,
-          is_resolved,
-          created_at
-        )
+        follow_up_record_id,
+        status,
+        treatment_effectiveness,
+        is_resolved,
+        created_at,
+        updated_at
       `)
       .eq('original_record_id', originalRecordId)
-      .eq('farm_id', farmId)
-      .eq('is_follow_up', true)
-      .order('record_date', { ascending: false })
+      .order('created_at', { ascending: false }) // Most recent first
     
-    if (error) {
-      console.error('Error fetching follow-up records:', error)
+    if (relationsError) {
+      console.error('Error fetching follow-up relations:', relationsError)
+      return []
+    }
+
+    if (!followUpRelations || followUpRelations.length === 0) {
+      return []
+    }
+
+    // Get the actual health records for the follow-ups
+    const followUpIds = followUpRelations.map(rel => rel.follow_up_record_id)
+    
+    const { data: followUpRecords, error: recordsError } = await supabase
+      .from('animal_health_records')
+      .select(`
+        id,
+        record_date,
+        record_type,
+        description,
+        veterinarian,
+        cost,
+        notes,
+        medication,
+        symptoms,
+        treatment,
+        created_at
+      `)
+      .in('id', followUpIds)
+      .eq('farm_id', farmId)
+      .order('record_date', { ascending: false }) // Most recent first
+    
+    if (recordsError) {
+      console.error('Error fetching follow-up records:', recordsError)
       return []
     }
     
-    return data || []
+    // Combine the follow-up data with the relation data
+    const enrichedFollowUps = (followUpRecords || []).map(record => {
+      const relation = followUpRelations.find(rel => rel.follow_up_record_id === record.id)
+      return {
+        ...record,
+        follow_up_status: relation?.status || 'stable',
+        treatment_effectiveness: relation?.treatment_effectiveness,
+        is_resolved: relation?.is_resolved || false,
+        follow_up_created_at: relation?.created_at,
+        follow_up_updated_at: relation?.updated_at
+      }
+    })
+    
+    return enrichedFollowUps
   } catch (error) {
     console.error('Error in getFollowUpRecords:', error)
+    return []
+  }
+}
+
+export async function getHealthRecordsWithFollowUps(
+  farmId: string, 
+  options: {
+    animalId?: string
+    recordType?: string
+    limit?: number
+  } = {}
+) {
+  const supabase = await createServerSupabaseClient()
+
+  try {
+    // Get farm animals first to ensure we only get records for farm animals
+    const { data: farmAnimals, error: animalError } = await supabase
+      .from('animals')
+      .select('id')
+      .eq('farm_id', farmId)
+      .eq('status', 'active')
+
+    if (animalError) {
+      console.error('Error fetching farm animals:', animalError)
+      return []
+    }
+
+    const animalIds = (farmAnimals || []).map(animal => animal.id)
+    
+    if (animalIds.length === 0) {
+      return []
+    }
+
+    let query = supabase
+      .from('animal_health_records')
+      .select(`
+        *,
+        animals!animal_health_records_animal_id_fkey (
+          id,
+          tag_number,
+          name,
+          breed,
+          gender
+        )
+      `)
+      .in('animal_id', animalIds)
+      .eq('is_follow_up', false) // Only get original records, not follow-ups
+      .order('record_date', { ascending: false })
+    
+    if (options.animalId) {
+      query = query.eq('animal_id', options.animalId)
+    }
+    
+    if (options.recordType) {
+      query = query.eq('record_type', options.recordType)
+    }
+    
+    if (options.limit) {
+      query = query.limit(options.limit)
+    }
+    
+    const { data: records, error } = await query
+    
+    if (error) {
+      console.error('Error fetching health records:', error)
+      return []
+    }
+    
+    if (!records || records.length === 0) {
+      return []
+    }
+
+    // For each record, get its follow-ups (if needed)
+    // This part stays the same as the existing implementation
+    return records
+  } catch (error) {
+    console.error('Error in getHealthRecordsWithFollowUps:', error)
     return []
   }
 }
@@ -1425,7 +1987,7 @@ export async function getIncompleteHealthRecords(farmId: string, limit: number =
         cost,
         notes,
         is_auto_generated,
-        animals!inner (
+        animals!animal_health_records_animal_id_fkey (
           id,
           tag_number,
           name,
@@ -1538,6 +2100,45 @@ export async function completeHealthRecord(
     notes?: string
     severity?: string
     treatment?: string
+    
+    // Include comprehensive fields
+    body_condition_score?: number
+    weight?: number
+    temperature?: number
+    pulse?: number
+    respiration?: number
+    physical_exam_notes?: string
+    vaccine_name?: string
+    vaccine_batch_number?: string
+    vaccine_dose?: string
+    route_of_administration?: string
+    administered_by?: string
+    diagnosis?: string
+    medication_name?: string
+    medication_dosage?: string
+    medication_duration?: string
+    treatment_route?: string
+    withdrawal_period?: string
+    response_notes?: string
+    treating_personnel?: string
+    injury_cause?: string
+    injury_type?: string
+    treatment_given?: string
+    follow_up_required?: boolean
+    illness_diagnosis?: string
+    illness_severity?: 'mild' | 'moderate' | 'severe'
+    lab_test_results?: string
+    treatment_plan?: string
+    recovery_outcome?: string
+    reproductive_type?: string
+    sire_id?: string
+    pregnancy_result?: 'yes' | 'no' | 'pending'
+    calving_outcome?: string
+    complications?: string
+    product_used?: string
+    deworming_dose?: string
+    next_deworming_date?: string
+    deworming_administered_by?: string
   }
 ) {
   const supabase = await createServerSupabaseClient()
@@ -1675,5 +2276,259 @@ export async function getHealthAlerts(farmId: string) {
   } catch (error) {
     console.error('Error getting health alerts:', error)
     return []
+  }
+}
+
+export async function updateAnimalHealthStatus(animalId: string, farmId: string) {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    // Call the database function to recalculate health status
+    const { data, error } = await supabase
+      .rpc('determine_animal_health_status', { animal_id_param: animalId })
+    
+    if (error) {
+      console.error('Error determining health status:', error)
+      return { success: false, error: error.message }
+    }
+    
+    const newHealthStatus = data
+    
+    // Update the animal's health status
+    const { data: updatedAnimal, error: updateError } = await supabase
+      .from('animals')
+      .update({ 
+        health_status: newHealthStatus,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', animalId)
+      .eq('farm_id', farmId)
+      .select('id, health_status, tag_number, name')
+      .single()
+    
+    if (updateError) {
+      console.error('Error updating animal health status:', updateError)
+      return { success: false, error: updateError.message }
+    }
+    
+    return { 
+      success: true, 
+      data: {
+        animalId,
+        oldStatus: null, // Could track this if needed
+        newStatus: newHealthStatus,
+        animal: updatedAnimal
+      }
+    }
+  } catch (error) {
+    console.error('Error in updateAnimalHealthStatus:', error)
+    return { success: false, error: 'Failed to update animal health status' }
+  }
+}
+export async function createHealthRecordWithStatusUpdate(data: HealthRecordData & { 
+  is_auto_generated?: boolean 
+  completion_status?: string 
+}) {
+  const supabase = await createServerSupabaseClient()
+
+  try {
+    // Create the health record (existing logic)
+    const result = await createHealthRecord(data)
+    
+    if (!result.success) {
+      return result
+    }
+    
+    // Update animal health status if this is a concerning record type
+    const concerningTypes = ['illness', 'injury', 'treatment']
+    if (concerningTypes.includes(data.record_type)) {
+      const statusResult = await updateAnimalHealthStatus(data.animal_id, data.farm_id)
+      
+      if (statusResult.success) {
+        return {
+          ...result,
+          animalHealthStatusUpdated: true,
+          newHealthStatus: statusResult.data?.newStatus,
+          updatedAnimal: statusResult.data?.animal
+        }
+      }
+    }
+    
+    return result
+  } catch (error) {
+    console.error('Error in createHealthRecordWithStatusUpdate:', error)
+    return { success: false, error: 'Failed to create health record with status update' }
+  }
+}
+
+// Enhanced follow-up creation with status update
+export async function createFollowUpRecordWithStatusUpdate(
+  originalRecordId: string,
+  farmId: string,
+  followUpData: {
+    record_date: string
+    status: 'improving' | 'stable' | 'worsening' | 'recovered' | 'requires_attention'
+    description: string
+    veterinarian?: string
+    cost?: number
+    notes?: string
+    next_followup_date?: string
+    medication_changes?: string
+    treatment_effectiveness?: 'very_effective' | 'effective' | 'somewhat_effective' | 'not_effective'
+    resolved?: boolean
+  },
+  userId: string
+) {
+  const supabase = await createServerSupabaseClient()
+
+  try {
+    // Create the follow-up record (existing logic from previous function)
+    const result = await createFollowUpRecord(originalRecordId, farmId, followUpData, userId)
+    
+    if (!result.success) {
+      return result
+    }
+    
+    // Get the animal ID from the original record
+    const { data: originalRecord } = await supabase
+      .from('animal_health_records')
+      .select('animal_id')
+      .eq('id', originalRecordId)
+      .single()
+    
+    if (originalRecord?.animal_id) {
+      // Update animal health status based on follow-up
+      const statusResult = await updateAnimalHealthStatus(originalRecord.animal_id, farmId)
+      
+      if (statusResult.success) {
+        return {
+          ...result,
+          animalHealthStatusUpdated: true,
+          newHealthStatus: statusResult.data?.newStatus,
+          updatedAnimal: statusResult.data?.animal
+        }
+      }
+    }
+    
+    return result
+  } catch (error) {
+    console.error('Error in createFollowUpRecordWithStatusUpdate:', error)
+    return { success: false, error: 'Failed to create follow-up record with status update' }
+  }
+}
+
+// Function to recalculate health status for all animals in a farm
+export async function recalculateAllAnimalHealthStatuses(farmId: string) {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    const { data, error } = await supabase
+      .rpc('recalculate_farm_animal_health_status', { farm_id_param: farmId })
+    
+    if (error) {
+      console.error('Error recalculating health statuses:', error)
+      return { success: false, error: error.message }
+    }
+    
+    return { 
+      success: true, 
+      data: { updatedAnimalsCount: data }
+    }
+  } catch (error) {
+    console.error('Error in recalculateAllAnimalHealthStatuses:', error)
+    return { success: false, error: 'Failed to recalculate health statuses' }
+  }
+}
+
+// Function to get animal health status history
+export async function getAnimalHealthStatusHistory(animalId: string, farmId: string, limit = 10) {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    // Verify animal belongs to farm
+    const { data: animal } = await supabase
+      .from('animals')
+      .select('id')
+      .eq('id', animalId)
+      .eq('farm_id', farmId)
+      .single()
+    
+    if (!animal) {
+      return { success: false, error: 'Animal not found or access denied' }
+    }
+    
+    const { data, error } = await supabase
+      .from('animal_health_status_log')
+      .select('*')
+      .eq('animal_id', animalId)
+      .order('changed_at', { ascending: false })
+      .limit(limit)
+    
+    if (error) {
+      console.error('Error fetching health status history:', error)
+      return { success: false, error: error.message }
+    }
+    
+    return { success: true, data: data || [] }
+  } catch (error) {
+    console.error('Error in getAnimalHealthStatusHistory:', error)
+    return { success: false, error: 'Failed to get health status history' }
+  }
+}
+export async function completeHealthRecordWithStatusUpdate(
+  recordId: string,
+  farmId: string,
+  completionData: {
+    symptoms?: string
+    veterinarian?: string
+    medication?: string
+    cost?: number
+    next_due_date?: string
+    notes?: string
+    severity?: string
+    treatment?: string
+  }
+) {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    // Get the original record to check if it affects health status
+    const { data: originalRecord } = await supabase
+      .from('animal_health_records')
+      .select('animal_id, record_type')
+      .eq('id', recordId)
+      .eq('farm_id', farmId)
+      .single()
+    
+    if (!originalRecord) {
+      return { success: false, error: 'Health record not found' }
+    }
+    
+    // Complete the record (existing logic)
+    const result = await completeHealthRecord(recordId, farmId, completionData)
+    
+    if (!result.success) {
+      return result
+    }
+    
+    // Update health status if this is a concerning record type
+    const concerningTypes = ['illness', 'injury', 'treatment']
+    if (concerningTypes.includes(originalRecord.record_type)) {
+      const statusResult = await updateAnimalHealthStatus(originalRecord.animal_id, farmId)
+      
+      if (statusResult.success) {
+        return {
+          ...result,
+          animalHealthStatusUpdated: true,
+          newHealthStatus: statusResult.data?.newStatus,
+          updatedAnimal: statusResult.data?.animal
+        }
+      }
+    }
+    
+    return result
+  } catch (error) {
+    console.error('Error in completeHealthRecordWithStatusUpdate:', error)
+    return { success: false, error: 'Failed to complete health record with status update' }
   }
 }

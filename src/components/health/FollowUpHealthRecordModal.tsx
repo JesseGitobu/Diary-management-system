@@ -1,4 +1,4 @@
-// FollowUpHealthRecordModal for creating follow-up records
+// Updated Follow-up Modal to work with new structure
 // src/components/health/FollowUpHealthRecordModal.tsx
 
 'use client'
@@ -77,43 +77,53 @@ export function FollowUpHealthRecordModal({
   
   const watchedStatus = form.watch('status')
   const watchedResolved = form.watch('resolved')
+
+  
   
   const handleSubmit = async (data: FollowUpFormData) => {
-    setLoading(true)
-    setError(null)
+  setLoading(true)
+  setError(null)
+  
+  try {
+    const response = await fetch(`/api/health/records/${originalRecord.id}/follow-up`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        ...data,
+        farm_id: farmId,
+        cost: data.cost || 0,
+      }),
+    })
     
-    try {
-      const response = await fetch(`/api/health/records/${originalRecord.id}/follow-up`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...data,
-          farm_id: farmId,
-          cost: data.cost || 0,
-        }),
-      })
-      
-      const result = await response.json()
-      
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to create follow-up record')
-      }
-      
-      onFollowUpAdded(result.followUp)
-      onClose()
-      
-    } catch (err) {
-      if (err instanceof Error) {
-        setError(err.message)
-      } else {
-        setError('An unexpected error occurred')
-      }
-    } finally {
-      setLoading(false)
+    const result = await response.json()
+    
+    if (!response.ok) {
+      throw new Error(result.error || 'Failed to create follow-up record')
     }
+    
+    // Pass the enriched follow-up data with status update info
+    onFollowUpAdded({
+      ...result.followUp,
+      animalHealthStatusUpdated: result.animalHealthStatusUpdated,
+      original_record_id: originalRecord.id,
+      animal_id: originalRecord.animal_id
+    })
+    
+    form.reset()
+    onClose()
+    
+  } catch (err) {
+    if (err instanceof Error) {
+      setError(err.message)
+    } else {
+      setError('An unexpected error occurred')
+    }
+  } finally {
+    setLoading(false)
   }
+}
   
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -143,7 +153,7 @@ export function FollowUpHealthRecordModal({
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-xl font-semibold text-gray-900 flex items-center space-x-2">
             <Activity className="w-6 h-6 text-farm-green" />
-            <span>Follow-up Health Record</span>
+            <span>Add Follow-up Record</span>
           </h3>
           <Button variant="ghost" size="sm" onClick={onClose}>
             <X className="w-5 h-5" />
@@ -312,7 +322,7 @@ export function FollowUpHealthRecordModal({
             <textarea
               id="notes"
               {...form.register('notes')}
-              rows={2}
+              rows={3}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
               placeholder="Any additional observations, recommendations, or important notes..."
             />

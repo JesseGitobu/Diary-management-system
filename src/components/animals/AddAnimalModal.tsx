@@ -117,7 +117,7 @@ export default function AddAnimalModal({
       <Modal 
         isOpen={isOpen && !showHealthRecordModal} 
         onClose={handleModalClose} 
-        className="max-w-5xl max-h-[90vh] overflow-y-auto"
+        className="max-w-5xl max-h-[90vh] "
       >
         <div className="p-6">
           {showSourceSelection ? (

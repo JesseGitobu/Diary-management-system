@@ -1,12 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { cn } from '@/lib/utils/cn'
+import { HealthStatusBadge } from './HealthStatusBadge'
 import { 
+  AlertTriangle,
   Calendar, 
   Tag, 
   MapPin, 
@@ -22,7 +24,8 @@ import {
   Clock,
   ChevronDown,
   ChevronUp,
-  Plus
+  Plus,
+  Shield
 } from 'lucide-react'
 
 interface AnimalBasicInfoProps {
@@ -34,7 +37,12 @@ interface AnimalBasicInfoProps {
 export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInfoProps) {
   const [showAllSections, setShowAllSections] = useState(false)
   const [expandedSections, setExpandedSections] = useState<string[]>(['identification'])
+  const [animalData, setAnimalData] = useState(animal)
   const { isMobile, isTouch } = useDeviceInfo()
+
+  useEffect(() => {
+    setAnimalData(animal)
+  }, [animal])
   
   const toggleSection = (sectionId: string) => {
     setExpandedSections(prev => 
@@ -100,26 +108,15 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
   }
   
   const getHealthStatusBadge = () => {
-    const statusColors = {
-      healthy: 'bg-green-100 text-green-800',
-      sick: 'bg-red-100 text-red-800',
-      requires_attention: 'bg-yellow-100 text-yellow-800',
-      quarantined: 'bg-red-100 text-red-800',
-    }
     
-    if (!animal.health_status) return null
     
     return (
-      <Badge className={cn(
-        statusColors[animal.health_status as keyof typeof statusColors] || 'bg-gray-100 text-gray-800',
-        isMobile ? "text-xs px-2 py-0.5" : ""
-      )}>
-        <Heart className="w-3 h-3 mr-1" />
-        {isMobile 
-          ? animal.health_status.replace('_', ' ').split(' ')[0].toUpperCase()
-          : animal.health_status.replace('_', ' ').toUpperCase()
-        }
-      </Badge>
+      <HealthStatusBadge 
+      healthStatus={animalData.health_status}
+      size="md"
+      showIcon={true}
+      showPulse={true}
+    />
     )
   }
   

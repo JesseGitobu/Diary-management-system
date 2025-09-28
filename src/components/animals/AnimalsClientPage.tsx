@@ -1,7 +1,7 @@
 // src/components/animals/AnimalsClientPage.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { AnimalsList } from '@/components/animals/AnimalsList'
@@ -10,7 +10,7 @@ import { ImportAnimalsModal } from '@/components/animals/ImportAnimalsModal'
 import { MobileStatsCarousel } from '@/components/mobile/MobileStatsCarousel'
 import { QuickActionButton } from '@/components/mobile/QuickActionButton'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
-import HealthNotificationBanner from '@/components/health/HealthNotificationBanner'
+import { HealthNotificationBanner } from '@/components/health/HealthNotificationBanner'
 import CompleteHealthRecordModal from '@/components/health/CompleteHealthRecordModal'
 import { 
   Plus, 
@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { GiCow } from 'react-icons/gi'
 import { Animal } from '@/types/database'
+import { HealthStatusNotification } from '../health/HealthStatusChangeNotification'
 
 interface AnimalsClientPageProps {
   initialAnimals: Animal[]
@@ -71,6 +72,27 @@ export function AnimalsClientPage({
   const [showHealthRecordModal, setShowHealthRecordModal] = useState(false)
   const [selectedHealthRecord, setSelectedHealthRecord] = useState<any>(null)
   const [healthRecordsNeedingCompletion, setHealthRecordsNeedingCompletion] = useState<any[]>([])
+  const [loadingIncompleteRecords, setLoadingIncompleteRecords] = useState(true)
+
+
+  useEffect(() => {
+    const loadMissingRecords = async () => {
+      try {
+        const response = await fetch(`/api/health/records/incomplete?farmId=${farmId}`);
+        if (response.ok) {
+          const data = await response.json();
+          // The API returns { records: [...] }, so we set the state with data.records
+          setHealthRecordsNeedingCompletion(data.records || []);
+        }
+      } catch (error) {
+        console.error('Error loading animals requiring health records:', error);
+      } finally {
+        setLoadingIncompleteRecords(false);
+      }
+    };
+
+    loadMissingRecords();
+  }, [farmId]);
 
   const handleAnimalAdded = (newAnimal: Animal) => {
     // Update local state with new animal
@@ -79,13 +101,31 @@ export function AnimalsClientPage({
     setShowAddModal(false)
   }
 
-  const handleHealthRecordCreated = (healthRecord: any) => {
-    // Add to the list of records needing completion
-    setHealthRecordsNeedingCompletion(prev => [healthRecord, ...prev])
+  const handleHealthRecordCreated = (healthRecord: any, updatedAnimal?: any) => {
+  // Add to the list of records needing completion
+  setHealthRecordsNeedingCompletion(prev => [healthRecord, ...prev])
+  
+  // If the animal's health status was updated, update the animals list
+  if (updatedAnimal) {
+    setAnimals(prev => 
+      prev.map(animal => 
+        animal.id === updatedAnimal.id ? { ...animal, ...updatedAnimal } : animal
+      )
+    )
     
-    // Refresh the notification banner
-    // This will be handled by the HealthNotificationBanner component
+    // Update stats to reflect new health status
+    type UpdateAnimalsFunction = (prevAnimals: Animal[]) => Animal[]
+
+    recalculateHealthStats(
+      (prev: Animal[]) => prev.map(animal => 
+        animal.id === updatedAnimal.id ? { ...animal, ...updatedAnimal } : animal
+      )
+    )
   }
+  
+  // Refresh the notification banner
+  // This will be handled by the HealthNotificationBanner component
+}
 
   const handleHealthRecordClick = (recordId: string) => {
     // Find the record and open completion modal
@@ -93,19 +133,73 @@ export function AnimalsClientPage({
     if (record) {
       setSelectedHealthRecord(record)
       setShowHealthRecordModal(true)
+    } else {
+      console.error('Health record not found:', recordId)
     }
   }
 
-  const handleHealthRecordCompleted = (completedRecord: any) => {
-    // Remove from incomplete list
-    setHealthRecordsNeedingCompletion(prev => 
-      prev.filter(r => r.id !== completedRecord.id)
-    )
-    setShowHealthRecordModal(false)
-    setSelectedHealthRecord(null)
+  const handleHealthRecordCompleted = async (completedRecord: any, followUpData?: any) => {
+  // Remove from incomplete list
+  setHealthRecordsNeedingCompletion(prev => 
+    prev.filter(r => r.id !== completedRecord.id)
+  )
+  
+  // CRITICAL: If follow-up was resolved, update animal health status
+  if (followUpData?.animalHealthStatusUpdated || followUpData?.is_resolved) {
+    // Fetch updated animal data
+    try {
+      const animalId = completedRecord.animal_id || followUpData.animal_id
+      const response = await fetch(`/api/animals/${animalId}`)
+      
+      if (response.ok) {
+        const { animal: updatedAnimal } = await response.json()
+        
+        // Update animals list with new health status
+        setAnimals(prev => 
+          prev.map(animal => 
+            animal.id === animalId ? { ...animal, ...updatedAnimal } : animal
+          )
+        )
+        
+        // Update health stats
+        recalculateHealthStats()
+      }
+    } catch (error) {
+      console.error('Error fetching updated animal data:', error)
+    }
   }
+  
+  setShowHealthRecordModal(false)
+  setSelectedHealthRecord(null)
+}
 
+const handleHealthStatusChange = (animalId: string, newStatus: Animal['health_status']) => {
+  // Update the animals list with the new health status
+  setAnimals(prev => 
+    prev.map(animal => 
+      animal.id === animalId 
+        ? { ...animal, health_status: newStatus, updated_at: new Date().toISOString() }
+        : animal
+    ) as Animal[]
+  )
+  
+  // Recalculate health stats
+  recalculateHealthStats()
+}
 
+// Helper function to recalculate health stats (for AnimalsClientPage)
+const recalculateHealthStats = (updateAnimals?: (prev: Animal[]) => Animal[]) => {
+  const updatedAnimals = updateAnimals ? updateAnimals(animals) : animals
+  setStats(prev => ({
+    ...prev,
+    byHealth: {
+      healthy: updatedAnimals.filter(a => a.health_status === 'healthy').length,
+      needsAttention: updatedAnimals.filter(a => 
+        a.health_status && a.health_status !== 'healthy'
+      ).length,
+    }
+  }))
+}
   const handleAnimalsImported = (importedAnimals: Animal[]) => {
     // Update local state with imported animals
     setAnimals(prev => [...importedAnimals, ...prev])
@@ -211,18 +305,32 @@ export function AnimalsClientPage({
   }
 
   const handleAnimalUpdated = (updatedAnimal: Animal) => {
-    setAnimals(prev =>
-      prev.map(animal =>
-        animal.id === updatedAnimal.id ? updatedAnimal : animal
-      )
-    )
-
-    // Recalculate stats with updated animals
-    const updatedAnimals = animals.map(animal =>
+  // Update local state with updated animal
+  setAnimals(prev =>
+    prev.map(animal =>
       animal.id === updatedAnimal.id ? updatedAnimal : animal
     )
-    recalculateStats(updatedAnimals)
-  }
+  )
+
+  // Recalculate stats with updated animals (including health stats)
+  const updatedAnimals = animals.map(animal =>
+    animal.id === updatedAnimal.id ? updatedAnimal : animal
+  )
+  
+  // Update all stats including health
+  setStats(prev => {
+    const newStats = {
+      ...prev,
+      byHealth: {
+        healthy: updatedAnimals.filter(a => a.health_status === 'healthy').length,
+        needsAttention: updatedAnimals.filter(a => 
+          a.health_status && a.health_status !== 'healthy'
+        ).length,
+      }
+    }
+    return newStats
+  })
+}
 
   // Prepare stats for mobile carousel
   const statsCards = [
@@ -275,8 +383,23 @@ export function AnimalsClientPage({
       <HealthNotificationBanner
         farmId={farmId}
         onRecordClick={handleHealthRecordClick}
-        className="mb-6"
+        missingRecords={healthRecordsNeedingCompletion} // Pass the state down
+        loading={loadingIncompleteRecords}
+        
       />
+
+      {/* Add Health Status Change Notifications */}
+    <div className="mb-4">
+      <HealthStatusNotification 
+        farmId={farmId}
+        onNotificationAction={(animalId, action) => {
+          if (action === 'view') {
+            // Navigate to animal details or handle view action
+            window.location.href = `/dashboard/animals/${animalId}`
+          }
+        }}
+      />
+    </div>
       {/* Mobile Header */}
       {isMobile ? (
         <div className="mb-6">
@@ -558,7 +681,7 @@ export function AnimalsClientPage({
           isOpen={showHealthRecordModal}
           onClose={() => setShowHealthRecordModal(false)}
           healthRecord={selectedHealthRecord}
-          animal={animals.find(a => a.id === selectedHealthRecord.animal_id)}
+          animal={selectedHealthRecord.animal || selectedHealthRecord.animals || animals.find(a => a.id === selectedHealthRecord.animal_id)}
           onHealthRecordUpdated={handleHealthRecordCompleted}
         />
       )}  
