@@ -3,17 +3,17 @@
 
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
+import { record, z } from 'zod'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { Modal } from '@/components/ui/Modal'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Badge } from '@/components/ui/Badge'
-import { X, Calendar, DollarSign, Stethoscope, AlertCircle, Activity, CheckCircle } from 'lucide-react'
+import { X, Calendar, DollarSign, Stethoscope, AlertCircle, Activity, CheckCircle, AlertTriangle } from 'lucide-react'
 
 const followUpSchema = z.object({
   record_date: z.string().min(1, 'Follow-up date is required'),
@@ -34,11 +34,12 @@ interface HealthRecord {
   id: string
   animal_id: string
   record_date: string
-  record_type: 'vaccination' | 'treatment' | 'checkup' | 'injury' | 'illness'
+  record_type: 'vaccination' | 'treatment' | 'checkup' | 'injury' | 'illness' | 'reproductive' | 'deworming'
   description: string
   veterinarian?: string
   cost?: number
   notes?: string
+  root_checkup_id?: string
   animals?: {
     id: string
     name?: string
@@ -64,6 +65,7 @@ export function FollowUpHealthRecordModal({
 }: FollowUpHealthRecordModalProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+    const [showRecordTypePrompt, setShowRecordTypePrompt] = useState(false)
   
   const form = useForm<FollowUpFormData>({
     resolver: zodResolver(followUpSchema),
@@ -79,8 +81,18 @@ export function FollowUpHealthRecordModal({
   const watchedResolved = form.watch('resolved')
 
   
+  // Show prompt when "requires_attention" is selected for checkup records
+  useEffect(() => {
+    if (watchedStatus === 'requires_attention' && originalRecord.record_type === 'checkup') {
+      setShowRecordTypePrompt(true)
+    } else {
+      setShowRecordTypePrompt(false)
+    }
+  }, [watchedStatus, originalRecord.record_type])
+
   
-  const handleSubmit = async (data: FollowUpFormData) => {
+  // In FollowUpHealthRecordModal.tsx - handleSubmit function
+const handleSubmit = async (data: FollowUpFormData) => {
   setLoading(true)
   setError(null)
   
@@ -103,13 +115,24 @@ export function FollowUpHealthRecordModal({
       throw new Error(result.error || 'Failed to create follow-up record')
     }
     
-    // Pass the enriched follow-up data with status update info
-    onFollowUpAdded({
+    // Determine the root checkup ID
+    const rootCheckupId = originalRecord.record_type === 'checkup' 
+      ? originalRecord.id 
+      : originalRecord.root_checkup_id || null
+    
+    // Pass enriched data with root checkup tracking
+    const enrichedResult = {
       ...result.followUp,
       animalHealthStatusUpdated: result.animalHealthStatusUpdated,
+      newHealthStatus: result.newHealthStatus,
+      updatedAnimal: result.updatedAnimal,
       original_record_id: originalRecord.id,
-      animal_id: originalRecord.animal_id
-    })
+      animal_id: originalRecord.animal_id,
+      requires_new_record: watchedStatus === 'requires_attention' && originalRecord.record_type === 'checkup',
+      root_checkup_id: rootCheckupId // ADD THIS
+    }
+    
+    onFollowUpAdded(enrichedResult)
     
     form.reset()
     onClose()
@@ -171,11 +194,42 @@ export function FollowUpHealthRecordModal({
             {originalRecord.veterinarian && <p><strong>Veterinarian:</strong> {originalRecord.veterinarian}</p>}
           </div>
         </div>
+
+        <div className="bg-blue-50 p-3 rounded-lg mb-4">
+  <p className="text-sm text-blue-800">
+    {originalRecord.record_type === 'vaccination' && 
+      "Document any reactions, side effects, or follow-up vaccination needs."}
+    {originalRecord.record_type === 'reproductive' && 
+      "Track pregnancy progress, calving updates, or breeding complications."}
+    {originalRecord.record_type === 'deworming' && 
+      "Monitor effectiveness, any adverse reactions, or schedule next treatment."}
+    {['illness', 'injury', 'treatment'].includes(originalRecord.record_type) && 
+      "Track recovery progress, treatment effectiveness, and current health status."}
+    {originalRecord.record_type === 'checkup' && 
+      "Document changes since last check, new concerns, or follow-up requirements."}
+  </p>
+</div>
         
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm flex items-center space-x-2">
             <AlertCircle className="w-4 h-4 text-red-500" />
             <span>{error}</span>
+          </div>
+        )}
+
+        {/* Show prompt when requires_attention is selected for checkup */}
+        {showRecordTypePrompt && (
+          <div className="mb-6 p-4 bg-orange-50 border-l-4 border-orange-500 rounded-lg">
+            <div className="flex items-start space-x-3">
+              <AlertTriangle className="w-5 h-5 text-orange-500 flex-shrink-0 mt-0.5" />
+              <div>
+                <h4 className="font-semibold text-orange-900 mb-1">Additional Health Record Required</h4>
+                <p className="text-sm text-orange-800">
+                  Since the animal requires attention, you'll be prompted to create a specific health record 
+                  (Vaccination, Treatment, Illness, Reproductive, or Deworming) after saving this follow-up.
+                </p>
+              </div>
+            </div>
           </div>
         )}
         

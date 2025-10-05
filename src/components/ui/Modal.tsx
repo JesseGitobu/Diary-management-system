@@ -101,7 +101,7 @@ export function Modal({
             onClick={onClose}
             className="absolute top-4 right-4 z-10 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
           >
-            <X className="h-4 w-4" />
+            <X className="w-5 h-5" />
             <span className="sr-only">Close</span>
           </button>
         )}

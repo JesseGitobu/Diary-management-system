@@ -1,4 +1,4 @@
-// Mobile-Optimized HealthDashboard.tsx
+// Mobile-Optimized HealthDashboard.tsx with List View for Desktop
 // src/components/health/HealthDashboard.tsx
 
 'use client'
@@ -38,6 +38,7 @@ import { VetVisitCard } from '@/components/health/VetVisitCard'
 import { MobileActionSheet } from '@/components/mobile/MobileActionSheet'
 import { MobileTabBar } from '@/components/mobile/MobileTabBar'
 import { MobileSearchFilter } from '@/components/mobile/MobileSearchFilter'
+import { HealthNotification } from '@/components/health/HealthNotification'
 
 import { EditHealthRecordModal } from '@/components/health/EditHealthRecordModal'
 import { FollowUpHealthRecordModal } from '@/components/health/FollowUpHealthRecordModal'
@@ -46,6 +47,7 @@ import { EditProtocolModal } from '@/components/health/EditProtocolModal'
 import { EditOutbreakModal } from '@/components/health/EditOutbreakModal'
 import { EditVaccinationModal } from '@/components/health/EditVaccinationModal'
 import { EditVetVisitModal } from '@/components/health/EditVetVisitModal'
+import { RecordTypeSelectionModal } from '@/components/health/RecordTypeSelectionModal'
 
 import {
   Plus,
@@ -65,12 +67,13 @@ import {
   ChevronDown,
   UserPlus,
   MoreHorizontal,
-  // Tab icons
   ClipboardList,
   UserCheck,
   BookOpen,
   Zap,
-  CalendarCheck
+  CalendarCheck,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react'
 import { LoadingSpinner } from '../ui/LoadingSpinner'
 
@@ -162,7 +165,7 @@ export function HealthRecordsContent({
   })
 
   // Filter states
-  const [selectedRecordType, setSelectedRecordType] = useState('')
+  const [selectedRecordType, setSelectedRecordType] = useState<string>('')
   const [selectedAnimalFilter, setSelectedAnimalFilter] = useState('')
 
   const [editingRecord, setEditingRecord] = useState<any>(null)
@@ -191,6 +194,28 @@ export function HealthRecordsContent({
   const [showEditVetVisitModal, setShowEditVetVisitModal] = useState(false)
   const [deletingVetVisitId, setDeletingVetVisitId] = useState<string | null>(null)
 
+  const [showRecordTypeSelectionModal, setShowRecordTypeSelectionModal] = useState(false)
+  const [pendingAttentionRecord, setPendingAttentionRecord] = useState<any>(null)
+
+
+  const [pendingAttentionAnimals, setPendingAttentionAnimals] = useState<Array<{
+    animalId: string
+    animalName: string
+    animalTagNumber: string
+    followUpId: string
+    recordDate: string
+    originalRecordId: string
+  }>>([])
+
+  const [dismissedNotifications, setDismissedNotifications] = useState<Set<string>>(new Set())
+  const [rootCheckupId, setRootCheckupId] = useState<string | null>(null)
+
+  const [selectedOriginalRecordId, setSelectedOriginalRecordId] = useState<string>('')
+
+  const [currentPage, setCurrentPage] = useState(1)
+  const RECORDS_PER_PAGE = 10
+
+
 
   // Permission checks
   const canAddRecords = userRole?.role_type &&
@@ -198,11 +223,36 @@ export function HealthRecordsContent({
   const canManageProtocols = userRole?.role_type &&
     ['farm_owner', 'farm_manager'].includes(userRole.role_type)
 
+
+
   useEffect(() => {
     refreshHealthData()
-  }, []) // Run once when component mounts
+  }, [])
 
-  // Filtered data for each tab (same as original)
+  // Add this useEffect to persist and load notifications
+  useEffect(() => {
+    // Load from localStorage on mount
+    const stored = localStorage.getItem('pending_attention_animals')
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored)
+        setPendingAttentionAnimals(parsed)
+      } catch (e) {
+        console.error('Failed to parse stored notifications', e)
+      }
+    }
+  }, [])
+
+  // Save to localStorage whenever it changes
+  useEffect(() => {
+    if (pendingAttentionAnimals.length > 0) {
+      localStorage.setItem('pending_attention_animals', JSON.stringify(pendingAttentionAnimals))
+    } else {
+      localStorage.removeItem('pending_attention_animals')
+    }
+  }, [pendingAttentionAnimals])
+
+  // Filtered data for each tab
   const filteredHealthRecords = useMemo(() => {
     if (!Array.isArray(healthRecords)) return []
 
@@ -312,6 +362,20 @@ export function HealthRecordsContent({
     })
   }, [vetVisits, searchTerms])
 
+  // Add this computed value after your other useMemo declarations
+  const paginatedHealthRecords = useMemo(() => {
+    const startIndex = (currentPage - 1) * RECORDS_PER_PAGE
+    const endIndex = startIndex + RECORDS_PER_PAGE
+    return filteredHealthRecords.slice(startIndex, endIndex)
+  }, [filteredHealthRecords, currentPage])
+
+  const totalPages = Math.ceil(filteredHealthRecords.length / RECORDS_PER_PAGE)
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchTerms['health-records'], selectedRecordType, selectedAnimalFilter])
+
   // Tab configuration with mobile-optimized layout
   const tabs = [
     {
@@ -364,8 +428,6 @@ export function HealthRecordsContent({
     }
   ]
 
-
-
   // Mobile action sheet configuration
   const actionSheetItems = [
     ...(canAddRecords ? [
@@ -416,7 +478,6 @@ export function HealthRecordsContent({
     ] : [])
   ]
 
-  // All the existing handler functions remain the same
   const handleRecordAdded = async (newRecord: any) => {
     if (newRecord) {
       setHealthRecords(prev => [newRecord, ...prev])
@@ -425,7 +486,6 @@ export function HealthRecordsContent({
     toast.success('Health record added successfully!')
     await refreshHealthData()
   }
-
 
   const handleEditRecord = (record: any) => {
     setEditingRecord(record)
@@ -481,53 +541,100 @@ export function HealthRecordsContent({
   }
 
   const handleFollowUpAdded = async (followUp: any) => {
-  if (followUp) {
-    // Update health records with the follow-up
-    setHealthRecords(prev =>
-      prev.map(record => {
-        if (record.id === followUp.original_record_id) {
-          return {
-            ...record,
-            follow_ups: [followUp, ...(record.follow_ups || [])],
-            is_resolved: followUp.is_resolved || record.is_resolved,
-            resolved_date: followUp.is_resolved ? followUp.record_date : record.resolved_date
+    if (followUp) {
+      setHealthRecords(prev =>
+        prev.map(record => {
+          if (record.id === followUp.original_record_id) {
+            return {
+              ...record,
+              follow_ups: [followUp, ...(record.follow_ups || [])],
+              is_resolved: followUp.is_resolved || record.is_resolved,
+              resolved_date: followUp.is_resolved ? followUp.record_date : record.resolved_date
+            }
           }
-        }
-        return record
-      })
-    )
+          return record
+        })
+      )
 
-    // Handle animal health status update
-    if (followUp.animalHealthStatusUpdated && onAnimalUpdated && followUp.updatedAnimal) {
-      onAnimalUpdated(followUp.updatedAnimal)
-      
-      // Show appropriate message based on status change
-      type HealthStatus = 'healthy' | 'sick' | 'requires_attention' | 'quarantined';
-      
-      const statusMessages: Record<HealthStatus, string> = {
-        'healthy': 'recovered and is now healthy! 🎉',
-        'sick': 'condition has worsened and is now marked as sick',
-        'requires_attention': 'still requires medical attention',
-        'quarantined': 'has been quarantined for safety'
-      }
-      
-      const message = statusMessages[followUp.newHealthStatus as HealthStatus] || `status updated to ${followUp.newHealthStatus}`
-      const isGoodNews = followUp.newHealthStatus === 'healthy'
-      
-      if (isGoodNews) {
-        toast.success(`${followUp.updatedAnimal.name || 'Animal'} ${message}`)
+      if (followUp.animalHealthStatusUpdated && onAnimalUpdated && followUp.updatedAnimal) {
+        onAnimalUpdated(followUp.updatedAnimal)
+
+        type HealthStatus = 'healthy' | 'sick' | 'requires_attention' | 'quarantined';
+
+        const statusMessages: Record<HealthStatus, string> = {
+          'healthy': 'recovered and is now healthy!',
+          'sick': 'condition has worsened and is now marked as sick',
+          'requires_attention': 'still requires medical attention',
+          'quarantined': 'has been quarantined for safety'
+        }
+
+        const message = statusMessages[followUp.newHealthStatus as HealthStatus] || `status updated to ${followUp.newHealthStatus}`
+        const isGoodNews = followUp.newHealthStatus === 'healthy'
+
+        if (isGoodNews) {
+          toast.success(`${followUp.updatedAnimal.name || 'Animal'} ${message}`)
+        } else {
+          toast.error(`${followUp.updatedAnimal.name || 'Animal'} ${message}`)
+        }
       } else {
-        toast.error(`${followUp.updatedAnimal.name || 'Animal'} ${message}`)
+        toast.success('Follow-up record added successfully!')
       }
-    } else {
-      toast.success('Follow-up record added successfully!')
+
+      // Check if we need to prompt for a new health record
+      if (followUp.requires_new_record) {
+        const originalRecord = healthRecords.find(r => r.id === followUp.original_record_id)
+        if (originalRecord) {
+          const pendingAnimal = {
+            animalId: originalRecord.animal_id,
+            animalName: originalRecord.animals?.name || `Animal ${originalRecord.animals?.tag_number}`,
+            animalTagNumber: originalRecord.animals?.tag_number,
+            followUpId: followUp.id,
+            recordDate: followUp.record_date,
+            originalRecordId: originalRecord.id
+          }
+
+          // SET the root checkup ID from the follow-up data
+          setRootCheckupId(followUp.root_checkup_id || null)
+
+          // Add to pending notifications
+          setPendingAttentionAnimals(prev => {
+            if (prev.some(p => p.animalId === pendingAnimal.animalId)) {
+              return prev
+            }
+            return [...prev, pendingAnimal]
+          })
+
+          setPendingAttentionRecord(pendingAnimal)
+          setShowRecordTypeSelectionModal(true)
+        }
+      }
     }
+
+    setShowFollowUpModal(false)
+    setFollowUpRecord(null)
+    await refreshHealthData()
   }
-  
-  setShowFollowUpModal(false)
-  setFollowUpRecord(null)
-  await refreshHealthData()
-}
+
+  const handleSelectPendingAnimal = (animal: any) => {
+    setPendingAttentionRecord(animal)
+    setShowRecordTypeSelectionModal(true)
+  }
+
+  const handleDismissNotification = (animalId: string) => {
+    // Remove from pending list
+    setPendingAttentionAnimals(prev => prev.filter(p => p.animalId !== animalId))
+
+    // Add to dismissed set
+    setDismissedNotifications(prev => new Set(prev).add(animalId))
+
+    toast.success('Notification dismissed')
+  }
+
+  const handleRecordCreatedForAnimal = (animalId: string) => {
+    // Remove from pending list after record is created
+    setPendingAttentionAnimals(prev => prev.filter(p => p.animalId !== animalId))
+  }
+
   const handleProtocolAdded = async (newProtocol: any) => {
     if (newProtocol) {
       setProtocols(prev => [newProtocol, ...prev])
@@ -768,7 +875,6 @@ export function HealthRecordsContent({
     }
   }
 
-
   const handleVeterinarianAdded = async (newVeterinarian: any) => {
     if (newVeterinarian) {
       setVeterinarians(prev => [newVeterinarian, ...prev])
@@ -826,11 +932,9 @@ export function HealthRecordsContent({
     }
   }
 
-  // Data refresh functions (same as original)
   const refreshHealthData = async () => {
     setLoading(true)
     try {
-      // Fetch all data in parallel using Promise.all
       const [
         healthRecordsRes,
         veterinariansRes,
@@ -839,7 +943,7 @@ export function HealthRecordsContent({
         vaccinationsRes,
         vetVisitsRes
       ] = await Promise.all([
-        fetch('/api/health/records?includeFollowUps=true'), // Add flag to include follow-ups
+        fetch('/api/health/records?includeFollowUps=true'),
         fetch('/api/health/veterinarians'),
         fetch('/api/health/protocols'),
         fetch('/api/health/outbreaks'),
@@ -847,7 +951,6 @@ export function HealthRecordsContent({
         fetch('/api/health/visits')
       ])
 
-      // Process all responses in parallel
       const [
         healthData,
         veterinariansData,
@@ -864,7 +967,6 @@ export function HealthRecordsContent({
         vetVisitsRes.ok ? vetVisitsRes.json() : { visits: [] }
       ])
 
-      // Update all state variables
       setHealthRecords(healthData.healthRecords || [])
       setVeterinarians(veterinariansData.veterinarians || [])
       setProtocols(protocolsData.protocols || [])
@@ -879,9 +981,6 @@ export function HealthRecordsContent({
     }
   }
 
-
-
-  // Helper functions (same as original - truncated for brevity)
   const createVisitReminder = async (visit: any) => {
     try {
       console.log(`Creating reminder for visit: ${visit?.id}`)
@@ -974,43 +1073,171 @@ export function HealthRecordsContent({
     { value: 'illness', label: '🤒 Illness' }
   ]
 
-  // Mobile-optimized grid function
+  // UPDATED: Mobile-optimized layout function for list view
   const getMobileGridCols = (dataLength: number) => {
     if (isMobile) {
       return 'grid-cols-1'
     } else if (isTablet) {
       return 'grid-cols-2'
     } else {
-      return dataLength > 6 ? 'grid-cols-3' : 'grid-cols-2'
+      // Desktop: return empty string - no grid needed for list view
+      return ''
     }
   }
 
   const handleHealthRecordAdded = async (newRecord: any) => {
-  if (newRecord) {
-    setHealthRecords(prev => [newRecord, ...prev])
-    
-    // Check if animal health status was updated
-    if (newRecord.animalHealthStatusUpdated) {
-      // Notify parent component about the animal update
-      if (onAnimalUpdated && newRecord.updatedAnimal) {
-        onAnimalUpdated(newRecord.updatedAnimal)
+    if (newRecord) {
+      if (newRecord.is_follow_up && newRecord.original_record_id) {
+        setHealthRecords(prev =>
+          prev.map(record => {
+            if (record.id === newRecord.original_record_id) {
+              return {
+                ...record,
+                follow_ups: [newRecord, ...(record.follow_ups || [])]
+              }
+            }
+            return record
+          })
+        )
+      } else {
+        // Only add to list if it's not a follow-up
+        setHealthRecords(prev => [newRecord, ...prev])
       }
-      
-      // Show success message with status update info
-      toast.success(
-        `Health record added. ${newRecord.updatedAnimal?.name || 'Animal'} status updated to ${newRecord.newHealthStatus}`,
-        { duration: 5000 }
-      )
-    } else {
-      toast.success('Health record added successfully!')
+
+      // Remove from pending notifications
+      handleRecordCreatedForAnimal(newRecord.animal_id)
+
+      if (newRecord.animalHealthStatusUpdated) {
+        if (onAnimalUpdated && newRecord.updatedAnimal) {
+          onAnimalUpdated(newRecord.updatedAnimal)
+        }
+
+        toast.success(
+          `Health record added. ${newRecord.updatedAnimal?.name || 'Animal'} status updated to ${newRecord.newHealthStatus}`,
+          { duration: 5000 }
+        )
+      } else {
+        toast.success('Health record added successfully!')
+      }
     }
+    setShowAddModal(false)
+    setSelectedAnimalId('')
+    setSelectedRecordType('')
+    setSelectedOriginalRecordId('')
+    setRootCheckupId(null)
+    await refreshHealthData()
   }
-  setShowAddModal(false)
-  await refreshHealthData()
-}
 
+  const PaginationControls = () => {
+    if (totalPages <= 1) return null
 
+    return (
+      <div className="flex items-center justify-between px-4 py-3 bg-white border-t border-gray-200 sm:px-6">
+        <div className="flex items-center justify-between w-full">
+          {/* Mobile View */}
+          <div className="flex items-center justify-between w-full sm:hidden">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+              className="flex items-center space-x-1"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              <span>Previous</span>
+            </Button>
 
+            <span className="text-sm text-gray-700">
+              Page {currentPage} of {totalPages}
+            </span>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={currentPage === totalPages}
+              className="flex items-center space-x-1"
+            >
+              <span>Next</span>
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
+
+          {/* Desktop View */}
+          <div className="hidden sm:flex sm:items-center sm:justify-between w-full">
+            <div className="text-sm text-gray-700">
+              Showing{' '}
+              <span className="font-medium">
+                {(currentPage - 1) * RECORDS_PER_PAGE + 1}
+              </span>
+              {' '}-{' '}
+              <span className="font-medium">
+                {Math.min(currentPage * RECORDS_PER_PAGE, filteredHealthRecords.length)}
+              </span>
+              {' '}of{' '}
+              <span className="font-medium">{filteredHealthRecords.length}</span>
+              {' '}records
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="flex items-center space-x-1"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                <span>Previous</span>
+              </Button>
+
+              {/* Page Numbers */}
+              <div className="flex items-center space-x-1">
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let pageNum
+                  if (totalPages <= 5) {
+                    pageNum = i + 1
+                  } else if (currentPage <= 3) {
+                    pageNum = i + 1
+                  } else if (currentPage >= totalPages - 2) {
+                    pageNum = totalPages - 4 + i
+                  } else {
+                    pageNum = currentPage - 2 + i
+                  }
+
+                  return (
+                    <Button
+                      key={pageNum}
+                      variant={currentPage === pageNum ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setCurrentPage(pageNum)}
+                      className={`w-10 h-10 p-0 ${currentPage === pageNum
+                          ? 'bg-farm-green text-white'
+                          : ''
+                        }`}
+                    >
+                      {pageNum}
+                    </Button>
+                  )
+                })}
+              </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className="flex items-center space-x-1"
+              >
+                <span>Next</span>
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4 pb-safe">
@@ -1041,7 +1268,6 @@ export function HealthRecordsContent({
               </Button>
             ) : (
               <div className="flex items-center space-x-3">
-                {/* Desktop Quick Actions Dropdown - same as original */}
                 <div className="relative group">
                   <Button variant="outline" className="flex items-center space-x-2">
                     <Plus className="w-4 h-4" />
@@ -1114,11 +1340,19 @@ export function HealthRecordsContent({
         </div>
       </div>
 
+      <div className={`${isMobile ? 'px-4' : ''}`}>
+        <HealthNotification
+          pendingAnimals={pendingAttentionAnimals.filter(
+            animal => !dismissedNotifications.has(animal.animalId)
+          )}
+          onSelectAnimal={handleSelectPendingAnimal}
+          onDismiss={handleDismissNotification}
+        />
+      </div>
+
       {/* Mobile-Optimized Scrollable Stats */}
       <div className={`${isMobile ? 'px-4' : ''}`}>
-        {/* Stats Cards */}
         <HealthStatsCards stats={healthStats} />
-
       </div>
 
       {/* Upcoming Tasks Section */}
@@ -1171,7 +1405,7 @@ export function HealthRecordsContent({
               </TabsList>
             )}
 
-            {/* Health Records Tab */}
+            {/* Health Records Tab - UPDATED FOR LIST VIEW */}
             <TabsContent value="health-records" className="space-y-4">
               {/* Mobile-Optimized Search and Filters */}
               {isMobile ? (
@@ -1271,7 +1505,7 @@ export function HealthRecordsContent({
                 </div>
               )}
 
-              {/* Health Records Display */}
+              {/* Health Records Display - UPDATED */}
               {filteredHealthRecords.length === 0 ? (
                 <div className="text-center py-12">
                   <ClipboardList className="mx-auto h-12 w-12 text-gray-400" />
@@ -1292,20 +1526,24 @@ export function HealthRecordsContent({
                   )}
                 </div>
               ) : (
-                <div className={`grid ${getMobileGridCols(filteredHealthRecords.length)} gap-4`}>
-                  {filteredHealthRecords.map((record) => (
-                    <HealthRecordCard
-                      key={record.id}
-                      record={record}
-                      onEdit={() => handleEditRecord(record)}
-                      onDelete={() => handleDeleteRecord(record.id)}
-                      onFollowUp={() => handleFollowUpRecord(record)}
-                      canEdit={canAddRecords}
-                      isDeleting={deletingRecordId === record.id}
-                      showFollowUp={['illness', 'injury', 'treatment'].includes(record.record_type)}
-                    />
-                  ))}
-                </div>
+                <>
+                  <div className={isMobile || isTablet ? `grid ${getMobileGridCols(paginatedHealthRecords.length)} gap-4` : 'space-y-3'}>
+                    {paginatedHealthRecords.map((record) => (
+                      <HealthRecordCard
+                        key={record.id}
+                        record={record}
+                        onEdit={() => handleEditRecord(record)}
+                        onDelete={() => handleDeleteRecord(record.id)}
+                        onFollowUp={() => handleFollowUpRecord(record)}
+                        canEdit={canAddRecords}
+                        isDeleting={deletingRecordId === record.id}
+                        showFollowUp={true}
+                      />
+                    ))}
+                  </div>
+
+                  <PaginationControls />
+                </>
               )}
             </TabsContent>
 
@@ -1640,7 +1878,7 @@ export function HealthRecordsContent({
         />
       )}
 
-      {/* All Modals - Same as original */}
+      {/* All Modals */}
       {showAddModal && (
         <AddHealthRecordModal
           farmId={userRole?.farm_id}
@@ -1649,13 +1887,17 @@ export function HealthRecordsContent({
           onClose={() => {
             setShowAddModal(false)
             setSelectedAnimalId('')
+            setSelectedRecordType('')
+            setSelectedOriginalRecordId('')
+            setRootCheckupId(null)
           }}
-          onRecordAdded={handleRecordAdded}
+          onRecordAdded={handleHealthRecordAdded}
           preSelectedAnimalId={selectedAnimalId}
+          preSelectedRecordType={selectedRecordType}
+          rootCheckupId={rootCheckupId}
         />
       )}
 
-      {/* New Edit Modal */}
       {showEditModal && editingRecord && (
         <EditHealthRecordModal
           farmId={userRole?.farm_id}
@@ -1670,7 +1912,6 @@ export function HealthRecordsContent({
         />
       )}
 
-      {/* New Follow-up Modal */}
       {showFollowUpModal && followUpRecord && (
         <FollowUpHealthRecordModal
           farmId={userRole?.farm_id}
@@ -1804,7 +2045,6 @@ export function HealthRecordsContent({
         />
       )}
 
-
       {loading && (
         <div className="fixed top-4 right-4 z-50 bg-white rounded-lg shadow-lg p-4 flex items-center space-x-2">
           <LoadingSpinner size="sm" />
@@ -1812,6 +2052,27 @@ export function HealthRecordsContent({
         </div>
       )}
 
+
+      {showRecordTypeSelectionModal && pendingAttentionRecord && (
+        <RecordTypeSelectionModal
+          isOpen={showRecordTypeSelectionModal}
+          onClose={() => {
+            setShowRecordTypeSelectionModal(false)
+            setPendingAttentionRecord(null)
+          }}
+          animalInfo={pendingAttentionRecord}
+          onRecordTypeSelected={(recordType, animalId) => {
+            setShowRecordTypeSelectionModal(false)
+            setPendingAttentionRecord(null)
+            const originalRecordId = pendingAttentionRecord?.originalRecordId || ''
+            setSelectedAnimalId(animalId)
+            setSelectedRecordType(recordType)
+            setSelectedOriginalRecordId(originalRecordId)
+
+            setShowAddModal(true)
+          }}
+        />
+      )}
     </div>
   )
 }

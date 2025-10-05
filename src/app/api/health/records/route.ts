@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
-import { getAnimalHealthRecords, createHealthRecordWithStatusUpdate, 
+import { getAnimalHealthRecords, createHealthRecordWithStatusUpdate, getFollowUpRecords,
   getHealthRecordsWithFollowUps,
   updateAnimalHealthStatus, createHealthRecord } from '@/lib/database/health'
 
@@ -40,6 +40,10 @@ export async function POST(request: NextRequest) {
       treatment,
       is_auto_generated = false,
       completion_status = 'pending',
+      
+      // Follow-up fields - ADD THESE
+      is_follow_up = false,
+      original_record_id = null,
       
       // General checkup fields
       body_condition_score,
@@ -90,7 +94,8 @@ export async function POST(request: NextRequest) {
       product_used,
       deworming_dose,
       next_deworming_date,
-      deworming_administered_by
+      deworming_administered_by,
+      root_checkup_id
     } = body
     
     // Validate required fields
@@ -105,6 +110,13 @@ export async function POST(request: NextRequest) {
     if (!validRecordTypes.includes(record_type)) {
       return NextResponse.json({ 
         error: `Invalid record type. Must be one of: ${validRecordTypes.join(', ')}` 
+      }, { status: 400 })
+    }
+    
+    // Validate follow-up relationship
+    if (is_follow_up && !original_record_id) {
+      return NextResponse.json({ 
+        error: 'original_record_id is required when is_follow_up is true' 
       }, { status: 400 })
     }
     
@@ -126,6 +138,10 @@ export async function POST(request: NextRequest) {
       treatment: treatment || null,
       is_auto_generated,
       completion_status,
+      
+      // Follow-up fields - ADD THESE
+      is_follow_up,
+      original_record_id,
       
       // General checkup fields
       body_condition_score: body_condition_score || null,
@@ -176,14 +192,37 @@ export async function POST(request: NextRequest) {
       product_used: product_used || null,
       deworming_dose: deworming_dose || null,
       next_deworming_date: next_deworming_date || null,
-      deworming_administered_by: deworming_administered_by || null
+      deworming_administered_by: deworming_administered_by || null,
+      root_checkup_id: root_checkup_id || null
     }
+    
+    // Create the supabase client for additional operations
+    const supabase = await createServerSupabaseClient()
     
     // Use enhanced function that updates health status
     const result = await createHealthRecordWithStatusUpdate(recordData) as any
     
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 })
+    }
+    
+    // If this is a follow-up record, create the relationship in health_record_follow_ups table
+    if (is_follow_up && original_record_id && result.data) {
+      const { error: relationError } = await supabase
+        .from('health_record_follow_ups')
+        .insert({
+          original_record_id: original_record_id,
+          follow_up_record_id: result.data.id,
+          status: 'requires_attention', // Status from the follow-up flow
+          is_resolved: false,
+          created_at: new Date().toISOString()
+        })
+      
+      if (relationError) {
+        console.error('Error creating follow-up relationship:', relationError)
+        // Don't fail the entire operation, but log the error
+        // The record is still created, just not linked properly
+      }
     }
     
     const response: {
@@ -196,7 +235,9 @@ export async function POST(request: NextRequest) {
     } = { 
       success: true, 
       record: result.data,
-      message: 'Health record created successfully'
+      message: is_follow_up 
+        ? 'Follow-up health record created successfully'
+        : 'Health record created successfully'
     }
     
     // Include animal health status update info if available
@@ -234,9 +275,8 @@ export async function GET(request: NextRequest) {
     const recordType = searchParams.get('recordType') || undefined
     const limit = searchParams.get('limit') ? parseInt(searchParams.get('limit')!) : undefined
 
-    console.log('Fetching health records with options:', {
-      farmId: userRole.farm_id,
-      includeFollowUps,
+    // Get base records (this now excludes is_follow_up = true records)
+    const baseRecords = await getAnimalHealthRecords(userRole.farm_id, {
       animalId,
       recordType,
       limit
@@ -245,22 +285,24 @@ export async function GET(request: NextRequest) {
     let healthRecords
 
     if (includeFollowUps) {
-      // Use the new function that includes follow-ups
-      healthRecords = await getHealthRecordsWithFollowUps(userRole.farm_id, {
-        animalId,
-        recordType,
-        limit
-      })
-    } else {
-      // Use the existing function for backwards compatibility
-      healthRecords = await getAnimalHealthRecords(userRole.farm_id, {
-        animalId,
-        recordType,
-        limit
-      })
-    }
+  const recordsWithFollowUps = await Promise.all(
+    baseRecords.map(async (record: any) => {
+      // CURRENT - LIMITED:
+      // if (['illness', 'injury', 'treatment', 'checkup'].includes(record.record_type)) {
+      
+      // UPDATED - ALL TYPES CAN HAVE FOLLOW-UPS:
+      const followUps = await getFollowUpRecords(record.id, userRole.farm_id!)
+      return {
+        ...record,
+        follow_ups: followUps
+      }
+    })
+  )
 
-    console.log(`Found ${healthRecords.length} health records`)
+      healthRecords = recordsWithFollowUps
+    } else {
+      healthRecords = baseRecords
+    }
 
     return NextResponse.json({ 
       success: true, 

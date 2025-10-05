@@ -39,14 +39,12 @@ export async function POST(
       resolved = false
     } = body
     
-    // Validate required fields
     if (!record_date || !status || !description) {
       return NextResponse.json({ 
         error: 'Missing required fields: record_date, status, description' 
       }, { status: 400 })
     }
     
-    // Use enhanced function that updates health status
     const result = await createFollowUpRecordWithStatusUpdate(
       originalRecordId,
       userRole.farm_id,
@@ -65,28 +63,51 @@ export async function POST(
       user.id
     )
     
-    if (!result.success) {
-      return NextResponse.json({ error: result.error }, { status: 400 })
+    if (!result.success || !('data' in result) || !result.data) {
+      return NextResponse.json({ error: result.error || 'No data returned' }, { status: 400 })
+    }
+    
+    const followUpData = {
+      id: result.data.id,
+      record_date: result.data.record_date,
+      description: result.data.description,
+      veterinarian: result.data.veterinarian,
+      cost: result.data.cost,
+      notes: result.data.notes,
+      medication: result.data.medication,
+      follow_up_status: result.data.follow_up_status,
+      treatment_effectiveness: result.data.treatment_effectiveness,
+      is_resolved: result.data.is_resolved,
+      created_at: result.data.created_at,
+      next_followup_date: result.data.next_due_date,
+      original_record_id: originalRecordId
     }
     
     const response: {
       success: boolean;
-      followUp: typeof result.data;
+      followUp: typeof followUpData;
       message: string;
       animalHealthStatusUpdated?: boolean;
       newHealthStatus?: string;
       updatedAnimal?: unknown;
+      cascadedResolution?: boolean; // NEW
+      resolvedRecords?: string[]; // NEW
     } = { 
       success: true, 
-      followUp: result.data,
+      followUp: followUpData,
       message: 'Follow-up record created successfully'
     }
     
-    // Include animal health status update info if available
     if ('animalHealthStatusUpdated' in result) {
-      response['animalHealthStatusUpdated'] = result.animalHealthStatusUpdated
-      response['newHealthStatus'] = result.newHealthStatus
-      response['updatedAnimal'] = result.updatedAnimal
+      response.animalHealthStatusUpdated = result.animalHealthStatusUpdated
+      response.newHealthStatus = result.newHealthStatus
+      response.updatedAnimal = result.updatedAnimal
+    }
+    
+    // NEW: Include cascade information
+    if (resolved && 'cascadedResolution' in result) {
+      response.cascadedResolution = true
+      response.resolvedRecords = result.resolvedRecords
     }
     
     return NextResponse.json(response)
@@ -97,6 +118,7 @@ export async function POST(
   }
 }
 
+// In your GET handler
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -118,9 +140,10 @@ export async function GET(
     
     const followUps = await getFollowUpRecords(originalRecordId, userRole.farm_id)
     
+    // KEY: Return as 'followUps' to match what the component expects
     return NextResponse.json({ 
       success: true, 
-      followUps 
+      followUps // This matches what HealthRecordCard expects
     })
     
   } catch (error) {

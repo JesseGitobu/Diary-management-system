@@ -3,7 +3,7 @@
 
 'use client'
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -150,6 +150,9 @@ interface AddHealthRecordModalProps {
   onClose: () => void
   onRecordAdded: (record: any) => void
   preSelectedAnimalId?: string
+  preSelectedRecordType?: string
+  originalRecordId?: string
+  rootCheckupId?: string | null
 }
 
 export function AddHealthRecordModal({
@@ -158,7 +161,10 @@ export function AddHealthRecordModal({
   isOpen,
   onClose,
   onRecordAdded,
-  preSelectedAnimalId
+  preSelectedAnimalId,
+  preSelectedRecordType,
+  originalRecordId,
+  rootCheckupId
 }: AddHealthRecordModalProps) {
 
   console.log('🔍 AddHealthRecordModal component rendered:', { isOpen, farmId, animalsCount: animals?.length })
@@ -167,19 +173,35 @@ export function AddHealthRecordModal({
   const [animalSearch, setAnimalSearch] = useState('')
   const [showAllAnimals, setShowAllAnimals] = useState(false)
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set())
+  
 
   const form = useForm<HealthRecordFormData>({
     resolver: zodResolver(healthRecordSchema) as any,
     defaultValues: {
       animal_id: preSelectedAnimalId || '',
       record_date: new Date().toISOString().split('T')[0],
-      record_type: 'checkup',
+      record_type: (preSelectedRecordType as any) || 'checkup',
       severity: 'medium',
       illness_severity: 'moderate',
       follow_up_required: false,
       pregnancy_result: 'pending',
     },
   })
+
+  useEffect(() => {
+  if (isOpen) {
+    form.reset({
+      animal_id: preSelectedAnimalId || '',
+      record_date: new Date().toISOString().split('T')[0],
+      record_type: (preSelectedRecordType as any) || 'checkup',
+      severity: 'medium',
+      illness_severity: 'moderate',
+      follow_up_required: false,
+      pregnancy_result: 'pending',
+    })
+  }
+}, [isOpen, preSelectedAnimalId, preSelectedRecordType, form])
+
 
   const watchedRecordType = form.watch('record_type')
   const watchedVaccineName = form.watch('vaccine_name')
@@ -240,6 +262,9 @@ export function AddHealthRecordModal({
         ...data,
         farm_id: farmId,
         cost: data.cost || 0,
+        is_follow_up: !!originalRecordId,
+      original_record_id: originalRecordId || null,
+      root_checkup_id: rootCheckupId || null,
         // Handle "other" options
         vaccine_name: data.vaccine_name === 'other' ? data.vaccine_name_other : data.vaccine_name,
         route_of_administration: data.route_of_administration === 'other' ? data.route_of_administration_other : data.route_of_administration,
@@ -306,7 +331,7 @@ export function AddHealthRecordModal({
     } finally {
       setLoading(false);
     }
-  }, [farmId, onRecordAdded, onClose, form])
+  }, [farmId, onRecordAdded, onClose, form, originalRecordId, rootCheckupId])
 
   const getRecordTypeIcon = (type: string) => {
     switch (type) {

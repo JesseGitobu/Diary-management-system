@@ -21,6 +21,7 @@ export interface HealthRecordData {
   original_health_status?: string | null
   requires_record_type_selection?: boolean
   available_record_types?: string[]
+  root_checkup_id?: string | null
   
   // General checkup fields
   body_condition_score?: number | null
@@ -115,6 +116,7 @@ export async function createHealthRecord(data: HealthRecordData & {
         original_health_status: data.original_health_status,
         requires_record_type_selection: data.requires_record_type_selection,
         available_record_types: data.available_record_types,
+        root_checkup_id: data.root_checkup_id || null,
         
         // General checkup fields
         body_condition_score: data.body_condition_score,
@@ -274,6 +276,7 @@ export async function getAnimalHealthRecords(
         )
       `)
       .in('animal_id', animalIds)
+      .eq('is_follow_up', false) // ADD THIS LINE - Only get original records
       .order('record_date', { ascending: false })
     
     if (options.animalId) {
@@ -1389,7 +1392,7 @@ export async function getFollowUpRecords(originalRecordId: string, farmId: strin
       `)
       .eq('original_record_id', originalRecordId)
       .order('created_at', { ascending: false }) // Most recent first
-    
+
     if (relationsError) {
       console.error('Error fetching follow-up relations:', relationsError)
       return []
@@ -1404,41 +1407,36 @@ export async function getFollowUpRecords(originalRecordId: string, farmId: strin
     
     const { data: followUpRecords, error: recordsError } = await supabase
       .from('animal_health_records')
-      .select(`
-        id,
-        record_date,
-        record_type,
-        description,
-        veterinarian,
-        cost,
-        notes,
-        medication,
-        symptoms,
-        treatment,
-        created_at
-      `)
+      .select('*')
       .in('id', followUpIds)
       .eq('farm_id', farmId)
       .order('record_date', { ascending: false }) // Most recent first
-    
+
     if (recordsError) {
       console.error('Error fetching follow-up records:', recordsError)
       return []
     }
-    
+
     // Combine the follow-up data with the relation data
+    // This is the KEY FIX - match the structure expected by HealthRecordCard
     const enrichedFollowUps = (followUpRecords || []).map(record => {
       const relation = followUpRelations.find(rel => rel.follow_up_record_id === record.id)
       return {
-        ...record,
+        id: record.id,
+        record_date: record.record_date,
+        description: record.description,
+        veterinarian: record.veterinarian,
+        cost: record.cost,
+        notes: record.notes,
+        medication: record.medication,
         follow_up_status: relation?.status || 'stable',
         treatment_effectiveness: relation?.treatment_effectiveness,
         is_resolved: relation?.is_resolved || false,
-        follow_up_created_at: relation?.created_at,
-        follow_up_updated_at: relation?.updated_at
+        created_at: record.created_at,
+        next_followup_date: record.next_due_date
       }
     })
-    
+
     return enrichedFollowUps
   } catch (error) {
     console.error('Error in getFollowUpRecords:', error)
@@ -2382,35 +2380,90 @@ export async function createFollowUpRecordWithStatusUpdate(
   const supabase = await createServerSupabaseClient()
 
   try {
-    // Create the follow-up record (existing logic from previous function)
-    const result = await createFollowUpRecord(originalRecordId, farmId, followUpData, userId)
+    // Get the original record details
+    const { data: originalRecord } = await supabase
+      .from('animal_health_records')
+      .select('animal_id, record_type, root_checkup_id, original_record_id')
+      .eq('id', originalRecordId)
+      .eq('farm_id', farmId)
+      .single()
+    
+    if (!originalRecord) {
+      return { success: false, error: 'Original record not found' }
+    }
+    
+    // Create the follow-up record with proper linkage
+    const result = await createFollowUpRecord(
+      originalRecordId,
+      farmId,
+      followUpData,
+      userId
+    )
     
     if (!result.success) {
       return result
     }
     
-    // Get the animal ID from the original record
-    const { data: originalRecord } = await supabase
-      .from('animal_health_records')
-      .select('animal_id')
-      .eq('id', originalRecordId)
-      .single()
+    // Track which records get resolved
+    const resolvedRecords: string[] = []
     
-    if (originalRecord?.animal_id) {
-      // Update animal health status based on follow-up
-      const statusResult = await updateAnimalHealthStatus(originalRecord.animal_id, farmId)
+    // If marking as resolved, cascade the resolution
+    if (followUpData.resolved) {
+      // 1. Mark the immediate parent record as resolved
+      await supabase
+        .from('animal_health_records')
+        .update({
+          is_resolved: true,
+          resolved_date: followUpData.record_date,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', originalRecordId)
+        .eq('farm_id', farmId)
       
-      if (statusResult.success) {
-        return {
-          ...result,
-          animalHealthStatusUpdated: true,
-          newHealthStatus: statusResult.data?.newStatus,
-          updatedAnimal: statusResult.data?.animal
-        }
+      resolvedRecords.push(originalRecordId)
+      
+      // 2. If there's a root checkup, resolve it too
+      if (originalRecord.root_checkup_id) {
+        await supabase
+          .from('animal_health_records')
+          .update({
+            is_resolved: true,
+            resolved_date: followUpData.record_date,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', originalRecord.root_checkup_id)
+          .eq('farm_id', farmId)
+        
+        resolvedRecords.push(originalRecord.root_checkup_id)
+      }
+      
+      // 3. Check if the original record is itself a follow-up (nested case)
+      if (originalRecord.original_record_id) {
+        await supabase
+          .from('animal_health_records')
+          .update({
+            is_resolved: true,
+            resolved_date: followUpData.record_date,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', originalRecord.original_record_id)
+          .eq('farm_id', farmId)
+        
+        resolvedRecords.push(originalRecord.original_record_id)
       }
     }
     
-    return result
+    // Update animal health status
+    const statusResult = await updateAnimalHealthStatus(originalRecord.animal_id, farmId)
+    
+    return {
+      ...result,
+      animalHealthStatusUpdated: statusResult.success,
+      newHealthStatus: statusResult.data?.newStatus,
+      updatedAnimal: statusResult.data?.animal,
+      cascadedResolution: followUpData.resolved && resolvedRecords.length > 1,
+      resolvedRecords: resolvedRecords.length > 0 ? resolvedRecords : undefined
+    }
   } catch (error) {
     console.error('Error in createFollowUpRecordWithStatusUpdate:', error)
     return { success: false, error: 'Failed to create follow-up record with status update' }
