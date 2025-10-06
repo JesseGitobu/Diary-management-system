@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/client'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { addDays, subDays } from 'date-fns'
-
+import { Database } from '@/lib/supabase/types'
 
 export type BreedingEventType = 'heat_detection' | 'insemination' | 'pregnancy_check' | 'calving'
 export type InseminationMethod = 'artificial_insemination' | 'natural_breeding'
@@ -543,7 +543,7 @@ interface PregnancyData {
   risk_level?: 'low' | 'medium' | 'high'
 }
 
-export interface Result {
+interface Result {
   success: boolean
   error?: string
   data?: any
@@ -558,7 +558,7 @@ export async function updatePregnancyStatus(
   farmId: string,
   data: PregnancyData
 ): Promise<Result> {
-  const supabase = await createServerSupabaseClient()
+  const supabase = createClient()
 
   try {
     // Validate required fields
