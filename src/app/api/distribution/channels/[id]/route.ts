@@ -2,10 +2,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser, getUserRole, createServerSupabaseClient } from '@/lib/supabase/server'
 
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PUT(request: NextRequest, context: { params: { id: string } }) {
+  const { params } = context
+  const channelId = params.id
+
   try {
     const user = await getCurrentUser()
     if (!user) {
@@ -46,16 +46,13 @@ export async function PUT(
         notes: notes?.trim() || null,
         is_active: isActive
       })
-      .eq('id', params.id)
+      .eq('id', channelId)
       .eq('farm_id', userRole.farm_id)
       .select()
       .single()
 
     if (error) throw error
-
-    if (!channel) {
-      return NextResponse.json({ error: 'Channel not found' }, { status: 404 })
-    }
+    if (!channel) return NextResponse.json({ error: 'Channel not found' }, { status: 404 })
 
     return NextResponse.json(channel)
   } catch (error) {
@@ -64,10 +61,10 @@ export async function PUT(
   }
 }
 
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(request: NextRequest, context: { params: { id: string } }) {
+  const { params } = context
+  const channelId = params.id
+
   try {
     const user = await getCurrentUser()
     if (!user) {
@@ -80,21 +77,17 @@ export async function PATCH(
     }
 
     const body = await request.json()
-
     const supabase = await createServerSupabaseClient()
     const { data: channel, error } = await supabase
       .from('distribution_channels')
       .update(body)
-      .eq('id', params.id)
+      .eq('id', channelId)
       .eq('farm_id', userRole.farm_id)
       .select()
       .single()
 
     if (error) throw error
-
-    if (!channel) {
-      return NextResponse.json({ error: 'Channel not found' }, { status: 404 })
-    }
+    if (!channel) return NextResponse.json({ error: 'Channel not found' }, { status: 404 })
 
     return NextResponse.json(channel)
   } catch (error) {
@@ -103,10 +96,10 @@ export async function PATCH(
   }
 }
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(request: NextRequest, context: { params: { id: string } }) {
+  const { params } = context
+  const channelId = params.id
+
   try {
     const user = await getCurrentUser()
     if (!user) {
@@ -119,12 +112,12 @@ export async function DELETE(
     }
 
     const supabase = await createServerSupabaseClient()
-    
+
     // Check if channel has distribution records
     const { data: records, error: recordsError } = await supabase
       .from('distribution_records')
       .select('id')
-      .eq('channel_id', params.id)
+      .eq('channel_id', channelId)
       .limit(1)
 
     if (recordsError) throw recordsError
@@ -134,16 +127,16 @@ export async function DELETE(
       const { data: channel, error } = await supabase
         .from('distribution_channels')
         .update({ is_active: false })
-        .eq('id', params.id)
+        .eq('id', channelId)
         .eq('farm_id', userRole.farm_id)
         .select()
         .single()
 
       if (error) throw error
 
-      return NextResponse.json({ 
+      return NextResponse.json({
         message: 'Channel deactivated (has distribution records)',
-        channel 
+        channel
       })
     }
 
@@ -151,7 +144,7 @@ export async function DELETE(
     const { error } = await supabase
       .from('distribution_channels')
       .delete()
-      .eq('id', params.id)
+      .eq('id', channelId)
       .eq('farm_id', userRole.farm_id)
 
     if (error) throw error
