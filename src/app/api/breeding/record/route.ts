@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
-import { createBreedingRecord } from '@/lib/database/breeding'
+import { createBreedingEvent } from '@/lib/database/breeding'
 
 export async function POST(request: NextRequest) {
   try {
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
     
-    const result = await createBreedingRecord(userRole.farm_id, breedingData)
+    const result = await createBreedingEvent({ farm_id: userRole.farm_id, ...breedingData })
     
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 })
