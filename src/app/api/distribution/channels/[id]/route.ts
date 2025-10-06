@@ -61,7 +61,7 @@ export async function PUT(request: NextRequest, context: any) {
   }
 }
 
-export async function PATCH(request: NextRequest, context: any) {
+export async function PATCH(request: NextRequest, context: { params: { id: string } }) {
   const { params } = context
   const channelId = params.id
 
@@ -96,7 +96,7 @@ export async function PATCH(request: NextRequest, context: any) {
   }
 }
 
-export async function DELETE(request: NextRequest, context: any) {
+export async function DELETE(request: NextRequest, context: { params: { id: string } }) {
   const { params } = context
   const channelId = params.id
 
