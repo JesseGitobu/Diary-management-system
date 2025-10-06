@@ -61,11 +61,10 @@ export async function PUT(request: NextRequest, context: any) {
   }
 }
 
-export async function PATCH(request: NextRequest, context: any) {
-  const { params } = context
-  const channelId = params.id
+export async function PATCH( request: NextRequest, { params }: { params: Promise<{ id: string }> } ) {
 
   try {
+    const { id } = await params;
     const user = await getCurrentUser()
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -81,7 +80,7 @@ export async function PATCH(request: NextRequest, context: any) {
     const { data: channel, error } = await supabase
       .from('distribution_channels')
       .update(body)
-      .eq('id', channelId)
+      .eq('id', id)
       .eq('farm_id', userRole.farm_id)
       .select()
       .single()
