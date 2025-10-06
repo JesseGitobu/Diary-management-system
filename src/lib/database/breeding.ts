@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/client'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { addDays, subDays } from 'date-fns'
 
+
 export type BreedingEventType = 'heat_detection' | 'insemination' | 'pregnancy_check' | 'calving'
 export type InseminationMethod = 'artificial_insemination' | 'natural_breeding'
 export type PregnancyResult = 'pregnant' | 'not_pregnant' | 'uncertain'
@@ -527,5 +528,139 @@ function getEventTitle(event: any): string {
       return `${animalName} - Calving (${event.calving_outcome || 'Unknown'})`
     default:
       return `${animalName} - Breeding Event`
+  }
+}
+
+interface PregnancyData {
+  pregnancy_status: 'confirmed' | 'not_pregnant' | 'uncertain'
+  confirmation_date: string
+  estimated_due_date?: string
+  notes?: string
+  confirmed_by?: string
+  confirmation_method?: 'visual' | 'palpation' | 'ultrasound' | 'blood_test'
+  fetus_count?: number
+  fetus_age_days?: number
+  risk_level?: 'low' | 'medium' | 'high'
+}
+
+export interface Result {
+  success: boolean
+  error?: string
+  data?: any
+}
+
+
+
+
+export async function updatePregnancyStatus(
+  breedingRecordId: string,
+  animalId: string,
+  farmId: string,
+  data: PregnancyData
+): Promise<Result> {
+  const supabase = await createServerSupabaseClient()
+
+  try {
+    // Validate required fields
+    if (!data.pregnancy_status || !data.confirmation_date) {
+      return {
+        success: false,
+        error: 'Missing required fields'
+      }
+    }
+
+    // Validate pregnancy status
+    const validStatuses = ['confirmed', 'not_pregnant', 'uncertain']
+    if (!validStatuses.includes(data.pregnancy_status)) {
+      return {
+        success: false,
+        error: 'Invalid pregnancy status'
+      }
+    }
+
+    // Verify breeding record exists and belongs to farm
+    const { data: breeding, error: breedingError } = await supabase
+      .from('breeding_records')
+      .select('id, animal_id')
+      .eq('id', breedingRecordId)
+      .eq('farm_id', farmId)
+      .single()
+
+    if (breedingError || !breeding) {
+      return {
+        success: false,
+        error: 'Breeding record not found or does not belong to farm'
+      }
+    }
+
+    // Verify animal matches breeding record
+    if (breeding.animal_id !== animalId) {
+      return {
+        success: false,
+        error: 'Animal ID does not match breeding record'
+      }
+    }
+
+    // Start a transaction to update both breeding record and animal
+    const { data: pregnancy, error: updateError } = await supabase
+      .from('breeding_records')
+      .update({
+        pregnancy_status: data.pregnancy_status,
+        pregnancy_confirmation_date: data.confirmation_date,
+        estimated_due_date: data.estimated_due_date,
+        pregnancy_notes: data.notes,
+        confirmed_by: data.confirmed_by,
+        confirmation_method: data.confirmation_method,
+        fetus_count: data.fetus_count,
+        fetus_age_days: data.fetus_age_days,
+        pregnancy_risk_level: data.risk_level,
+        breeding_status: data.pregnancy_status === 'confirmed' ? 'successful' : 
+                        data.pregnancy_status === 'not_pregnant' ? 'failed' : 
+                        'pending',
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', breedingRecordId)
+      .select()
+      .single()
+
+    if (updateError) {
+      return {
+        success: false,
+        error: 'Failed to update pregnancy status'
+      }
+    }
+
+    // Update animal status based on pregnancy status
+    const animalStatus = data.pregnancy_status === 'confirmed' ? 'pregnant' :
+                        data.pregnancy_status === 'not_pregnant' ? 'open' :
+                        'bred'
+
+    const { error: animalError } = await supabase
+      .from('animals')
+      .update({ 
+        status: animalStatus,
+        pregnancy_status: data.pregnancy_status,
+        estimated_due_date: data.estimated_due_date,
+        last_pregnancy_check: data.confirmation_date
+      })
+      .eq('id', animalId)
+      .eq('farm_id', farmId)
+
+    if (animalError) {
+      console.error('Failed to update animal status:', animalError)
+      // Don't return error as pregnancy status was updated successfully
+    }
+
+    return {
+      success: true,
+      data: pregnancy
+    }
+
+  } catch (error) {
+    console.error('Error updating pregnancy status:', error)
+    return {
+      success: false,
+      error: 'Internal server error'
+    }
   }
 }
