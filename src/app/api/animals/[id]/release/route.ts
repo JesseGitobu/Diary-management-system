@@ -3,10 +3,9 @@ import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { releaseAnimal, getAnimalById, getAnimalReleaseInfo } from '@/lib/database/animals'
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(request: NextRequest, context: { params: { id: string } }) {
+  const { params } = context
+  const animalId = params.id
   try {
     const user = await getCurrentUser()
     
@@ -107,10 +106,9 @@ export async function POST(
 }
 
 // GET release information for an animal
-export async function GET(
-  request: NextRequest,
-  context: { params: { id: string } }
-) {
+export async function GET(request: NextRequest, context: { params: { id: string } }) {
+  const { params } = context
+  const animalId = params.id
   try {
     const user = await getCurrentUser()
     
@@ -124,7 +122,7 @@ export async function GET(
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
     }
     
-    const animalId = context.params.id
+    const animalId = params.id
     const releaseInfo = await getAnimalReleaseInfo(animalId, userRole.farm_id)
     
     if (!releaseInfo) {
