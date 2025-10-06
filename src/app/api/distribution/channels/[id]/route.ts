@@ -61,10 +61,12 @@ export async function PUT(request: NextRequest, context: any) {
   }
 }
 
-export async function PATCH( request: NextRequest, { params }: { params: Promise<{ id: string }> } ) {
-
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
-    const { id } = await params;
+    const { id } = params; // Remove await here since params is no longer a Promise
     const user = await getCurrentUser()
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
