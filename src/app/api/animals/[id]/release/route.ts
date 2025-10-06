@@ -109,7 +109,7 @@ export async function POST(
 // GET release information for an animal
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } }
 ) {
   try {
     const user = await getCurrentUser()
@@ -124,7 +124,7 @@ export async function GET(
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
     }
     
-    const animalId = params.id
+    const animalId = context.params.id
     const releaseInfo = await getAnimalReleaseInfo(animalId, userRole.farm_id)
     
     if (!releaseInfo) {
