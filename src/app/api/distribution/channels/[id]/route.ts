@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser, getUserRole, createServerSupabaseClient } from '@/lib/supabase/server'
 
-export async function PUT(request: NextRequest, context: { params: { id: string } }) {
+export async function PUT(request: NextRequest, context: any) {
   const { params } = context
   const channelId = params.id
 
@@ -61,7 +61,7 @@ export async function PUT(request: NextRequest, context: { params: { id: string 
   }
 }
 
-export async function PATCH(request: NextRequest, context: { params: { id: string } }) {
+export async function PATCH(request: NextRequest, context: any) {
   const { params } = context
   const channelId = params.id
 
@@ -96,7 +96,7 @@ export async function PATCH(request: NextRequest, context: { params: { id: strin
   }
 }
 
-export async function DELETE(request: NextRequest, context: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, context: any) {
   const { params } = context
   const channelId = params.id
 
