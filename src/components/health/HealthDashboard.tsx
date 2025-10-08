@@ -2001,6 +2001,7 @@ export function HealthRecordsContent({
         <ScheduleVisitModal
           farmId={userRole?.farm_id}
           animals={animals}
+          veterinarians={veterinarians}
           isOpen={showScheduleVisitModal}
           onClose={() => setShowScheduleVisitModal(false)}
           onVisitScheduled={handleVisitScheduled}

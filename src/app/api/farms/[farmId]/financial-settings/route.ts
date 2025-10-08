@@ -5,9 +5,10 @@ import { cookies } from 'next/headers'
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { farmId: string } }
+  props: { params: Promise<{ farmId: string }> }
 ) {
   try {
+    const params = await props.params;
     const supabase = createRouteHandlerClient({ cookies })
     
     // Get the current user
@@ -86,4 +87,4 @@ export async function PUT(
     console.error('Financial settings error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
-} 
+}

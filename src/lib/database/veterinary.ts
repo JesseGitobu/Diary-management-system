@@ -4,13 +4,29 @@ import { addDays, format } from 'date-fns'
 export interface Veterinarian {
   id?: string
   farm_id: string
+  created_by: string  // REQUIRED - add this!
   name: string
-  practice_name?: string
-  phone?: string
-  email?: string
-  license_number?: string
-  specializations?: string[]
-  emergency_contact?: boolean
+  clinic_name: string  // REQUIRED (was practice_name)
+  license_number: string  // REQUIRED
+  specialization?: string  // Optional (was specializations array)
+  phone_primary: string  // REQUIRED (was phone)
+  phone_emergency?: string
+  email: string  // REQUIRED
+  address_street: string  // REQUIRED
+  address_city: string  // REQUIRED
+  address_state: string  // REQUIRED
+  address_postal: string  // REQUIRED
+  address_country?: string  // Has default
+  availability_hours?: string
+  emergency_available?: boolean  // (was emergency_contact)
+  travel_radius_km?: number
+  service_types?: string[]
+  rates_consultation?: number
+  rates_emergency?: number
+  preferred_payment?: string[]
+  notes?: string
+  rating?: number
+  is_primary?: boolean
   is_active?: boolean
 }
 
@@ -18,16 +34,27 @@ export interface VeterinaryVisit {
   id?: string
   farm_id: string
   veterinarian_id?: string
-  visit_date: string
-  visit_type: 'routine' | 'emergency' | 'vaccination' | 'treatment' | 'consultation'
-  purpose?: string
-  animals_treated?: string[]
-  total_cost?: number
-  invoice_number?: string
-  notes?: string
+  visit_type: 'routine_checkup' | 'vaccination' | 'emergency' | 'consultation' | 'breeding' | 'other'
+  visit_purpose: string  // REQUIRED
+  scheduled_datetime: string  // REQUIRED (ISO timestamp string)
+  duration_hours?: number
+  veterinarian_name: string  // REQUIRED
+  veterinarian_clinic?: string
+  veterinarian_phone?: string
+  veterinarian_email?: string
+  priority_level?: 'low' | 'medium' | 'high' | 'urgent'
+  location_details?: string
+  special_instructions?: string
+  estimated_cost?: number
+  actual_cost?: number
+  status?: 'scheduled' | 'in_progress' | 'completed' | 'cancelled' | 'rescheduled'
+  preparation_notes?: string
+  visit_notes?: string
   follow_up_required?: boolean
   follow_up_date?: string
-  created_by: string
+  send_reminder?: boolean
+  reminder_days_before?: number
+  created_by?: string
 }
 
 export async function createVeterinarian(vet: Veterinarian) {
@@ -187,7 +214,7 @@ export async function getVeterinaryStats(farmId: string) {
   // Get visit counts by type
   const { data: visits } = await supabase
     .from('veterinary_visits')
-    .select('visit_type, total_cost')
+    .select('visit_type, actual_cost')
     .eq('farm_id', farmId)
     .gte('visit_date', yearStart)
   
@@ -208,7 +235,7 @@ export async function getVeterinaryStats(farmId: string) {
   
   // Calculate statistics
   const totalVisits = visits?.length || 0
-  const totalCost = visits?.reduce((sum, visit) => sum + (visit.total_cost || 0), 0) || 0
+  const totalCost = visits?.reduce((sum, visit) => sum + (visit.actual_cost || 0), 0) || 0
   
   const visitTypes = visits?.reduce((acc, visit) => {
     acc[visit.visit_type] = (acc[visit.visit_type] || 0) + 1

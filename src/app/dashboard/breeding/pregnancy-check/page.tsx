@@ -1,7 +1,7 @@
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { redirect } from 'next/navigation'
-import { PregnancyCheckForm } from '@/components/breeding/PregnancyCheckForm'
+import { PregnancyCheckFormWrapper } from '@/components/breeding/PregnancyCheckFormWrapper'
 
 export default async function PregnancyCheckPage() {
   const user = await getCurrentUser()
@@ -31,7 +31,7 @@ export default async function PregnancyCheckPage() {
           </p>
         </div>
         
-        <PregnancyCheckForm farmId={userRole.farm_id} />
+        <PregnancyCheckFormWrapper farmId={userRole.farm_id} />
       </div>
     </div>
   )

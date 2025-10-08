@@ -147,7 +147,7 @@ export async function generateFeedReport(filters: ReportFilters) {
         }
       }
       acc[feedType].totalQuantity += record.quantity_kg || 0
-      acc[feedType].totalCost += (record.quantity_kg || 0) * (record.cost_per_kg || 0)
+      acc[feedType].totalCost += (record.quantity_kg || 0) * (record.feed_types?.typical_cost_per_kg || 0)
       acc[feedType].recordCount += 1
       return acc
     }, {} as { [key: string]: { name: string, totalQuantity: number, totalCost: number, recordCount: number } })

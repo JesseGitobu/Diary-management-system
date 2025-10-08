@@ -6,14 +6,16 @@ import { getBreedingSettings } from '@/lib/database/breeding-settings'
 import { getFarmBasicInfoServer } from '@/lib/database/settings'
 import HealthBreedingSettings from '@/components/settings/health-breeding/HealthBreedingSettings'
 
+// FIXED: searchParams must be a Promise in Next.js 15
 interface PageProps {
-  searchParams: {
+  searchParams: Promise<{
     farmId?: string
-  }
+  }>
 }
 
 export default async function HealthBreedingPage({ searchParams }: PageProps) {
-  const { farmId } = searchParams
+  // Await searchParams to get the actual values
+  const { farmId } = await searchParams
 
   if (!farmId) {
     redirect('/dashboard')

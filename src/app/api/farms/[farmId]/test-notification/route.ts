@@ -5,9 +5,10 @@ import { cookies } from 'next/headers'
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { farmId: string } }
+  props: { params: Promise<{ farmId: string }> }
 ) {
   try {
+    const params = await props.params;
     const supabase = createRouteHandlerClient({ cookies })
     
     // Get the current user

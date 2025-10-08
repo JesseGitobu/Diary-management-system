@@ -33,7 +33,7 @@ export interface Veterinarian {
   id: string
   farm_id: string
   name: string
-  practice_name?: string
+  clinic_name?: string
   phone?: string
   email?: string
   address?: string
@@ -376,7 +376,7 @@ export async function deleteVeterinaryVisit(visitId: string, farmId: string) {
 // Get or create veterinarian
 export async function getOrCreateVeterinarian(farmId: string, vetData: {
   name: string
-  practice_name?: string
+  clinic_name?: string
   phone?: string
   email?: string
   specialization?: string
@@ -397,8 +397,8 @@ export async function getOrCreateVeterinarian(farmId: string, vetData: {
       const { data: updated, error: updateError } = await supabase
         .from('veterinarians')
         .update({
-          practice_name: vetData.practice_name || existing.practice_name,
-          phone: vetData.phone || existing.phone,
+          clinic_name: vetData.clinic_name || existing.clinic_name,
+          phone: vetData.phone || existing.phone_primary,
           email: vetData.email || existing.email,
           specialization: vetData.specialization || existing.specialization,
           updated_at: new Date().toISOString()
@@ -419,13 +419,22 @@ export async function getOrCreateVeterinarian(farmId: string, vetData: {
         .from('veterinarians')
         .insert({
           farm_id: farmId,
+          address_city: '',
+          address_postal: '',
+          address_state: '',
+          address_street: '',
+          address_country: '',
+          clinic_name: vetData.clinic_name || '',
+          phone_primary: vetData.phone || '',
+          email: vetData.email || '',
+          specialization: vetData.specialization || '',
           name: vetData.name,
-          practice_name: vetData.practice_name,
-          phone: vetData.phone,
-          email: vetData.email,
-          specialization: vetData.specialization,
           is_primary: false,
-          is_active: true
+          is_active: true,
+          created_by: farmId,
+          license_number: '',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
         })
         .select()
         .single()

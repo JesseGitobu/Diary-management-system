@@ -16,7 +16,7 @@ export interface DiseaseOutbreak {
   first_detected_date: string
   outbreak_name: string
   severity_level: string
-  symptoms: string[]
+  symptoms: string
 }
 
 export interface AnimalDiseaseRecord {
@@ -103,9 +103,9 @@ export async function addAnimalToDiseaseOutbreak(
     // Get current outbreak data
     const { data: outbreak, error: fetchError } = await supabase
       .from('disease_outbreaks')
-      .select('affected_animals, suspected_animals')
+      .select('affected_animals')
       .eq('id', outbreakId)
-      .single()
+      .single() as { data: { affected_animals: string[] }, error: any }
     
     if (fetchError) throw fetchError
     
@@ -118,12 +118,7 @@ export async function addAnimalToDiseaseOutbreak(
         updates.affected_animals = [...currentAffected, animalId]
         updates.total_affected = currentAffected.length + 1
       }
-    } else {
-      const currentSuspected = outbreak.suspected_animals || []
-      if (!currentSuspected.includes(animalId)) {
-        updates.suspected_animals = [...currentSuspected, animalId]
-      }
-    }
+      } 
     
     if (Object.keys(updates).length > 0) {
       const { error: updateError } = await supabase
@@ -137,7 +132,7 @@ export async function addAnimalToDiseaseOutbreak(
     return { success: true }
   } catch (error) {
     console.error('Error adding animal to outbreak:', error)
-    return { success: false, error: error.message }
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error occurred' }
   }
 }
 
@@ -213,16 +208,25 @@ export async function getActiveDiseaseAlerts(farmId: string) {
     .eq('status', 'active')
   
   // Get overdue health records or suspicious symptoms
-  const alerts = []
+  interface DiseaseAlert {
+    type: string;
+    severity: 'high' | 'medium' | 'low';
+    title: string;
+    description: string;
+    date: string;
+    id: string;
+  }
+
+  const alerts: DiseaseAlert[] = [];
   
   // Add outbreak alerts
   outbreaks?.forEach(outbreak => {
     alerts.push({
       type: 'outbreak',
-      severity: outbreak.disease.is_contagious ? 'high' : 'medium',
-      title: `Active ${outbreak.disease.name} outbreak`,
-      description: `${outbreak.total_affected || 0} animals affected`,
-      date: outbreak.outbreak_date,
+      severity: outbreak.disease?.is_contagious ? 'high' : 'medium',
+      title: `Active ${outbreak.disease?.name ?? 'Unknown'} outbreak`,
+      description: `${(outbreak.affected_animals as string[] || []).length} animals affected`,
+      date: outbreak.first_detected_date,
       id: outbreak.id
     })
   })

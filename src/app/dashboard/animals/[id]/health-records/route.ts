@@ -5,7 +5,7 @@ import { createServerSupabaseClient } from '@/lib/supabase/server'
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  props: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getCurrentUser()
@@ -20,6 +20,7 @@ export async function GET(
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
     }
     
+    const params = await props.params
     const supabase = await createServerSupabaseClient()
     
     // Verify animal belongs to user's farm
@@ -62,7 +63,7 @@ export async function GET(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  props: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getCurrentUser()
@@ -100,6 +101,7 @@ export async function POST(
       }, { status: 400 })
     }
     
+    const params = await props.params
     const supabase = await createServerSupabaseClient()
     
     // Verify animal belongs to user's farm

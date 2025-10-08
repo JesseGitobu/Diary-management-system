@@ -13,16 +13,18 @@ interface VeterinaryScheduleProps {
   veterinarians: any[]
   upcomingVisits: any[]
   followUpVisits: any[]
+  animals: any[]
   onVisitScheduled: (visit: any) => void
 }
-
 export function VeterinarySchedule({ 
   farmId, 
   visits, 
   veterinarians, 
   upcomingVisits, 
-  followUpVisits, 
+  followUpVisits,
+  animals,
   onVisitScheduled 
+
 }: VeterinaryScheduleProps) {
   const [showScheduleModal, setShowScheduleModal] = useState(false)
   
@@ -222,6 +224,7 @@ export function VeterinarySchedule({
         <ScheduleVisitModal
           farmId={farmId}
           veterinarians={veterinarians}
+          animals={animals}
           isOpen={showScheduleModal}
           onClose={() => setShowScheduleModal(false)}
           onVisitScheduled={onVisitScheduled}

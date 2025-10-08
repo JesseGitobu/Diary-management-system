@@ -4,14 +4,15 @@ import { getAnimalById } from '@/lib/database/animals'
 import { redirect, notFound } from 'next/navigation'
 import { AnimalProfile } from '@/components/animals/AnimalProfile'
 
+// FIXED: params must be a Promise in Next.js 15
 interface AnimalPageProps {
-  params: {
+  params: Promise<{
     id: string
-  }
+  }>
 }
 
 export default async function AnimalPage({ params }: AnimalPageProps) {
-  // Await params first
+  // Await params to get the actual values
   const { id } = await params
   const user = await getCurrentUser()
   

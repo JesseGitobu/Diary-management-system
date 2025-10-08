@@ -6,9 +6,10 @@ import { deleteFeedConsumption, updateFeedConsumption, getFeedConsumptionById } 
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  props: { params: Promise<{ id: string }> }
 ) {
   try {
+    const params = await props.params;
     const user = await getCurrentUser()
     
     if (!user) {
@@ -50,9 +51,10 @@ export async function DELETE(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  props: { params: Promise<{ id: string }> }
 ) {
   try {
+    const params = await props.params;
     const user = await getCurrentUser()
     
     if (!user) {
@@ -132,9 +134,10 @@ export async function PUT(
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  props: { params: Promise<{ id: string }> }
 ) {
   try {
+    const params = await props.params;
     const user = await getCurrentUser()
     
     if (!user) {

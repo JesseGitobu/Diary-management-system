@@ -127,6 +127,12 @@ export async function generateVaccinationSchedule(animalId: string, protocolId: 
 export async function getVaccinationSchedules(farmId: string, status?: string) {
   const supabase = await createServerSupabaseClient()
   
+  const animalIds = await supabase
+    .from('animals')
+    .select('id')
+    .eq('farm_id', farmId)
+    .then(result => result.data?.map(row => row.id) || [])
+
   let query = supabase
     .from('vaccination_schedules')
     .select(`
@@ -144,12 +150,7 @@ export async function getVaccinationSchedules(farmId: string, status?: string) {
         user_metadata
       )
     `)
-    .in('animal_id', 
-      supabase
-        .from('animals')
-        .select('id')
-        .eq('farm_id', farmId)
-    )
+    .in('animal_id', animalIds)
     .order('scheduled_date')
   
   if (status) {
@@ -196,6 +197,12 @@ export async function getOverdueVaccinations(farmId: string) {
   
   const today = format(new Date(), 'yyyy-MM-dd')
   
+  const animalIds = await supabase
+    .from('animals')
+    .select('id')
+    .eq('farm_id', farmId)
+    .then(result => result.data?.map(row => row.id) || [])
+
   const { data, error } = await supabase
     .from('vaccination_schedules')
     .select(`
@@ -210,12 +217,7 @@ export async function getOverdueVaccinations(farmId: string) {
         vaccine_name
       )
     `)
-    .in('animal_id', 
-      supabase
-        .from('animals')
-        .select('id')
-        .eq('farm_id', farmId)
-    )
+    .in('animal_id', animalIds)
     .eq('status', 'pending')
     .lt('scheduled_date', today)
   

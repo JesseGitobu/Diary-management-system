@@ -13,7 +13,7 @@ import {
   ContactFormApiData,
   FarmSizeMapping,
   ContactFormProps
-} from './types';
+} from '@/types/database';
 
 const ContactForm: React.FC<ContactFormProps> = ({
   onSubmissionSuccess,

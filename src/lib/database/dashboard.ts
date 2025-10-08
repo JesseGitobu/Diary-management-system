@@ -201,32 +201,39 @@ export async function getBreedingStats(farmId: string) {
   const supabase = await createServerSupabaseClient()
   
   try {
-    // Get pregnant animals count
+    // Get pregnant animals count (confirmed pregnancies that haven't been completed)
     const { count: pregnantCount } = await supabase
-      .from('breeding_records')
+      .from('pregnancy_records')
       .select('*', { count: 'exact', head: true })
       .eq('farm_id', farmId)
-      .eq('status', 'pregnant')
+      .eq('pregnancy_status', 'confirmed')
     
     // Get animals due to calve in next 30 days
-    const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+    const today = new Date().toISOString().split('T')[0]
+    const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split('T')[0]
+    
     const { count: dueSoon } = await supabase
-      .from('breeding_records')
+      .from('pregnancy_records')
       .select('*', { count: 'exact', head: true })
       .eq('farm_id', farmId)
-      .eq('status', 'pregnant')
+      .eq('pregnancy_status', 'confirmed')
+      .gte('expected_calving_date', today)
       .lte('expected_calving_date', thirtyDaysFromNow)
     
-    // Get recent calvings (last 30 days)
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+    // Get recent calvings (last 30 days) from calving_records table
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split('T')[0]
+    
     const { data: recentCalvings } = await supabase
-      .from('breeding_records')
+      .from('calving_records')
       .select(`
         calving_date,
-        animals!inner(name, tag_number)
+        animals!calving_records_mother_id_fkey(name, tag_number)
       `)
       .eq('farm_id', farmId)
-      .eq('status', 'calved')
       .gte('calving_date', thirtyDaysAgo)
       .order('calving_date', { ascending: false })
       .limit(5)
@@ -234,7 +241,11 @@ export async function getBreedingStats(farmId: string) {
     const formattedCalvings = Array.isArray(recentCalvings)
       ? recentCalvings.map(record => ({
           cowName: record.animals?.name || record.animals?.tag_number || 'Unknown',
-          daysAgo: Math.floor((new Date().getTime() - new Date(record.calving_date).getTime()) / (1000 * 60 * 60 * 24))
+          calvingDate: record.calving_date,
+          daysAgo: Math.floor(
+            (new Date().getTime() - new Date(record.calving_date).getTime()) / 
+            (1000 * 60 * 60 * 24)
+          )
         }))
       : []
     
@@ -259,34 +270,105 @@ export async function getFeedStats(farmId: string) {
   
   try {
     // Get current month's feed costs
-    const currentMonth = new Date().toISOString().slice(0, 7) // YYYY-MM format
+    const now = new Date()
+    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+      .toISOString()
+      .split('T')[0]
+    const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+      .toISOString()
+      .split('T')[0]
     
-    const { data: feedCosts } = await supabase
+    // Calculate monthly cost from feed purchases
+    const { data: feedPurchases } = await supabase
       .from('feed_inventory')
-      .select('cost, quantity')
+      .select('quantity_kg, cost_per_kg')
       .eq('farm_id', farmId)
-      .like('purchase_date', `${currentMonth}%`)
+      .gte('purchase_date', firstDayOfMonth)
+      .lte('purchase_date', lastDayOfMonth)
     
-    const monthlyCost = feedCosts?.reduce((sum, record) => sum + (record.cost || 0), 0) || 0
-    
-    // Get current feed inventory
-    const { data: feedInventory } = await supabase
-      .from('feed_inventory')
-      .select('quantity, daily_usage')
-      .eq('farm_id', farmId)
-      .gt('quantity', 0)
-    
-    // Calculate days remaining (average across all feed types)
-    const totalDaysRemaining = feedInventory?.reduce((sum, item) => {
-      const daysLeft = item.daily_usage > 0 ? item.quantity / item.daily_usage : 999
-      return sum + daysLeft
+    const monthlyCost = feedPurchases?.reduce((sum, record) => {
+      const cost = (record.quantity_kg || 0) * (record.cost_per_kg || 0)
+      return sum + cost
     }, 0) || 0
     
-    const avgDaysRemaining = feedInventory?.length ? Math.floor(totalDaysRemaining / feedInventory.length) : 0
+    // Get current feed inventory grouped by feed type
+    const { data: feedInventory } = await supabase
+      .from('feed_inventory')
+      .select('feed_type_id, quantity_kg')
+      .eq('farm_id', farmId)
+      .gt('quantity_kg', 0)
+    
+    if (!feedInventory || feedInventory.length === 0) {
+      return {
+        monthlyCost: Math.round(monthlyCost),
+        daysRemaining: 0
+      }
+    }
+    
+    // Group inventory by feed type and sum quantities
+    const inventoryByType = feedInventory.reduce((acc, item) => {
+      const typeId = item.feed_type_id
+      if (!acc[typeId]) {
+        acc[typeId] = 0
+      }
+      acc[typeId] += item.quantity_kg || 0
+      return acc
+    }, {} as Record<string, number>)
+    
+    // Calculate daily consumption for the last 7 days for each feed type
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+      .toISOString()
+    
+    const { data: recentConsumption } = await supabase
+      .from('feed_consumption')
+      .select('feed_type_id, quantity_kg')
+      .eq('farm_id', farmId)
+      .gte('feeding_time', sevenDaysAgo)
+    
+    // Calculate average daily usage per feed type
+    const dailyUsageByType: Record<string, number> = {}
+    
+    if (recentConsumption && recentConsumption.length > 0) {
+      const consumptionByType = recentConsumption.reduce((acc, item) => {
+        const typeId = item.feed_type_id
+        if (!acc[typeId]) {
+          acc[typeId] = 0
+        }
+        acc[typeId] += item.quantity_kg || 0
+        return acc
+      }, {} as Record<string, number>)
+      
+      // Convert total consumption to daily average (divide by 7 days)
+      Object.keys(consumptionByType).forEach(typeId => {
+        dailyUsageByType[typeId] = consumptionByType[typeId] / 7
+      })
+    }
+    
+    // Calculate days remaining for each feed type
+    const daysRemainingByType: number[] = []
+    
+    Object.keys(inventoryByType).forEach(typeId => {
+      const currentStock = inventoryByType[typeId]
+      const dailyUsage = dailyUsageByType[typeId] || 0
+      
+      if (dailyUsage > 0) {
+        const daysLeft = currentStock / dailyUsage
+        daysRemainingByType.push(daysLeft)
+      } else {
+        // If no consumption data, assume 999 days (essentially unlimited)
+        daysRemainingByType.push(999)
+      }
+    })
+    
+    // Use the MINIMUM days remaining (most critical feed type)
+    // This tells you when you'll run out of the first feed type
+    const minDaysRemaining = daysRemainingByType.length > 0
+      ? Math.floor(Math.min(...daysRemainingByType))
+      : 0
     
     return {
       monthlyCost: Math.round(monthlyCost),
-      daysRemaining: Math.min(avgDaysRemaining, 999) // Cap at 999 for display
+      daysRemaining: Math.min(minDaysRemaining, 999) // Cap at 999 for display
     }
   } catch (error) {
     console.error('Error getting feed stats:', error)
@@ -384,7 +466,7 @@ export async function getEquipmentStats(farmId: string) {
       .from('equipment')
       .select('*', { count: 'exact', head: true })
       .eq('farm_id', farmId)
-      .eq('status', 'active')
+      .eq('status', 'operational')
     
     // Get equipment due for maintenance
     const today = new Date().toISOString().split('T')[0]
@@ -392,7 +474,7 @@ export async function getEquipmentStats(farmId: string) {
       .from('equipment')
       .select('*', { count: 'exact', head: true })
       .eq('farm_id', farmId)
-      .eq('status', 'active')
+      .eq('status', 'operational')
       .lte('next_maintenance_date', today)
     
     return {
@@ -469,7 +551,7 @@ export async function getCriticalAlerts(farmId: string) {
     
     // Inventory alerts - low stock
     const { count: lowStock } = await supabase
-      .from('inventory')
+      .from('inventory_items')
       .select('*', { count: 'exact', head: true })
       .eq('farm_id', farmId)
       .filter('quantity', 'lte', 'reorder_point')
@@ -495,7 +577,33 @@ export async function getRecentActivities(farmId: string, limit: number = 10) {
   const supabase = await createServerSupabaseClient()
   
   try {
-    const activities = []
+    interface BaseActivity {
+      type: 'animal' | 'health' | 'production' | 'breeding';
+      title: string;
+      description: string;
+      timeAgo: string;
+      timestamp: string;
+    }
+
+    interface AnimalActivity extends BaseActivity {
+      type: 'animal';
+    }
+
+    interface HealthActivity extends BaseActivity {
+      type: 'health';
+    }
+
+    interface ProductionActivity extends BaseActivity {
+      type: 'production';
+    }
+
+    interface BreedingActivity extends BaseActivity {
+      type: 'breeding';
+    }
+
+    type FarmActivity = AnimalActivity | HealthActivity | ProductionActivity | BreedingActivity;
+
+    const activities: FarmActivity[] = [];
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
     const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()
     
@@ -509,13 +617,13 @@ export async function getRecentActivities(farmId: string, limit: number = 10) {
       .limit(3)
     
     newAnimals?.forEach(animal => {
-      const timeAgo = getTimeAgo(animal.created_at)
+      const timeAgo = getTimeAgo(animal.created_at || new Date().toISOString())
       activities.push({
         type: 'animal',
         title: `New animal added: ${animal.name || animal.tag_number}`,
         description: `Animal ${animal.tag_number} joined the herd`,
         timeAgo,
-        timestamp: animal.created_at
+        timestamp: animal.created_at || new Date().toISOString()
       })
     })
     
@@ -533,13 +641,13 @@ export async function getRecentActivities(farmId: string, limit: number = 10) {
       .limit(3)
     
     healthRecords?.forEach(record => {
-      const timeAgo = getTimeAgo(record.created_at)
+      const timeAgo = getTimeAgo(record.created_at || new Date().toISOString())
       activities.push({
         type: 'health',
         title: `Health record: ${record.record_type}`,
         description: `${record.animals.name || record.animals.tag_number} - ${record.record_type}`,
         timeAgo,
-        timestamp: record.created_at
+        timestamp: record.created_at || new Date().toISOString()
       })
     })
     
@@ -557,13 +665,13 @@ export async function getRecentActivities(farmId: string, limit: number = 10) {
       .limit(2)
     
     productionRecords?.forEach(record => {
-      const timeAgo = getTimeAgo(record.created_at)
+      const timeAgo = getTimeAgo(record.created_at || new Date().toISOString())
       activities.push({
         type: 'production',
         title: `Milk recorded: ${record.milk_volume}L`,
         description: `${record.animals.name || record.animals.tag_number} produced ${record.milk_volume}L`,
         timeAgo,
-        timestamp: record.created_at
+        timestamp: record.created_at || new Date().toISOString()
       })
     })
     
@@ -571,9 +679,9 @@ export async function getRecentActivities(farmId: string, limit: number = 10) {
     const { data: breedingRecords } = await supabase
       .from('breeding_records')
       .select(`
-        event_type,
+        breeding_type,
         created_at,
-        animals!inner(name, tag_number)
+        animals!breeding_records_animal_id_fkey(name, tag_number)
       `)
       .eq('farm_id', farmId)
       .gte('created_at', threeDaysAgo)
@@ -581,13 +689,13 @@ export async function getRecentActivities(farmId: string, limit: number = 10) {
       .limit(2)
     
     breedingRecords?.forEach(record => {
-      const timeAgo = getTimeAgo(record.created_at)
+      const timeAgo = getTimeAgo(record.created_at || new Date().toISOString())
       activities.push({
         type: 'breeding',
-        title: `Breeding event: ${record.event_type}`,
-        description: `${record.animals.name || record.animals.tag_number} - ${record.event_type}`,
+        title: `Breeding event: ${record.breeding_type}`,
+        description: `${record.animals.name || record.animals.tag_number} - ${record.breeding_type}`,
         timeAgo,
-        timestamp: record.created_at
+        timestamp: record.created_at || new Date().toISOString()
       })
     })
     

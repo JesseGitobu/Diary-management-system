@@ -10,10 +10,10 @@ import { AddProtocolModal } from '@/components/health/AddProtocolModal'
 interface VaccinationProtocolsProps {
   farmId: string
   protocols: any[]
+  animals: any[]
   onProtocolAdded: (protocol: any) => void
 }
-
-export function VaccinationProtocols({ farmId, protocols, onProtocolAdded }: VaccinationProtocolsProps) {
+export function VaccinationProtocols({ farmId, protocols, animals, onProtocolAdded }: VaccinationProtocolsProps) {
   const [showAddModal, setShowAddModal] = useState(false)
   
   const getFrequencyText = (days: number) => {
@@ -104,14 +104,14 @@ export function VaccinationProtocols({ farmId, protocols, onProtocolAdded }: Vac
         </div>
       )}
       
-      {showAddModal && (
-        <AddProtocolModal
+      <AddProtocolModal
           farmId={farmId}
+          animals={animals}
           isOpen={showAddModal}
           onClose={() => setShowAddModal(false)}
-          onProtocolAdded={onProtocolAdded}
+          onProtocolCreated={onProtocolAdded}
+          
         />
-      )}
     </div>
   )
 }

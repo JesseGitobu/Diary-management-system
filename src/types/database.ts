@@ -501,6 +501,8 @@ export interface AnimalStats {
   }
   averageAge?: number
   averageProduction?: number
+  milkingCows?: number
+  dryCows?: number
 
 }
 
@@ -1908,4 +1910,46 @@ export interface AvailableTagsResponse {
   availableTags?: TagData[]
   batchTaggingEnabled?: boolean
   error?: string
+}
+
+export interface ContactFormData {
+  firstName: string;
+  lastName: string;
+  email: string;
+  farmSize: string;
+  message: string;
+}
+
+export interface FormErrors {
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  farmSize?: string;
+  message?: string;
+  submit?: string;
+}
+
+export type InputChangeEvent = React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>;
+
+export type SubmitStatus = 'idle' | 'success' | 'error';
+
+export type FarmSizeOption = 'lessThan100' | 'between100and500' | 'moreThan500';
+
+export interface ContactFormApiData {
+  name: string;
+  email: string;
+  company: string;
+  message: string;
+  phone: string;
+}
+
+export interface FarmSizeMapping {
+  [key: string]: string;
+}
+
+export interface ContactFormProps {
+  onSubmissionSuccess?: (data: ContactFormData) => void;
+  onSubmissionError?: (error: string) => void;
+  className?: string;
+  style?: React.CSSProperties;
 }

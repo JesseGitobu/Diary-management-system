@@ -39,7 +39,8 @@ type ScheduleVisitFormData = z.infer<typeof scheduleVisitSchema>
 
 interface ScheduleVisitModalProps {
   farmId: string
-  animals: any[]  // ✅ Change this
+  animals: any[]  
+  veterinarians: any[]
   isOpen: boolean
   onClose: () => void
   onVisitScheduled: (visit: any) => void
@@ -47,7 +48,8 @@ interface ScheduleVisitModalProps {
 
 export function ScheduleVisitModal({ 
   farmId, 
-  animals,  // ✅ Change this
+  animals,  
+  veterinarians,
   isOpen, 
   onClose, 
   onVisitScheduled 

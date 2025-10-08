@@ -59,7 +59,7 @@ export default async function DashboardPage() {
   const canManageAnimals = ['farm_owner', 'farm_manager', 'worker'].includes(userRole.role_type)
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 via-blue-50 to-indigo-50">
+    <div className="min-h-screen ">
       <div className="dashboard-container py-4 md:py-6">
         {/* Welcome Header - Mobile Optimized */}
         <div className="mb-6">

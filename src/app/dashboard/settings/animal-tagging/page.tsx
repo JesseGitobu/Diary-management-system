@@ -6,14 +6,16 @@ import { getTaggingSettings } from '@/lib/database/tagging-settings'
 import { getFarmAnimals } from '@/lib/database/animals'
 import AnimalTaggingSettings from '@/components/settings/animals/AnimalTaggingSettings'
 
+// FIXED: searchParams must be a Promise in Next.js 15
 interface PageProps {
-  searchParams: {
+  searchParams: Promise<{
     farmId?: string
-  }
+  }>
 }
 
 export default async function AnimalTaggingPage({ searchParams }: PageProps) {
-  const { farmId } = searchParams
+  // Await searchParams to get the actual values
+  const { farmId } = await searchParams
 
   if (!farmId) {
     redirect('/dashboard')

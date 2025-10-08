@@ -161,7 +161,7 @@ export function DiseaseOutbreaks({ farmId, outbreaks, diseases, onOutbreakCreate
       {showCreateModal && (
         <CreateOutbreakModal
           farmId={farmId}
-          diseases={diseases}
+          animals={[]}
           isOpen={showCreateModal}
           onClose={() => setShowCreateModal(false)}
           onOutbreakCreated={onOutbreakCreated}
