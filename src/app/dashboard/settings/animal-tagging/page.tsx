@@ -4,6 +4,8 @@ import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { getTaggingSettings } from '@/lib/database/tagging-settings'
 import { getFarmAnimals } from '@/lib/database/animals'
+// Import the function to get animal categories
+import { getAnimalCategories } from '@/lib/database/feedManagementSettings' 
 import AnimalTaggingSettings from '@/components/settings/animals/AnimalTaggingSettings'
 
 // FIXED: searchParams must be a Promise in Next.js 15
@@ -39,12 +41,18 @@ export default async function AnimalTaggingPage({ searchParams }: PageProps) {
       redirect(`/dashboard?farmId=${farmId}`)
     }
 
-    // Get current herd size
-    const animals = await getFarmAnimals(farmId, { includeInactive: false })
+    // Fetch all required data in parallel for efficiency
+    const [
+      animals, 
+      initialSettings, 
+      initialAnimalCategories
+    ] = await Promise.all([
+      getFarmAnimals(farmId, { includeInactive: false }),
+      getTaggingSettings(farmId),
+      getAnimalCategories(farmId) // Fetch the animal categories here
+    ]);
+    
     const currentHerdSize = animals.length
-
-    // Get existing tagging settings
-    const initialSettings = await getTaggingSettings(farmId)
 
     // Get farm name from user role (you might want to get this from farm table)
     const farmName = "Your Farm" // Replace with actual farm name retrieval
@@ -56,6 +64,8 @@ export default async function AnimalTaggingPage({ searchParams }: PageProps) {
         currentHerdSize={currentHerdSize}
         initialSettings={initialSettings}
         farmName={farmName}
+        // Pass the fetched animal categories as a prop
+        initialAnimalCategories={initialAnimalCategories}
       />
     )
   } catch (error) {

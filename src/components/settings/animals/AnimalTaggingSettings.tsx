@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select'
+import { AnimalCategoriesManager } from '@/components/settings/animals/AnimalCategoriesManager'
 import { Textarea } from '@/components/ui/Textarea'
 import { Switch } from '@/components/ui/Switch'
 import { Badge } from '@/components/ui/Badge'
@@ -86,17 +87,22 @@ export default function AnimalTaggingSettings({
   userRole,
   currentHerdSize,
   initialSettings,
-  farmName
+  farmName,
+  initialAnimalCategories,
 }: {
   farmId: any
   userRole: any
   currentHerdSize?: number
   initialSettings: any
   farmName: string
+  initialAnimalCategories: any[]
 }) {
   type TaggingMethodKey = keyof typeof taggingMethods;
   const [selectedMethod, setSelectedMethod] = useState<TaggingMethodKey>('basic')
   const { isMobile } = useDeviceInfo()
+  const [animalCategories, setAnimalCategories] = useState(initialAnimalCategories || [])
+  const canEdit = ['farm_owner', 'farm_manager'].includes(userRole)
+
   const [settings, setSettings] = useState({
     // Basic Settings
     tagPrefix: 'COW',
@@ -154,10 +160,10 @@ export default function AnimalTaggingSettings({
   })
 
   const resetCustomFormat = () => {
-  const defaultFormat = settings.includeYearInTag 
-    ? '{PREFIX}-{YEAR}-{NUMBER:3}' 
+  const defaultFormat = settings.includeYearInTag
+    ? '{PREFIX}-{YEAR}-{NUMBER:3}'
     : '{PREFIX}-{NUMBER:3}'
-  
+
   setSettings(prev => ({
     ...prev,
     customFormat: defaultFormat
@@ -175,7 +181,7 @@ const clearCustomFormat = () => {
 const appendToFormat = (placeholder: string) => {
   setSettings(prev => {
     const currentFormat = prev.customFormat || ''
-    
+
     // If format is empty, just add the placeholder
     if (!currentFormat) {
       return {
@@ -183,7 +189,7 @@ const appendToFormat = (placeholder: string) => {
         customFormat: placeholder
       }
     }
-    
+
     // Add separator and placeholder
     const separator = '-'
     return {
@@ -530,12 +536,12 @@ const appendToFormat = (placeholder: string) => {
           method: selectedMethod,
           tagPrefix: settings.tagPrefix,
           numberingSystem: settings.tagNumbering,
-          
+
           // Custom format settings
           customFormat: settings.customFormat,
           customStartNumber: settings.customStartNumber,
           includeYearInTag: settings.includeYearInTag,
-          
+
           // Barcode settings
           barcodeType: settings.barcodeType,
           barcodeLength: settings.barcodeLength,
@@ -549,7 +555,7 @@ const appendToFormat = (placeholder: string) => {
           enableHierarchicalTags: settings.enableHierarchicalTags,
           enableBatchTagging: settings.enableBatchTagging,
           enableSmartAlerts: settings.enableSmartAlerts,
-          
+
           // Advanced features
           enableRFID: settings.enableRFID,
           enableNFC: settings.enableNFC,
@@ -558,7 +564,7 @@ const appendToFormat = (placeholder: string) => {
           qrCodeSize: settings.qrCodeSize,
           rfidFrequency: settings.rfidFrequency,
           gpsUpdateInterval: settings.gpsUpdateInterval,
-          
+
           // Custom attributes and colors
           customAttributes: settings.customAttributes.map((attr, index) => ({
             name: attr.name,
@@ -592,7 +598,7 @@ const appendToFormat = (placeholder: string) => {
       `Prefix: ${settings.tagPrefix}\n` +
       `Features enabled: ${[
         settings.enablePhotoTags && 'Photo Tags',
-        settings.enableColorCoding && 'Color Coding', 
+        settings.enableColorCoding && 'Color Coding',
         settings.enableQRCodes && 'QR Codes',
         settings.enableBatchTagging && 'Batch Tagging',
         settings.enableRFID && 'RFID',
@@ -607,7 +613,7 @@ const appendToFormat = (placeholder: string) => {
 
   } catch (error) {
     console.error('❌ Error saving settings:', error)
-    
+
     // Error feedback
     toast.error(`Failed to save settings: ${error instanceof Error ? error.message : 'Unknown error'}`, {
       duration: 6000,
@@ -703,7 +709,7 @@ const appendToFormat = (placeholder: string) => {
       customFormat: '{PREFIX}-{NUMBER:3}',
       customStartNumber: 1,
       includeYearInTag: false,
-      
+
       // Barcode defaults
       barcodeType: 'code128',
       barcodeLength: 8,
@@ -761,7 +767,7 @@ const appendToFormat = (placeholder: string) => {
 
   const handleBack = (event: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
   event.preventDefault()
-  
+
   if (checkUnsavedChanges()) {
     window.history.back()
     // Or if using Next.js router:
@@ -775,7 +781,7 @@ const resetUnsavedChanges = () => {
 
   return (
     <div className={`
-      ${isMobile ? 'px-4 py-4' : 'dashboard-container'} 
+      ${isMobile ? 'px-4 py-4' : 'dashboard-container'}
       pb-20 lg:pb-6
     `}>
       {/* Header */}
@@ -797,7 +803,7 @@ const resetUnsavedChanges = () => {
           </div>
           <div>
             <h1 className={`font-bold text-gray-900 ${isMobile ? 'text-2xl' : 'text-3xl'}`}>
-              Animal Tagging Configuration
+              Animal Classification and Tagging Configuration
             </h1>
             <p className={`text-gray-600 ${isMobile ? 'text-sm' : 'text-base'}`}>
               Configure tagging methods and identification systems for your herd of {currentHerdSize} animals
@@ -808,6 +814,29 @@ const resetUnsavedChanges = () => {
           </Badge>
         </div>
       </div>
+
+      {/* Animal Categories */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center space-x-2">
+            <Users className="w-5 h-5" />
+            <span>Animal Categories</span>
+          </CardTitle>
+          <CardDescription>
+            Define animal groups based on age, breeding status, and other characteristics.
+            This helps create targeted feeding programs and better animal management.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <AnimalCategoriesManager
+            farmId={farmId}
+            categories={animalCategories}
+            onCategoriesUpdate={setAnimalCategories}
+            canEdit={canEdit}
+            isMobile={isMobile}
+          />
+        </CardContent>
+      </Card>
 
 
       {/* Method Selection */}
@@ -1810,16 +1839,16 @@ const resetUnsavedChanges = () => {
     )}
   </div>
   <div className="flex space-x-3">
-    <Button 
-      variant="outline" 
+    <Button
+      variant="outline"
       onClick={resetToDefaults}
       className="hover:bg-red-50 hover:border-red-200 hover:text-red-700"
     >
       <RotateCcw className="h-4 w-4 mr-2" />
       Reset to Defaults
     </Button>
-    <Button 
-      onClick={handleSaveSettings} 
+    <Button
+      onClick={handleSaveSettings}
       disabled={isLoading}
       className={hasUnsavedChanges ? 'bg-blue-600 hover:bg-blue-700' : ''}
     >

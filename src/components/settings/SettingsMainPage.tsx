@@ -65,7 +65,7 @@ export function SettingsMainPage({ farmId, userRole, farmData }: SettingsMainPag
     },
     {
       id: 'animal-tagging',
-      title: 'Animal Tagging',
+      title: 'Animal Classification and Tagging',
       description: 'Configure animal identification and tagging preferences',
       icon: <Tag className="h-5 w-5" />,
       href: `/dashboard/settings/animal-tagging?farmId=${farmId}`,
