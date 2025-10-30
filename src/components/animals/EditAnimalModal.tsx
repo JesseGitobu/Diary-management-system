@@ -10,7 +10,8 @@ import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
-import { Edit, Save, X } from 'lucide-react'
+import { AlertTriangle, Edit, Save, Scale, X } from 'lucide-react'
+import { cn } from '@/lib/utils/cn'
 
 const editAnimalSchema = z.object({
   tag_number: z.string().min(1, 'Tag number is required'),
@@ -38,6 +39,8 @@ interface EditAnimalModalProps {
   isOpen: boolean
   onClose: () => void
   onAnimalUpdated: (updatedAnimal: any) => void
+  highlightWeight?: boolean 
+  weightUpdateReason?: string
 }
 
 export function EditAnimalModal({ 
@@ -45,11 +48,14 @@ export function EditAnimalModal({
   farmId, 
   isOpen, 
   onClose, 
-  onAnimalUpdated 
+  onAnimalUpdated,
+  highlightWeight = false,
+  weightUpdateReason 
 }: EditAnimalModalProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [availableMothers, setAvailableMothers] = useState<any[]>([])
+  const [weightHistory, setWeightHistory] = useState<any[]>([])
   
   const form = useForm<EditAnimalFormData>({
     resolver: zodResolver(editAnimalSchema),
@@ -75,6 +81,24 @@ export function EditAnimalModal({
       fetchAvailableMothers()
     }
   }, [farmId])
+
+  useEffect(() => {
+    if (highlightWeight) {
+      fetchWeightHistory()
+    }
+  }, [highlightWeight])
+  
+  const fetchWeightHistory = async () => {
+    try {
+      const response = await fetch(`/api/animals/${animal.id}/weight-history`)
+      if (response.ok) {
+        const data = await response.json()
+        setWeightHistory(data.records || [])
+      }
+    } catch (error) {
+      console.error('Error fetching weight history:', error)
+    }
+  }
   
   const fetchAvailableMothers = async () => {
     try {
@@ -89,53 +113,112 @@ export function EditAnimalModal({
   }
   
   const handleSubmit = async (data: EditAnimalFormData) => {
-    setLoading(true)
-    setError(null)
+  setLoading(true)
+  setError(null)
+  
+  console.log('📝 [EditModal] Submitting update:', {
+    animalId: animal.id,
+    oldWeight: animal.weight,
+    newWeight: data.weight
+  })
+  
+  try {
+    const response = await fetch(`/api/animals/${animal.id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        ...data,
+        weight: data.weight, // ✅ Ensure weight is included
+        current_daily_production: data.current_daily_production || null,
+      }),
+    })
     
-    try {
-      const response = await fetch(`/api/animals/${animal.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...data,
-          weight: data.weight || null,
-          current_daily_production: data.current_daily_production || null,
-        }),
-      })
-      
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to update animal')
-      }
-      
-      const result = await response.json()
-      onAnimalUpdated(result.animal)
-    } catch (err: any) {
-      setError(err.message)
-    } finally {
-      setLoading(false)
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.error || 'Failed to update animal')
     }
+    
+    const result = await response.json()
+    
+    console.log('✅ [EditModal] Update successful:', {
+      animalId: result.animal.id,
+      newWeight: result.animal.weight
+    })
+    
+    onAnimalUpdated(result.animal)
+    onClose()
+    
+  } catch (err: any) {
+    console.error('❌ [EditModal] Update error:', err)
+    setError(err.message)
+  } finally {
+    setLoading(false)
   }
+}
   
   return (
     <Modal isOpen={isOpen} onClose={onClose} className="max-w-4xl">
       <div className="p-6">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-              <Edit className="w-5 h-5 text-blue-600" />
+            <div className={cn(
+              "w-10 h-10 rounded-lg flex items-center justify-center",
+              highlightWeight ? "bg-orange-100" : "bg-blue-100"
+            )}>
+              {highlightWeight ? (
+                <Scale className="w-5 h-5 text-orange-600" />
+              ) : (
+                <Edit className="w-5 h-5 text-blue-600" />
+              )}
             </div>
             <div>
-              <h2 className="text-2xl font-bold">Edit Animal</h2>
-              <p className="text-gray-600">Update animal information</p>
+              <h2 className="text-2xl font-bold">
+                {highlightWeight ? 'Update Weight' : 'Edit Animal'}
+              </h2>
+              <p className="text-gray-600">
+                {highlightWeight 
+                  ? 'Weight recording required for this animal' 
+                  : 'Update animal information'
+                }
+              </p>
             </div>
           </div>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            <X className="w-4 h-4" />
-          </Button>
+          
         </div>
+        
+        {/* Weight Update Alert Banner */}
+        {highlightWeight && weightUpdateReason && (
+          <div className="mb-6 p-4 bg-orange-50 border-l-4 border-orange-500 rounded-r-lg">
+            <div className="flex items-start space-x-3">
+              <AlertTriangle className="w-5 h-5 text-orange-600 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <h4 className="font-medium text-orange-900 mb-1">
+                  Weight Update Required
+                </h4>
+                <p className="text-sm text-orange-700">
+                  {getWeightUpdateMessage(weightUpdateReason)}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* Weight History (if available) */}
+        {highlightWeight && weightHistory.length > 0 && (
+          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <h4 className="font-medium text-blue-900 mb-2">Previous Weights</h4>
+            <div className="space-y-1">
+              {weightHistory.slice(0, 3).map((record: any, index: number) => (
+                <div key={index} className="text-sm text-blue-700 flex justify-between">
+                  <span>{new Date(record.measurement_date).toLocaleDateString()}</span>
+                  <span className="font-medium">{record.weight_kg} kg</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-md">
@@ -152,6 +235,7 @@ export function EditAnimalModal({
                 id="tag_number"
                 {...form.register('tag_number')}
                 error={form.formState.errors.tag_number?.message}
+                disabled={true} // Tag number should not be editable
               />
             </div>
             
@@ -163,6 +247,53 @@ export function EditAnimalModal({
                 placeholder="Optional animal name"
               />
             </div>
+          </div>
+          
+          {/* HIGHLIGHTED WEIGHT SECTION */}
+          <div className={cn(
+            "p-4 rounded-lg border-2 transition-all",
+            highlightWeight 
+              ? "border-orange-400 bg-orange-50 shadow-md" 
+              : "border-gray-200"
+          )}>
+            <div className="flex items-center space-x-2 mb-3">
+              <Scale className={cn(
+                "w-5 h-5",
+                highlightWeight ? "text-orange-600" : "text-gray-600"
+              )} />
+              <Label 
+                htmlFor="weight" 
+                className={cn(
+                  "text-base font-semibold",
+                  highlightWeight && "text-orange-900"
+                )}
+              >
+                Current Weight (kg) {highlightWeight && '*'}
+              </Label>
+            </div>
+            
+            <Input
+              id="weight"
+              type="number"
+              step="0.1"
+              min="0"
+              {...form.register('weight', { 
+                valueAsNumber: true,
+                required: highlightWeight ? 'Weight is required' : false
+              })}
+              placeholder="e.g., 450.5"
+              error={form.formState.errors.weight?.message}
+              autoFocus={highlightWeight} // Auto-focus if weight update needed
+              className={cn(
+                highlightWeight && "border-orange-300 focus:ring-orange-500"
+              )}
+            />
+            
+            {highlightWeight && (
+              <p className="text-xs text-orange-700 mt-2">
+                💡 Please enter the current weight to continue. This helps monitor the animal's growth and health.
+              </p>
+            )}
           </div>
           
           {/* Animal Details */}
@@ -350,21 +481,24 @@ export function EditAnimalModal({
               onClick={onClose}
               disabled={loading}
             >
-              Cancel
+              {highlightWeight ? 'Skip for Now' : 'Cancel'}
             </Button>
             <Button
               type="submit"
               disabled={loading}
+              className={cn(
+                highlightWeight && "bg-orange-600 hover:bg-orange-700"
+              )}
             >
               {loading ? (
                 <>
                   <LoadingSpinner size="sm" className="mr-2" />
-                  Updating...
+                  {highlightWeight ? 'Recording...' : 'Updating...'}
                 </>
               ) : (
                 <>
                   <Save className="mr-2 h-4 w-4" />
-                  Update Animal
+                  {highlightWeight ? 'Record Weight' : 'Update Animal'}
                 </>
               )}
             </Button>
@@ -373,4 +507,15 @@ export function EditAnimalModal({
       </div>
     </Modal>
   )
+}
+
+function getWeightUpdateMessage(reason: string): string {
+  const messages: Record<string, string> = {
+    'new_calf_over_month': 'This calf is over 30 days old and requires an initial weight recording for proper growth monitoring.',
+    'purchased_over_month': 'This purchased animal requires a current weight recording to track its health and development.',
+    'routine_schedule': 'Regular weight measurement is due based on the monitoring schedule for this animal.',
+    'special_event': 'Weight measurement is required due to recent health or production changes.',
+  }
+  
+  return messages[reason] || 'Weight update is needed to maintain accurate health records.'
 }

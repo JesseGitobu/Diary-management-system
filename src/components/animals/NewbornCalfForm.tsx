@@ -3,11 +3,17 @@
 import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { Activity } from 'lucide-react'
 import { z } from 'zod'
+import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import {
+  getProductionStatusDisplay,
+  getProductionStatusBadgeColor,
+} from '@/lib/utils/productionStatusUtils'
 import {
   Select,
   SelectContent,
@@ -60,6 +66,11 @@ export function NewbornCalfForm({ farmId, onSuccess, onCancel }: NewbornCalfForm
   const [availableMothers, setAvailableMothers] = useState<Animal[]>([])
   const [loadingMothers, setLoadingMothers] = useState(true)
 
+  const [calculatedProductionStatus, setCalculatedProductionStatus] = useState<string>('calf')
+  const [calculatingStatus, setCalculatingStatus] = useState(false)
+  const [matchingCategory, setMatchingCategory] = useState<{ id: string; name: string } | null>(null)
+
+
   const form = useForm<NewbornCalfFormData>({
     resolver: zodResolver(newbornCalfSchema),
     defaultValues: {
@@ -106,6 +117,49 @@ export function NewbornCalfForm({ farmId, onSuccess, onCancel }: NewbornCalfForm
     }
   }, [farmId])
 
+  useEffect(() => {
+    const calculateProductionStatus = async () => {
+      const birthDate = form.watch('birth_date')
+      const gender = form.watch('gender')
+
+      if (!birthDate || !gender) {
+        setCalculatedProductionStatus('calf')
+        return
+      }
+
+      setCalculatingStatus(true)
+      try {
+        const response = await fetch('/api/animals/calculate-production-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            birth_date: birthDate,
+            gender: gender,
+            farm_id: farmId
+          })
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          setCalculatedProductionStatus(data.production_status)
+          setMatchingCategory(data.matching_category)
+
+          console.log(`Production status calculated: ${data.production_status}`,
+            data.matching_category ? `(Category: ${data.matching_category.name})` : '(Default rules)')
+        }
+      } catch (error) {
+        console.error('Error calculating production status:', error)
+        // Fallback to 'calf' if calculation fails
+        setCalculatedProductionStatus('calf')
+        setMatchingCategory(null)
+      } finally {
+        setCalculatingStatus(false)
+      }
+    }
+
+    calculateProductionStatus()
+  }, [form.watch('birth_date'), form.watch('gender'), farmId])
+
   // Handle tag changes from TagGenerationSection
   const handleTagChange = (tagNumber: string, autoGenerate: boolean) => {
     form.setValue('tag_number', tagNumber)
@@ -126,55 +180,57 @@ export function NewbornCalfForm({ farmId, onSuccess, onCancel }: NewbornCalfForm
   }
 
   const handleSubmit = async (data: NewbornCalfFormData) => {
-  // Validate that we have a tag number (either auto-generated or manual)
-  if (!data.tag_number || data.tag_number.trim().length === 0) {
-    setError('Tag number is required. Please enable auto-generation or enter a manual tag number.')
-    return
+    // Validate that we have a tag number (either auto-generated or manual)
+    if (!data.tag_number || data.tag_number.trim().length === 0) {
+      setError('Tag number is required. Please enable auto-generation or enter a manual tag number.')
+      return
+    }
+
+    setLoading(true)
+    setError(null)
+
+    console.log(`Submitting calf with calculated production status: ${calculatedProductionStatus}`)
+
+    try {
+      const requestData = {
+        ...data,
+        farm_id: farmId,
+        animal_source: 'newborn_calf',
+        production_status: 'calf',
+        // weight: data.birth_weight,
+        status: 'active',
+        autoGenerateTag: data.autoGenerateTag,
+      }
+
+      const response = await fetch('/api/animals', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestData),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to add calf')
+      }
+
+      const result = await response.json()
+
+      // Show success message with generated tag if applicable
+      if (result.generatedTagNumber) {
+        console.log(`Calf registered successfully with auto-generated tag: ${result.generatedTagNumber}`)
+      }
+
+      // Pass the API RESULT (not the form data) to the success handler
+      onSuccess(result) // ← This should be the API response, not form data
+
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
   }
-
-  setLoading(true)
-  setError(null)
-
-  try {
-    const requestData = {
-      ...data,
-      farm_id: farmId,
-      animal_source: 'newborn_calf',
-      production_status: 'calf',
-      weight: data.birth_weight,
-      status: 'active',
-      autoGenerateTag: data.autoGenerateTag,
-    }
-
-    const response = await fetch('/api/animals', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(requestData),
-    })
-
-    if (!response.ok) {
-      const errorData = await response.json()
-      throw new Error(errorData.error || 'Failed to add calf')
-    }
-
-    const result = await response.json()
-
-    // Show success message with generated tag if applicable
-    if (result.generatedTagNumber) {
-      console.log(`Calf registered successfully with auto-generated tag: ${result.generatedTagNumber}`)
-    }
-
-    // Pass the API RESULT (not the form data) to the success handler
-    onSuccess(result) // ← This should be the API response, not form data
-
-  } catch (err: any) {
-    setError(err.message)
-  } finally {
-    setLoading(false)
-  }
-}
 
   return (
     <div className="space-y-6">
@@ -269,6 +325,40 @@ export function NewbornCalfForm({ farmId, onSuccess, onCancel }: NewbornCalfForm
             </div>
           </div>
         </div>
+
+
+
+        {calculatingStatus ? (
+          <div className="col-span-2 flex items-center justify-center p-3 bg-blue-50 border border-blue-200 rounded-md">
+            <LoadingSpinner size="sm" className="mr-2" />
+            <span className="text-sm text-blue-700">Calculating production status...</span>
+          </div>
+        ) : (formData.birth_date && formData.gender) && (
+          <div className="col-span-2 p-3 bg-green-50 border border-green-200 rounded-md">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-green-800 flex items-center">
+                  <Activity className="w-4 h-4 mr-2" />
+                  Auto-assigned Production Status
+                </p>
+                <p className="text-xs text-green-700 mt-1">
+                  {matchingCategory
+                    ? `Based on "${matchingCategory.name}" category → "${getProductionStatusDisplay(calculatedProductionStatus, formData.gender)}"`
+                    : `Based on age and ${formData.gender} default rules → "${getProductionStatusDisplay(calculatedProductionStatus, formData.gender)}"`
+                  }
+                </p>
+                {formData.gender === 'male' && (
+                  <p className="text-xs text-green-600 mt-1 italic">
+                    ℹ️ Male animals are categorized as either Calves or Bulls
+                  </p>
+                )}
+              </div>
+              <Badge className={`${getProductionStatusBadgeColor(calculatedProductionStatus)} px-3 py-1`}>
+                {getProductionStatusDisplay(calculatedProductionStatus, formData.gender)}
+              </Badge>
+            </div>
+          </div>
+        )}
 
         {/* Parentage Information */}
         <div className="space-y-4">

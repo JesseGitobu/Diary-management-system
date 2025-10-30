@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/Label'
 import { NewbornCalfForm } from './NewbornCalfForm'
 import { PurchasedAnimalForm } from './PurchasedAnimalForm'
 import CompleteHealthRecordModal from '@/components/health/CompleteHealthRecordModal'
+import { WeightUpdateModal } from '@/components/animals/WeightUpdateModal'
 import { Baby, ShoppingCart, ArrowLeft, AlertTriangle } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import { TagGenerationSection } from './TagGenerationSection'
@@ -18,63 +19,88 @@ interface AddAnimalModalProps {
   onHealthRecordCreated?: (record: any) => void
 }
 
-export default function AddAnimalModal({ 
-  farmId, 
-  isOpen, 
-  onClose, 
+export default function AddAnimalModal({
+  farmId,
+  isOpen,
+  onClose,
   onAnimalAdded,
   onHealthRecordCreated
 }: AddAnimalModalProps) {
   const [animalSource, setAnimalSource] = useState<'newborn_calf' | 'purchased_animal' | null>(null)
   const [showSourceSelection, setShowSourceSelection] = useState(true)
-  
+
   // Health record completion states
   const [showHealthRecordModal, setShowHealthRecordModal] = useState(false)
   const [pendingHealthRecord, setPendingHealthRecord] = useState<any>(null)
+
+  const [showWeightUpdateModal, setShowWeightUpdateModal] = useState(false)
+  const [pendingWeightUpdate, setPendingWeightUpdate] = useState<any>(null)
+
   const [createdAnimal, setCreatedAnimal] = useState<any>(null)
-  
+
   const handleSourceSelection = (source: 'newborn_calf' | 'purchased_animal') => {
     setAnimalSource(source)
     setShowSourceSelection(false)
   }
-  
+
   const handleBackToSelection = () => {
     setAnimalSource(null)
     setShowSourceSelection(true)
   }
-  
+
   const handleSuccess = (result: any) => {
   console.log('🎉 [Modal] Animal creation successful:', result)
   
-  // Store the created animal from the API response
   setCreatedAnimal(result.animal)
   onAnimalAdded(result.animal)
 
-  // Check if health record was created automatically
+  // ✅ Check weight FIRST (higher priority)
+  if (result.requiresWeightUpdate) {
+    setPendingWeightUpdate({
+      animal: result.animal,
+      reason: result.weightUpdateReason
+    })
+    setShowWeightUpdateModal(true)
+    
+    toast('⚠️ Weight recording required', {
+      duration: 4000,
+      icon: '⚖️'
+    })
+    return // Don't close modal yet
+  }
+
+  // ✅ Then check health record
   if (result.healthRecordCreated && result.healthRecord) {
     setPendingHealthRecord(result.healthRecord)
+    setShowHealthRecordModal(true)
     
-    // Show completion prompt
     toast.success(result.message, {
       duration: 4000,
       icon: '⚠️'
     })
-
-    // Show health record completion modal
-    setShowHealthRecordModal(true)
     
-    // Notify parent component
     if (onHealthRecordCreated) {
       onHealthRecordCreated(result.healthRecord)
     }
   } else {
-    // Normal success flow - close modal completely
     toast.success(result.message)
     handleModalClose()
   }
 }
 
+  const handleWeightUpdated = (weightRecord: any) => {
+  toast.success('Weight recorded successfully!')
+  setShowWeightUpdateModal(false)
   
+  // If there's also a health record, show that modal
+  if (pendingHealthRecord) {
+    setShowHealthRecordModal(true)
+  } else {
+    handleModalClose()
+  }
+}
+
+
   const handleCancel = () => {
     if (!showSourceSelection && animalSource) {
       // If we're in a form, go back to source selection
@@ -111,12 +137,12 @@ export default function AddAnimalModal({
     setShowHealthRecordModal(false)
     handleModalClose()
   }
-  
+
   return (
     <>
-      <Modal 
-        isOpen={isOpen && !showHealthRecordModal} 
-        onClose={handleModalClose} 
+      <Modal
+        isOpen={isOpen && !showHealthRecordModal}
+        onClose={handleModalClose}
         className="max-w-5xl max-h-[90vh] "
       >
         <div className="p-6">
@@ -129,7 +155,7 @@ export default function AddAnimalModal({
                   Select how this animal was acquired to provide the most relevant information
                 </p>
               </div>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
                 {/* New Born Calf Option */}
                 <button
@@ -147,7 +173,7 @@ export default function AddAnimalModal({
                       <p className="text-sm text-gray-600">Born on this farm</p>
                     </div>
                   </div>
-                  
+
                   <div className="space-y-2 text-sm text-gray-600">
                     <p><strong>Information collected:</strong></p>
                     <ul className="list-disc list-inside space-y-1 ml-2">
@@ -157,13 +183,13 @@ export default function AddAnimalModal({
                       <li>Special notes about the birth</li>
                     </ul>
                   </div>
-                  
+
                   <div className="mt-4 text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
-                    <strong>Best for:</strong> Calves born on your farm where you know the parentage 
+                    <strong>Best for:</strong> Calves born on your farm where you know the parentage
                     and birth details
                   </div>
                 </button>
-                
+
                 {/* Purchased Animal Option */}
                 <button
                   onClick={() => handleSourceSelection('purchased_animal')}
@@ -180,7 +206,7 @@ export default function AddAnimalModal({
                       <p className="text-sm text-gray-600">Acquired from another source</p>
                     </div>
                   </div>
-                  
+
                   <div className="space-y-2 text-sm text-gray-600">
                     <p><strong>Information collected:</strong></p>
                     <ul className="list-disc list-inside space-y-1 ml-2">
@@ -190,9 +216,9 @@ export default function AddAnimalModal({
                       <li>Status-specific details (breeding, production)</li>
                     </ul>
                   </div>
-                  
+
                   <div className="mt-4 text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
-                    <strong>Best for:</strong> Animals bought from other farms, auctions, 
+                    <strong>Best for:</strong> Animals bought from other farms, auctions,
                     or other sources
                   </div>
                 </button>
@@ -207,13 +233,13 @@ export default function AddAnimalModal({
                       Automatic Health Tracking
                     </h3>
                     <p className="text-sm text-blue-700 mt-1">
-                      If you register an animal with concerning health status (sick, requires attention, or quarantined), 
+                      If you register an animal with concerning health status (sick, requires attention, or quarantined),
                       a health record will be automatically created for proper tracking and follow-up.
                     </p>
                   </div>
                 </div>
               </div>
-              
+
               <div className="text-center">
                 <Button
                   variant="outline"
@@ -237,7 +263,7 @@ export default function AddAnimalModal({
                   <ArrowLeft className="w-4 h-4" />
                   <span>Back</span>
                 </Button>
-                
+
                 <div className="flex items-center space-x-3">
                   <div className="flex-shrink-0 w-8 h-8 bg-farm-green/20 rounded-lg flex items-center justify-center">
                     {animalSource === 'newborn_calf' ? (
@@ -251,7 +277,7 @@ export default function AddAnimalModal({
                       {animalSource === 'newborn_calf' ? 'New Born Calf' : 'Purchased Animal'}
                     </h2>
                     <p className="text-sm text-gray-600">
-                      {animalSource === 'newborn_calf' 
+                      {animalSource === 'newborn_calf'
                         ? 'Register a calf born on your farm'
                         : 'Register an animal acquired from another source'
                       }
@@ -259,16 +285,16 @@ export default function AddAnimalModal({
                   </div>
                 </div>
               </div>
-              
+
               {/* Dynamic Form */}
               {animalSource === 'newborn_calf' ? (
-                <NewbornCalfForm 
+                <NewbornCalfForm
                   farmId={farmId}
                   onSuccess={handleSuccess}
                   onCancel={handleCancel}
                 />
               ) : (
-                <PurchasedAnimalForm 
+                <PurchasedAnimalForm
                   farmId={farmId}
                   onSuccess={handleSuccess}
                   onCancel={handleCancel}
@@ -289,6 +315,22 @@ export default function AddAnimalModal({
           onHealthRecordUpdated={handleHealthRecordUpdated}
         />
       )}
+
+      {showWeightUpdateModal && pendingWeightUpdate && createdAnimal && (
+  <WeightUpdateModal
+    isOpen={showWeightUpdateModal}
+    onClose={() => {
+      setShowWeightUpdateModal(false)
+      // Still close main modal even if user skips
+      if (!pendingHealthRecord) {
+        handleModalClose()
+      }
+    }}
+    animal={createdAnimal}
+    reason={pendingWeightUpdate.reason}
+    onWeightUpdated={handleWeightUpdated}
+  />
+)}
     </>
   )
 }

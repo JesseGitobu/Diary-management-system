@@ -1,7 +1,7 @@
 // src/components/animals/AnimalCard.tsx
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { Animal } from '@/types/database'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
@@ -11,11 +11,11 @@ import { EditAnimalModal } from '@/components/animals/EditAnimalModal'
 import { HealthStatusBadge } from './HealthStatusBadge'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { cn } from '@/lib/utils/cn'
-import { 
-  Calendar, 
-  Weight, 
-  Heart, 
-  Droplets, 
+import {
+  Calendar,
+  Weight,
+  Heart,
+  Droplets,
   ShoppingCart,
   Eye,
   Edit,
@@ -23,8 +23,7 @@ import {
   AlertTriangle,
   Shield,
   Activity,
-  MoreVertical,
-  Phone
+  Scale,
 } from 'lucide-react'
 
 interface AnimalCardProps {
@@ -39,23 +38,104 @@ interface AnimalCardProps {
 export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealthStatusChange, isMobile }: AnimalCardProps) {
   const [showEditModal, setShowEditModal] = useState(false)
   const [animalData, setAnimalData] = useState(animal)
-   const [healthStatusHistory, setHealthStatusHistory] = useState([])
+  const [healthStatusHistory, setHealthStatusHistory] = useState([])
+  const [requiresWeightUpdate, setRequiresWeightUpdate] = useState(false)
+  const [weightUpdateDue, setWeightUpdateDue] = useState<Date | null>(null)
   const [showAllInfo, setShowAllInfo] = useState(false)
+
+  const [statusMismatch, setStatusMismatch] = useState<{
+    current: string
+    calculated: string
+    age_days: number
+  } | null>(null)
 
   const { isMobile: isMobileDevice, isTouch } = useDeviceInfo()
   const canEdit = ['farm_owner', 'farm_manager'].includes(userRole)
 
-    useEffect(() => {
+  // Update animal data when prop changes
+  useEffect(() => {
+    console.log('🔄 [AnimalCard] Animal prop updated:', animal.id, 'Weight:', animal.weight)
     setAnimalData(animal)
   }, [animal])
 
+  // Check for health status changes
   useEffect(() => {
     if (animalData.health_status !== animal.health_status && animalData.health_status) {
       onHealthStatusChange?.(animalData.id, animalData.health_status)
     }
   }, [animalData.health_status])
 
-   const fetchHealthStatusHistory = async () => {
+  // Check production status
+  useEffect(() => {
+    const checkProductionStatus = async () => {
+      if (!animalData.birth_date || !animalData.id) return
+
+      try {
+        const response = await fetch(
+          `/api/animals/calculate-production-status?animalId=${animalData.id}&farmId=${farmId}`
+        )
+
+        if (response.ok) {
+          const data = await response.json()
+
+          if (data.should_update) {
+            setStatusMismatch({
+              current: data.current_production_status,
+              calculated: data.calculated_production_status,
+              age_days: data.age_days
+            })
+          } else {
+            setStatusMismatch(null)
+          }
+        }
+      } catch (error) {
+        console.error('❌ [AnimalCard] Error checking production status:', error)
+      }
+    }
+
+    checkProductionStatus()
+  }, [animalData.id, animalData.birth_date, animalData.production_status, farmId])
+
+  // 🆕 Extract weight requirement check into a callback function
+  const checkWeightRequirement = useCallback(async () => {
+    if (!animalData.id || !farmId) {
+      console.log('⚠️ [AnimalCard] Skipping weight check - missing id or farmId')
+      return
+    }
+
+    console.log('🔍 [AnimalCard] Checking weight requirement for:', animalData.tag_number)
+    
+    try {
+      const response = await fetch(
+        `/api/animals/${animalData.id}/weight-requirement?farmId=${farmId}`
+      )
+      
+      if (response.ok) {
+        const data = await response.json()
+        console.log('📊 [AnimalCard] Weight requirement result:', {
+          animalId: animalData.id,
+          tagNumber: animalData.tag_number,
+          requiresUpdate: data.requires_update,
+          dueDate: data.due_date
+        })
+        
+        setRequiresWeightUpdate(data.requires_update)
+        setWeightUpdateDue(data.due_date ? new Date(data.due_date) : null)
+      } else {
+        console.error('❌ [AnimalCard] Weight requirement check failed:', response.status)
+      }
+    } catch (error) {
+      console.error('❌ [AnimalCard] Error checking weight requirement:', error)
+    }
+  }, [animalData.id, animalData.tag_number, farmId])
+
+  // Check weight requirement on mount and when animal data changes
+  useEffect(() => {
+    console.log('🔄 [AnimalCard] Weight check triggered for:', animalData.tag_number, 'Weight:', animalData.weight)
+    checkWeightRequirement()
+  }, [animalData.id, animalData.weight, checkWeightRequirement])
+
+  const fetchHealthStatusHistory = async () => {
     try {
       const response = await fetch(`/api/health/animals/${animalData.id}/status-history`)
       if (response.ok) {
@@ -63,16 +143,39 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealth
         setHealthStatusHistory(data.history || [])
       }
     } catch (error) {
-      console.error('Error fetching health status history:', error)
+      console.error('❌ [AnimalCard] Error fetching health status history:', error)
     }
   }
-  
-  const handleAnimalUpdated = (updatedAnimal: Animal) => {
+
+  // 🆕 Enhanced handleAnimalUpdated
+  const handleAnimalUpdated = async (updatedAnimal: Animal) => {
+    console.log('✅ [AnimalCard] Animal updated callback received:', {
+      animalId: updatedAnimal.id,
+      tagNumber: updatedAnimal.tag_number,
+      oldWeight: animalData.weight,
+      newWeight: updatedAnimal.weight
+    })
+    
+    // Update local animal data
     setAnimalData(updatedAnimal)
+    
+    // Close the edit modal
     setShowEditModal(false)
-    onAnimalUpdated?.(updatedAnimal)
+    
+    // ✅ CRITICAL: Wait a moment for DB to propagate, then re-check weight requirement
+    console.log('⏳ [AnimalCard] Waiting before weight requirement re-check...')
+    setTimeout(async () => {
+      console.log('🔄 [AnimalCard] Re-checking weight requirement after update...')
+      await checkWeightRequirement()
+    }, 500) // 500ms delay to ensure DB has updated
+    
+    // Notify parent component
+    if (onAnimalUpdated) {
+      console.log('📢 [AnimalCard] Notifying parent of update')
+      onAnimalUpdated(updatedAnimal)
+    }
   }
-  
+
   const getSourceBadge = () => {
     if (animalData.animal_source === 'newborn_calf') {
       return (
@@ -97,39 +200,81 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealth
     }
     return null
   }
-  
+
   const getProductionStatusBadge = () => {
-    if (!animalData.production_status) return null
-    
-    const statusColors = {
-      calf: 'bg-yellow-100 text-yellow-800',
-      heifer: 'bg-blue-100 text-blue-800',
-      served: 'bg-purple-100 text-purple-800',
-      lactating: 'bg-green-100 text-green-800',
-      dry: 'bg-gray-100 text-gray-800',
-    }
-    
-    const statusLabels = {
-      calf: 'Calf',
-      heifer: 'Heifer',
-      served: 'Served',
-      lactating: isMobile ? 'Lactating' : 'Lactating',
-      dry: 'Dry',
-    }
-    
-    return (
+  if (!animalData.production_status) return null
+  
+  const statusColors: Record<string, string> = {
+    calf: 'bg-yellow-100 text-yellow-800',
+    heifer: 'bg-blue-100 text-blue-800',
+    served: 'bg-purple-100 text-purple-800',
+    lactating: 'bg-green-100 text-green-800',
+    dry: 'bg-gray-100 text-gray-800',
+    bull: 'bg-blue-100 text-blue-800',
+  }
+  
+  const statusLabels = {
+    calf: 'Calf',
+    heifer: 'Heifer',
+    served: 'Served',
+    lactating: isMobile ? 'Lactating' : 'Lactating',
+    dry: 'Dry',
+    bull: 'Bull'
+  }
+  
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
       <Badge className={cn(
         statusColors[animalData.production_status] || 'bg-gray-100 text-gray-800',
         isMobile ? "text-xs px-2 py-1" : "text-xs"
       )}>
         {statusLabels[animalData.production_status] || animalData.production_status.replace('_', ' ').toUpperCase()}
       </Badge>
-    )
-  }
-  
+      
+      {/* Production status update indicator */}
+      {statusMismatch && (
+        <Badge 
+          variant="outline" 
+          className={cn(
+            "text-xs bg-amber-50 border-amber-300 text-amber-800",
+            isMobile ? "px-1.5 py-0.5" : "px-2 py-1"
+          )}
+          title={`Should be: ${statusMismatch.calculated} (${Math.floor(statusMismatch.age_days / 30)} months old)`}
+        >
+          <Activity className="w-3 h-3 mr-1" />
+          {isMobile ? 'Update' : 'Status Update'}
+        </Badge>
+      )}
+      
+      {/* ✅ ADD WEIGHT UPDATE INDICATOR */}
+      {requiresWeightUpdate && (
+        <Badge 
+          variant="outline" 
+          className={cn(
+            "text-xs bg-orange-50 border-orange-300 text-orange-800 cursor-pointer hover:bg-orange-100",
+            isMobile ? "px-1.5 py-0.5" : "px-2 py-1"
+          )}
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            setShowEditModal(true) // Open edit modal when clicked
+          }}
+          title={weightUpdateDue 
+            ? `Weight update due: ${weightUpdateDue.toLocaleDateString()}` 
+            : 'Weight update required'
+          }
+        >
+          <Scale className="w-3 h-3 mr-1" />
+          {isMobile ? 'Weight' : 'Update Weight'}
+        </Badge>
+      )}
+    </div>
+  )
+}
+
   const getHealthStatusBadge = () => {
     if (!animalData.health_status) return null
-    
+
     const statusConfig = {
       healthy: {
         color: 'bg-green-100 text-green-800 border-green-200',
@@ -156,12 +301,12 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealth
         pulse: true
       }
     }
-    
+
     const config = statusConfig[animalData.health_status as keyof typeof statusConfig]
     if (!config) return null
-    
+
     const IconComponent = config.icon
-    
+
     return (
       <Badge className={cn(
         config.color,
@@ -173,14 +318,14 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealth
       </Badge>
     )
   }
-  
+
   const calculateAge = () => {
     if (!animalData.birth_date) return null
-    
+
     const birthDate = new Date(animalData.birth_date)
     const now = new Date()
     const ageInDays = Math.floor((now.getTime() - birthDate.getTime()) / (1000 * 60 * 60 * 24))
-    
+
     if (ageInDays < 30) {
       return `${ageInDays}d`
     } else if (ageInDays < 365) {
@@ -192,7 +337,7 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealth
       return isMobile ? `${years}y ${remainingMonths}m` : `${years}y ${remainingMonths}m old`
     }
   }
-  
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       month: 'short',
@@ -200,13 +345,13 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealth
       year: isMobile ? '2-digit' : 'numeric'
     })
   }
-  
+
   const animalAge = calculateAge()
-  
+
   // Mobile-specific info items (prioritized)
   const getPrimaryInfo = () => {
     const items = []
-    
+
     // Always show age if available
     if (animalData.birth_date && animalAge) {
       items.push({
@@ -215,7 +360,7 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealth
         color: 'text-gray-600'
       })
     }
-    
+
     // Show weight if available
     if (animalData.weight) {
       items.push({
@@ -224,7 +369,7 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealth
         color: 'text-gray-600'
       })
     }
-    
+
     // Show current production for lactating animals
     if (animalData.production_status === 'lactating' && animalData.current_daily_production) {
       items.push({
@@ -233,7 +378,7 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealth
         color: 'text-blue-600'
       })
     }
-    
+
     // Show mother for newborn calves
     if (animalData.animal_source === 'newborn_calf' && animalData.mother) {
       items.push({
@@ -242,13 +387,13 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealth
         color: 'text-pink-600'
       })
     }
-    
+
     return items.slice(0, isMobile ? 2 : 4) // Limit items on mobile
   }
-  
+
   const getSecondaryInfo = () => {
     const items = []
-    
+
     // Purchase date for purchased animals
     if (animalData.animal_source === 'purchased_animal' && animalData.purchase_date) {
       items.push({
@@ -257,7 +402,7 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealth
         color: 'text-gray-600'
       })
     }
-    
+
     // Service information for served animals
     if (animalData.production_status === 'served' && animalData.service_date) {
       items.push({
@@ -266,7 +411,7 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealth
         color: 'text-purple-600'
       })
     }
-    
+
     // Expected calving date
     if (animalData.expected_calving_date) {
       items.push({
@@ -275,19 +420,19 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealth
         color: 'text-green-600'
       })
     }
-    
+
     return items
   }
-  
+
   const primaryInfo = getPrimaryInfo()
   const secondaryInfo = getSecondaryInfo()
-  
+
   return (
     <>
       <Card className={cn(
         "transition-all duration-200 group",
-        isMobile 
-          ? "hover:shadow-md active:scale-[0.98] active:shadow-lg" 
+        isMobile
+          ? "hover:shadow-md active:scale-[0.98] active:shadow-lg"
           : "hover:shadow-lg",
         isTouch && "cursor-pointer"
       )}>
@@ -309,32 +454,32 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealth
                 #{animalData.tag_number} • {animalData.breed || 'Unknown breed'}
               </CardDescription>
             </div>
-            
+
             <div className={cn(
               "flex items-center space-x-1 ml-2",
               isMobile ? "flex-row" : "flex-col space-y-1 items-end"
             )}>
               {getSourceBadge()}
               {!isMobile && (
-                <Badge variant={animalData.gender === 'female' ? 'default' : 'secondary'} 
-                       className="text-xs">
+                <Badge variant={animalData.gender === 'female' ? 'default' : 'secondary'}
+                  className="text-xs">
                   {animalData.gender === 'female' ? '♀ Female' : '♂ Male'}
                 </Badge>
               )}
             </div>
           </div>
-          
+
           {/* Mobile: Show gender badge in header on separate line */}
           {isMobile && (
             <div className="flex items-center justify-between mt-2">
-              <Badge variant={animalData.gender === 'female' ? 'default' : 'secondary'} 
-                     className="text-xs">
+              <Badge variant={animalData.gender === 'female' ? 'default' : 'secondary'}
+                className="text-xs">
                 {animalData.gender === 'female' ? '♀ Female' : '♂ Male'}
               </Badge>
             </div>
           )}
         </CardHeader>
-        
+
         <CardContent className={cn(
           isMobile ? "px-4 pb-4 pt-0" : "pt-0"
         )}>
@@ -347,14 +492,14 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealth
               isMobile ? "gap-1" : "gap-2"
             )}>
               {getProductionStatusBadge()}
-               <HealthStatusBadge 
-              healthStatus={animalData.health_status || undefined}
-              size={isMobile ? "sm" : "md"}
-              showIcon={true}
-              showPulse={true}
-            />
+              <HealthStatusBadge
+                healthStatus={animalData.health_status || undefined}
+                size={isMobile ? "sm" : "md"}
+                showIcon={true}
+                showPulse={true}
+              />
             </div>
-            
+
             {/* Primary Information - Always Visible */}
             <div className={cn(
               "grid gap-2",
@@ -377,7 +522,7 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealth
                 )
               })}
             </div>
-            
+
             {/* Secondary Information - Collapsible on Mobile */}
             {secondaryInfo.length > 0 && (
               <>
@@ -404,7 +549,7 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealth
                     })}
                   </div>
                 )}
-                
+
                 {/* Show More/Less Button for Mobile */}
                 {isMobile && secondaryInfo.length > 0 && (
                   <button
@@ -416,7 +561,7 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealth
                 )}
               </>
             )}
-            
+
             {/* Notes - Collapsible */}
             {animalData.notes && (
               <div className={cn(
@@ -427,18 +572,18 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealth
                 {animalData.notes}
               </div>
             )}
-            
+
             {/* Action Buttons */}
             <div className={cn(
               "flex pt-2 transition-opacity duration-200",
-              isMobile 
+              isMobile
                 ? "space-x-2 opacity-100" // Always visible on mobile
                 : "space-x-2 opacity-0 group-hover:opacity-100"
             )}>
-              <Button 
-                asChild 
-                size={isMobile ? "default" : "sm"} 
-                variant="outline" 
+              <Button
+                asChild
+                size={isMobile ? "default" : "sm"}
+                variant="outline"
                 className={cn(
                   "flex-1",
                   isMobile && "h-10 text-sm" // Larger touch target
@@ -449,11 +594,11 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealth
                   View
                 </Link>
               </Button>
-              
+
               {isMobile ? (
                 // Mobile: Dropdown menu for actions
                 <div className="relative">
-                  <Button 
+                  <Button
                     size="default"
                     variant="outline"
                     className="h-10 px-3"
@@ -469,9 +614,9 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealth
                 </div>
               ) : (
                 // Desktop: Full edit button
-                <Button 
-                  size="sm" 
-                  variant="outline" 
+                <Button
+                  size="sm"
+                  variant="outline"
                   className="flex-1"
                   onClick={() => setShowEditModal(true)}
                   disabled={!canEdit}
@@ -484,7 +629,7 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealth
           </div>
         </CardContent>
       </Card>
-      
+
       {/* Edit Animal Modal */}
       {showEditModal && (
         <EditAnimalModal
@@ -493,6 +638,8 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealth
           isOpen={showEditModal}
           onClose={() => setShowEditModal(false)}
           onAnimalUpdated={handleAnimalUpdated}
+          highlightWeight={requiresWeightUpdate} // ✅ Pass weight requirement status
+          weightUpdateReason={requiresWeightUpdate ? 'routine_schedule' : undefined}
         />
       )}
     </>

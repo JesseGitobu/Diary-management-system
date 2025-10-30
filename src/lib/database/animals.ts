@@ -12,6 +12,11 @@ import {
   PurchasedAnimalFormData 
 } from '@/types/database'
 
+import { 
+  calculateAgeDays, 
+  getProductionStatusFromCategories 
+} from '@/lib/utils/productionStatusUtils'
+
 // Get all animals for a farm with enhanced filtering
 export async function getFarmAnimals(
   farmId: string, 
@@ -244,7 +249,7 @@ export async function getEnhancedAnimalStats(farmId: string): Promise<AnimalStat
       female: 0,
       male: 0,
       bySource: { newborn_calves: 0, purchased: 0 },
-      byProduction: { calves: 0, heifers: 0, served: 0, lactating: 0, dry: 0 },
+      byProduction: { calves: 0, heifers: 0, bulls: 0, served: 0, lactating: 0, dry: 0 },
       byHealth: { healthy: 0, needsAttention: 0 }
     }
   }
@@ -261,6 +266,7 @@ export async function getEnhancedAnimalStats(farmId: string): Promise<AnimalStat
     byProduction: {
       calves: animals.filter(a => a.production_status === 'calf').length,
       heifers: animals.filter(a => a.production_status === 'heifer').length,
+      bulls: animals.filter(a => a.production_status === 'bull').length,
       served: animals.filter(a => a.production_status === 'served').length,
       lactating: animals.filter(a => a.production_status === 'lactating').length,
       dry: animals.filter(a => a.production_status === 'dry').length,
@@ -417,12 +423,15 @@ export async function updateAnimal(animalId: string, farmId: string, animalData:
       }
     })
     
+    // 🔍 Log BEFORE update to see what we're sending
+    console.log('🔍 [DB] Updating animal:', animalId, 'with data:', updateData)
+    
     // Update the animal
     const { data, error } = await supabase
       .from('animals')
       .update(updateData)
       .eq('id', animalId)
-      .eq('farm_id', farmId) // Double-check farm ownership
+      .eq('farm_id', farmId)
       .select(`
         *,
         mother:mother_id (
@@ -439,14 +448,311 @@ export async function updateAnimal(animalId: string, farmId: string, animalData:
       .single()
     
     if (error) {
-      console.error('Error updating animal:', error)
+      console.error('❌ [DB] Error updating animal:', error)
       return { success: false, error: error.message }
     }
+
+    // ✅ FIXED: Log the returned data (which has the ID)
+    console.log('✅ [DB] Animal updated:', data.id, 'Weight:', data.weight)
     
     return { success: true, data }
   } catch (error) {
-    console.error('Error in updateAnimal:', error)
+    console.error('❌ [DB] Error in updateAnimal:', error)
     return { success: false, error: 'Failed to update animal' }
+  }
+}
+
+export async function updateAnimalProductionStatusByAge(
+  animalId: string,
+  farmId: string
+): Promise<{ success: boolean; data?: any; error?: string; message?: string }> {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    // Fetch the animal
+    const { data: animal, error: fetchError } = await supabase
+      .from('animals')
+      .select('id, birth_date, gender, production_status, health_status')
+      .eq('id', animalId)
+      .eq('farm_id', farmId)
+      .single()
+    
+    if (fetchError || !animal) {
+      return { success: false, error: 'Animal not found' }
+    }
+    
+    if (!animal.birth_date) {
+      return { success: false, error: 'Animal has no birth date' }
+    }
+    
+    // Don't auto-update if animal has health issues (optional - you may want to update anyway)
+    if (animal.health_status && ['sick', 'quarantined'].includes(animal.health_status)) {
+      console.log('Skipping production status update for animal with health issues')
+      return { success: false, error: 'Animal has health issues - status not auto-updated' }
+    }
+    
+    // Fetch animal categories
+    const { data: categories } = await supabase
+      .from('animal_categories')
+      .select('*')
+      .eq('farm_id', farmId)
+      .order('sort_order', { ascending: true })
+    
+    // Calculate age and determine new production status
+    const ageDays = animal.birth_date ? calculateAgeDays(animal.birth_date) : 0
+    if (!animal.gender) {
+      return { success: false, error: 'Animal gender is required' }
+    }
+    const newProductionStatus = getProductionStatusFromCategories(
+      ageDays,
+      animal.gender as 'male' | 'female',
+      (categories || []).map(cat => ({
+        ...cat,
+        min_age_days: cat.min_age_days ?? undefined,
+        max_age_days: cat.max_age_days ?? undefined,
+        gender: cat.gender ?? undefined,
+        production_status: (cat.production_status as "calf" | "heifer" | "bull" | "served" | "lactating" | "dry" | null | undefined),
+        characteristics: cat.characteristics ? {
+          lactating: (cat.characteristics as any).lactating,
+          pregnant: (cat.characteristics as any).pregnant,
+          breeding_male: (cat.characteristics as any).breeding_male,
+          growth_phase: (cat.characteristics as any).growth_phase
+        } : {}
+      }))
+    )
+    
+    // Only update if status has changed
+    if (newProductionStatus === animal.production_status) {
+      return { 
+        success: true, 
+        data: animal,
+        error: 'Production status already up to date' 
+      }
+    }
+    
+    // Update the animal
+    const { data: updatedAnimal, error: updateError } = await supabase
+      .from('animals')
+      .update({ 
+        production_status: newProductionStatus,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', animalId)
+      .select()
+      .single()
+    
+    if (updateError) {
+      return { success: false, error: updateError.message }
+    }
+    
+    return { 
+      success: true, 
+      data: updatedAnimal,
+      message: `Production status updated from ${animal.production_status} to ${newProductionStatus}`
+    }
+    
+  } catch (error) {
+    console.error('Error updating production status:', error)
+    return { success: false, error: 'Failed to update production status' }
+  }
+}
+
+export async function bulkUpdateProductionStatusesByAge(
+  farmId: string,
+  options: {
+    onlyOutdated?: boolean // Only update animals where status doesn't match
+    excludeHealthIssues?: boolean // Skip animals with health issues
+  } = {}
+): Promise<{
+  success: boolean
+  updated: number
+  skipped: number
+  errors: number
+  details?: any[]
+}> {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    // Fetch all active animals with birth dates
+    let query = supabase
+      .from('animals')
+      .select('id, birth_date, gender, production_status, health_status, tag_number, name')
+      .eq('farm_id', farmId)
+      .eq('status', 'active')
+      .not('birth_date', 'is', null)
+    
+    if (options.excludeHealthIssues) {
+      query = query.not('health_status', 'in', '(sick,quarantined)')
+    }
+    
+    const { data: animals, error: fetchError } = await query
+    
+    if (fetchError || !animals) {
+      return { success: false, updated: 0, skipped: 0, errors: 1 }
+    }
+    
+    // Fetch animal categories
+    const { data: categories } = await supabase
+      .from('animal_categories')
+      .select('*')
+      .eq('farm_id', farmId)
+      .order('sort_order', { ascending: true })
+    
+    let updated = 0
+    let skipped = 0
+    let errors = 0
+    const details: any[] = []
+    
+    for (const animal of animals) {
+      try {
+        const ageDays = animal.birth_date ? calculateAgeDays(animal.birth_date) : 0
+        if (!animal.gender || !['male', 'female'].includes(animal.gender)) {
+          throw new Error('Invalid gender value')
+        }
+        const calculatedStatus = getProductionStatusFromCategories(
+          ageDays,
+          animal.gender as 'male' | 'female',
+          (categories || []).map(cat => ({
+            ...cat,
+            min_age_days: cat.min_age_days ?? undefined,
+            max_age_days: cat.max_age_days ?? undefined,
+            gender: cat.gender ?? undefined,
+            production_status: (cat.production_status as "calf" | "heifer" | "bull" | "served" | "lactating" | "dry" | null | undefined),
+            characteristics: cat.characteristics ? {
+              lactating: (cat.characteristics as any).lactating,
+              pregnant: (cat.characteristics as any).pregnant,
+              breeding_male: (cat.characteristics as any).breeding_male,
+              growth_phase: (cat.characteristics as any).growth_phase
+            } : {}
+          }))
+        )
+        
+        if (calculatedStatus === animal.production_status) {
+          skipped++
+          continue
+        }
+        
+        if (options.onlyOutdated && calculatedStatus === animal.production_status) {
+          skipped++
+          continue
+        }
+        
+        // Update the animal
+        const { error: updateError } = await supabase
+          .from('animals')
+          .update({
+            production_status: calculatedStatus,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', animal.id)
+        
+        if (updateError) {
+          errors++
+          details.push({
+            animal_id: animal.id,
+            tag: animal.tag_number,
+            error: updateError.message
+          })
+        } else {
+          updated++
+          details.push({
+            animal_id: animal.id,
+            tag: animal.tag_number,
+            old_status: animal.production_status,
+            new_status: calculatedStatus
+          })
+        }
+      } catch (error) {
+        errors++
+        details.push({
+          animal_id: animal.id,
+          tag: animal.tag_number,
+          error: 'Processing error'
+        })
+      }
+    }
+    
+    return {
+      success: true,
+      updated,
+      skipped,
+      errors,
+      details
+    }
+    
+  } catch (error) {
+    console.error('Error in bulk update:', error)
+    return { success: false, updated: 0, skipped: 0, errors: 1 }
+  }
+}
+
+export async function getAnimalsWithOutdatedProductionStatus(
+  farmId: string
+): Promise<Array<{
+  animal: any
+  current_status: string
+  calculated_status: string
+  age_days: number
+}>> {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    // Fetch all active animals with birth dates
+    const { data: animals, error: fetchError } = await supabase
+      .from('animals')
+      .select('*')
+      .eq('farm_id', farmId)
+      .eq('status', 'active')
+      .not('birth_date', 'is', null)
+    
+    if (fetchError || !animals) {
+      return []
+    }
+    
+    // Fetch animal categories
+    const { data: categories } = await supabase
+      .from('animal_categories')
+      .select('*')
+      .eq('farm_id', farmId)
+      .order('sort_order', { ascending: true })
+    
+    const outdated: any[] = []
+    
+    for (const animal of animals) {
+      const ageDays = calculateAgeDays(animal.birth_date)
+      const calculatedStatus = getProductionStatusFromCategories(
+        ageDays,
+        animal.gender as 'male' | 'female',
+        (categories || []).map(cat => ({
+          ...cat,
+          min_age_days: cat.min_age_days ?? undefined,
+          max_age_days: cat.max_age_days ?? undefined,
+          gender: cat.gender ?? undefined,
+          production_status: (cat.production_status as "calf" | "heifer" | "bull" | "served" | "lactating" | "dry" | null | undefined),
+          characteristics: cat.characteristics ? {
+            lactating: (cat.characteristics as any).lactating,
+            pregnant: (cat.characteristics as any).pregnant,
+            breeding_male: (cat.characteristics as any).breeding_male,
+            growth_phase: (cat.characteristics as any).growth_phase
+          } : {}
+        }))
+      )
+      
+      if (calculatedStatus !== animal.production_status) {
+        outdated.push({
+          animal,
+          current_status: animal.production_status,
+          calculated_status: calculatedStatus,
+          age_days: ageDays
+        })
+      }
+    }
+    
+    return outdated
+    
+  } catch (error) {
+    console.error('Error getting outdated statuses:', error)
+    return []
   }
 }
 
@@ -653,6 +959,8 @@ export async function deleteAnimal(animalId: string): Promise<{ success: boolean
 }
 
 // Get comprehensive animal statistics
+// In lib/database/animals.ts
+
 export async function getAnimalStats(farmId: string): Promise<AnimalStats> {
   const supabase = await createServerSupabaseClient()
 
@@ -662,17 +970,21 @@ export async function getAnimalStats(farmId: string): Promise<AnimalStats> {
     .eq('farm_id', farmId)
     .eq('status', 'active')
   
-  if (error) {
-    console.error('Error fetching animal stats:', error)
+  if (error || !animals) {
     return {
       total: 0,
       female: 0,
       male: 0,
       bySource: { newborn_calves: 0, purchased: 0 },
-      byProduction: { calves: 0, heifers: 0, served: 0, lactating: 0, dry: 0 },
-      byHealth: { healthy: 0, needsAttention: 0 },
-      averageAge: 0,
-      averageProduction: 0
+      byProduction: { 
+        calves: 0, 
+        heifers: 0, 
+        bulls: 0,      // ← ADD THIS
+        served: 0, 
+        lactating: 0, 
+        dry: 0 
+      },
+      byHealth: { healthy: 0, needsAttention: 0 }
     }
   }
   
@@ -689,6 +1001,7 @@ export async function getAnimalStats(farmId: string): Promise<AnimalStats> {
     byProduction: {
       calves: animals.filter(a => a.production_status === 'calf').length,
       heifers: animals.filter(a => a.production_status === 'heifer').length,
+      bulls: animals.filter(a => a.production_status === 'bull').length,  // ← ADD THIS
       served: animals.filter(a => a.production_status === 'served').length,
       lactating: animals.filter(a => a.production_status === 'lactating').length,
       dry: animals.filter(a => a.production_status === 'dry').length,

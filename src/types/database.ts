@@ -4,7 +4,7 @@ export type InvitationStatus = 'pending' | 'accepted' | 'declined' | 'expired'
 export type AnimalStatus = 'active' | 'sold' | 'deceased' | 'dry'
 export type AnimalGender = 'male' | 'female'
 export type AnimalSource = 'newborn_calf' | 'purchased_animal'
-export type ProductionStatus = 'calf' | 'heifer' | 'served' | 'lactating' | 'dry'
+export type ProductionStatus = 'calf' | 'heifer' | 'bull' | 'served' | 'lactating' | 'dry'
 export type HealthStatus = 'healthy' | 'sick' | 'requires_attention' | 'quarantined'
 export type ServiceMethod = 'artificial_insemination' | 'natural_breeding'
 
@@ -491,6 +491,7 @@ export interface AnimalStats {
   byProduction: {
     calves: number
     heifers: number
+    bulls: number
     served: number
     lactating: number
     dry: number

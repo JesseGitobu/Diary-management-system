@@ -65,12 +65,13 @@ export function AnimalListRow({ animal, farmId, userRole, onAnimalUpdated, isMob
   const getProductionStatusBadge = () => {
     if (!animalData.production_status) return null
     
-    const statusColors = {
+    const statusColors: Record<string, string> = {
       calf: 'bg-yellow-100 text-yellow-800',
       heifer: 'bg-blue-100 text-blue-800',
       served: 'bg-purple-100 text-purple-800',
       lactating: 'bg-green-100 text-green-800',
       dry: 'bg-gray-100 text-gray-800',
+      bull: 'bg-gray-100 text-gray-800',
     }
     
     const statusLabels = {
@@ -79,6 +80,7 @@ export function AnimalListRow({ animal, farmId, userRole, onAnimalUpdated, isMob
       served: 'Served',
       lactating: 'Lactating',
       dry: 'Dry',
+      bull: 'Bull'
     }
     
     return (

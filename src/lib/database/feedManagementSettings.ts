@@ -23,9 +23,15 @@ export interface AnimalCategory {
   min_age_days?: number | null
   max_age_days?: number | null
   gender?: string | null  // Added gender field
-  characteristics: any
+  characteristics: {
+    lactating?: boolean
+    pregnant?: boolean
+    breeding_male?: boolean
+    growth_phase?: boolean
+  }
   is_default: boolean | null
   sort_order: number | null
+  production_status?: 'calf' | 'heifer' | 'bull' | 'served' | 'lactating' | 'dry'| null
   created_at: string | null
   updated_at: string | null
   matching_animals_count?: number  // Added for displaying count
@@ -276,6 +282,18 @@ export async function getAnimalCategories(farmId: string): Promise<AnimalCategor
     .select('*')
     .eq('farm_id', farmId)
     .order('sort_order', { ascending: true })
+    .then(({ data, error }) => ({
+      data: data?.map(category => ({
+        ...category,
+        characteristics: category.characteristics as {
+          lactating?: boolean;
+          pregnant?: boolean;
+          breeding_male?: boolean;
+          growth_phase?: boolean;
+        } || {}
+      })),
+      error
+    }))
   
   if (error) {
     console.error('Error fetching animal categories:', error)
@@ -285,9 +303,24 @@ export async function getAnimalCategories(farmId: string): Promise<AnimalCategor
   // Get matching animals count for each category
   const categoriesWithCounts = await Promise.all(
     (data || []).map(async (category) => {
-      const matchingCount = await getMatchingAnimalsCount(farmId, category)
+      const validStatus = category.production_status === null || 
+        ['calf', 'heifer', 'bull', 'served', 'lactating', 'dry'].includes(category.production_status) 
+        ? category.production_status as 'calf' | 'heifer' | 'bull' | 'served' | 'lactating' | 'dry' | null
+        : null;
+
+      const matchingCount = await getMatchingAnimalsCount(farmId, {
+        ...category,
+        production_status: validStatus,
+        characteristics: category.characteristics as {
+          lactating?: boolean;
+          pregnant?: boolean;
+          breeding_male?: boolean;
+          growth_phase?: boolean;
+        }
+      })
       return {
         ...category,
+        production_status: validStatus,
         matching_animals_count: matchingCount
       }
     })
@@ -302,7 +335,15 @@ export async function createAnimalCategory(
 ) {
   const supabase = await createServerSupabaseClient()
   
-  // Get the next sort order
+  // Validate production_status if provided
+  const validStatuses = ['calf', 'heifer', 'served', 'lactating', 'dry']
+  if (data.production_status && !validStatuses.includes(data.production_status)) {
+    return { 
+      success: false, 
+      error: 'Invalid production status. Must be one of: calf, heifer, served, lactating, dry' 
+    }
+  }
+  
   const { data: maxOrder } = await supabase
     .from('animal_categories')
     .select('sort_order')
@@ -317,7 +358,8 @@ export async function createAnimalCategory(
     .insert({
       ...data,
       farm_id: farmId,
-      sort_order: nextOrder
+      sort_order: nextOrder,
+      production_status: data.production_status || null  // ← Save production status
     })
     .select()
     .single()

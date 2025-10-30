@@ -25,7 +25,9 @@ import {
   ChevronDown,
   ChevronUp,
   Plus,
-  Shield
+  Shield,
+  Syringe,
+  DollarSign
 } from 'lucide-react'
 
 interface AnimalBasicInfoProps {
@@ -401,7 +403,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
                 </span>
               </div>
               
-              {animal.purchase_date && (
+              {/* {animal.purchase_date && (
                 <div className={cn(
                   isMobile ? "col-span-1" : "col-span-2"
                 )}>
@@ -420,7 +422,89 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
                     )}>{formatDate(animal.purchase_date)}</span>
                   </div>
                 </div>
-              )}
+              )} */}
+              {/* Source-Specific Information */}
+          {animal.animal_source === 'newborn_calf' && (
+            <>
+              {/* Parentage Section */}
+              <CollapsibleSection id="parentage" title="Parentage" icon={Heart}>
+                <div className="space-y-3">
+                  {animal.mother_id && (
+                    <div>
+                      <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Mother</p>
+                      <span className={cn("font-medium", isMobile ? "text-sm" : "")}>
+                        {animal.mother_tag || animal.mother_id}
+                      </span>
+                    </div>
+                  )}
+                  {animal.father_info && (
+                    <div>
+                      <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Father Info</p>
+                      <span className={cn("font-medium", isMobile ? "text-sm" : "")}>
+                        {animal.father_info}
+                      </span>
+                    </div>
+                  )}
+                  {animal.mother_production_info && (
+                    <div>
+                      <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Mother's Production</p>
+                      <div className="text-sm text-gray-700 space-y-1">
+                        {animal.mother_production_info.daily_production && (
+                          <p>Daily: {animal.mother_production_info.daily_production}L</p>
+                        )}
+                        {animal.mother_production_info.lactation_number && (
+                          <p>Lactation: {animal.mother_production_info.lactation_number}</p>
+                        )}
+                        {animal.mother_production_info.peak_production && (
+                          <p>Peak: {animal.mother_production_info.peak_production}L</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </CollapsibleSection>
+            </>
+          )}
+
+          {animal.animal_source === 'purchased_animal' && (
+            <>
+              {/* Purchase Information */}
+              <CollapsibleSection id="purchase" title="Purchase Information" icon={ShoppingCart}>
+                <div className="space-y-3">
+                  {animal.purchase_date && (
+                    <div>
+                      <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Purchase Date</p>
+                      <div className="flex items-center space-x-2">
+                        <Calendar className={cn("text-gray-500", isMobile ? "w-3 h-3" : "w-4 h-4")} />
+                        <span className={cn("font-medium", isMobile ? "text-sm" : "")}>{formatDate(animal.purchase_date)}</span>
+                      </div>
+                    </div>
+                  )}
+                  {animal.purchase_price && (
+                    <div>
+                      <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Purchase Price</p>
+                      <div className="flex items-center space-x-2">
+                        {/* <DollarSign className={cn("text-gray-500", isMobile ? "w-3 h-3" : "w-4 h-4")} /> */}
+                        <span className={cn("font-medium", isMobile ? "text-sm" : "")}>
+                          KSh {animal.purchase_price.toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  {animal.seller_info && (
+                    <div>
+                      <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Seller Information</p>
+                      <span className={cn("font-medium", isMobile ? "text-sm" : "")}>
+                        {animal.seller_info}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </CollapsibleSection>
+            </>
+          )}
+
+          
             </div>
           </CollapsibleSection>
           
@@ -457,21 +541,61 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
           )}
           
           {/* Production Information for Lactating Animals */}
-          {animal.production_status === 'lactating' && animal.current_daily_production && (
-            <CollapsibleSection id="production" title="Current Production" icon={Droplets}>
-              <div className="bg-green-50 p-3 rounded-md">
-                <div className="flex justify-between items-center">
-                  <span className={cn(
-                    "text-green-700",
-                    isMobile ? "text-sm" : "text-sm"
-                  )}>Daily Production:</span>
-                  <span className={cn(
-                    "font-bold text-green-800",
-                    isMobile ? "text-base" : "text-lg"
-                  )}>
-                    {animal.current_daily_production}L
-                  </span>
-                </div>
+          {/* Production-Specific Information */}
+          {(['served', 'lactating', 'dry'].includes(animal.production_status)) && (
+            <CollapsibleSection id="production" title="Production Information" icon={Droplets}>
+              <div className="space-y-3">
+                {animal.service_date && (
+                  <div>
+                    <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Service Date</p>
+                    <div className="flex items-center space-x-2">
+                      <Syringe className={cn("text-gray-500", isMobile ? "w-3 h-3" : "w-4 h-4")} />
+                      <span className={cn("font-medium", isMobile ? "text-sm" : "")}>{formatDate(animal.service_date)}</span>
+                    </div>
+                  </div>
+                )}
+                {animal.service_method && (
+                  <div>
+                    <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Service Method</p>
+                    <Badge className="capitalize">{animal.service_method.replace('_', ' ')}</Badge>
+                  </div>
+                )}
+                {animal.expected_calving_date && (
+                  <div>
+                    <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Expected Calving Date</p>
+                    <div className="flex items-center space-x-2">
+                      <Baby className={cn("text-gray-500", isMobile ? "w-3 h-3" : "w-4 h-4")} />
+                      <span className={cn("font-medium", isMobile ? "text-sm" : "")}>{formatDate(animal.expected_calving_date)}</span>
+                    </div>
+                  </div>
+                )}
+                {animal.current_daily_production && (
+                  <div>
+                    <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Current Daily Production</p>
+                    <div className="flex items-center space-x-2">
+                      <Droplets className={cn("text-gray-500", isMobile ? "w-3 h-3" : "w-4 h-4")} />
+                      <span className={cn("font-medium", isMobile ? "text-sm" : "")}>
+                        {animal.current_daily_production}L per day
+                      </span>
+                    </div>
+                  </div>
+                )}
+                {animal.days_in_milk && (
+                  <div>
+                    <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Days in Milk</p>
+                    <span className={cn("font-medium", isMobile ? "text-sm" : "")}>
+                      {animal.days_in_milk} days
+                    </span>
+                  </div>
+                )}
+                {animal.lactation_number && (
+                  <div>
+                    <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Lactation Number</p>
+                    <span className={cn("font-medium", isMobile ? "text-sm" : "")}>
+                      Lactation {animal.lactation_number}
+                    </span>
+                  </div>
+                )}
               </div>
             </CollapsibleSection>
           )}

@@ -14,12 +14,14 @@ interface PregnantAnimalsListProps {
 
 interface PregnantAnimal {
   id: string
+  animal_id: string
   tag_number: string
   name?: string
   estimated_due_date: string
   days_pregnant: number
   conception_date: string
   status: 'normal' | 'overdue' | 'due_soon'
+  pregnancy_status: string
 }
 
 export function PregnantAnimalsList({ farmId, canManage }: PregnantAnimalsListProps) {
@@ -32,30 +34,18 @@ export function PregnantAnimalsList({ farmId, canManage }: PregnantAnimalsListPr
 
   const loadPregnantAnimals = async () => {
     try {
-      // This would fetch from your API
-      // For now, using mock data
-      const mockData: PregnantAnimal[] = [
-        {
-          id: '1',
-          tag_number: '001',
-          name: 'Bessie',
-          estimated_due_date: '2025-02-15',
-          days_pregnant: 250,
-          conception_date: '2024-05-10',
-          status: 'due_soon'
-        },
-        {
-          id: '2',
-          tag_number: '045',
-          name: 'Daisy',
-          estimated_due_date: '2025-03-20',
-          days_pregnant: 220,
-          conception_date: '2024-06-15',
-          status: 'normal'
-        }
-      ]
+      setLoading(true)
       
-      setPregnantAnimals(mockData)
+      const response = await fetch(`/api/breeding/pregnant?farmId=${farmId}`)
+      if (!response.ok) {
+        throw new Error('Failed to fetch pregnant animals')
+      }
+      
+      const data = await response.json()
+      
+      if (data.success) {
+        setPregnantAnimals(data.pregnantAnimals || [])
+      }
     } catch (error) {
       console.error('Error loading pregnant animals:', error)
     } finally {
@@ -108,6 +98,15 @@ export function PregnantAnimalsList({ farmId, canManage }: PregnantAnimalsListPr
       </Card>
     )
   }
+
+  const dueSoonCount = pregnantAnimals.filter(a => {
+    const daysUntil = getDaysUntilDue(a.estimated_due_date)
+    return daysUntil <= 7 && daysUntil >= 0
+  }).length
+
+  const overdueCount = pregnantAnimals.filter(a => 
+    getDaysUntilDue(a.estimated_due_date) < 0
+  ).length
 
   return (
     <div className="space-y-6">
@@ -169,7 +168,7 @@ export function PregnantAnimalsList({ farmId, canManage }: PregnantAnimalsListPr
                             </div>
                             <div className="flex items-center space-x-1 text-sm text-gray-500">
                               <Clock className="w-4 h-4" />
-                              <span>Conceived: {new Date(animal.conception_date).toLocaleDateString()}</span>
+                              <span>Bred: {new Date(animal.conception_date).toLocaleDateString()}</span>
                             </div>
                           </div>
                         </div>
@@ -181,7 +180,7 @@ export function PregnantAnimalsList({ farmId, canManage }: PregnantAnimalsListPr
                         </Badge>
                         <div className="mt-2 space-x-2">
                           <Button asChild size="sm" variant="outline">
-                            <Link href={`/dashboard/animals/${animal.id}`}>
+                            <Link href={`/dashboard/animals/${animal.animal_id}`}>
                               View Animal
                             </Link>
                           </Button>
@@ -198,14 +197,14 @@ export function PregnantAnimalsList({ farmId, canManage }: PregnantAnimalsListPr
                     <div className="mt-4">
                       <div className="flex justify-between text-sm text-gray-600 mb-1">
                         <span>Pregnancy Progress</span>
-                        <span>{Math.round((animal.days_pregnant / 283) * 100)}%</span>
+                        <span>{Math.round((animal.days_pregnant / 280) * 100)}%</span>
                       </div>
                       <div className="w-full bg-gray-200 rounded-full h-2">
                         <div
                           className={`h-2 rounded-full ${
                             isOverdue ? 'bg-red-500' : isDueSoon ? 'bg-yellow-500' : 'bg-green-500'
                           }`}
-                          style={{ width: `${Math.min((animal.days_pregnant / 283) * 100, 100)}%` }}
+                          style={{ width: `${Math.min((animal.days_pregnant / 280) * 100, 100)}%` }}
                         ></div>
                       </div>
                     </div>
@@ -241,9 +240,7 @@ export function PregnantAnimalsList({ farmId, canManage }: PregnantAnimalsListPr
               </div>
               <div>
                 <p className="text-sm font-medium text-gray-900">Due Soon</p>
-                <p className="text-lg font-bold text-yellow-600">
-                  {pregnantAnimals.filter(a => getDaysUntilDue(a.estimated_due_date) <= 7 && getDaysUntilDue(a.estimated_due_date) >= 0).length}
-                </p>
+                <p className="text-lg font-bold text-yellow-600">{dueSoonCount}</p>
               </div>
             </div>
           </CardContent>
@@ -257,9 +254,7 @@ export function PregnantAnimalsList({ farmId, canManage }: PregnantAnimalsListPr
               </div>
               <div>
                 <p className="text-sm font-medium text-gray-900">Overdue</p>
-                <p className="text-lg font-bold text-red-600">
-                  {pregnantAnimals.filter(a => getDaysUntilDue(a.estimated_due_date) < 0).length}
-                </p>
+                <p className="text-lg font-bold text-red-600">{overdueCount}</p>
               </div>
             </div>
           </CardContent>

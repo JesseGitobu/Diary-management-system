@@ -1,7 +1,7 @@
 //api/animals/[id]/route.ts
 
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUser } from '@/lib/supabase/server'
+import { getCurrentUser, createServerSupabaseClient } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { updateAnimal, getAnimalById, getAnimalByTagNumber } from '@/lib/database/animals'
 
@@ -59,7 +59,6 @@ export async function PUT(
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
     }
     
-    // Only farm owners and managers can edit animals
     if (!['farm_owner', 'farm_manager'].includes(userRole.role_type)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
@@ -67,7 +66,6 @@ export async function PUT(
     const body = await request.json()
     const { id: animalId } = await params
     
-    // Validate required fields
     if (!body.tag_number || !body.breed || !body.gender) {
       return NextResponse.json({ 
         error: 'Missing required fields: tag_number, breed, gender' 
@@ -82,10 +80,75 @@ export async function PUT(
       }, { status: 400 })
     }
     
+    // 🆕 GET CURRENT ANIMAL DATA BEFORE UPDATE
+    const currentAnimal = await getAnimalById(animalId)
+    if (!currentAnimal) {
+      return NextResponse.json({ error: 'Animal not found' }, { status: 404 })
+    }
+    
+    const oldWeight = currentAnimal.weight
+    const newWeight = body.weight
+    
+    console.log('🔍 [API] Weight change:', {
+      animalId,
+      oldWeight,
+      newWeight,
+      changed: oldWeight !== newWeight
+    })
+    
+    // Update the animal
     const result = await updateAnimal(animalId, userRole.farm_id, body)
     
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 })
+    }
+    
+    // 🆕 IF WEIGHT WAS UPDATED, CREATE WEIGHT RECORD AND RESOLVE REQUIREMENT
+    if (newWeight !== undefined && newWeight !== null && newWeight !== oldWeight) {
+      console.log('⚖️ [API] Weight was updated, creating weight record...')
+      
+      const supabase = await createServerSupabaseClient()
+      
+      // Create weight record
+      const { data: weightRecord, error: weightError } = await supabase
+        .from('animal_weight_records')
+        .insert({
+          animal_id: animalId,
+          farm_id: userRole.farm_id,
+          weight_kg: newWeight,
+          measurement_date: new Date().toISOString().split('T')[0],
+          measurement_type: 'routine',
+          notes: 'Weight updated via edit form',
+          is_required: true,
+          recorded_by: user.id
+        })
+        .select()
+        .single()
+      
+      if (weightError) {
+        console.error('⚠️ [API] Failed to create weight record:', weightError)
+      } else {
+        console.log('✅ [API] Weight record created:', weightRecord.id)
+        
+        // Resolve any pending weight requirements
+        const { data: resolvedReqs, error: resolveError } = await supabase
+          .from('animals_requiring_weight_update')
+          .update({
+            is_resolved: true,
+            resolved_at: new Date().toISOString(),
+            weight_record_id: weightRecord.id
+          })
+          .eq('animal_id', animalId)
+          .eq('farm_id', userRole.farm_id)
+          .eq('is_resolved', false)
+          .select()
+        
+        if (resolveError) {
+          console.error('⚠️ [API] Failed to resolve weight requirements:', resolveError)
+        } else {
+          console.log('✅ [API] Resolved', resolvedReqs?.length || 0, 'weight requirement(s)')
+        }
+      }
     }
     
     return NextResponse.json({ 
@@ -95,7 +158,7 @@ export async function PUT(
     })
     
   } catch (error) {
-    console.error('Update animal API error:', error)
+    console.error('❌ [API] Update animal error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
