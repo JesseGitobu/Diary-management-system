@@ -31,15 +31,15 @@ type ProductionFormData = z.infer<typeof productionSchema>
 
 interface ProductionEntryFormProps {
   farmId: string
-  animals: Array<{ id: string; tag_number: string; name?: string }>
+  animals: Array<{ id: string; tag_number: string; name?: string; gender: string; production_status: string }>
   initialData?: Partial<ProductionFormData>
   onSuccess?: () => void
   isMobile?: boolean
 }
 
-export function ProductionEntryForm({ 
-  farmId, 
-  animals, 
+export function ProductionEntryForm({
+  farmId,
+  animals,
   initialData,
   onSuccess,
   isMobile
@@ -47,7 +47,7 @@ export function ProductionEntryForm({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
-  
+
   const form = useForm<ProductionFormData>({
     resolver: zodResolver(productionSchema),
     defaultValues: {
@@ -64,7 +64,7 @@ export function ProductionEntryForm({
       notes: initialData?.notes || '',
     },
   })
-  
+
   // Function to convert empty strings to null for numeric fields
   const preprocessFormData = (data: ProductionFormData) => {
     return {
@@ -79,15 +79,15 @@ export function ProductionEntryForm({
       notes: data.notes === '' ? null : data.notes,
     }
   }
-  
+
   const handleSubmit = async (data: ProductionFormData) => {
     setLoading(true)
     setError(null)
-    
+
     try {
       // Preprocess the data to handle null values
       const processedData = preprocessFormData(data)
-      
+
       const response = await fetch('/api/production', {
         method: 'POST',
         headers: {
@@ -98,18 +98,18 @@ export function ProductionEntryForm({
           farm_id: farmId,
         }),
       })
-      
+
       if (!response.ok) {
         const errorData = await response.json()
         throw new Error(errorData.error || 'Failed to record production')
       }
-      
+
       if (onSuccess) {
         onSuccess()
       } else {
         router.push('/dashboard/production')
       }
-      
+
       // Reset form for next entry with null defaults for optional fields
       form.reset({
         animal_id: '',
@@ -124,7 +124,7 @@ export function ProductionEntryForm({
         ph_level: null,
         notes: '',
       })
-      
+
     } catch (err) {
       if (err instanceof Error) {
         setError(err.message)
@@ -135,7 +135,12 @@ export function ProductionEntryForm({
       setLoading(false)
     }
   }
-  
+
+  const eligibleAnimals = animals.filter(animal =>
+    animal.gender === 'female' &&
+    animal.production_status === 'lactating'
+  )
+
   return (
     <Card>
       <CardHeader>
@@ -150,7 +155,9 @@ export function ProductionEntryForm({
             {error}
           </div>
         )}
-        
+
+
+
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
           {/* Basic Information */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -162,19 +169,32 @@ export function ProductionEntryForm({
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
               >
                 <option value="">Select an animal</option>
-                {animals.map((animal) => (
-                  <option key={animal.id} value={animal.id}>
-                    {animal.tag_number} - {animal.name || 'Unnamed'}
-                  </option>
-                ))}
+                {eligibleAnimals.length === 0 ? (
+                  <option disabled>No lactating animals available</option>
+                ) : (
+                  eligibleAnimals.map((animal) => (
+                    <option key={animal.id} value={animal.id}>
+                      {animal.tag_number} - {animal.name || 'Unnamed'}
+                    </option>
+                  ))
+                )}
               </select>
+
+              {/* Add a helpful message if no eligible animals */}
+              {eligibleAnimals.length === 0 && (
+                <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                  <p className="text-sm text-yellow-800">
+                    ℹ️ No lactating animals available. Only animals with "Lactating" status can have production records.
+                  </p>
+                </div>
+              )}
               {form.formState.errors.animal_id && (
                 <p className="text-sm text-red-600 mt-1">
                   {form.formState.errors.animal_id.message}
                 </p>
               )}
             </div>
-            
+
             <div>
               <Label htmlFor="record_date">Date *</Label>
               <Input
@@ -184,7 +204,7 @@ export function ProductionEntryForm({
                 error={form.formState.errors.record_date?.message}
               />
             </div>
-            
+
             <div>
               <Label htmlFor="milking_session">Session *</Label>
               <select
@@ -198,7 +218,7 @@ export function ProductionEntryForm({
               </select>
             </div>
           </div>
-          
+
           {/* Production Data */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -212,14 +232,14 @@ export function ProductionEntryForm({
                 placeholder="e.g., 25.5"
               />
             </div>
-            
+
             <div>
               <Label htmlFor="fat_content">Fat Content (%)</Label>
               <Input
                 id="fat_content"
                 type="number"
                 step="0.01"
-                {...form.register('fat_content', { 
+                {...form.register('fat_content', {
                   valueAsNumber: true,
                   setValueAs: (value) => value === '' ? null : parseFloat(value) || null
                 })}
@@ -228,7 +248,7 @@ export function ProductionEntryForm({
               />
             </div>
           </div>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <Label htmlFor="protein_content">Protein Content (%)</Label>
@@ -236,7 +256,7 @@ export function ProductionEntryForm({
                 id="protein_content"
                 type="number"
                 step="0.01"
-                {...form.register('protein_content', { 
+                {...form.register('protein_content', {
                   valueAsNumber: true,
                   setValueAs: (value) => value === '' ? null : parseFloat(value) || null
                 })}
@@ -244,13 +264,13 @@ export function ProductionEntryForm({
                 placeholder="e.g., 3.25"
               />
             </div>
-            
+
             <div>
               <Label htmlFor="somatic_cell_count">Somatic Cell Count</Label>
               <Input
                 id="somatic_cell_count"
                 type="number"
-                {...form.register('somatic_cell_count', { 
+                {...form.register('somatic_cell_count', {
                   valueAsNumber: true,
                   setValueAs: (value) => value === '' ? null : parseInt(value) || null
                 })}
@@ -259,7 +279,7 @@ export function ProductionEntryForm({
               />
             </div>
           </div>
-          
+
           {/* Advanced Parameters */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
@@ -268,7 +288,7 @@ export function ProductionEntryForm({
                 id="lactose_content"
                 type="number"
                 step="0.01"
-                {...form.register('lactose_content', { 
+                {...form.register('lactose_content', {
                   valueAsNumber: true,
                   setValueAs: (value) => value === '' ? null : parseFloat(value) || null
                 })}
@@ -276,14 +296,14 @@ export function ProductionEntryForm({
                 placeholder="e.g., 4.8"
               />
             </div>
-            
+
             <div>
               <Label htmlFor="temperature">Temperature (°C)</Label>
               <Input
                 id="temperature"
                 type="number"
                 step="0.1"
-                {...form.register('temperature', { 
+                {...form.register('temperature', {
                   valueAsNumber: true,
                   setValueAs: (value) => value === '' ? null : parseFloat(value) || null
                 })}
@@ -291,14 +311,14 @@ export function ProductionEntryForm({
                 placeholder="e.g., 37.5"
               />
             </div>
-            
+
             <div>
               <Label htmlFor="ph_level">pH Level</Label>
               <Input
                 id="ph_level"
                 type="number"
                 step="0.1"
-                {...form.register('ph_level', { 
+                {...form.register('ph_level', {
                   valueAsNumber: true,
                   setValueAs: (value) => value === '' ? null : parseFloat(value) || null
                 })}
@@ -307,7 +327,7 @@ export function ProductionEntryForm({
               />
             </div>
           </div>
-          
+
           <div>
             <Label htmlFor="notes">Notes</Label>
             <textarea
@@ -320,7 +340,7 @@ export function ProductionEntryForm({
               placeholder="Any additional notes about this milking session..."
             />
           </div>
-          
+
           <div className="flex justify-end space-x-4">
             <Button
               type="button"

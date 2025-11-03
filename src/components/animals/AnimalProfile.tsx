@@ -557,6 +557,7 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
           <TabsContent value="production" className="space-y-6 mt-0">
             <AnimalProductionRecords 
               animalId={animalData.id}
+              animal={animalData}
               canAddRecords={canAddRecords}
             />
           </TabsContent>
