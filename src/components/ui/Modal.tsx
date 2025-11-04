@@ -39,6 +39,7 @@ export function Modal({
   showCloseButton = true
 }: ModalProps) {
   const modalRef = React.useRef<HTMLDivElement>(null)
+  const hasInitializedRef = React.useRef(false)
   
   const sizeClasses = {
     sm: 'max-w-sm',
@@ -57,8 +58,15 @@ export function Modal({
     if (isOpen) {
       document.addEventListener('keydown', handleEscape)
       document.body.style.overflow = 'hidden'
-      // Focus management
-      modalRef.current?.focus()
+      
+      // Only focus on initial mount, not on every render
+      if (!hasInitializedRef.current) {
+        modalRef.current?.focus()
+        hasInitializedRef.current = true
+      }
+    } else {
+      // Reset the flag when modal closes
+      hasInitializedRef.current = false
     }
 
     return () => {

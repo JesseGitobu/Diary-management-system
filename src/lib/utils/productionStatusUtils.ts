@@ -290,3 +290,4 @@ export function getProductionStatusBadgeColor(status: string): string {
   
   return colors[status] || 'bg-gray-100 text-gray-800'
 }
+

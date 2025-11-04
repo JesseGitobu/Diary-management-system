@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import * as React from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -107,6 +108,15 @@ export function AnimalBreedingRecords({ animalId, animal, canAddRecords }: Anima
   const [error, setError] = useState<string | null>(null)
   const [autoGeneratingRecords, setAutoGeneratingRecords] = useState(false)
   const { isMobile } = useDeviceInfo()
+  const [autoGenerationState, setAutoGenerationState] = useState<{
+    inProgress: boolean
+    completed: boolean
+    error: string | null
+  }>({
+    inProgress: false,
+    completed: false,
+    error: null
+  })
 
   // Form states
   const [breedingForm, setBreedingForm] = useState<{
@@ -143,6 +153,61 @@ export function AnimalBreedingRecords({ animalId, animal, canAddRecords }: Anima
     next_check_date: ''
   })
 
+  // Memoized change handlers to prevent input focus loss
+  // Breeding Form Handlers
+  const handleBreedingDateChange = React.useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setBreedingForm(prev => ({ ...prev, breeding_date: e.target.value }))
+  }, [])
+
+  const handleBreedingMethodChange = React.useCallback((value: 'natural' | 'artificial_insemination') => {
+    setBreedingForm(prev => ({ ...prev, breeding_method: value }))
+  }, [])
+
+  const handleSireTagChange = React.useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setBreedingForm(prev => ({ ...prev, sire_tag: e.target.value }))
+  }, [])
+
+  const handleSireBreedChange = React.useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setBreedingForm(prev => ({ ...prev, sire_breed: e.target.value }))
+  }, [])
+
+  const handleVeterinarianChange = React.useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setBreedingForm(prev => ({ ...prev, veterinarian: e.target.value }))
+  }, [])
+
+  const handleBreedingCostChange = React.useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setBreedingForm(prev => ({ ...prev, breeding_cost: e.target.value }))
+  }, [])
+
+  const handleBreedingNotesChange = React.useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setBreedingForm(prev => ({ ...prev, breeding_notes: e.target.value }))
+  }, [])
+
+  // Pregnancy Check Form Handlers
+  const handleCheckDateChange = React.useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setCheckForm(prev => ({ ...prev, check_date: e.target.value }))
+  }, [])
+
+  const handleCheckMethodChange = React.useCallback((value: 'palpation' | 'ultrasound' | 'blood_test' | 'visual') => {
+    setCheckForm(prev => ({ ...prev, check_method: value }))
+  }, [])
+
+  const handleCheckResultChange = React.useCallback((value: 'positive' | 'negative' | 'inconclusive') => {
+    setCheckForm(prev => ({ ...prev, result: value }))
+  }, [])
+
+  const handleCheckedByChange = React.useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setCheckForm(prev => ({ ...prev, checked_by: e.target.value }))
+  }, [])
+
+  const handleNextCheckDateChange = React.useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setCheckForm(prev => ({ ...prev, next_check_date: e.target.value }))
+  }, [])
+
+  const handleCheckNotesChange = React.useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setCheckForm(prev => ({ ...prev, notes: e.target.value }))
+  }, [])
+
   // Load breeding settings and check eligibility
   useEffect(() => {
     loadBreedingSettings()
@@ -157,10 +222,16 @@ export function AnimalBreedingRecords({ animalId, animal, canAddRecords }: Anima
 
   // Auto-generate breeding records based on animal data
   useEffect(() => {
-    if (breedingSettings && animal && breedingRecords.length === 0) {
-      autoGenerateBreedingRecords()
-    }
-  }, [breedingSettings, animal])
+  if (
+    breedingSettings && 
+    animal?.id && 
+    breedingRecords.length === 0 && 
+    !autoGenerationState.completed &&
+    !autoGenerationState.inProgress
+  ) {
+    autoGenerateBreedingRecords()
+  }
+}, [breedingSettings?.defaultGestationPeriod, animal?.id, breedingRecords.length])
 
 
   const loadBreedingSettings = async () => {
@@ -179,108 +250,129 @@ export function AnimalBreedingRecords({ animalId, animal, canAddRecords }: Anima
   }
 
   const autoGenerateBreedingRecords = async () => {
-    if (!animal || !breedingSettings || autoGeneratingRecords) return
-
-    // Check if animal has breeding-related data that should create records
-    const shouldGenerateRecord = (
-      animal.production_status === 'served' ||
-      animal.production_status === 'dry' ||
-      animal.production_status === 'lactating' ||
-      animal.service_date ||
-      animal.expected_calving_date
-    )
-
-    if (!shouldGenerateRecord) {
-      console.log('ℹ️ No breeding record generation needed for this animal')
-      return
-    }
-
-    setAutoGeneratingRecords(true)
-    console.log('🔄 Auto-generating breeding records for animal:', animal.tag_number)
-
-    try {
-      // Generate breeding record based on production status
-      let breedingData: any = null
-
-      if (animal.production_status === 'served' && animal.service_date) {
-        // Animal is served - create pending breeding record
-        breedingData = {
-          breeding_date: animal.service_date,
-          breeding_method: animal.service_method || 'artificial_insemination',
-          expected_calving_date: animal.expected_calving_date || 
-            format(addDays(parseISO(animal.service_date), breedingSettings.defaultGestationPeriod), 'yyyy-MM-dd'),
-          pregnancy_status: 'pending',
-          pregnancy_confirmed: false,
-          breeding_notes: 'Auto-generated from registration data (Served status)',
-          auto_generated: true
-        }
-      } else if (animal.production_status === 'dry' && animal.expected_calving_date) {
-        // Animal is dry (pregnant) - create confirmed breeding record
-        const expectedDate = parseISO(animal.expected_calving_date)
-        const breedingDate = format(
-          addDays(expectedDate, -breedingSettings.defaultGestationPeriod),
-          'yyyy-MM-dd'
-        )
-
-        breedingData = {
-          breeding_date: breedingDate,
-          breeding_method: animal.service_method || 'artificial_insemination',
-          expected_calving_date: animal.expected_calving_date,
-          pregnancy_status: 'confirmed',
-          pregnancy_confirmed: true,
-          pregnancy_check_date: format(
-            addDays(parseISO(breedingDate), breedingSettings.pregnancyCheckDays),
-            'yyyy-MM-dd'
-          ),
-          breeding_notes: 'Auto-generated from registration data (Dry/Pregnant status)',
-          auto_generated: true
-        }
-      } else if (animal.production_status === 'lactating' && animal.lactation_number) {
-        // Animal is lactating - infer previous calving
-        const today = new Date()
-        const daysInMilk = animal.days_in_milk || 60 // Default assumption
-
-        const calvingDate = format(addDays(today, -daysInMilk), 'yyyy-MM-dd')
-        const breedingDate = format(
-          addDays(parseISO(calvingDate), -breedingSettings.defaultGestationPeriod),
-          'yyyy-MM-dd'
-        )
-
-        breedingData = {
-          breeding_date: breedingDate,
-          breeding_method: 'artificial_insemination',
-          expected_calving_date: calvingDate,
-          actual_calving_date: calvingDate,
-          pregnancy_status: 'completed',
-          pregnancy_confirmed: true,
-          breeding_notes: `Auto-generated from registration data (Lactating status, Lactation ${animal.lactation_number})`,
-          auto_generated: true
-        }
-      }
-
-      if (breedingData) {
-        const response = await fetch(`/api/animals/${animalId}/breeding-records`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(breedingData)
-        })
-
-        if (response.ok) {
-          const result = await response.json()
-          console.log('✅ Auto-generated breeding record:', result.breedingRecord.id)
-          
-          // Reload breeding records
-          await loadBreedingRecords()
-        } else {
-          console.error('❌ Failed to auto-generate breeding record')
-        }
-      }
-    } catch (error) {
-      console.error('❌ Error auto-generating breeding records:', error)
-    } finally {
-      setAutoGeneratingRecords(false)
-    }
+  // ✅ Add guard clauses
+  if (autoGenerationState.inProgress || autoGenerationState.completed) {
+    console.log('⏭️ Auto-generation already handled')
+    return
   }
+
+  if (!animal || !breedingSettings) {
+    console.log('⚠️ Missing required data for auto-generation')
+    return
+  }
+
+  // Check if animal has breeding-related data
+  const shouldGenerateRecord = (
+    animal.production_status === 'served' ||
+    animal.production_status === 'dry' ||
+    animal.production_status === 'lactating' ||
+    animal.service_date ||
+    animal.expected_calving_date
+  )
+
+  if (!shouldGenerateRecord) {
+    console.log('ℹ️ No breeding record generation needed')
+    setAutoGenerationState({ inProgress: false, completed: true, error: null })
+    return
+  }
+
+  // ✅ Set in-progress state
+  setAutoGenerationState({ inProgress: true, completed: false, error: null })
+  console.log('🔄 Starting auto-generation for animal:', animal.tag_number)
+
+  try {
+    let breedingData: any = null
+
+    // Determine breeding data based on production status
+    if (animal.production_status === 'served' && animal.service_date) {
+      breedingData = {
+        breeding_date: animal.service_date,
+        breeding_method: animal.service_method || 'artificial_insemination',
+        expected_calving_date: animal.expected_calving_date || 
+          format(addDays(parseISO(animal.service_date), breedingSettings.defaultGestationPeriod), 'yyyy-MM-dd'),
+        pregnancy_status: 'pending',
+        auto_generated: true, // ✅ Set flag
+        expected_production_status: 'served', // ✅ Keep current status
+        breeding_notes: '🤖 Auto-generated from registration (Served status)'
+      }
+    } 
+    else if (animal.production_status === 'dry' && animal.expected_calving_date) {
+      const expectedDate = parseISO(animal.expected_calving_date)
+      const breedingDate = format(
+        addDays(expectedDate, -breedingSettings.defaultGestationPeriod),
+        'yyyy-MM-dd'
+      )
+
+      breedingData = {
+        breeding_date: breedingDate,
+        breeding_method: animal.service_method || 'artificial_insemination',
+        expected_calving_date: animal.expected_calving_date,
+        pregnancy_status: 'confirmed',
+        pregnancy_confirmed: true,
+        pregnancy_check_date: format(
+          addDays(parseISO(breedingDate), breedingSettings.pregnancyCheckDays),
+          'yyyy-MM-dd'
+        ),
+        auto_generated: true, // ✅ Set flag
+        expected_production_status: 'dry', // ✅ Keep current status
+        breeding_notes: '🤖 Auto-generated from registration (Dry/Pregnant status)'
+      }
+    }
+    else if (animal.production_status === 'lactating' && animal.lactation_number) {
+      const today = new Date()
+      const daysInMilk = animal.days_in_milk || 60
+
+      const calvingDate = format(addDays(today, -daysInMilk), 'yyyy-MM-dd')
+      const breedingDate = format(
+        addDays(parseISO(calvingDate), -breedingSettings.defaultGestationPeriod),
+        'yyyy-MM-dd'
+      )
+
+      breedingData = {
+        breeding_date: breedingDate,
+        breeding_method: 'artificial_insemination',
+        expected_calving_date: calvingDate,
+        actual_calving_date: calvingDate,
+        pregnancy_status: 'completed',
+        pregnancy_confirmed: true,
+        auto_generated: true, // ✅ Set flag
+        expected_production_status: 'lactating', // ✅ Keep current status
+        breeding_notes: `🤖 Auto-generated from registration (Lactating L${animal.lactation_number})`
+      }
+    }
+
+    if (breedingData) {
+      const response = await fetch(`/api/animals/${animalId}/breeding-records`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(breedingData)
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to create breeding record')
+      }
+
+      const result = await response.json()
+      console.log('✅ Auto-generated breeding record:', result.breedingRecord.id)
+      
+      // ✅ Reload breeding records
+      await loadBreedingRecords()
+      
+      // ✅ Mark as completed
+      setAutoGenerationState({ inProgress: false, completed: true, error: null })
+    } else {
+      setAutoGenerationState({ inProgress: false, completed: true, error: null })
+    }
+  } catch (error: any) {
+    console.error('❌ Auto-generation failed:', error)
+    setAutoGenerationState({ 
+      inProgress: false, 
+      completed: false, 
+      error: error.message 
+    })
+  }
+}
 
   const checkBreedingEligibility = () => {
     if (!breedingSettings || !animal) return
@@ -297,7 +389,7 @@ export function AnimalBreedingRecords({ animalId, animal, canAddRecords }: Anima
     if (animal.birth_date) {
       eligibility.ageInMonths = differenceInMonths(
         new Date(),
-        parseISO(animal.birth_date)  // ← Correct field
+        parseISO(animal.birth_date)
       )
 
       // Check minimum breeding age
@@ -534,16 +626,29 @@ export function AnimalBreedingRecords({ animalId, animal, canAddRecords }: Anima
       .sort((a, b) => new Date(b.actual_calving_date!).getTime() - new Date(a.actual_calving_date!).getTime())[0]
   }
 
-  if (loading && !autoGeneratingRecords) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading breeding records...</p>
-        </div>
+  if (loading && !autoGenerationState.inProgress) {
+  return (
+    <div className="flex items-center justify-center py-12">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+        <p className="text-gray-600">Loading breeding records...</p>
       </div>
-    )
-  }
+    </div>
+  )
+}
+
+// Add this BEFORE the main return
+if (autoGenerationState.inProgress) {
+  return (
+    <div className="flex items-center justify-center py-12">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
+        <p className="text-gray-600">Generating breeding history...</p>
+        <p className="text-sm text-gray-500 mt-2">This will only take a moment</p>
+      </div>
+    </div>
+  )
+}
 
   return (
     <div className="space-y-6">
@@ -927,7 +1032,7 @@ export function AnimalBreedingRecords({ animalId, animal, canAddRecords }: Anima
                 id="breeding_date"
                 type="date"
                 value={breedingForm.breeding_date}
-                onChange={(e) => setBreedingForm(prev => ({ ...prev, breeding_date: e.target.value }))}
+                onChange={handleBreedingDateChange}
                 max={format(new Date(), 'yyyy-MM-dd')}
               />
             </div>
@@ -936,9 +1041,7 @@ export function AnimalBreedingRecords({ animalId, animal, canAddRecords }: Anima
               <Label htmlFor="breeding_method">Breeding Method *</Label>
               <Select
                 value={breedingForm.breeding_method}
-                onValueChange={(value: 'natural' | 'artificial_insemination') =>
-                  setBreedingForm(prev => ({ ...prev, breeding_method: value }))
-                }
+                onValueChange={handleBreedingMethodChange}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -956,7 +1059,7 @@ export function AnimalBreedingRecords({ animalId, animal, canAddRecords }: Anima
                 <Input
                   id="sire_tag"
                   value={breedingForm.sire_tag}
-                  onChange={(e) => setBreedingForm(prev => ({ ...prev, sire_tag: e.target.value }))}
+                  onChange={handleSireTagChange}
                   placeholder="e.g., BULL001"
                 />
               </div>
@@ -965,7 +1068,7 @@ export function AnimalBreedingRecords({ animalId, animal, canAddRecords }: Anima
                 <Input
                   id="sire_breed"
                   value={breedingForm.sire_breed}
-                  onChange={(e) => setBreedingForm(prev => ({ ...prev, sire_breed: e.target.value }))}
+                  onChange={handleSireBreedChange}
                   placeholder="e.g., Holstein"
                 />
               </div>
@@ -977,7 +1080,7 @@ export function AnimalBreedingRecords({ animalId, animal, canAddRecords }: Anima
                 <Input
                   id="veterinarian"
                   value={breedingForm.veterinarian}
-                  onChange={(e) => setBreedingForm(prev => ({ ...prev, veterinarian: e.target.value }))}
+                  onChange={handleVeterinarianChange}
                   placeholder="Name"
                 />
               </div>
@@ -987,7 +1090,7 @@ export function AnimalBreedingRecords({ animalId, animal, canAddRecords }: Anima
                   id="breeding_cost"
                   type="number"
                   value={breedingForm.breeding_cost}
-                  onChange={(e) => setBreedingForm(prev => ({ ...prev, breeding_cost: e.target.value }))}
+                  onChange={handleBreedingCostChange}
                   placeholder="0"
                 />
               </div>
@@ -998,7 +1101,7 @@ export function AnimalBreedingRecords({ animalId, animal, canAddRecords }: Anima
               <Textarea
                 id="breeding_notes"
                 value={breedingForm.breeding_notes}
-                onChange={(e) => setBreedingForm(prev => ({ ...prev, breeding_notes: e.target.value }))}
+                onChange={handleBreedingNotesChange}
                 placeholder="Additional notes about the breeding"
                 rows={3}
               />
@@ -1041,7 +1144,7 @@ export function AnimalBreedingRecords({ animalId, animal, canAddRecords }: Anima
                 id="check_date"
                 type="date"
                 value={checkForm.check_date}
-                onChange={(e) => setCheckForm(prev => ({ ...prev, check_date: e.target.value }))}
+                onChange={handleCheckDateChange}
                 max={format(new Date(), 'yyyy-MM-dd')}
               />
             </div>
@@ -1050,9 +1153,7 @@ export function AnimalBreedingRecords({ animalId, animal, canAddRecords }: Anima
               <Label htmlFor="check_method">Check Method *</Label>
               <Select
                 value={checkForm.check_method}
-                onValueChange={(value: 'palpation' | 'ultrasound' | 'blood_test' | 'visual') =>
-                  setCheckForm(prev => ({ ...prev, check_method: value }))
-                }
+                onValueChange={handleCheckMethodChange}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -1070,9 +1171,7 @@ export function AnimalBreedingRecords({ animalId, animal, canAddRecords }: Anima
               <Label htmlFor="result">Result *</Label>
               <Select
                 value={checkForm.result}
-                onValueChange={(value: 'positive' | 'negative' | 'inconclusive') =>
-                  setCheckForm(prev => ({ ...prev, result: value }))
-                }
+                onValueChange={handleCheckResultChange}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -1090,7 +1189,7 @@ export function AnimalBreedingRecords({ animalId, animal, canAddRecords }: Anima
               <Input
                 id="checked_by"
                 value={checkForm.checked_by}
-                onChange={(e) => setCheckForm(prev => ({ ...prev, checked_by: e.target.value }))}
+                onChange={handleCheckedByChange}
                 placeholder="Veterinarian or technician name"
                 required
               />
@@ -1102,7 +1201,7 @@ export function AnimalBreedingRecords({ animalId, animal, canAddRecords }: Anima
                 id="next_check_date"
                 type="date"
                 value={checkForm.next_check_date}
-                onChange={(e) => setCheckForm(prev => ({ ...prev, next_check_date: e.target.value }))}
+                onChange={handleNextCheckDateChange}
                 min={format(new Date(), 'yyyy-MM-dd')}
               />
             </div>
@@ -1112,7 +1211,7 @@ export function AnimalBreedingRecords({ animalId, animal, canAddRecords }: Anima
               <Textarea
                 id="check_notes"
                 value={checkForm.notes}
-                onChange={(e) => setCheckForm(prev => ({ ...prev, notes: e.target.value }))}
+                onChange={handleCheckNotesChange}
                 placeholder="Additional observations or notes"
                 rows={3}
               />

@@ -18,7 +18,8 @@ import {
   Activity,
   BarChart3,
   Clock,
-  ThermometerSun
+  ThermometerSun,
+  Baby
 } from 'lucide-react'
 import { Animal } from '@/types/database'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
@@ -74,9 +75,11 @@ export function AnimalProductionRecords({
   const isCalf = animal.production_status === 'calf'
   const isBull = animal.gender === 'male'
   
-  const showProductionRecords = isLactating
-  const canAddProductionRecords = canAddRecords && isLactating
+  const isProducingMilk = isLactating || isServed
   
+  const showProductionRecords = isProducingMilk
+  const canAddProductionRecords = canAddRecords && isProducingMilk
+
   useEffect(() => {
     if (showProductionRecords) {
       loadProductionData()
@@ -182,14 +185,14 @@ export function AnimalProductionRecords({
       }
     }
     
-    if (isServed) {
-      return {
-        title: "Production Paused - Pregnant",
-        message: "This animal is currently pregnant (served). Production tracking is paused and will resume after calving.",
-        icon: <Clock className="w-12 h-12 text-blue-400" />,
-        showHistory: true
-      }
-    }
+    // if (isServed) {
+    //   return {
+    //     title: "Production Paused - Pregnant",
+    //     message: "This animal is currently pregnant (served). Production tracking is paused and will resume after calving.",
+    //     icon: <Clock className="w-12 h-12 text-blue-400" />,
+    //     showHistory: true
+    //   }
+    // }
     
     if (isDry) {
       return {
@@ -235,6 +238,25 @@ export function AnimalProductionRecords({
 
   return (
     <div className="space-y-6">
+      {isServed && (
+      <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+        <div className="flex items-center space-x-2">
+          <Baby className="w-5 h-5 text-blue-600" />
+          <div>
+            <p className="font-medium text-blue-900">Currently Pregnant</p>
+            <p className="text-sm text-blue-700">
+              This animal is served (pregnant) but still producing milk. 
+              Production will naturally decrease as pregnancy progresses.
+            </p>
+            {animal.expected_calving_date && (
+              <p className="text-sm text-blue-600 mt-1">
+                Expected calving: {new Date(animal.expected_calving_date).toLocaleDateString()}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-lg font-medium text-gray-900">Production Records</h3>
