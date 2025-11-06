@@ -1,10 +1,12 @@
+// src/components/onboarding/OnboardingWelcome.tsx
 'use client'
 
 import { Button } from '@/components/ui/Button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { useRouter } from 'next/navigation'
-import { GiCow } from "react-icons/gi";
-import { Dog, Users, BarChart3, Settings } from 'lucide-react'
+import { GiCow } from "react-icons/gi"
+import { Users, BarChart3, Settings } from 'lucide-react'
+import { useState } from 'react'
 
 interface OnboardingWelcomeProps {
   userName: string
@@ -13,13 +15,39 @@ interface OnboardingWelcomeProps {
 
 export function OnboardingWelcome({ userName, onboardingData }: OnboardingWelcomeProps) {
   const router = useRouter()
+  const [isSkipping, setIsSkipping] = useState(false)
   
   const handleStart = () => {
     router.push('/onboarding/steps/farm-basics')
   }
   
-  const handleSkip = () => {
-    router.push('/dashboard')
+  const handleSkip = async () => {
+    setIsSkipping(true)
+    
+    try {
+      const response = await fetch('/api/onboarding/skip', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+      
+      const data = await response.json()
+      
+      if (data.success) {
+        console.log('✅ Onboarding skipped successfully')
+        // Force a hard navigation to ensure fresh data
+        window.location.href = '/dashboard'
+      } else {
+        console.error('❌ Failed to skip onboarding:', data.error)
+        alert('Failed to skip onboarding. Please try again.')
+      }
+    } catch (error) {
+      console.error('❌ Error skipping onboarding:', error)
+      alert('An error occurred. Please try again.')
+    } finally {
+      setIsSkipping(false)
+    }
   }
   
   return (
@@ -66,8 +94,12 @@ export function OnboardingWelcome({ userName, onboardingData }: OnboardingWelcom
             <Button onClick={handleStart} className="flex-1">
               Start Setup
             </Button>
-            <Button variant="outline" onClick={handleSkip}>
-              Skip for Now
+            <Button 
+              variant="outline" 
+              onClick={handleSkip}
+              disabled={isSkipping}
+            >
+              {isSkipping ? 'Skipping...' : 'Skip for Now'}
             </Button>
           </div>
         </CardContent>

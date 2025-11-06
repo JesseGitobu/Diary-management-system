@@ -1,3 +1,4 @@
+// src/app/onboarding/page.tsx
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getOnboardingData } from '@/lib/database/onboarding'
 import { getUserRole } from '@/lib/database/auth' // <-- Add the correct import path

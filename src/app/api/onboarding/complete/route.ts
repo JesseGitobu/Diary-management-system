@@ -1,3 +1,4 @@
+// src/app/api/onboarding/complete/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { updateCompletionStatus } from '@/lib/database/onboarding'

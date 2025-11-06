@@ -1,18 +1,19 @@
-import { getCurrentUser } from '@/lib/supabase/server'
+import { getCurrentUser, createServerSupabaseClient } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { getDashboardStats } from '@/lib/database/dashboard'
 import { redirect } from 'next/navigation'
+import { OnboardingBanner } from '@/components/dashboard/OnboardingBanner'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Progress } from '@/components/ui/Progress'
-import { 
-  Plus, 
+import {
+  Plus,
   Users,
-  BarChart3, 
-  Heart, 
-  Milk, 
-  Wheat, 
+  BarChart3,
+  Heart,
+  Milk,
+  Wheat,
   DollarSign,
   Package,
   Wrench,
@@ -33,34 +34,68 @@ import Link from 'next/link'
 
 export default async function DashboardPage() {
   const user = await getCurrentUser()
-  
+
   if (!user) {
     redirect('/auth')
   }
-  
+
   const userRole = await getUserRole(user.id)
-  
+
   if (!userRole) {
     redirect('/auth')
   }
-  
-  // Handle pending setup status
-  if (userRole.status === 'pending_setup') {
-    redirect('/onboarding')
-  }
-  
-  if (!userRole.farm_id) {
-    redirect('/onboarding')
-  }
 
-  // Get comprehensive dashboard data
-  const dashboardStats = await getDashboardStats(userRole.farm_id)
+  // 🎯 NEW: Check onboarding status but DON'T redirect
+  const needsOnboarding = userRole.status === 'pending_setup' || !userRole.farm_id
+
+  // 🎯 NEW: Get farm profile to check onboarding completion
+  const supabase = await createServerSupabaseClient()
+  const { data: farmProfile } = await supabase
+    .from('farm_profiles')
+    .select('onboarding_completed, completion_percentage, farm_name')
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  const isOnboardingIncomplete = !farmProfile?.onboarding_completed || needsOnboarding
+
+  // Get comprehensive dashboard data (only if we have a farm_id)
+  const dashboardStats = userRole.farm_id
+    ? await getDashboardStats(userRole.farm_id)
+    : null
   const canManageTeam = ['farm_owner', 'farm_manager'].includes(userRole.role_type)
   const canManageAnimals = ['farm_owner', 'farm_manager', 'worker'].includes(userRole.role_type)
+
+  const checkBannerDismissed = () => {
+    if (typeof window === 'undefined') return false
+
+    const dismissalData = localStorage.getItem('onboarding-banner-dismissed')
+    if (!dismissalData) return false
+
+    try {
+      const { timestamp } = JSON.parse(dismissalData)
+      const dismissedAt = new Date(timestamp)
+      const now = new Date()
+      const hoursSinceDismissal = (now.getTime() - dismissedAt.getTime()) / (1000 * 60 * 60)
+
+      // Show banner again after 24 hours
+      return hoursSinceDismissal < 24
+    } catch {
+      return false
+    }
+  }
 
   return (
     <div className="min-h-screen ">
       <div className="dashboard-container py-4 md:py-6">
+        {/* 🎯 NEW: Onboarding Banner */}
+        {isOnboardingIncomplete && !checkBannerDismissed() && (
+          <OnboardingBanner
+            userName={user.user_metadata?.full_name || user.email || 'there'}
+            farmId={userRole.farm_id ?? undefined}
+            completionPercentage={farmProfile?.completion_percentage || 0}
+          />
+        )}
+
         {/* Welcome Header - Mobile Optimized */}
         <div className="mb-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4">
@@ -69,10 +104,10 @@ export default async function DashboardPage() {
                 Welcome back, {user.user_metadata?.full_name?.split(' ')[0] || 'Farmer'}! 👋
               </h1>
               <p className="text-gray-600 mt-1 text-sm md:text-base">
-                {dashboardStats?.farm?.name || 'Your Farm'} • {new Date().toLocaleDateString('en-US', { 
-                  weekday: 'long', 
-                  month: 'short', 
-                  day: 'numeric' 
+                {dashboardStats?.farm?.name || 'Your Farm'} • {new Date().toLocaleDateString('en-US', {
+                  weekday: 'long',
+                  month: 'short',
+                  day: 'numeric'
                 })}
               </p>
             </div>
@@ -99,10 +134,9 @@ export default async function DashboardPage() {
                 {dashboardStats?.alerts?.slice(0, 3).map((alert, index) => (
                   <div key={index} className="flex items-center justify-between p-2 bg-white rounded-lg">
                     <div className="flex items-center space-x-3">
-                      <div className={`w-2 h-2 rounded-full ${
-                        alert.priority === 'high' ? 'bg-red-500' : 
+                      <div className={`w-2 h-2 rounded-full ${alert.priority === 'high' ? 'bg-red-500' :
                         alert.priority === 'medium' ? 'bg-yellow-500' : 'bg-blue-500'
-                      }`} />
+                        }`} />
                       <div>
                         <p className="text-sm font-medium text-gray-900">{alert.title}</p>
                         <p className="text-xs text-gray-600">{alert.description}</p>
@@ -216,7 +250,7 @@ export default async function DashboardPage() {
                   </Link>
                 </Button>
               )}
-              
+
               {canManageAnimals && (
                 <Button asChild variant="outline" className="h-auto py-4 flex-col space-y-2">
                   <Link href="/dashboard/animals/add">
@@ -225,14 +259,14 @@ export default async function DashboardPage() {
                   </Link>
                 </Button>
               )}
-              
+
               <Button asChild variant="outline" className="h-auto py-4 flex-col space-y-2">
                 <Link href="/dashboard/health/check">
                   <Heart className="w-5 h-5 text-red-500" />
                   <span className="text-xs">Health Check</span>
                 </Link>
               </Button>
-              
+
               <Button asChild variant="outline" className="h-auto py-4 flex-col space-y-2">
                 <Link href="/dashboard/reports">
                   <BarChart3 className="w-5 h-5 text-purple-600" />
@@ -279,7 +313,7 @@ export default async function DashboardPage() {
                   <span className="font-medium">{dashboardStats?.animals?.dryCows || 0}</span>
                 </div>
               </div>
-              
+
               {/* Recent Calvings */}
               {(dashboardStats?.breeding?.recentCalvings?.length ?? 0) > 0 && (
                 <div className="border-t pt-3">
@@ -320,9 +354,9 @@ export default async function DashboardPage() {
                   <span className="text-gray-600">Weekly Average</span>
                   <span className="font-medium">{dashboardStats?.production?.weeklyAvg || '0'}L/day</span>
                 </div>
-                <Progress 
-                  value={dashboardStats?.production?.weeklyProgress || 0} 
-                  className="h-2" 
+                <Progress
+                  value={dashboardStats?.production?.weeklyProgress || 0}
+                  className="h-2"
                 />
                 <p className="text-xs text-gray-500">
                   {dashboardStats?.production?.weeklyProgress || 0}% of weekly target
@@ -436,11 +470,10 @@ export default async function DashboardPage() {
                 <div className="space-y-3">
                   {(dashboardStats?.activities ?? []).slice(0, 5).map((activity, index) => (
                     <div key={index} className="flex items-start space-x-3">
-                      <div className={`w-2 h-2 rounded-full mt-2 ${
-                        activity.type === 'health' ? 'bg-red-500' : 
+                      <div className={`w-2 h-2 rounded-full mt-2 ${activity.type === 'health' ? 'bg-red-500' :
                         activity.type === 'production' ? 'bg-blue-500' :
-                        activity.type === 'breeding' ? 'bg-pink-500' : 'bg-green-500'
-                      }`} />
+                          activity.type === 'breeding' ? 'bg-pink-500' : 'bg-green-500'
+                        }`} />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-gray-900 truncate">
                           {activity.title}

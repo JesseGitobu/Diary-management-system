@@ -1,14 +1,31 @@
+// src/lib/database/settings.ts
 import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { useAuth } from '@/lib/hooks/useAuth'
 import { createClient } from '@/lib/supabase/client'
-
 
 export interface FarmData {
   id: string
   name: string
   location: string | null
-  farm_type: 'Dairy ' | 'cooperative' | 'commercial' | null
+  farm_type: 'Dairy' | 'cooperative' | 'commercial' | null
   total_cows: number // This will come from animals table count
   created_at: string | null
+}
+
+export interface FarmProfileData {
+  name: string
+  owner_name: string
+  owner_phone: string
+  owner_email: string
+  farm_size_acres: number
+  total_cows: number
+  farm_type: 'Dairy Cattle' | 'Dairy Goat' | 'Mixed Dairy'
+  county: string
+  sub_county: string
+  village: string
+  preferred_currency: 'KSH' | 'USD'
+  preferred_volume_unit: 'liters' | 'gallons'
+  description?: string
 }
 
 export async function getFarmBasicInfoServer(farmId: string) {
@@ -112,7 +129,7 @@ export async function getFarmDataServer(farmId: string): Promise<FarmData | null
     return {
       ...farmResult.data,
       total_cows: totalCows,
-      farm_type: farmResult.data.farm_type as 'Dairy ' | 'cooperative' | 'commercial' | null
+      farm_type: farmResult.data.farm_type as 'Dairy' | 'cooperative' | 'commercial' | null
     }
   } catch (error) {
     console.error('Unexpected error fetching farm data:', error)
@@ -120,37 +137,246 @@ export async function getFarmDataServer(farmId: string): Promise<FarmData | null
   }
 }
 
-// Server-side profile data function
-export async function getFarmProfileDataServer(farmId: string) {
-  
-  try {
-    const farm = await getFarmDataServer(farmId)
-    
-    if (!farm) return null
+/**
+ * 🎯 ENHANCED: Get farm profile data from farm_profile_settings table
+ * Falls back to farms table if settings don't exist yet
+ */
+export async function getFarmProfileDataServer(farmId: string): Promise<FarmProfileData | null> {
+   if (!farmId || farmId === 'null' ) {
+    console.log('⚠️ Invalid or missing farm ID, returning null')
+    return null
+  }
 
+  const supabase = await createServerSupabaseClient()
+
+  try {
+    console.log('🔍 Fetching farm profile data for farm:', farmId)
+
+    // First, try to get data from farm_profile_settings (most complete)
+    const { data: settings, error: settingsError } = await supabase
+      .from('farm_profile_settings')
+      .select('*')
+      .eq('farm_id', farmId)
+      .maybeSingle()
+
+    if (settings) {
+      console.log('✅ Found farm profile settings')
+      // Map farm_type to valid type
+      const farmType = (type: string): 'Dairy Cattle' | 'Dairy Goat' | 'Mixed Dairy' => {
+        switch(type) {
+          case 'Dairy Cattle': return 'Dairy Cattle';
+          case 'Dairy Goat': return 'Dairy Goat';
+          case 'Mixed Dairy': return 'Mixed Dairy';
+          default: return 'Dairy Cattle';
+        }
+      };
+
+      const currency = (cur: string): 'KSH' | 'USD' => {
+        return cur === 'USD' ? 'USD' : 'KSH';
+      };
+
+      const volumeUnit = (unit: string): 'liters' | 'gallons' => {
+        return unit === 'gallons' ? 'gallons' : 'liters';
+      };
+
+      return {
+        name: settings.farm_name,
+        owner_name: settings.owner_name,
+        owner_phone: settings.owner_phone,
+        owner_email: settings.owner_email,
+        farm_size_acres: settings.farm_size_acres,
+        total_cows: settings.total_cows,
+        farm_type: farmType(settings.farm_type),
+        county: settings.county,
+        sub_county: settings.sub_county || '',
+        village: settings.village || '',
+        preferred_currency: currency(settings.preferred_currency),
+        preferred_volume_unit: volumeUnit(settings.preferred_volume_unit),
+        description: settings.description || ''
+      }
+    }
+
+    console.log('⚠️ No farm_profile_settings found, falling back to farms table')
+
+    // Fallback: Get basic data from farms table and create defaults
+    const { data: farm, error: farmError } = await supabase
+      .from('farms')
+      .select('*')
+      .eq('id', farmId)
+      .single()
+
+    if (farmError || !farm) {
+      console.error('❌ Error fetching farm:', farmError)
+      return null
+    }
+
+    console.log('✅ Found farm data, creating default profile')
+
+    // Get user info from user_roles to populate owner fields
+    const { user, signOut } = useAuth()
+
+    const ownerEmail = user?.email || 'owner@farm.com'
+    const ownerName = user?.user_metadata?.full_name || 'Farm Owner'
+
+    // Get total cows count
+    const { count: totalCows } = await supabase
+      .from('animals')
+      .select('id', { count: 'exact', head: true })
+      .eq('farm_id', farmId)
+
+    // Parse location from farms table
+    const locationParts = farm.location?.split(',') || []
+    const county = locationParts[locationParts.length - 1]?.trim() || 'Nairobi'
+    const sub_county = locationParts[locationParts.length - 2]?.trim() || ''
+    const village = locationParts[0]?.trim() || ''
+
+    // Map farm_type from database to UI format
+    const mapFarmType = (dbType: string): 'Dairy Cattle' | 'Dairy Goat' | 'Mixed Dairy' => {
+      const typeMap: Record<string, 'Dairy Cattle' | 'Dairy Goat' | 'Mixed Dairy'> = {
+        'dairy': 'Dairy Cattle',
+        'dairy_cattle': 'Dairy Cattle',
+        'Dairy': 'Dairy Cattle',
+        'Dairy Cattle': 'Dairy Cattle',
+        'dairy_goat': 'Dairy Goat',
+        'Dairy Goat': 'Dairy Goat',
+        'mixed_dairy': 'Mixed Dairy',
+        'Mixed Dairy': 'Mixed Dairy',
+        'cooperative': 'Mixed Dairy',
+        'commercial': 'Dairy Cattle'
+      }
+      return typeMap[dbType] || 'Dairy Cattle'
+    }
+
+    // Return default data structure
     return {
-      name: farm.name || '',
-      owner_name: 'Sample Owner',
-      owner_phone: '0712345678',
-      owner_email: 'example@example.com',
-      farm_size_acres:  20,
-      total_cows: farm.total_cows || 0, // This now comes from animals table
-      farm_type: farm.farm_type || 'Dairy',
-      county:   'Sample County',
-      sub_county: 'Sample Sub County',
-      village: 'Sample Village',
+      name: farm.name || 'My Farm',
+      owner_name: ownerName,
+      owner_phone: '+254700000000', // Default, should be updated
+      owner_email: ownerEmail,
+      farm_size_acres: 0, // Default, should be updated
+      total_cows: totalCows || 0,
+      farm_type: mapFarmType(farm.farm_type || 'dairy'),
+      county: county,
+      sub_county: sub_county,
+      village: village,
       preferred_currency: 'KSH',
       preferred_volume_unit: 'liters',
-      description: 'This is a sample farm description.'
+      description: ''
     }
+
   } catch (error) {
-    console.error('Error fetching farm profile data:', error)
+    console.error('❌ Error in getFarmProfileDataServer:', error)
     return null
   }
 }
 
+/**
+ * 🎯 NEW: Create initial farm profile settings when a farm is created
+ * This should be called during farm creation or onboarding
+ */
+export async function createInitialFarmProfileSettings(
+  farmId: string,
+  userId: string,
+  farmName: string,
+  ownerEmail: string
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createServerSupabaseClient()
+
+  try {
+    console.log('🔍 Creating initial farm profile settings for farm:', farmId)
+
+    const { error } = await supabase
+      .from('farm_profile_settings')
+      .insert({
+        farm_id: farmId,
+        user_id: userId,
+        farm_name: farmName,
+        farm_type: 'Dairy Cattle',
+        owner_name: 'Farm Owner', // Default, to be updated
+        owner_phone: '+254700000000', // Default, to be updated
+        owner_email: ownerEmail,
+        farm_size_acres: 0,
+        total_cows: 0,
+        county: 'Nairobi', // Default, to be updated
+        sub_county: null,
+        village: null,
+        preferred_currency: 'KSH',
+        preferred_volume_unit: 'liters',
+        description: null
+      })
+
+    if (error) {
+      console.error('❌ Error creating initial farm profile settings:', error)
+      return { success: false, error: error.message }
+    }
+
+    console.log('✅ Initial farm profile settings created')
+    return { success: true }
+
+  } catch (error) {
+    console.error('❌ Exception in createInitialFarmProfileSettings:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : String(error) 
+    }
+  }
+}
+
+/**
+ * 🎯 NEW: Update farm profile settings
+ * This is called from the API route
+ */
+export async function updateFarmProfileSettings(
+  farmId: string,
+  userId: string,
+  profileData: FarmProfileData
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createServerSupabaseClient()
+
+  try {
+    console.log('🔍 Updating farm profile settings for farm:', farmId)
+
+    const { error } = await supabase
+      .from('farm_profile_settings')
+      .upsert({
+        farm_id: farmId,
+        user_id: userId,
+        farm_name: profileData.name,
+        farm_type: profileData.farm_type,
+        description: profileData.description || null,
+        owner_name: profileData.owner_name,
+        owner_phone: profileData.owner_phone,
+        owner_email: profileData.owner_email,
+        farm_size_acres: profileData.farm_size_acres,
+        total_cows: profileData.total_cows,
+        county: profileData.county,
+        sub_county: profileData.sub_county || null,
+        village: profileData.village || null,
+        preferred_currency: profileData.preferred_currency,
+        preferred_volume_unit: profileData.preferred_volume_unit,
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'farm_id'
+      })
+
+    if (error) {
+      console.error('❌ Error updating farm profile settings:', error)
+      return { success: false, error: error.message }
+    }
+
+    console.log('✅ Farm profile settings updated')
+    return { success: true }
+
+  } catch (error) {
+    console.error('❌ Exception in updateFarmProfileSettings:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : String(error) 
+    }
+  }
+}
+
 export async function getNotificationSettings(farmId: string, userId: string) {
-  
   const supabase = await createServerSupabaseClient()
 
   const { data: settings, error } = await supabase
@@ -400,4 +626,3 @@ function getDefaultTaggingSettings() {
     ]
   }
 }
-

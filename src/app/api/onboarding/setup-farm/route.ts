@@ -1,3 +1,4 @@
+// src/app/api/onboarding/setup-farm/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'

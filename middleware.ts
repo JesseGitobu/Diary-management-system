@@ -1,3 +1,4 @@
+// src/middleware.ts
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createMiddlewareClient } from '@/lib/supabase/middleware'
@@ -69,7 +70,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/auth', request.url))
   }
   
-  // Role-based routing for authenticated users on protected routes
+  // 🎯 UPDATED: Role-based routing for authenticated users on protected routes
   if (user && isProtectedRoute) {
     // First check if user is admin
     try {
@@ -88,33 +89,15 @@ export async function middleware(request: NextRequest) {
       console.error('Error checking admin status:', error)
     }
     
-    // Continue with regular user role checking
+    // 🎯 REMOVED: The strict pending_setup redirects that were causing the loop
+    // Now we let the dashboard page handle onboarding status with the banner
+    
+    // Only check if user has a role at all
     const userRole = await getUserRole(user.id, supabase)
     
-    if (userRole) {
-      if (userRole.status === 'pending_setup') {
-        if (!pathname.startsWith('/onboarding')) {
-          console.log('🔄 Redirecting pending user to onboarding:', user.id)
-          return NextResponse.redirect(new URL('/onboarding', request.url))
-        }
-      }
-      
-      if (userRole.status === 'active' && userRole.farm_id) {
-        if (pathname.startsWith('/onboarding')) {
-          console.log('🔄 Redirecting active user to dashboard:', user.id)
-          return NextResponse.redirect(new URL('/dashboard', request.url))
-        }
-      }
-      
-      if (userRole.role_type === 'farm_owner' && !userRole.farm_id) {
-        if (!pathname.startsWith('/onboarding')) {
-          console.log('🔄 Redirecting farm owner without farm to onboarding:', user.id)
-          return NextResponse.redirect(new URL('/onboarding', request.url))
-        }
-      }
-    } else {
+    if (!userRole) {
       console.log('⚠️ Authenticated user without role found:', user.id)
-      
+      // Only redirect if accessing dashboard without a role
       if (pathname.startsWith('/dashboard')) {
         return NextResponse.redirect(new URL('/onboarding', request.url))
       }
@@ -145,15 +128,9 @@ export async function middleware(request: NextRequest) {
     const userRole = await getUserRole(user.id, supabase)
     
     if (userRole) {
-      if (userRole.status === 'pending_setup') {
-        return NextResponse.redirect(new URL('/onboarding', request.url))
-      } else if (userRole.status === 'active' && userRole.farm_id) {
-        return NextResponse.redirect(new URL('/dashboard', request.url))
-      } else if (userRole.role_type === 'farm_owner' && !userRole.farm_id) {
-        return NextResponse.redirect(new URL('/onboarding', request.url))
-      } else {
-        return NextResponse.redirect(new URL('/dashboard', request.url))
-      }
+      // 🎯 UPDATED: Always redirect to dashboard if user has a role
+      // Let the dashboard show the onboarding banner if needed
+      return NextResponse.redirect(new URL('/dashboard', request.url))
     } else {
       return NextResponse.redirect(new URL('/onboarding', request.url))
     }

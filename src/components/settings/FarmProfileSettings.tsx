@@ -1,3 +1,4 @@
+// src/components/settings/FarmProfileSettings.tsx
 'use client'
 
 import { useState } from 'react'
@@ -16,11 +17,12 @@ import {
   Users,
   Ruler,
   Save,
-  AlertCircle
+  AlertCircle,
+  CheckCircle
 } from 'lucide-react'
 
 interface FarmProfileSettingsProps {
-  farmId: string
+  farmId: string | null // Allow null for new farms
   userRole: string
   initialData: {
     name: string
@@ -29,7 +31,7 @@ interface FarmProfileSettingsProps {
     owner_email: string
     farm_size_acres: number
     total_cows: number
-    farm_type: 'Dairy' | 'cooperative' | 'commercial'
+    farm_type: 'Dairy Cattle' | 'Dairy Goat' | 'Mixed Dairy'
     county: string
     sub_county: string
     village: string
@@ -37,14 +39,21 @@ interface FarmProfileSettingsProps {
     preferred_volume_unit: 'liters' | 'gallons'
     description?: string
   }
+  isNewFarm?: boolean
 }
 
-export function FarmProfileSettings({ farmId, userRole, initialData }: FarmProfileSettingsProps) {
+export function FarmProfileSettings({ 
+  farmId, 
+  userRole, 
+  initialData,
+  isNewFarm = false 
+}: FarmProfileSettingsProps) {
   const router = useRouter()
   const { isMobile } = useDeviceInfo()
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState(initialData)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [saveSuccess, setSaveSuccess] = useState(false)
 
   // Kenyan counties for location dropdown
   const kenyanCounties = [
@@ -62,6 +71,10 @@ export function FarmProfileSettings({ farmId, userRole, initialData }: FarmProfi
     // Clear error when user starts typing
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }))
+    }
+    // Clear success message when user makes changes
+    if (saveSuccess) {
+      setSaveSuccess(false)
     }
   }
 
@@ -105,11 +118,24 @@ export function FarmProfileSettings({ farmId, userRole, initialData }: FarmProfi
   }
 
   const handleSave = async () => {
-    if (!validateForm()) return
+    if (!validateForm()) {
+      // Scroll to first error
+      const firstError = Object.keys(errors)[0]
+      const element = document.getElementById(firstError)
+      element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      return
+    }
 
     setLoading(true)
+    setSaveSuccess(false)
+
     try {
-      const response = await fetch(`/api/farms/${farmId}/profile`, {
+      // Use 'new' as farmId if creating a new farm, otherwise use existing farmId
+      const effectiveFarmId = farmId || 'new'
+      
+      console.log('🔄 Saving farm profile...', { farmId: effectiveFarmId, isNewFarm })
+
+      const response = await fetch(`/api/farms/${effectiveFarmId}/profile`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -117,22 +143,44 @@ export function FarmProfileSettings({ farmId, userRole, initialData }: FarmProfi
         body: JSON.stringify(formData)
       })
 
+      const data = await response.json()
+
       if (!response.ok) {
-        throw new Error('Failed to update farm profile')
+        throw new Error(data.error || 'Failed to update farm profile')
       }
 
-      // Show success message or redirect
-      router.push(`/farms/${farmId}/settings`)
+      console.log('✅ Profile saved successfully:', data)
+
+      // Show success message
+      setSaveSuccess(true)
+
+      // If this was a new farm, redirect to dashboard with the new farm ID
+      if (data.isNewFarm && data.farmId) {
+        console.log('🔄 New farm created, redirecting to dashboard...')
+        setTimeout(() => {
+          window.location.href = '/dashboard'
+        }, 1500)
+      } else {
+        // Just refresh the page data for existing farms
+        setTimeout(() => {
+          router.refresh()
+        }, 1500)
+      }
+      
     } catch (error) {
-      console.error('Error updating farm profile:', error)
-      alert('Failed to update farm profile. Please try again.')
+      console.error('❌ Error saving farm profile:', error)
+      alert(error instanceof Error ? error.message : 'Failed to save farm profile. Please try again.')
     } finally {
       setLoading(false)
     }
   }
 
   const handleBack = () => {
-    router.push(`/dashboard/settings`)
+    if (isNewFarm) {
+      router.push('/dashboard')
+    } else {
+      router.push('/dashboard/settings')
+    }
   }
 
   const canEdit = ['farm_owner', 'farm_manager'].includes(userRole)
@@ -151,7 +199,7 @@ export function FarmProfileSettings({ farmId, userRole, initialData }: FarmProfi
             className="flex items-center space-x-2"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Back to Settings</span>
+            <span>{isNewFarm ? 'Back to Dashboard' : 'Back to Settings'}</span>
           </Button>
         </div>
         
@@ -161,17 +209,48 @@ export function FarmProfileSettings({ farmId, userRole, initialData }: FarmProfi
           </div>
           <div>
             <h1 className={`font-bold text-gray-900 ${isMobile ? 'text-2xl' : 'text-3xl'}`}>
-              Farm Profile
+              {isNewFarm ? 'Set Up Your Farm' : 'Farm Profile'}
             </h1>
             <p className={`text-gray-600 ${isMobile ? 'text-sm' : 'text-base'}`}>
-              Manage your farm's basic information and preferences
+              {isNewFarm 
+                ? 'Complete your farm information to get started'
+                : 'Manage your farm\'s basic information and preferences'
+              }
             </p>
           </div>
         </div>
       </div>
 
+      {/* Success Message */}
+      {saveSuccess && (
+        <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-start space-x-3">
+          <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" />
+          <div>
+            <p className="text-green-800 font-medium">
+              {isNewFarm ? 'Farm created successfully!' : 'Changes saved successfully!'}
+            </p>
+            <p className="text-green-700 text-sm">
+              {isNewFarm ? 'Redirecting to your dashboard...' : 'Your farm profile has been updated.'}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* New Farm Notice */}
+      {isNewFarm && (
+        <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-start space-x-3">
+          <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5" />
+          <div>
+            <p className="text-blue-800 font-medium">Welcome! Let's set up your farm</p>
+            <p className="text-blue-700 text-sm">
+              Fill in your farm details below. You can always update this information later from Settings.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Permission Warning */}
-      {!canEdit && (
+      {!canEdit && !isNewFarm && (
         <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg flex items-start space-x-3">
           <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5" />
           <div>
@@ -198,13 +277,14 @@ export function FarmProfileSettings({ farmId, userRole, initialData }: FarmProfi
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="farm-name">Farm Name *</Label>
+                <Label htmlFor="name">Farm Name *</Label>
                 <Input
-                  id="farm-name"
+                  id="name"
                   value={formData.name}
                   onChange={(e) => handleInputChange('name', e.target.value)}
-                  disabled={!canEdit}
+                  disabled={!canEdit && !isNewFarm}
                   className={errors.name ? 'border-red-500' : ''}
+                  placeholder="e.g., Green Valley Dairy Farm"
                 />
                 {errors.name && (
                   <p className="text-red-500 text-sm mt-1">{errors.name}</p>
@@ -212,19 +292,19 @@ export function FarmProfileSettings({ farmId, userRole, initialData }: FarmProfi
               </div>
               
               <div>
-                <Label htmlFor="farm-type">Farm Type</Label>
+                <Label htmlFor="farm_type">Farm Type</Label>
                 <Select
                   value={formData.farm_type}
                   onValueChange={(value) => handleInputChange('farm_type', value)}
-                  disabled={!canEdit}
+                  disabled={!canEdit && !isNewFarm}
                 >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="smallholder">Smallholder Farm</SelectItem>
-                    <SelectItem value="cooperative">Cooperative Farm</SelectItem>
-                    <SelectItem value="commercial">Commercial/Large-scale</SelectItem>
+                    <SelectItem value="Dairy Cattle">Dairy Cattle</SelectItem>
+                    <SelectItem value="Dairy Goat">Dairy Goat</SelectItem>
+                    <SelectItem value="Mixed Dairy">Mixed Dairy</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -236,7 +316,7 @@ export function FarmProfileSettings({ farmId, userRole, initialData }: FarmProfi
                 id="description"
                 value={formData.description || ''}
                 onChange={(e) => handleInputChange('description', e.target.value)}
-                disabled={!canEdit}
+                disabled={!canEdit && !isNewFarm}
                 placeholder="Brief description of your farm (optional)"
                 rows={3}
               />
@@ -258,13 +338,14 @@ export function FarmProfileSettings({ farmId, userRole, initialData }: FarmProfi
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="owner-name">Owner Name *</Label>
+                <Label htmlFor="owner_name">Owner Name *</Label>
                 <Input
-                  id="owner-name"
+                  id="owner_name"
                   value={formData.owner_name}
                   onChange={(e) => handleInputChange('owner_name', e.target.value)}
-                  disabled={!canEdit}
+                  disabled={!canEdit && !isNewFarm}
                   className={errors.owner_name ? 'border-red-500' : ''}
+                  placeholder="e.g., John Doe"
                 />
                 {errors.owner_name && (
                   <p className="text-red-500 text-sm mt-1">{errors.owner_name}</p>
@@ -272,12 +353,12 @@ export function FarmProfileSettings({ farmId, userRole, initialData }: FarmProfi
               </div>
               
               <div>
-                <Label htmlFor="owner-phone">Phone Number *</Label>
+                <Label htmlFor="owner_phone">Phone Number *</Label>
                 <Input
-                  id="owner-phone"
+                  id="owner_phone"
                   value={formData.owner_phone}
                   onChange={(e) => handleInputChange('owner_phone', e.target.value)}
-                  disabled={!canEdit}
+                  disabled={!canEdit && !isNewFarm}
                   placeholder="+254712345678"
                   className={errors.owner_phone ? 'border-red-500' : ''}
                 />
@@ -288,14 +369,15 @@ export function FarmProfileSettings({ farmId, userRole, initialData }: FarmProfi
             </div>
 
             <div>
-              <Label htmlFor="owner-email">Email Address *</Label>
+              <Label htmlFor="owner_email">Email Address *</Label>
               <Input
-                id="owner-email"
+                id="owner_email"
                 type="email"
                 value={formData.owner_email}
                 onChange={(e) => handleInputChange('owner_email', e.target.value)}
-                disabled={!canEdit}
+                disabled={!canEdit && !isNewFarm}
                 className={errors.owner_email ? 'border-red-500' : ''}
+                placeholder="owner@example.com"
               />
               {errors.owner_email && (
                 <p className="text-red-500 text-sm mt-1">{errors.owner_email}</p>
@@ -318,13 +400,13 @@ export function FarmProfileSettings({ farmId, userRole, initialData }: FarmProfi
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="farm-size">Farm Size (Acres) *</Label>
+                <Label htmlFor="farm_size_acres">Farm Size (Acres) *</Label>
                 <Input
-                  id="farm-size"
+                  id="farm_size_acres"
                   type="number"
                   value={formData.farm_size_acres}
                   onChange={(e) => handleInputChange('farm_size_acres', parseFloat(e.target.value) || 0)}
-                  disabled={!canEdit}
+                  disabled={!canEdit && !isNewFarm}
                   min="0"
                   step="0.1"
                   className={errors.farm_size_acres ? 'border-red-500' : ''}
@@ -335,13 +417,13 @@ export function FarmProfileSettings({ farmId, userRole, initialData }: FarmProfi
               </div>
               
               <div>
-                <Label htmlFor="total-cows">Total Number of Cows</Label>
+                <Label htmlFor="total_cows">Total Number of Cows</Label>
                 <Input
-                  id="total-cows"
+                  id="total_cows"
                   type="number"
                   value={formData.total_cows}
                   onChange={(e) => handleInputChange('total_cows', parseInt(e.target.value) || 0)}
-                  disabled={!canEdit}
+                  disabled={!canEdit && !isNewFarm}
                   min="0"
                   className={errors.total_cows ? 'border-red-500' : ''}
                 />
@@ -371,7 +453,7 @@ export function FarmProfileSettings({ farmId, userRole, initialData }: FarmProfi
                 <Select
                   value={formData.county}
                   onValueChange={(value) => handleInputChange('county', value)}
-                  disabled={!canEdit}
+                  disabled={!canEdit && !isNewFarm}
                 >
                   <SelectTrigger className={errors.county ? 'border-red-500' : ''}>
                     <SelectValue placeholder="Select county" />
@@ -390,12 +472,12 @@ export function FarmProfileSettings({ farmId, userRole, initialData }: FarmProfi
               </div>
               
               <div>
-                <Label htmlFor="sub-county">Sub-County</Label>
+                <Label htmlFor="sub_county">Sub-County/Location</Label>
                 <Input
-                  id="sub-county"
+                  id="sub_county"
                   value={formData.sub_county}
                   onChange={(e) => handleInputChange('sub_county', e.target.value)}
-                  disabled={!canEdit}
+                  disabled={!canEdit && !isNewFarm}
                   placeholder="e.g., Kikuyu"
                 />
               </div>
@@ -406,7 +488,7 @@ export function FarmProfileSettings({ farmId, userRole, initialData }: FarmProfi
                   id="village"
                   value={formData.village}
                   onChange={(e) => handleInputChange('village', e.target.value)}
-                  disabled={!canEdit}
+                  disabled={!canEdit && !isNewFarm}
                   placeholder="e.g., Kinoo"
                 />
               </div>
@@ -425,11 +507,11 @@ export function FarmProfileSettings({ farmId, userRole, initialData }: FarmProfi
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="currency">Preferred Currency</Label>
+                <Label htmlFor="preferred_currency">Preferred Currency</Label>
                 <Select
                   value={formData.preferred_currency}
                   onValueChange={(value) => handleInputChange('preferred_currency', value)}
-                  disabled={!canEdit}
+                  disabled={!canEdit && !isNewFarm}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -442,11 +524,11 @@ export function FarmProfileSettings({ farmId, userRole, initialData }: FarmProfi
               </div>
               
               <div>
-                <Label htmlFor="volume-unit">Volume Unit</Label>
+                <Label htmlFor="preferred_volume_unit">Volume Unit</Label>
                 <Select
                   value={formData.preferred_volume_unit}
                   onValueChange={(value) => handleInputChange('preferred_volume_unit', value)}
-                  disabled={!canEdit}
+                  disabled={!canEdit && !isNewFarm}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -462,7 +544,7 @@ export function FarmProfileSettings({ farmId, userRole, initialData }: FarmProfi
         </Card>
 
         {/* Save Button */}
-        {canEdit && (
+        {(canEdit || isNewFarm) && (
           <div className="flex justify-end space-x-3">
             <Button
               variant="outline"
@@ -477,7 +559,14 @@ export function FarmProfileSettings({ farmId, userRole, initialData }: FarmProfi
               className="flex items-center space-x-2"
             >
               <Save className="w-4 h-4" />
-              <span>{loading ? 'Saving...' : 'Save Changes'}</span>
+              <span>
+                {loading 
+                  ? 'Saving...' 
+                  : isNewFarm 
+                    ? 'Create Farm' 
+                    : 'Save Changes'
+                }
+              </span>
             </Button>
           </div>
         )}

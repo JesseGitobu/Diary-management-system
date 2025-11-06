@@ -1,3 +1,4 @@
+// src/app/dashboard/layout.tsx
 import { getCurrentUser } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { DashboardHeader } from '@/components/layout/DashboardHeader'

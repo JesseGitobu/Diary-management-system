@@ -1,3 +1,4 @@
+// src/app/api/onboarding/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { saveOnboardingStep, calculateProgress } from '@/lib/database/onboarding'

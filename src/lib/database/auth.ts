@@ -280,30 +280,43 @@ export async function isAdminUser(userId: string) {
 }
 
 // 🎯 NEW: Helper function to update user role status
+// 🎯 IMPROVED: Helper function to update user role status
 export async function updateUserRoleStatus(userId: string, status: string, farmId?: string) {
   const supabase = await createServerSupabaseClient()
   
   try {
-    const updateData: any = { status }
+    console.log('🔍 Updating user role status:', { userId, status, farmId })
+    
+    const updateData: any = { 
+      status,
+      //updated_at: new Date().toISOString() // Good practice to track updates
+    }
+    
     if (farmId) {
       updateData.farm_id = farmId
     }
     
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('user_roles')
       .update(updateData)
       .eq('user_id', userId)
-      .eq('role_type', 'farm_owner')
+      .select() // Return the updated record to verify
     
     if (error) {
-      console.error('Error updating user role status:', error)
+      console.error('❌ Error updating user role status:', error)
       return false
     }
     
-    console.log('✅ User role status updated:', { userId, status, farmId })
+    if (!data || data.length === 0) {
+      console.error('❌ No user role found to update for userId:', userId)
+      return false
+    }
+    
+    console.log('✅ User role status updated successfully:', data[0])
     return true
+    
   } catch (error) {
-    console.error('Error updating user role status:', error)
+    console.error('❌ Exception updating user role status:', error)
     return false
   }
 }
