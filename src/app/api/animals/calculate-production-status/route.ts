@@ -2,9 +2,9 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser, createServerSupabaseClient } from '@/lib/supabase/server'
-import { 
-  calculateAgeDays, 
-  getProductionStatusFromCategories 
+import {
+  calculateAgeDays,
+  getProductionStatusFromCategories
 } from '@/lib/utils/productionStatusUtils'
 
 export async function POST(request: NextRequest) {
@@ -124,13 +124,34 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Calculate using POST logic
+    // ✅ NEW: Check for breeding records (indicates context-based status)
+    const { data: breedingRecords } = await supabase
+      .from('breeding_records')
+      .select('id')
+      .eq('animal_id', animalId)
+      .limit(1)
+
+    // ✅ NEW: If breeding records exist, trust the current status
+    if (breedingRecords && breedingRecords.length > 0) {
+      return NextResponse.json({
+        current_production_status: animal.production_status,
+        calculated_production_status: animal.production_status,
+        should_update: false,
+        age_days: calculateAgeDays(animal.birth_date),
+        age_months: Math.floor(calculateAgeDays(animal.birth_date) / 30),
+        has_breeding_context: true,
+        message: 'Status validated by breeding records'
+      })
+    }
+
+    // ✅ Continue with age-based calculation ONLY if no breeding records
     if (!animal.birth_date) {
       return NextResponse.json(
         { error: 'Birth date is required' },
         { status: 400 }
       )
     }
+
     const ageDays = calculateAgeDays(animal.birth_date)
 
     const { data: categories } = await supabase

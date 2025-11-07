@@ -232,7 +232,8 @@ export async function POST(request: NextRequest) {
             days_in_milk: animalData.days_in_milk,
             lactation_number: animalData.lactation_number
           },
-          breedingSettings
+          breedingSettings,
+          user.id
         )
         
         if (breedingResult) {
@@ -466,7 +467,8 @@ async function autoGenerateBreedingRecords(
     days_in_milk?: number
     lactation_number?: number
   },
-  breedingSettings: any
+  breedingSettings: any,
+  userId: string
 ) {
   try {
     console.log('🔄 [AUTO-BREEDING] Starting auto-generation for animal:', animalId)
@@ -596,7 +598,7 @@ async function autoGenerateBreedingRecords(
     if (breedingData && pregnancyData) {
       console.log('💾 [AUTO-BREEDING] Inserting breeding record...')
       
-      // Insert breeding record
+      // 1. Insert breeding record
       const { data: breedingRecord, error: breedingError } = await supabase
         .from('breeding_records')
         .insert(breedingData)
@@ -610,7 +612,31 @@ async function autoGenerateBreedingRecords(
 
       console.log('✅ [AUTO-BREEDING] Breeding record created:', breedingRecord.id)
 
-      // Insert pregnancy record with breeding_record_id
+      // 2. Create breeding event
+      const breedingEvent = {
+        farm_id: farmId,
+        animal_id: animalId,
+        event_type: 'insemination',
+        event_date: breedingData.breeding_date,
+        insemination_method: breedingData.breeding_type,
+        semen_bull_code: breedingData.sire_name,
+        technician_name: breedingData.technician_name,
+        notes: `🤖 Auto-generated from registration (${data.production_status} status)`,
+        created_by: userId 
+      }
+
+      const { error: eventError } = await supabase
+        .from('breeding_events')
+        .insert(breedingEvent)
+
+      if (eventError) {
+        console.error('❌ [AUTO-BREEDING] Failed to create breeding event:', eventError)
+        // Don't fail the whole operation, just log the error
+      } else {
+        console.log('✅ [AUTO-BREEDING] Breeding event created')
+      }
+
+      // 3. Insert pregnancy record with breeding_record_id
       pregnancyData.breeding_record_id = breedingRecord.id
       
       const { data: pregnancyRecord, error: pregnancyError } = await supabase
@@ -624,7 +650,32 @@ async function autoGenerateBreedingRecords(
         return breedingRecord // Return breeding record even if pregnancy fails
       }
 
-      console.log('✅ [AUTO-BREEDING] Pregnancy record created:', pregnancyRecord.id)
+      // 4. Create pregnancy check event if pregnancy is confirmed
+      if (pregnancyData.pregnancy_status === 'confirmed') {
+        const pregnancyEvent = {
+          farm_id: farmId,
+          animal_id: animalId,
+          event_type: 'pregnancy_check',
+          event_date: pregnancyData.confirmed_date,
+          pregnancy_result: 'pregnant',
+          examination_method: pregnancyData.confirmation_method,
+          veterinarian_name: pregnancyData.veterinarian,
+          estimated_due_date: pregnancyData.expected_calving_date,
+          notes: pregnancyData.pregnancy_notes,
+          created_by: userId 
+        }
+
+        const { error: pregnancyEventError } = await supabase
+          .from('breeding_events')
+          .insert(pregnancyEvent)
+
+        if (pregnancyEventError) {
+          console.error('❌ [AUTO-BREEDING] Failed to create pregnancy check event:', pregnancyEventError)
+        } else {
+          console.log('✅ [AUTO-BREEDING] Pregnancy check event created')
+        }
+      }
+
       console.log('✅ [AUTO-BREEDING] Auto-generation complete')
 
       return {

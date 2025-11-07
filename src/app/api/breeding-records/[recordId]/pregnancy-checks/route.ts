@@ -1,127 +1,87 @@
-// app/api/breeding-records/[recordId]/pregnancy-checks/route.ts
+// src/app/api/breeding-records/[recordId]/pregnancy-checks/route.ts
+// Updated pregnancy check endpoint
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { getCurrentUser } from '@/lib/supabase/server'
+import { updatePregnancyStatusUnified } from '@/lib/database/breeding-sync'
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ recordId: string }> }
 ) {
   try {
-    const supabase = await createServerSupabaseClient()
-    const { recordId } = await params // Add await here
+    const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { recordId } = await params
     const body = await request.json()
 
-    const {
-      check_date,
-      check_method,
-      result,
-      checked_by,
-      notes
-    } = body
+    console.log('🔍 Recording pregnancy check for:', recordId)
 
-    // Get the breeding record and associated pregnancy record
-    const { data: breedingRecord, error: fetchError } = await supabase
+    // Get breeding record details
+    const { createServerSupabaseClient } = await import('@/lib/supabase/server')
+    const supabase = await createServerSupabaseClient()
+
+    const { data: breeding } = await supabase
       .from('breeding_records')
       .select('animal_id, farm_id')
       .eq('id', recordId)
       .single()
 
-    if (fetchError) throw fetchError
-
-    // Get or create pregnancy record
-    let { data: pregnancyRecord, error: pregnancyFetchError } = await supabase
-      .from('pregnancy_records')
-      .select('*')
-      .eq('breeding_record_id', recordId)
-      .single()
-
-    if (pregnancyFetchError && pregnancyFetchError.code !== 'PGRST116') {
-      throw pregnancyFetchError
+    if (!breeding) {
+      return NextResponse.json(
+        { error: 'Breeding record not found' },
+        { status: 404 }
+      )
     }
 
-    // If no pregnancy record exists, create one
-    if (!pregnancyRecord) {
-      const { data: newPregnancyRecord, error: createError } = await supabase
-        .from('pregnancy_records')
-        .insert({
-          breeding_record_id: recordId,
-          animal_id: breedingRecord.animal_id,
-          farm_id: breedingRecord.farm_id,
-          pregnancy_status: 'suspected'
-        })
-        .select()
-        .single()
+    // Map result to pregnancy status
+    const pregnancyStatus = body.result === 'positive' ? 'confirmed' :
+                           body.result === 'negative' ? 'false' :
+                           'aborted'
 
-      if (createError) throw createError
-      pregnancyRecord = newPregnancyRecord
+    // Calculate due date if positive
+    let estimatedDueDate
+    if (body.result === 'positive') {
+      const checkDate = new Date(body.check_date)
+      checkDate.setDate(checkDate.getDate() + 280) // Default gestation
+      estimatedDueDate = checkDate.toISOString().split('T')[0]
     }
 
-    // Update pregnancy record based on check result
-    let updateData: any = {
-      confirmed_date: check_date,
-      confirmation_method: check_method,
-      veterinarian: checked_by,
-      pregnancy_notes: notes || pregnancyRecord.pregnancy_notes
+    // Update using unified service
+    const result = await updatePregnancyStatusUnified(
+      recordId,
+      breeding.animal_id,
+      breeding.farm_id,
+      {
+        pregnancy_status: pregnancyStatus,
+        check_date: body.check_date,
+        check_method: body.check_method,
+        checked_by: body.checked_by,
+        notes: body.notes,
+        estimated_due_date: estimatedDueDate
+      },
+      user.id,
+      true
+    )
+
+    if (!result.success) {
+      return NextResponse.json(
+        { error: result.error },
+        { status: 400 }
+      )
     }
-
-    if (result === 'positive') {
-      updateData.pregnancy_status = 'confirmed'
-    } else if (result === 'negative') {
-      updateData.pregnancy_status = 'false'
-    } else {
-      // inconclusive - keep as suspected
-      updateData.pregnancy_status = 'suspected'
-    }
-
-    const { data: updatedPregnancy, error: updateError } = await supabase
-      .from('pregnancy_records')
-      .update(updateData)
-      .eq('id', pregnancyRecord.id)
-      .select()
-      .single()
-
-    if (updateError) throw updateError
-
-    // Update animal production status based on result
-    if (result === 'positive') {
-      await supabase
-        .from('animals')
-        .update({ production_status: 'pregnant' })
-        .eq('id', breedingRecord.animal_id)
-    } else if (result === 'negative') {
-      // Revert to open status
-      await supabase
-        .from('animals')
-        .update({ production_status: 'open' })
-        .eq('id', breedingRecord.animal_id)
-    }
-
-    // Also create a breeding event for tracking
-    const user = await supabase.auth.getUser()
-    const { error: eventError } = await supabase
-      .from('breeding_events')
-      .insert({
-        animal_id: breedingRecord.animal_id,
-        farm_id: breedingRecord.farm_id,
-        event_type: 'pregnancy_check',
-        event_date: check_date,
-        pregnancy_result: result,
-        examination_method: check_method,
-        veterinarian_name: checked_by || null,
-        notes: notes || null,
-        created_by: user.data.user?.id || ''
-      })
-
-    if (eventError) console.error('Error creating breeding event:', eventError)
 
     return NextResponse.json({
       success: true,
-      pregnancyRecord: updatedPregnancy,
-      checkResult: result
+      checkResult: body.result,
+      message: 'Pregnancy check recorded successfully'
     })
+
   } catch (error: any) {
-    console.error('Error creating pregnancy check:', error)
+    console.error('❌ Error recording pregnancy check:', error)
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 }

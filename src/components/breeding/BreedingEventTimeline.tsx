@@ -3,19 +3,21 @@
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardContent } from '@/components/ui/Card'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { useBreedingEvents } from '@/lib/hooks/useBreedingEvents'
 import { 
   Heart, 
   Syringe, 
   Stethoscope, 
   Baby, 
   Calendar,
-  FileText 
+  FileText,
+  AlertCircle 
 } from 'lucide-react'
 
 interface BreedingEventTimelineProps {
-  events: any[]
-  loading: boolean
+  animalId?: string | null
   animalGender: string
+  className?: string
 }
 
 const eventConfig = {
@@ -41,7 +43,21 @@ const eventConfig = {
   }
 }
 
-export function BreedingEventTimeline({ events, loading, animalGender }: BreedingEventTimelineProps) {
+export function BreedingEventTimeline({ 
+  animalId, 
+  animalGender,
+  className 
+}: BreedingEventTimelineProps) {
+  const { events, loading, error } = useBreedingEvents(animalId ?? null)
+
+  if (error) {
+    return (
+      <div className="text-center py-8 text-red-500">
+        <AlertCircle className="mx-auto h-12 w-12 text-red-400 mb-4" />
+        <p>Failed to load breeding events: {error}</p>
+      </div>
+    )
+  }
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8">

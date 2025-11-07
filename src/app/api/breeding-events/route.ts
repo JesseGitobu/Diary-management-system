@@ -1,120 +1,170 @@
-// Update src/app/api/breeding-events/route.ts
+// src/app/api/breeding-events/route.ts
+// Updated to use unified service
+
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
-import { createBreedingEventServer, createCalfFromEventServer } from '@/lib/database/breeding-server'
+import { recordCalvingUnified } from '@/lib/database/breeding-sync'
+import { createServerSupabaseClient } from '@/lib/supabase/server'
 
 export async function POST(request: NextRequest) {
   try {
     const user = await getCurrentUser()
-    console.log('Current user:', user?.id)
-    
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    
+
     const userRole = await getUserRole(user.id)
-    console.log('User role:', userRole)
-    
     if (!userRole?.farm_id) {
-      return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'No farm associated with user' },
+        { status: 400 }
+      )
     }
-    
+
     const body = await request.json()
     const { eventData, createCalf } = body
-    
-    console.log('Event data received:', eventData)
-    
-    // Verify user owns the farm
+
+    console.log('📝 Processing breeding event:', eventData.event_type)
+
+    // Validate farm ownership
     if (eventData.farm_id !== userRole.farm_id) {
-      console.log('Farm ID mismatch:', { eventFarmId: eventData.farm_id, userFarmId: userRole.farm_id })
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
-    
-    // Add user ID to event data
-    eventData.created_by = user.id
-    
-    console.log('Final event data for database:', eventData)
-    
-    // Create the breeding event using server function
-    const result = await createBreedingEventServer(eventData)
-    
-    if (!result.success) {
-      console.log('Database error:', result.error)
-      return NextResponse.json({ error: result.error }, { status: 400 })
-    }
-    
-    let calfResult = null
-    
-    // Create calf if it's a calving event and requested
-    if (eventData.event_type === 'calving' && createCalf) {
-      calfResult = await createCalfFromEventServer(eventData, userRole.farm_id)
-      
-      if (!calfResult.success) {
-        return NextResponse.json({ 
-          success: true, 
-          event: result.data,
-          warning: `Event recorded but failed to create calf: ${calfResult.error}`
-        })
+
+    const supabase = await createServerSupabaseClient()
+
+    // Handle different event types
+    if (eventData.event_type === 'calving') {
+      // Find the breeding record for this animal
+      const { data: breedingRecord } = await supabase
+        .from('breeding_records')
+        .select('id')
+        .eq('animal_id', eventData.animal_id)
+        .eq('farm_id', eventData.farm_id)
+        .order('breeding_date', { ascending: false })
+        .limit(1)
+        .single()
+
+      if (!breedingRecord) {
+        return NextResponse.json(
+          { error: 'No breeding record found for this animal' },
+          { status: 400 }
+        )
       }
+
+      // Record calving using unified service
+      const result = await recordCalvingUnified(
+        breedingRecord.id,
+        eventData.animal_id,
+        eventData.farm_id,
+        {
+          calving_date: eventData.event_date,
+          calving_outcome: eventData.calving_outcome,
+          calf_gender: eventData.calf_gender,
+          calf_weight: eventData.calf_weight,
+          calf_tag: eventData.calf_tag_number,
+          calf_health: eventData.calf_health_status,
+          notes: eventData.notes,
+          create_calf: createCalf
+        },
+        user.id,
+        true
+      )
+
+      if (!result.success) {
+        return NextResponse.json({ error: result.error }, { status: 400 })
+      }
+
+      return NextResponse.json({
+        success: true,
+        event: result,
+        calf: result.calf,
+        message: 'Calving recorded successfully'
+      })
     }
-    
-    return NextResponse.json({ 
-      success: true, 
-      event: result.data,
-      calf: calfResult?.data,
+
+    // For other events (heat detection, insemination, pregnancy check)
+    // Create standalone event
+    const { data: event, error } = await supabase
+      .from('breeding_events')
+      .insert({
+        ...eventData,
+        created_by: user.id
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Database error:', error)
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+
+    return NextResponse.json({
+      success: true,
+      event,
       message: 'Breeding event recorded successfully'
     })
-    
-  } catch (error) {
+
+  } catch (error: any) {
     console.error('Breeding events API error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
   }
 }
 
 export async function GET(request: NextRequest) {
   try {
     const user = await getCurrentUser()
-    
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    
+
     const userRole = await getUserRole(user.id)
-    
     if (!userRole?.farm_id) {
-      return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'No farm associated with user' },
+        { status: 400 }
+      )
     }
-    
+
     const { searchParams } = new URL(request.url)
     const animalId = searchParams.get('animal_id')
-    const eventType = searchParams.get('event_type')
-    const limit = parseInt(searchParams.get('limit') || '10')
-    
-    // Import client-side functions for GET operations
-    const { getAnimalBreedingEvents, getRecentBreedingEvents } = await import('@/lib/database/breeding')
-    
-    // Get breeding events based on filters
-    let events = []
-    
+
+    const supabase = await createServerSupabaseClient()
+
+    let query = supabase
+      .from('breeding_events')
+      .select(`
+        *,
+        animals (
+          tag_number,
+          name
+        )
+      `)
+      .eq('farm_id', userRole.farm_id)
+      .order('event_date', { ascending: false })
+
     if (animalId) {
-      events = await getAnimalBreedingEvents(animalId)
-    } else {
-      events = await getRecentBreedingEvents(userRole.farm_id, limit)
+      query = query.eq('animal_id', animalId)
     }
-    
-    // Filter by event type if specified
-    if (eventType) {
-      events = events.filter(event => event.event_type === eventType)
-    }
-    
-    return NextResponse.json({ 
-      success: true, 
-      events 
+
+    const { data, error } = await query
+
+    if (error) throw error
+
+    return NextResponse.json({
+      success: true,
+      events: data
     })
-    
-  } catch (error) {
-    console.error('Get breeding events API error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+
+  } catch (error: any) {
+    console.error('Error fetching breeding events:', error)
+    return NextResponse.json(
+      { error: 'Failed to fetch breeding events' },
+      { status: 500 }
+    )
   }
 }

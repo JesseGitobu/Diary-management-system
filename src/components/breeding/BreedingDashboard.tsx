@@ -6,15 +6,15 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { cn } from '@/lib/utils/cn'
-import { 
-  Calendar, 
-  Plus, 
-  Heart, 
-  Baby, 
-  TrendingUp, 
-  Clock, 
-  AlertCircle, 
-  Syringe, 
+import {
+  Calendar,
+  Plus,
+  Heart,
+  Baby,
+  TrendingUp,
+  Clock,
+  AlertCircle,
+  Syringe,
   Stethoscope,
   ChevronDown,
   ChevronUp,
@@ -34,6 +34,8 @@ import { PregnancyCheckForm } from '@/components/breeding/PregnancyCheckForm'
 import { CalvingEventForm } from '@/components/breeding/CalvingEventForm'
 import { Modal } from '@/components/ui/Modal'
 import type { BreedingAlert } from '@/lib/database/breeding-stats'
+// Add to imports at top
+import { BreedingEventTimeline } from '@/components/breeding/BreedingEventTimeline'
 
 interface BreedingDashboardProps {
   userRole: string
@@ -64,6 +66,7 @@ export function BreedingDashboard({
   const [activeModal, setActiveModal] = useState<BreedingEventType>(null)
   const [showQuickActions, setShowQuickActions] = useState(false)
   const [upcomingEventsExpanded, setUpcomingEventsExpanded] = useState(false)
+  const [selectedAnimal, setSelectedAnimal] = useState<{ id?: string, gender?: 'male' | 'female' } | null>(null)
 
   const { isMobile, isTouch } = useDeviceInfo()
   const canManageBreeding = ['farm_owner', 'farm_manager'].includes(userRole)
@@ -94,9 +97,9 @@ export function BreedingDashboard({
     }
 
     return (
-      <Modal 
-        isOpen={true} 
-        onClose={handleModalClose} 
+      <Modal
+        isOpen={true}
+        onClose={handleModalClose}
         className={cn(
           isMobile ? "max-w-full h-full m-0 rounded-none" : "max-w-2xl"
         )}
@@ -109,16 +112,16 @@ export function BreedingDashboard({
             )}>
               {modalTitles[activeModal]}
             </h2>
-            <Button 
-              variant="ghost" 
-              onClick={handleModalClose} 
+            <Button
+              variant="ghost"
+              onClick={handleModalClose}
               size={isMobile ? "default" : "sm"}
               className={cn(isMobile && "h-10 w-10")}
             >
               ✕
             </Button>
           </div>
-          
+
           {activeModal === 'heat_detection' && <HeatDetectionForm {...commonProps} />}
           {activeModal === 'insemination' && <InseminationForm {...commonProps} />}
           {activeModal === 'pregnancy_check' && <PregnancyCheckForm {...commonProps} />}
@@ -188,7 +191,7 @@ export function BreedingDashboard({
           )}>
             {isMobile ? (
               <>
-                <Button 
+                <Button
                   onClick={() => setShowQuickActions(!showQuickActions)}
                   className="w-full justify-between"
                 >
@@ -196,12 +199,12 @@ export function BreedingDashboard({
                     <Plus className="mr-2 h-4 w-4" />
                     Quick Record
                   </span>
-                  {showQuickActions ? 
-                    <ChevronUp className="h-4 w-4" /> : 
+                  {showQuickActions ?
+                    <ChevronUp className="h-4 w-4" /> :
                     <ChevronDown className="h-4 w-4" />
                   }
                 </Button>
-                
+
                 <Button asChild variant="outline" className="w-full">
                   <Link href="/dashboard/breeding/calendar">
                     <Calendar className="mr-2 h-4 w-4" />
@@ -266,10 +269,10 @@ export function BreedingDashboard({
           {[
             { key: 'overview', label: 'Overview' },
             { key: 'calendar', label: isMobile ? 'Calendar' : 'Calendar' },
-            { 
-              key: 'pregnant', 
-              label: isMobile 
-                ? `Pregnant (${breedingStats.currentPregnant})` 
+            {
+              key: 'pregnant',
+              label: isMobile
+                ? `Pregnant (${breedingStats.currentPregnant})`
                 : `Pregnant Animals (${breedingStats.currentPregnant})`
             }
           ].map((tab) => (
@@ -329,8 +332,8 @@ export function BreedingDashboard({
                       size="sm"
                       onClick={() => setUpcomingEventsExpanded(!upcomingEventsExpanded)}
                     >
-                      {upcomingEventsExpanded ? 
-                        <ChevronUp className="h-4 w-4" /> : 
+                      {upcomingEventsExpanded ?
+                        <ChevronUp className="h-4 w-4" /> :
                         <ChevronDown className="h-4 w-4" />
                       }
                     </Button>
@@ -346,43 +349,43 @@ export function BreedingDashboard({
                     {calendarEvents
                       .slice(0, isMobile && !upcomingEventsExpanded ? 3 : 5)
                       .map((event) => (
-                      <div 
-                        key={event.id} 
-                        className={cn(
-                          "flex justify-between p-3 bg-gray-50 rounded-lg",
-                          isMobile ? "flex-col space-y-2" : "items-center"
-                        )}
-                      >
-                        <div className={isMobile ? "" : ""}>
-                          <p className="font-medium text-gray-900">
-                            {event.animals?.name || event.animals?.tag_number}
-                          </p>
-                          <p className={cn(
-                            "text-gray-600 capitalize",
-                            isMobile ? "text-xs" : "text-sm"
+                        <div
+                          key={event.id}
+                          className={cn(
+                            "flex justify-between p-3 bg-gray-50 rounded-lg",
+                            isMobile ? "flex-col space-y-2" : "items-center"
+                          )}
+                        >
+                          <div className={isMobile ? "" : ""}>
+                            <p className="font-medium text-gray-900">
+                              {event.animals?.name || event.animals?.tag_number}
+                            </p>
+                            <p className={cn(
+                              "text-gray-600 capitalize",
+                              isMobile ? "text-xs" : "text-sm"
+                            )}>
+                              {event.event_type.replace('_', ' ')}
+                            </p>
+                          </div>
+                          <div className={cn(
+                            isMobile ? "flex justify-between items-center" : "text-right"
                           )}>
-                            {event.event_type.replace('_', ' ')}
-                          </p>
+                            <p className={cn(
+                              "font-medium",
+                              isMobile ? "text-sm" : "text-sm"
+                            )}>
+                              {new Date(event.scheduled_date).toLocaleDateString()}
+                            </p>
+                            <Badge
+                              variant={event.status === 'scheduled' ? 'default' : 'destructive'}
+                              className={isMobile ? "text-xs" : ""}
+                            >
+                              {event.status}
+                            </Badge>
+                          </div>
                         </div>
-                        <div className={cn(
-                          isMobile ? "flex justify-between items-center" : "text-right"
-                        )}>
-                          <p className={cn(
-                            "font-medium",
-                            isMobile ? "text-sm" : "text-sm"
-                          )}>
-                            {new Date(event.scheduled_date).toLocaleDateString()}
-                          </p>
-                          <Badge 
-                            variant={event.status === 'scheduled' ? 'default' : 'destructive'}
-                            className={isMobile ? "text-xs" : ""}
-                          >
-                            {event.status}
-                          </Badge>
-                        </div>
-                      </div>
-                    ))}
-                    
+                      ))}
+
                     {isMobile && !upcomingEventsExpanded && calendarEvents.length > 3 && (
                       <Button
                         variant="ghost"
@@ -438,7 +441,7 @@ export function BreedingDashboard({
                       </p>
                     </div>
                   )}
-                  
+
                   {/* Additional Action Buttons */}
                   <div className="mt-4 grid grid-cols-2 gap-4">
                     <Button asChild variant="ghost" className="text-sm">
@@ -446,7 +449,7 @@ export function BreedingDashboard({
                         View All Animals
                       </Link>
                     </Button>
-                    
+
                     <Button asChild variant="ghost" className="text-sm">
                       <Link href="/dashboard/reports">
                         Breeding Reports
@@ -457,8 +460,28 @@ export function BreedingDashboard({
               </Card>
             )}
           </div>
+          <div>
+            {/* Breeding Timeline */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <Calendar className="h-5 w-5" />
+                  <span>Breeding History</span>
+                </CardTitle>
+                <CardDescription>
+                  Timeline of all breeding-related events
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <BreedingEventTimeline
+                  animalId={selectedAnimal?.id} // Optional - omit to show all events
+                  animalGender={selectedAnimal?.gender || 'female'}
+                  className="mt-4"
+                />
+              </CardContent>
+            </Card>
+          </div>
 
-          
         </div>
       )}
 
