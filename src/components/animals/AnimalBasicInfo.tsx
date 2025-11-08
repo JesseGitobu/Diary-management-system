@@ -89,25 +89,35 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
   }
   
   const getProductionStatusBadge = () => {
-    const statusColors = {
-      calf: 'bg-yellow-100 text-yellow-800',
-      heifer: 'bg-blue-100 text-blue-800',
-      served: 'bg-purple-100 text-purple-800',
-      lactating: 'bg-green-100 text-green-800',
-      dry: 'bg-gray-100 text-gray-800',
-    }
-    
-    if (!animal.production_status) return null
-    
-    return (
-      <Badge className={cn(
-        statusColors[animal.production_status as keyof typeof statusColors] || 'bg-gray-100 text-gray-800',
-        isMobile ? "text-xs px-2 py-0.5" : ""
-      )}>
-        {animal.production_status.replace('_', ' ').toUpperCase()}
-      </Badge>
-    )
+  const statusColors = {
+    calf: 'bg-yellow-100 text-yellow-800',
+    heifer: 'bg-blue-100 text-blue-800',
+    served: 'bg-purple-100 text-purple-800',
+    lactating: 'bg-green-100 text-green-800',
+    dry: 'bg-gray-100 text-gray-800',
+    bull: 'bg-orange-100 text-orange-800',
   }
+  
+  const statusLabels: Record<string, string> = {
+    calf: 'Calf',
+    heifer: 'Heifer',
+    served: isMobile ? 'In Calf' : 'In Calf (Served)',
+    lactating: 'Lactating',
+    dry: 'Dry',
+    bull: 'Bull'
+  }
+  
+  if (!animal.production_status) return null
+  
+  return (
+    <Badge className={cn(
+      statusColors[animal.production_status as keyof typeof statusColors] || 'bg-gray-100 text-gray-800',
+      isMobile ? "text-xs px-2 py-0.5" : ""
+    )}>
+      {statusLabels[animal.production_status] || animal.production_status.replace('_', ' ').toUpperCase()}
+    </Badge>
+  )
+}
   
   const getHealthStatusBadge = () => {
     

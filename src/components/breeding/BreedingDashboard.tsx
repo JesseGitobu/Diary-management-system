@@ -205,21 +205,21 @@ export function BreedingDashboard({
                   }
                 </Button>
 
-                <Button asChild variant="outline" className="w-full">
+                {/* <Button asChild variant="outline" className="w-full">
                   <Link href="/dashboard/breeding/calendar">
                     <Calendar className="mr-2 h-4 w-4" />
                     Breeding Calendar
                   </Link>
-                </Button>
+                </Button> */}
               </>
             ) : (
               <>
-                <Button asChild variant="outline">
-                  <Link href="/dashboard/breeding/calendar">
+                {/* <Button asChild variant="outline">
+                  <Link href="/components/animals/breeding/calendar">
                     <Calendar className="mr-2 h-4 w-4" />
                     Breeding Calendar
                   </Link>
-                </Button>
+                </Button> */}
                 <Button onClick={() => setActiveModal('heat_detection')}>
                   <Plus className="mr-2 h-4 w-4" />
                   Quick Record
