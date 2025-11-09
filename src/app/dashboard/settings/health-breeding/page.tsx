@@ -3,10 +3,10 @@ import { redirect } from 'next/navigation'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { getBreedingSettings } from '@/lib/database/breeding-settings'
+import { getHealthSettings } from '@/lib/database/health-settings' // ✅ ADD THIS
 import { getFarmBasicInfoServer } from '@/lib/database/settings'
 import HealthBreedingSettings from '@/components/settings/health-breeding/HealthBreedingSettings'
 
-// FIXED: searchParams must be a Promise in Next.js 15
 interface PageProps {
   searchParams: Promise<{
     farmId?: string
@@ -14,7 +14,6 @@ interface PageProps {
 }
 
 export default async function HealthBreedingPage({ searchParams }: PageProps) {
-  // Await searchParams to get the actual values
   const { farmId } = await searchParams
 
   if (!farmId) {
@@ -22,39 +21,43 @@ export default async function HealthBreedingPage({ searchParams }: PageProps) {
   }
 
   try {
-    // Get current user
     const user = await getCurrentUser()
     if (!user) {
       redirect('/auth/login')
     }
 
-    // Get user role and verify access
     const userRole = await getUserRole(user.id)
     if (!userRole || userRole.farm_id !== farmId) {
       redirect('/dashboard')
     }
 
-    // Check permissions - farm_owner, farm_manager, and veterinarian can access
     const allowedRoles = ['farm_owner', 'farm_manager', 'veterinarian']
     if (!allowedRoles.includes(userRole.role_type)) {
       redirect(`/dashboard?farmId=${farmId}`)
     }
 
-    // Get farm basic info
     const farmData = await getFarmBasicInfoServer(farmId)
     if (!farmData) {
       redirect('/dashboard')
     }
 
-    // Get existing breeding settings
-    const initialSettings = await getBreedingSettings(farmId)
+    // ✅ Fetch BOTH settings in parallel
+    const [breedingSettings, healthSettings] = await Promise.all([
+      getBreedingSettings(farmId),
+      getHealthSettings(farmId) // ✅ ADD THIS
+    ])
+
+    // ✅ Optional: Fetch veterinarians for the dropdown
+    // const veterinarians = await getVeterinarians(farmId)
 
     return (
       <HealthBreedingSettings
         farmId={farmId}
         userRole={userRole.role_type}
-        initialSettings={initialSettings}
+        initialSettings={breedingSettings} // Breeding settings
+        healthSettings={healthSettings} // ✅ ADD THIS - Health settings
         farmName={farmData.name}
+        // veterinarians={veterinarians} // ✅ Optional
       />
     )
   } catch (error) {

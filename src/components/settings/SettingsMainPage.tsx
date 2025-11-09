@@ -1,3 +1,5 @@
+// components/settings/SettingsMainPage.tsx (UPDATED)
+
 'use client'
 
 import { useState } from 'react'
@@ -10,7 +12,8 @@ import {
   Building2,
   Users,
   Tag,
-  Milk,
+  Droplets, // Changed from Milk
+  Truck, // Added for combined icon
   Wheat,
   Heart,
   Bell,
@@ -72,12 +75,17 @@ export function SettingsMainPage({ farmId, userRole, farmData }: SettingsMainPag
       permissions: ['farm_owner', 'farm_manager', 'worker']
     },
     {
-      id: 'milk-production',
-      title: 'Milk Production',
-      description: 'Milking sessions, data entry, and quality settings',
-      icon: <Milk className="h-5 w-5" />,
-      href: `/dashboard/settings/milk-production?farmId=${farmId}`,
-      permissions: ['farm_owner', 'farm_manager', 'worker']
+      id: 'production-distribution',
+      title: 'Production & Distribution',
+      description: 'Milk production tracking, quality settings, and distribution channels',
+      icon: (
+        <div className="flex items-center gap-1">
+          <Droplets className="h-4 w-4" />
+          <Truck className="h-4 w-4" />
+        </div>
+      ),
+      href: `/dashboard/settings/production-distribution?farmId=${farmId}`,
+      permissions: ['farm_owner', 'farm_manager'],
     },
     {
       id: 'feed-management',
@@ -188,7 +196,7 @@ export function SettingsMainPage({ farmId, userRole, farmData }: SettingsMainPag
 
       {/* Settings Grid */}
       <div className={`
-        grid gap-4
+        grid gap-4 mt-6
         ${isMobile ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}
       `}>
         {accessibleSections.map((section) => (
@@ -208,7 +216,11 @@ export function SettingsMainPage({ farmId, userRole, farmData }: SettingsMainPag
                   </div>
                   <div className="flex items-center space-x-2">
                     {section.badge && (
-                      <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                      <span className={`px-2 py-1 text-xs rounded-full ${
+                        section.badge === 'New' 
+                          ? 'bg-green-100 text-green-800' 
+                          : 'bg-blue-100 text-blue-800'
+                      }`}>
                         {section.badge}
                       </span>
                     )}
@@ -250,7 +262,7 @@ export function SettingsMainPage({ farmId, userRole, farmData }: SettingsMainPag
               </Button>
             </Link>
             {userRole === 'farm_owner' && (
-              <Link href={`/dashboard/settings/users-roles?farmId=${farmId}`}>
+              <Link href={`/dashboard/settings/team?farmId=${farmId}`}>
                 <Button
                   variant="outline"
                   className="flex items-center space-x-2"
@@ -263,8 +275,6 @@ export function SettingsMainPage({ farmId, userRole, farmData }: SettingsMainPag
           </div>
         </div>
       )}
-
-      
     </div>
   )
 }

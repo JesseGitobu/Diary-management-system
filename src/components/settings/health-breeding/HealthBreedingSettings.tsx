@@ -23,19 +23,24 @@ import {
     RotateCcw,
     Stethoscope
 } from 'lucide-react'
+import HealthSettingsTab from './HealthSettingsTab' // ✅ ADD THIS
 
 interface HealthBreedingSettingsProps {
     farmId: string
     userRole: string
-    initialSettings: any
+    initialSettings: any // Breeding settings
+    healthSettings?: any // ✅ ADD THIS - Health settings
     farmName: string
+    veterinarians?: any[] // ✅ ADD THIS - Optional
 }
 
 export default function HealthBreedingSettings({
     farmId,
     userRole,
     initialSettings,
-    farmName
+    healthSettings, // ✅ ADD THIS
+    farmName,
+    veterinarians = [] // ✅ ADD THIS
 }: HealthBreedingSettingsProps) {
     const { isMobile } = useDeviceInfo()
     const [activeTab, setActiveTab] = useState('breeding')
@@ -100,64 +105,64 @@ export default function HealthBreedingSettings({
 
     // Load settings only once when component mounts
     useEffect(() => {
-  if (initialSettings && isInitialLoad.current) {
-    // Load all settings - USE CAMELCASE EVERYWHERE
-    setCycleSettings({
-      minimumBreedingAgeMonths: initialSettings.minimumBreedingAgeMonths || 15, // ✅ FIXED
-      defaultCycleInterval: initialSettings.defaultCycleInterval || 21,
-      autoCreateNextEvent: initialSettings.autoCreateNextEvent ?? true,
-      alertType: initialSettings.alertType || ['app', 'sms']
-    })
+        if (initialSettings && isInitialLoad.current) {
+            // Load all settings - USE CAMELCASE EVERYWHERE
+            setCycleSettings({
+                minimumBreedingAgeMonths: initialSettings.minimumBreedingAgeMonths || 15, // ✅ FIXED
+                defaultCycleInterval: initialSettings.defaultCycleInterval || 21,
+                autoCreateNextEvent: initialSettings.autoCreateNextEvent ?? true,
+                alertType: initialSettings.alertType || ['app', 'sms']
+            })
 
-    setHeatSettings({
-      detectionMethod: initialSettings.detectionMethod || 'manual',
-      responsibleUser: initialSettings.responsibleUser || 'worker',
-      missedHeatAlert: initialSettings.missedHeatAlert || 25,
-      reminderFrequency: initialSettings.reminderFrequency || 'daily'
-    })
+            setHeatSettings({
+                detectionMethod: initialSettings.detectionMethod || 'manual',
+                responsibleUser: initialSettings.responsibleUser || 'worker',
+                missedHeatAlert: initialSettings.missedHeatAlert || 25,
+                reminderFrequency: initialSettings.reminderFrequency || 'daily'
+            })
 
-    setInseminationSettings({
-      breedingMethod: initialSettings.breedingMethod || 'ai',
-      defaultAITechnician: initialSettings.defaultAITechnician || '',
-      semenProvider: initialSettings.semenProvider || '',
-      costPerAI: initialSettings.costPerAI || 500,
-      defaultBull: initialSettings.defaultBull || '',
-      autoSchedulePregnancyCheck: initialSettings.autoSchedulePregnancyCheck ?? true,
-      pregnancyCheckDays: initialSettings.pregnancyCheckDays || 45
-    })
+            setInseminationSettings({
+                breedingMethod: initialSettings.breedingMethod || 'ai',
+                defaultAITechnician: initialSettings.defaultAITechnician || '',
+                semenProvider: initialSettings.semenProvider || '',
+                costPerAI: initialSettings.costPerAI || 500,
+                defaultBull: initialSettings.defaultBull || '',
+                autoSchedulePregnancyCheck: initialSettings.autoSchedulePregnancyCheck ?? true,
+                pregnancyCheckDays: initialSettings.pregnancyCheckDays || 45
+            })
 
-    setPregnancySettings({
-      entryMethod: initialSettings.entryMethod || 'vet_only',
-      diagnosisInterval: initialSettings.diagnosisInterval || 45,
-      autoCreateHeatOnFailed: initialSettings.autoCreateHeatOnFailed ?? true,
-      heatRetryDays: initialSettings.heatRetryDays || 21
-    })
+            setPregnancySettings({
+                entryMethod: initialSettings.entryMethod || 'vet_only',
+                diagnosisInterval: initialSettings.diagnosisInterval || 45,
+                autoCreateHeatOnFailed: initialSettings.autoCreateHeatOnFailed ?? true,
+                heatRetryDays: initialSettings.heatRetryDays || 21
+            })
 
-    setCalvingSettings({
-      defaultGestation: initialSettings.defaultGestation || 280,
-      daysPregnantAtDryoff: initialSettings.daysPregnantAtDryoff || 220, // ✅ FIXED
-      autoRegisterCalf: initialSettings.autoRegisterCalf ?? true,
-      calfIdFormat: initialSettings.calfIdFormat || 'farm_year_number',
-      autoCreateDryOff: initialSettings.autoCreateDryOff ?? true,
-      autoCreateLactation: initialSettings.autoCreateLactation ?? true,
-      postpartumBreedingDelayDays: initialSettings.postpartumBreedingDelayDays || 60 // ✅ FIXED
-    })
+            setCalvingSettings({
+                defaultGestation: initialSettings.defaultGestation || 280,
+                daysPregnantAtDryoff: initialSettings.daysPregnantAtDryoff || 220, // ✅ FIXED
+                autoRegisterCalf: initialSettings.autoRegisterCalf ?? true,
+                calfIdFormat: initialSettings.calfIdFormat || 'farm_year_number',
+                autoCreateDryOff: initialSettings.autoCreateDryOff ?? true,
+                autoCreateLactation: initialSettings.autoCreateLactation ?? true,
+                postpartumBreedingDelayDays: initialSettings.postpartumBreedingDelayDays || 60 // ✅ FIXED
+            })
 
-    if (initialSettings.smartAlerts) {
-      setSmartAlerts({
-        heatReminders: initialSettings.smartAlerts.heatReminders ?? true,
-        breedingReminders: initialSettings.smartAlerts.breedingReminders ?? true,
-        pregnancyCheckReminders: initialSettings.smartAlerts.pregnancyCheckReminders ?? true,
-        calvingReminders: initialSettings.smartAlerts.calvingReminders ?? true
-      })
-    }
+            if (initialSettings.smartAlerts) {
+                setSmartAlerts({
+                    heatReminders: initialSettings.smartAlerts.heatReminders ?? true,
+                    breedingReminders: initialSettings.smartAlerts.breedingReminders ?? true,
+                    pregnancyCheckReminders: initialSettings.smartAlerts.pregnancyCheckReminders ?? true,
+                    calvingReminders: initialSettings.smartAlerts.calvingReminders ?? true
+                })
+            }
 
-    // Mark as loaded
-    setTimeout(() => {
-      isInitialLoad.current = false
-    }, 100)
-  }
-}, [initialSettings])
+            // Mark as loaded
+            setTimeout(() => {
+                isInitialLoad.current = false
+            }, 100)
+        }
+    }, [initialSettings])
 
     // Track changes only after initial load
     useEffect(() => {
@@ -303,7 +308,7 @@ export default function HealthBreedingSettings({
                     >
                         <div className="flex items-center gap-2">
                             <Stethoscope className="w-4 h-4" />
-                            Health (Coming Soon)
+                            Health Settings
                         </div>
                     </button>
                 </div>
@@ -882,13 +887,13 @@ export default function HealthBreedingSettings({
             )}
 
             {activeTab === 'health' && (
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
-                    <Stethoscope className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                    <h3 className="text-xl font-semibold text-gray-900 mb-2">Health Settings Coming Soon</h3>
-                    <p className="text-gray-600">
-                        Vaccination schedules, treatment protocols, and disease management settings will be available in the next update.
-                    </p>
-                </div>
+                <HealthSettingsTab
+                    farmId={farmId}
+                    userRole={userRole}
+                    initialSettings={healthSettings || {}} // Pass health settings
+                    farmName={farmName}
+                    veterinarians={veterinarians}
+                />
             )}
         </div>
     )
