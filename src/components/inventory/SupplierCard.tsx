@@ -1,3 +1,4 @@
+//src/components/inventory/SupplierCard.tsx
 'use client'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'

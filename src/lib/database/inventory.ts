@@ -1,3 +1,4 @@
+// lib/database/inventory.ts - COMPLETE UPDATED VERSION
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { InventoryItem, InventoryTransaction, Supplier } from '@/types/database'
 import { getSupabaseClient } from '../supabase/client'
@@ -39,19 +40,40 @@ export async function getInventoryItems(
 export async function getInventoryAlerts(farmId: string) {
   const supabase = await createServerSupabaseClient()
   
-  const { data, error } = await supabase
-    .from('inventory_items')
-    .select('*')
-    .eq('farm_id', farmId)
-    .eq('status', 'active')
-    .or('current_stock.lt.minimum_stock,expiry_date.lt.' + new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
-  
-  if (error) {
+  try {
+    // Get all active inventory items
+    const { data: items, error } = await supabase
+      .from('inventory_items')
+      .select('*')
+      .eq('farm_id', farmId)
+      .eq('status', 'active')
+    
+    if (error) {
+      console.error('Error fetching inventory items for alerts:', error)
+      return []
+    }
+    
+    if (!items) return []
+    
+    // Filter in JavaScript for low stock and expiring items
+    const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+    
+    const alerts = items.filter(item => {
+      // Check for low stock
+      const isLowStock = (item.current_stock || 0) < (item.minimum_stock || 0)
+      
+      // Check for expiring soon
+      const isExpiringSoon = item.expiry_date && 
+        new Date(item.expiry_date) <= thirtyDaysFromNow
+      
+      return isLowStock || isExpiringSoon
+    })
+    
+    return alerts
+  } catch (error) {
     console.error('Error fetching inventory alerts:', error)
     return []
   }
-  
-  return data || []
 }
 
 export async function createInventoryItem(
@@ -173,40 +195,42 @@ export async function getInventoryStats(farmId: string) {
       .eq('farm_id', farmId)
       .eq('status', 'active')
     
-    // Get low stock alerts
-    const { count: lowStockItems } = await supabase
+    // Get all active items for calculations
+    const { data: items } = await supabase
       .from('inventory_items')
-      .select('*', { count: 'exact', head: true })
+      .select('current_stock, minimum_stock, unit_cost, expiry_date')
       .eq('farm_id', farmId)
       .eq('status', 'active')
-      .filter('current_stock', 'lt', 'minimum_stock')
     
-    // Get expiring items (within 30 days)
-    const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-    const { count: expiringItems } = await supabase
-      .from('inventory_items')
-      .select('*', { count: 'exact', head: true })
-      .eq('farm_id', farmId)
-      .eq('status', 'active')
-      .not('expiry_date', 'is', null)
-      .lte('expiry_date', thirtyDaysFromNow)
+    if (!items) {
+      return {
+        totalItems: 0,
+        lowStockItems: 0,
+        expiringItems: 0,
+        totalValue: 0,
+      }
+    }
     
-    // Get inventory value
-    const { data: valueData } = await supabase
-      .from('inventory_items')
-      .select('current_stock, unit_cost')
-      .eq('farm_id', farmId)
-      .eq('status', 'active')
-      .not('unit_cost', 'is', null)
+    // Calculate low stock items
+    const lowStockItems = items.filter(item => 
+      (item.current_stock || 0) < (item.minimum_stock || 0)
+    ).length
     
-    const totalValue = valueData?.reduce((sum, item) => {
+    // Calculate expiring items (within 30 days)
+    const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+    const expiringItems = items.filter(item => 
+      item.expiry_date && new Date(item.expiry_date) <= thirtyDaysFromNow
+    ).length
+    
+    // Calculate inventory value
+    const totalValue = items.reduce((sum, item) => {
       return sum + ((item.current_stock || 0) * (item.unit_cost || 0))
-    }, 0) || 0
+    }, 0)
     
     return {
       totalItems: totalItems || 0,
-      lowStockItems: lowStockItems || 0,
-      expiringItems: expiringItems || 0,
+      lowStockItems,
+      expiringItems,
       totalValue,
     }
   } catch (error) {
@@ -219,7 +243,7 @@ export async function getInventoryStats(farmId: string) {
     }
   }
 }
-// lib/database/inventory.ts
+
 export async function getAvailableVolume(farmId: string): Promise<number> {
   try {
     const supabase = await createServerSupabaseClient()
@@ -358,5 +382,55 @@ export async function updateDistributionRecord(
   } catch (error) {
     console.error('Error updating distribution record:', error)
     throw error
+  }
+}
+
+// Supplier functions
+export async function getSuppliers(farmId: string) {
+  const supabase = await createServerSupabaseClient()
+  
+  const { data, error } = await supabase
+    .from('suppliers')
+    .select('*')
+    .eq('farm_id', farmId)
+    .eq('status', 'active')
+    .order('name')
+  
+  if (error) {
+    console.error('Error fetching suppliers:', error)
+    return []
+  }
+  
+  return data || []
+}
+
+export async function getSupplierStats(farmId: string) {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    const { data: suppliers, error } = await supabase
+      .from('suppliers')
+      .select('supplier_type')
+      .eq('farm_id', farmId)
+      .eq('status', 'active')
+    
+    if (error) throw error
+    
+    const supplierTypes = suppliers?.reduce((acc: any, supplier) => {
+      const type = supplier.supplier_type || 'other'
+      acc[type] = (acc[type] || 0) + 1
+      return acc
+    }, {})
+    
+    return {
+      totalSuppliers: suppliers?.length || 0,
+      supplierTypes: supplierTypes || {}
+    }
+  } catch (error) {
+    console.error('Error getting supplier stats:', error)
+    return {
+      totalSuppliers: 0,
+      supplierTypes: {}
+    }
   }
 }
