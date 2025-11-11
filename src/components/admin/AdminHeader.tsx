@@ -1,3 +1,4 @@
+//src/components/admin/AdminHeader.tsx  
 'use client'
 
 import { useAdminAuth } from '@/lib/hooks/useAdminAuth'

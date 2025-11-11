@@ -1,3 +1,4 @@
+//src/app/admin/dashboard/page.tsx
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getSystemOverview } from '@/lib/database/admin'
 import { redirect } from 'next/navigation'

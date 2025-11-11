@@ -1,3 +1,4 @@
+// src/app/api/admin/billing/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getSystemOverview } from '@/lib/database/admin'

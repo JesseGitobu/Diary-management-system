@@ -1,7 +1,8 @@
+//src/components/admin/FarmManagement.tsx
 'use client'
 
 import { useState } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
+import { Card, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Input } from '@/components/ui/Input'
@@ -14,7 +15,9 @@ import {
   MoreHorizontal,
   Eye,
   Ban,
-  Trash2
+  Trash2,
+  Edit,
+  X
 } from 'lucide-react'
 import { GiCow } from 'react-icons/gi'
 import Link from 'next/link'
@@ -38,6 +41,7 @@ export function FarmManagement({ initialFarms, totalCount }: FarmManagementProps
   const [farms, setFarms] = useState(initialFarms)
   const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(false)
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
 
   const getSubscriptionBadge = (subscription: any) => {
     if (!subscription) return <Badge variant="outline">No Subscription</Badge>
@@ -54,6 +58,65 @@ export function FarmManagement({ initialFarms, totalCount }: FarmManagementProps
         {subscription.plan_type} - {subscription.status}
       </Badge>
     )
+  }
+
+  const handleSuspendFarm = async (farmId: string) => {
+    if (!confirm('Are you sure you want to suspend this farm? All users will lose access.')) return
+    
+    setLoading(true)
+    try {
+      const response = await fetch('/api/admin/farms/suspend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ farmId })
+      })
+      
+      if (response.ok) {
+        alert('Farm suspended successfully')
+        // Refresh the page or update state
+        window.location.reload()
+      } else {
+        alert('Failed to suspend farm')
+      }
+    } catch (error) {
+      console.error('Error suspending farm:', error)
+      alert('Error suspending farm')
+    } finally {
+      setLoading(false)
+      setOpenMenuId(null)
+    }
+  }
+
+  const handleDeleteFarm = async (farmId: string) => {
+    if (!confirm('⚠️ WARNING: This will permanently delete the farm and all its data. This action cannot be undone. Type "DELETE" to confirm.')) {
+      return
+    }
+    
+    const confirmation = prompt('Type "DELETE" to confirm deletion:')
+    if (confirmation !== 'DELETE') {
+      alert('Deletion cancelled')
+      return
+    }
+    
+    setLoading(true)
+    try {
+      const response = await fetch(`/api/admin/farms/${farmId}`, {
+        method: 'DELETE'
+      })
+      
+      if (response.ok) {
+        alert('Farm deleted successfully')
+        setFarms(farms.filter(f => f.id !== farmId))
+      } else {
+        alert('Failed to delete farm')
+      }
+    } catch (error) {
+      console.error('Error deleting farm:', error)
+      alert('Error deleting farm')
+    } finally {
+      setLoading(false)
+      setOpenMenuId(null)
+    }
   }
 
   const filteredFarms = farms.filter(farm => 
@@ -85,7 +148,7 @@ export function FarmManagement({ initialFarms, totalCount }: FarmManagementProps
           />
         </div>
         
-        <Button variant="outline">
+        <Button variant="outline" onClick={() => alert('Export functionality would be implemented here')}>
           Export Data
         </Button>
       </div>
@@ -146,7 +209,7 @@ export function FarmManagement({ initialFarms, totalCount }: FarmManagementProps
                   </div>
                 </div>
                 
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-2 relative">
                   <Button asChild variant="outline" size="sm">
                     <Link href={`/admin/farms/${farm.id}`}>
                       <Eye className="w-4 h-4 mr-1" />
@@ -154,9 +217,60 @@ export function FarmManagement({ initialFarms, totalCount }: FarmManagementProps
                     </Link>
                   </Button>
                   
-                  <Button variant="outline" size="sm">
-                    <MoreHorizontal className="w-4 h-4" />
-                  </Button>
+                  {/* Dropdown Menu */}
+                  <div className="relative">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => setOpenMenuId(openMenuId === farm.id ? null : farm.id)}
+                    >
+                      <MoreHorizontal className="w-4 h-4" />
+                    </Button>
+                    
+                    {openMenuId === farm.id && (
+                      <>
+                        {/* Backdrop */}
+                        <div 
+                          className="fixed inset-0 z-10"
+                          onClick={() => setOpenMenuId(null)}
+                        />
+                        
+                        {/* Menu */}
+                        <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-20 border border-gray-200">
+                          <div className="py-1">
+                            <button
+                              onClick={() => {
+                                alert('Edit farm functionality would open a modal')
+                                setOpenMenuId(null)
+                              }}
+                              className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                            >
+                              <Edit className="w-4 h-4 mr-2" />
+                              Edit Farm
+                            </button>
+                            
+                            <button
+                              onClick={() => handleSuspendFarm(farm.id)}
+                              disabled={loading}
+                              className="flex items-center w-full px-4 py-2 text-sm text-orange-600 hover:bg-orange-50 disabled:opacity-50"
+                            >
+                              <Ban className="w-4 h-4 mr-2" />
+                              Suspend Farm
+                            </button>
+                            
+                            <button
+                              onClick={() => handleDeleteFarm(farm.id)}
+                              disabled={loading}
+                              className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Delete Farm
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             </CardContent>

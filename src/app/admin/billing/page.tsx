@@ -1,3 +1,4 @@
+//src/app/admin/billing/page.tsx
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getBillingOverview } from '@/lib/database/admin'
 import { redirect } from 'next/navigation'

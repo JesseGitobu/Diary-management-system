@@ -1,3 +1,4 @@
+//src/components/admin/AdminAuthGuard.tsx
 'use client'
 
 import { useEffect, useState } from 'react'

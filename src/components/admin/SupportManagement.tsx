@@ -1,7 +1,8 @@
+//src/components/admin/SupportManagement.tsx
 'use client'
 
 import { useState } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
+import { Card, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Input } from '@/components/ui/Input'
@@ -11,8 +12,8 @@ import {
   AlertTriangle, 
   CheckCircle,
   Search,
-  Filter,
-  Plus
+  Plus,
+  X
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -20,11 +21,129 @@ interface SupportManagementProps {
   initialTickets: any[]
 }
 
+// Create Ticket Modal
+function CreateTicketModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  const [loading, setLoading] = useState(false)
+  const [formData, setFormData] = useState({
+    subject: '',
+    description: '',
+    priority: 'medium',
+    farmId: '',
+    userId: ''
+  })
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+
+    try {
+      const response = await fetch('/api/admin/support/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      })
+
+      if (response.ok) {
+        alert('Ticket created successfully!')
+        onSuccess()
+        onClose()
+      } else {
+        alert('Failed to create ticket')
+      }
+    } catch (error) {
+      console.error('Error creating ticket:', error)
+      alert('Error creating ticket')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold">Create Support Ticket</h2>
+            <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">Subject *</label>
+              <Input
+                required
+                value={formData.subject}
+                onChange={(e) => setFormData({...formData, subject: e.target.value})}
+                placeholder="Brief description of the issue"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">Description *</label>
+              <textarea
+                required
+                value={formData.description}
+                onChange={(e) => setFormData({...formData, description: e.target.value})}
+                placeholder="Detailed description of the issue"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md min-h-32"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">Priority</label>
+              <select
+                value={formData.priority}
+                onChange={(e) => setFormData({...formData, priority: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="urgent">Urgent</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">User ID (Optional)</label>
+              <Input
+                value={formData.userId}
+                onChange={(e) => setFormData({...formData, userId: e.target.value})}
+                placeholder="User ID if ticket is for specific user"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">Farm ID (Optional)</label>
+              <Input
+                value={formData.farmId}
+                onChange={(e) => setFormData({...formData, farmId: e.target.value})}
+                placeholder="Farm ID if ticket is for specific farm"
+              />
+            </div>
+
+            <div className="flex justify-end space-x-3 pt-4">
+              <Button type="button" variant="outline" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={loading}>
+                {loading ? 'Creating...' : 'Create Ticket'}
+              </Button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function SupportManagement({ initialTickets }: SupportManagementProps) {
   const [tickets, setTickets] = useState(initialTickets)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [priorityFilter, setPriorityFilter] = useState('all')
+  const [showCreateModal, setShowCreateModal] = useState(false)
 
   const getPriorityBadge = (priority: 'low' | 'medium' | 'high' | 'urgent') => {
     const colors: Record<'low' | 'medium' | 'high' | 'urgent', string> = {
@@ -56,6 +175,18 @@ export function SupportManagement({ initialTickets }: SupportManagementProps) {
     )
   }
 
+  const refreshTickets = async () => {
+    try {
+      const response = await fetch('/api/admin/support')
+      if (response.ok) {
+        const data = await response.json()
+        setTickets(data.tickets)
+      }
+    } catch (error) {
+      console.error('Error refreshing tickets:', error)
+    }
+  }
+
   const filteredTickets = tickets.filter(ticket => {
     const matchesSearch = ticket.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          ticket.ticket_number.toLowerCase().includes(searchTerm.toLowerCase())
@@ -75,6 +206,14 @@ export function SupportManagement({ initialTickets }: SupportManagementProps) {
 
   return (
     <div className="space-y-6">
+      {/* Create Ticket Modal */}
+      {showCreateModal && (
+        <CreateTicketModal
+          onClose={() => setShowCreateModal(false)}
+          onSuccess={refreshTickets}
+        />
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -84,7 +223,7 @@ export function SupportManagement({ initialTickets }: SupportManagementProps) {
           </p>
         </div>
         
-        <Button>
+        <Button onClick={() => setShowCreateModal(true)}>
           <Plus className="mr-2 h-4 w-4" />
           Create Ticket
         </Button>

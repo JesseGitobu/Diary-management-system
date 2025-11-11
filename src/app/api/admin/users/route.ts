@@ -1,7 +1,7 @@
-// src/app/api/admin/billing/route.ts
+// src/app/api/admin/users/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUser } from '@/lib/supabase/server'
-import { getAllFarms } from '@/lib/database/admin'
+import { getCurrentUser, createAdminClient } from '@/lib/supabase/server'
+import { getAllUsers } from '@/lib/database/admin'
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,7 +12,6 @@ export async function GET(request: NextRequest) {
     }
     
     // Check admin access
-    const { createAdminClient } = await import('@/lib/supabase/server')
     const adminSupabase = createAdminClient()
     
     const { data: adminUser } = await adminSupabase
@@ -29,12 +28,12 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = parseInt(searchParams.get('offset') || '0')
     
-    const { farms, count } = await getAllFarms(limit, offset)
+    const { users, count } = await getAllUsers(limit, offset)
     
-    return NextResponse.json({ farms, count, limit, offset })
+    return NextResponse.json({ users, count, limit, offset })
     
   } catch (error) {
-    console.error('Admin farms API error:', error)
+    console.error('Admin users API error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

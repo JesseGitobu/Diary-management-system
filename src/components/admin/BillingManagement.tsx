@@ -1,3 +1,4 @@
+//src/components/admin/BillingManagement.tsx
 'use client'
 
 import { useState } from 'react'
@@ -10,8 +11,7 @@ import {
   CreditCard, 
   TrendingUp, 
   AlertTriangle,
-  Users,
-  Building2
+  Download
 } from 'lucide-react'
 
 interface BillingManagementProps {
@@ -20,6 +20,7 @@ interface BillingManagementProps {
 
 export function BillingManagement({ billingOverview }: BillingManagementProps) {
   const [selectedPlan, setSelectedPlan] = useState('all')
+  const [exporting, setExporting] = useState(false)
 
   if (!billingOverview) {
     return <div>Loading billing data...</div>
@@ -29,6 +30,46 @@ export function BillingManagement({ billingOverview }: BillingManagementProps) {
     starter: 29,
     professional: 59,
     enterprise: 99
+  }
+
+  const handleExportRevenue = () => {
+    setExporting(true)
+    
+    try {
+      // Create CSV content
+      const headers = ['Metric', 'Value']
+      const rows = [
+        ['Total MRR', `$${billingOverview.totalMRR}`],
+        ['Active Subscriptions', billingOverview.active],
+        ['Cancelled Subscriptions', billingOverview.cancelled],
+        ['Past Due', billingOverview.pastDue],
+        ['Starter Plan', billingOverview.planBreakdown.starter],
+        ['Professional Plan', billingOverview.planBreakdown.professional],
+        ['Enterprise Plan', billingOverview.planBreakdown.enterprise],
+        ['Total Subscriptions', billingOverview.totalSubscriptions]
+      ]
+      
+      const csvContent = [
+        headers.join(','),
+        ...rows.map(row => row.join(','))
+      ].join('\n')
+      
+      // Create and download file
+      const blob = new Blob([csvContent], { type: 'text/csv' })
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `revenue-report-${new Date().toISOString().split('T')[0]}.csv`
+      a.click()
+      window.URL.revokeObjectURL(url)
+      
+      alert('Revenue report exported successfully!')
+    } catch (error) {
+      console.error('Error exporting revenue:', error)
+      alert('Error exporting revenue report')
+    } finally {
+      setExporting(false)
+    }
   }
 
   return (
@@ -42,8 +83,9 @@ export function BillingManagement({ billingOverview }: BillingManagementProps) {
           </p>
         </div>
         
-        <Button variant="outline">
-          Export Revenue Report
+        <Button variant="outline" onClick={handleExportRevenue} disabled={exporting}>
+          <Download className="mr-2 h-4 w-4" />
+          {exporting ? 'Exporting...' : 'Export Revenue Report'}
         </Button>
       </div>
 

@@ -1,3 +1,4 @@
+//src/app/admin/farms/page.tsx
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getAllFarms } from '@/lib/database/admin'
 import { redirect } from 'next/navigation'

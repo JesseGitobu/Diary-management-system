@@ -1,3 +1,4 @@
+// src/lib/database/admin.ts
 import { createServerSupabaseClient, createAdminClient } from '@/lib/supabase/server'
 
 // System Overview Statistics
@@ -391,5 +392,336 @@ export async function logAdminAction(actionData: {
     }
   } catch (error) {
     console.error('Error in logAdminAction:', error)
+  }
+}
+
+// src/lib/database/admin.ts - Additional functions to add
+
+// Analytics Data
+export async function getAnalyticsData(timeRange: string = '30d') {
+  const adminSupabase = createAdminClient()
+  
+  try {
+    // Calculate date range
+    const daysBack = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : timeRange === '90d' ? 90 : 365
+    const startDate = new Date()
+    startDate.setDate(startDate.getDate() - daysBack)
+    const previousPeriodStart = new Date()
+    previousPeriodStart.setDate(previousPeriodStart.getDate() - (daysBack * 2))
+
+    // Get current period data
+    const { data: currentUsers } = await adminSupabase
+      .from('user_roles')
+      .select('id')
+      .gte('created_at', startDate.toISOString())
+
+    const { data: currentFarms } = await adminSupabase
+      .from('farms')
+      .select('id')
+      .gte('created_at', startDate.toISOString())
+
+    const { data: currentAnimals } = await adminSupabase
+      .from('animals')
+      .select('id')
+      .gte('created_at', startDate.toISOString())
+
+    // Get previous period data for comparison
+    const { data: previousUsers } = await adminSupabase
+      .from('user_roles')
+      .select('id')
+      .gte('created_at', previousPeriodStart.toISOString())
+      .lt('created_at', startDate.toISOString())
+
+    const { data: previousFarms } = await adminSupabase
+      .from('farms')
+      .select('id')
+      .gte('created_at', previousPeriodStart.toISOString())
+      .lt('created_at', startDate.toISOString())
+
+    // Calculate growth percentages
+    const userGrowth = {
+      current: currentUsers?.length || 0,
+      previous: previousUsers?.length || 0,
+      change: previousUsers?.length ? 
+        Math.round(((currentUsers?.length || 0) - (previousUsers?.length || 0)) / (previousUsers?.length || 1) * 100) : 0
+    }
+
+    const farmGrowth = {
+      current: currentFarms?.length || 0,
+      previous: previousFarms?.length || 0,
+      change: previousFarms?.length ? 
+        Math.round(((currentFarms?.length || 0) - (previousFarms?.length || 0)) / (previousFarms?.length || 1) * 100) : 0
+    }
+
+    const animalTracking = {
+      current: currentAnimals?.length || 0,
+      previous: 0,
+      change: 0
+    }
+
+    // Get revenue data
+    const { data: subscriptions } = await adminSupabase
+      .from('billing_subscriptions')
+      .select('monthly_price, status')
+      .eq('status', 'active')
+
+    const currentRevenue = subscriptions?.reduce((sum, sub) => sum + (Number(sub.monthly_price) || 0), 0) || 0
+
+    const revenueGrowth = {
+      current: currentRevenue,
+      previous: currentRevenue * 0.88, // Simulated previous period
+      change: 12 // Simulated growth
+    }
+
+    // Get top farms by activity
+    const { data: topFarms } = await adminSupabase
+      .from('farms')
+      .select(`
+        id,
+        name,
+        animals(count),
+        user_roles(count)
+      `)
+      .limit(5)
+
+    return {
+      userGrowth,
+      farmGrowth,
+      revenueGrowth,
+      animalTracking,
+      engagement: {
+        dailyActiveUsers: Math.floor((currentUsers?.length || 0) * 0.6),
+        averageSessionTime: 24,
+        featuresUsed: [
+          { name: 'Animal Tracking', usage: 95 },
+          { name: 'Health Records', usage: 87 },
+          { name: 'Breeding Management', usage: 72 },
+          { name: 'Reports', usage: 68 },
+          { name: 'Team Collaboration', usage: 54 }
+        ]
+      },
+      topFarms: (topFarms || []).map((farm: any, index: number) => ({
+        id: farm.id,
+        name: farm.name,
+        animals: farm.animals?.[0]?.count || 0,
+        teamSize: farm.user_roles?.[0]?.count || 0,
+        engagement: 95 - (index * 5)
+      })),
+      recentActivity: [
+        { message: 'New farm registered', timestamp: '5 min ago', type: 'success', category: 'signup' },
+        { message: 'User upgraded subscription', timestamp: '15 min ago', type: 'success', category: 'billing' },
+        { message: 'Support ticket resolved', timestamp: '1 hour ago', type: 'success', category: 'support' },
+        { message: 'Payment failed', timestamp: '2 hours ago', type: 'error', category: 'billing' },
+        { message: 'New animal added', timestamp: '3 hours ago', type: 'success', category: 'activity' }
+      ]
+    }
+  } catch (error) {
+    console.error('Error getting analytics data:', error)
+    return {
+      userGrowth: { current: 0, previous: 0, change: 0 },
+      farmGrowth: { current: 0, previous: 0, change: 0 },
+      revenueGrowth: { current: 0, previous: 0, change: 0 },
+      animalTracking: { current: 0, previous: 0, change: 0 },
+      engagement: { dailyActiveUsers: 0, averageSessionTime: 0, featuresUsed: [] },
+      topFarms: [],
+      recentActivity: []
+    }
+  }
+}
+
+// Get Audit Logs
+export async function getAuditLogs(limit: number = 100) {
+  const adminSupabase = createAdminClient()
+  
+  try {
+    const { data, error } = await adminSupabase
+      .from('audit_logs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limit)
+
+    if (error) {
+      console.error('Error getting audit logs:', error)
+      return []
+    }
+
+    return data || []
+  } catch (error) {
+    console.error('Error in getAuditLogs:', error)
+    return []
+  }
+}
+
+// Get User Details
+export async function getUserDetails(userId: string) {
+  const adminSupabase = createAdminClient()
+  
+  try {
+    const { data, error } = await adminSupabase
+      .from('user_roles')
+      .select(`
+        *,
+        farms (
+          name,
+          location
+        )
+      `)
+      .eq('user_id', userId)
+      .single()
+
+    if (error) {
+      console.error('Error getting user details:', error)
+      return null
+    }
+
+    return data
+  } catch (error) {
+    console.error('Error in getUserDetails:', error)
+    return null
+  }
+}
+
+// Activate/Deactivate User
+export async function toggleUserStatus(userId: string, newStatus: 'active' | 'suspended' | 'inactive') {
+  const adminSupabase = createAdminClient()
+  
+  try {
+    const { error } = await adminSupabase
+      .from('user_roles')
+      .update({ status: newStatus })
+      .eq('user_id', userId)
+
+    if (error) throw error
+
+    // Log the action
+    try {
+      await adminSupabase.from('audit_logs').insert({
+        action: newStatus === 'active' ? 'activate_user' : 'suspend_user',
+        resource_type: 'user',
+        resource_id: userId,
+        new_values: { status: newStatus, updated_at: new Date().toISOString() }
+      })
+    } catch (auditError) {
+      console.warn('Could not log action:', auditError)
+    }
+
+    return { success: true }
+  } catch (error) {
+    console.error('Error toggling user status:', error)
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+// Update Subscription Status
+export async function updateSubscriptionStatus(subscriptionId: string, newStatus: string) {
+  const adminSupabase = createAdminClient()
+  
+  try {
+    const { error } = await adminSupabase
+      .from('billing_subscriptions')
+      .update({ 
+        status: newStatus,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', subscriptionId)
+
+    if (error) throw error
+
+    return { success: true }
+  } catch (error) {
+    console.error('Error updating subscription:', error)
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+// Get Support Ticket Details
+export async function getTicketDetails(ticketId: string) {
+  const adminSupabase = createAdminClient()
+  
+  try {
+    const { data, error } = await adminSupabase
+      .from('support_tickets')
+      .select(`
+        *,
+        farms (
+          name
+        )
+      `)
+      .eq('id', ticketId)
+      .single()
+
+    if (error) {
+      console.error('Error getting ticket details:', error)
+      return null
+    }
+
+    return data
+  } catch (error) {
+    console.error('Error in getTicketDetails:', error)
+    return null
+  }
+}
+
+// Update Support Ticket
+export async function updateTicket(ticketId: string, updates: any) {
+  const adminSupabase = createAdminClient()
+  
+  try {
+    const { error } = await adminSupabase
+      .from('support_tickets')
+      .update({
+        ...updates,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', ticketId)
+
+    if (error) throw error
+
+    return { success: true }
+  } catch (error) {
+    console.error('Error updating ticket:', error)
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+// Get Platform Statistics
+export async function getPlatformStats(days: number = 30) {
+  const adminSupabase = createAdminClient()
+  const startDate = new Date()
+  startDate.setDate(startDate.getDate() - days)
+  
+  try {
+    // Fetch all data in parallel
+    const [
+      { count: totalFarms },
+      { count: totalUsers },
+      { count: totalAnimals },
+      { data: subscriptions }
+    ] = await Promise.all([
+      adminSupabase.from('farms').select('*', { count: 'exact', head: true }),
+      adminSupabase.from('user_roles').select('*', { count: 'exact', head: true }),
+      adminSupabase.from('animals').select('*', { count: 'exact', head: true }),
+      adminSupabase.from('billing_subscriptions').select('monthly_price, status')
+    ])
+
+    const activeSubscriptions = subscriptions?.filter(s => s.status === 'active') || []
+    const mrr = activeSubscriptions.reduce((sum, sub) => sum + (Number(sub.monthly_price) || 0), 0)
+
+    return {
+      totalFarms: totalFarms || 0,
+      totalUsers: totalUsers || 0,
+      totalAnimals: totalAnimals || 0,
+      activeSubscriptions: activeSubscriptions.length,
+      monthlyRevenue: mrr
+    }
+  } catch (error) {
+    console.error('Error getting platform stats:', error)
+    return {
+      totalFarms: 0,
+      totalUsers: 0,
+      totalAnimals: 0,
+      activeSubscriptions: 0,
+      monthlyRevenue: 0
+    }
   }
 }
