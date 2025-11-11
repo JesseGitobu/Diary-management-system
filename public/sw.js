@@ -1,5 +1,5 @@
-const CACHE_NAME = 'farmtrack-pro-v1'
-const OFFLINE_CACHE = 'farmtrack-offline-v1'
+const CACHE_NAME = 'dairytrack-pro-v1'
+const OFFLINE_CACHE = 'dairytrack-offline-v1'
 
 // Essential files to cache immediately
 const ESSENTIAL_CACHE = [
@@ -60,6 +60,13 @@ self.addEventListener('activate', (event) => {
   )
 })
 
+
+// Listen for skip waiting message
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting()
+  }
+})
 // Fetch event with different strategies
 self.addEventListener('fetch', (event) => {
   const { request } = event

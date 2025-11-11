@@ -1,6 +1,7 @@
+
 {
-  "name": "FarmTrack Pro - Dairy Farm Management",
-  "short_name": "FarmTrack Pro",
+  "name": "DairyTrack Pro - Dairy Farm Management",
+  "short_name": "DairyTrack Pro",
   "description": "Professional dairy farm management and analytics platform",
   "start_url": "/dashboard",
   "display": "standalone",
@@ -56,6 +57,20 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable any"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshots/desktop-1.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide"
+    },
+    {
+      "src": "/screenshots/mobile-1.png",
+      "sizes": "540x720",
+      "type": "image/png",
+      "form_factor": "narrow"
     }
   ]
 }
