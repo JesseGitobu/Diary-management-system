@@ -1,24 +1,14 @@
+// src/app/page.tsx
 'use client';
 import React, { useState } from 'react';
 import Link from "next/link"
-
-// Importing components for the landing page
-
-//import ResultCard from '@/components/landing_page/ResultCard';
 import BenefitSection from '@/components/landing_page/BenefitSection';
 import Testimonial from '@/components/landing_page/TestimonialComponent';
 import ContactForm from '@/components/landing_page/ContactForm';
 import PricingCard from '@/components/landing_page/PricingCard';
 import { Button } from "@/components/ui/Button"
 import {
-  Card,
-  CardHeader,
-  CardFooter,
-  CardTitle,
-  CardDescription,
-  CardContent,
   IconCard,
-  SimpleCard,
   ResultCard
 } from "@/components/ui/Card"
 
@@ -33,9 +23,6 @@ import { FiFacebook, FiLinkedin, FiPhone, FiMail } from "react-icons/fi";
 import { RiTwitterXFill } from "react-icons/ri";
 import { FaInstagram } from "react-icons/fa";
 import { HandCoins, ShieldPlus, Headset } from 'lucide-react';
-
-// Importing styles for the landing page
-//import styles from '@/styles/landing_page/LandingPage.module.css';
 
 export default function LandingPage() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);

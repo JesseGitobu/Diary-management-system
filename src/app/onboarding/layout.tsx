@@ -1,3 +1,4 @@
+// src/app/onboarding/layout.tsx
 import { getCurrentUser } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { OnboardingHeader } from '@/components/onboarding/OnboardingHeader'

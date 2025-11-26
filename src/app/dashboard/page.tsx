@@ -1,3 +1,4 @@
+// src/app/dashboard/page.tsx
 import { getCurrentUser, createServerSupabaseClient } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { getDashboardStats } from '@/lib/database/dashboard'

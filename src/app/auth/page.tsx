@@ -1,3 +1,4 @@
+// src/app/auth/page.tsx
 import { Suspense } from 'react'
 import { AuthForm } from '@/components/auth/AuthForm'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'

@@ -1,3 +1,4 @@
+// src/app/auth/confirm-email/page.tsx
 import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'

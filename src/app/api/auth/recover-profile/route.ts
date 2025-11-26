@@ -1,3 +1,4 @@
+// src/app/api/auth/recover-profile/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { createFarmOwnerProfile } from '@/lib/database/auth'

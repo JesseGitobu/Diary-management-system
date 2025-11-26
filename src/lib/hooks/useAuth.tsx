@@ -1,165 +1,386 @@
+// src/lib/hooks/useAuth.tsx
 'use client'
 
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react'
 import { User } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
 import { UserRole } from '@/lib/supabase/types'
+import { debugLogger } from '@/lib/utils/debugLogger'
+
+type SessionStatus = 'loading' | 'authenticated' | 'unauthenticated' | 'error'
 
 type AuthContextType = {
   user: User | null
   userRole: UserRole | null
   loading: boolean
+  sessionStatus: SessionStatus
+  lastActivity: number
   signIn: (email: string, password: string) => Promise<{ error: string | null }>
-  signUp: (email: string, password: string, fullName: string, invitationToken?: string) => Promise<{ error: string | null }>  // Add invitationToken parameter
+  signUp: (email: string, password: string, fullName: string, invitationToken?: string) => Promise<{ error: string | null }>
   signOut: () => Promise<void>
   refreshSession: () => Promise<void>
+  resetPassword: (email: string) => Promise<{ error: string | null }>
+  hasPermission: (requiredRole: string) => boolean
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
+
+// Session configuration constants
+const SESSION_CONFIG = {
+  IDLE_TIMEOUT: 30 * 60 * 1000, // 30 minutes
+  REFRESH_BUFFER: 5 * 60 * 1000, // Refresh 5 minutes before expiry
+  ACTIVITY_THROTTLE: 1000, // Throttle activity tracking to 1s
+  PERMISSION_CACHE_TTL: 5 * 60 * 1000, // Cache permissions for 5 minutes
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [userRole, setUserRole] = useState<UserRole | null>(null)
   const [loading, setLoading] = useState(true)
+  const [sessionStatus, setSessionStatus] = useState<SessionStatus>('loading')
+  const [lastActivity, setLastActivity] = useState<number>(Date.now())
+
   const supabase = createClient()
 
-  useEffect(() => {
-    // Get initial session
-    const getSession = async () => {
-      const { data: { session }, error } = await supabase.auth.getSession()
-      if (error) {
-        console.error('Error getting session:', error)
-      } else {
-        setUser(session?.user ?? null)
-        if (session?.user) {
-          await loadUserRole(session.user.id)
-        }
+  // Refs for managing timers and state
+  const idleTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const refreshTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const activityThrottleRef = useRef<NodeJS.Timeout | null>(null)
+  const permissionCacheRef = useRef<{ role: string; timestamp: number } | null>(null)
+
+  // Clear all timers
+  const clearAllTimers = useCallback(() => {
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current)
+    if (activityThrottleRef.current) clearTimeout(activityThrottleRef.current)
+    idleTimerRef.current = null
+    refreshTimerRef.current = null
+    activityThrottleRef.current = null
+  }, [])
+
+  // Setup session refresh timer
+  const setupRefreshTimer = useCallback(async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.expires_at) return
+
+      const expiresAt = new Date(session.expires_at * 1000).getTime()
+      const now = Date.now()
+      const timeUntilExpiry = expiresAt - now
+
+      if (timeUntilExpiry <= 0) {
+        debugLogger.warning('AuthProvider', 'Session already expired, signing out')
+        await signOut()
+        return
       }
-      setLoading(false)
+
+      const refreshTime = timeUntilExpiry - SESSION_CONFIG.REFRESH_BUFFER
+
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current)
+
+      refreshTimerRef.current = setTimeout(async () => {
+        debugLogger.debug('AuthProvider', 'Auto-refreshing session before expiry')
+        await refreshSession()
+      }, Math.max(refreshTime, 0))
+
+    } catch (error) {
+      debugLogger.error('AuthProvider', 'Error setting up refresh timer', { error })
+    }
+  }, [supabase])
+
+  // Reset idle timer
+  const resetIdleTimer = useCallback(() => {
+    setLastActivity(Date.now())
+
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
+
+    if (user) {
+      idleTimerRef.current = setTimeout(() => {
+        debugLogger.warning('AuthProvider', 'User inactive for 30 minutes, logging out')
+        signOut()
+      }, SESSION_CONFIG.IDLE_TIMEOUT)
+    }
+  }, [user])
+
+  // Throttled activity handler
+  const handleActivity = useCallback(() => {
+    if (activityThrottleRef.current) return
+
+    activityThrottleRef.current = setTimeout(() => {
+      resetIdleTimer()
+      activityThrottleRef.current = null
+    }, SESSION_CONFIG.ACTIVITY_THROTTLE)
+  }, [resetIdleTimer])
+
+  // Setup activity listeners
+  useEffect(() => {
+    if (!user) return
+
+    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click']
+    events.forEach(event => document.addEventListener(event, handleActivity))
+
+    resetIdleTimer()
+    setupRefreshTimer()
+
+    return () => {
+      events.forEach(event => document.removeEventListener(event, handleActivity))
+      clearAllTimers()
+    }
+  }, [user, handleActivity, resetIdleTimer, setupRefreshTimer])
+
+  // Initialize auth session
+  useEffect(() => {
+    const initializeAuth = async () => {
+      try {
+        setSessionStatus('loading')
+        debugLogger.info('AuthProvider', 'Initializing authentication')
+
+        const { data: { session }, error } = await supabase.auth.getSession()
+
+        if (error) {
+          debugLogger.error('AuthProvider', 'Error getting session', { error: error.message })
+          setSessionStatus('error')
+          setLoading(false)
+          return
+        }
+
+        if (session?.user) {
+          debugLogger.success('AuthProvider', 'Session found', { userId: session.user.id })
+          setUser(session.user)
+          setSessionStatus('authenticated')
+          await loadUserRole(session.user.id)
+          await setupRefreshTimer()
+        } else {
+          debugLogger.info('AuthProvider', 'No session found')
+          setSessionStatus('unauthenticated')
+        }
+      } catch (error) {
+        debugLogger.error('AuthProvider', 'Exception during auth initialization', { error })
+        setSessionStatus('error')
+      } finally {
+        setLoading(false)
+      }
     }
 
-    getSession()
+    initializeAuth()
 
-    // Listen for auth changes
+    // Subscribe to auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        setUser(session?.user ?? null)
+        debugLogger.debug('AuthProvider', 'Auth state changed', { event, hasSession: !!session })
+
         if (session?.user) {
+          setUser(session.user)
+          setSessionStatus('authenticated')
           await loadUserRole(session.user.id)
+          await setupRefreshTimer()
         } else {
+          setUser(null)
           setUserRole(null)
+          setSessionStatus('unauthenticated')
+          clearAllTimers()
         }
-        setLoading(false)
       }
     )
 
-    return () => subscription.unsubscribe()
-  }, [])
-
- // Update your useAuth.tsx - modify the loadUserRole function
-
-const loadUserRole = async (userId: string) => {
-  try {
-    // First check if user is admin
-    const { data: adminUser, error: adminError } = await supabase
-      .from('admin_users')
-      .select('id')
-      .eq('user_id', userId)
-      .maybeSingle()
-
-    // If user is admin, don't load regular user role
-    if (!adminError && adminUser) {
-      console.log('User is admin, skipping regular role check')
-      setUserRole('super_admin' as any) // Set a special admin role
-      return
+    return () => {
+      subscription.unsubscribe()
+      clearAllTimers()
     }
+  }, [supabase, setupRefreshTimer])
 
-    // Only check regular user role if not admin
-    const { data, error } = await supabase
-      .from('user_roles')
-      .select('role_type')
-      .eq('user_id', userId)
-      .maybeSingle() // Use maybeSingle instead of single
+  // Load user role from database
+  const loadUserRole = async (userId: string) => {
+    try {
+      debugLogger.debug('AuthProvider', 'Loading user role', { userId })
 
-    if (error) {
-      console.error('Error loading user role:', error)
-      setUserRole(null)
-    } else {
+      // Check admin status first
+      const { data: adminUser } = await supabase
+        .from('admin_users')
+        .select('id')
+        .eq('user_id', userId)
+        .maybeSingle()
+
+      if (adminUser) {
+        debugLogger.success('AuthProvider', 'User is admin', { userId })
+        setUserRole('super_admin' as any)
+        return
+      }
+
+      // Get user role
+      const { data, error } = await supabase
+        .from('user_roles')
+        .select('role_type, farm_id, status')
+        .eq('user_id', userId)
+        .maybeSingle()
+
+      if (error) {
+        debugLogger.error('AuthProvider', 'Error loading user role', { error: error.message })
+        setUserRole(null)
+        return
+      }
+
+      debugLogger.success('AuthProvider', 'User role loaded', { role: data?.role_type })
       setUserRole(data?.role_type || null)
+    } catch (error) {
+      debugLogger.error('AuthProvider', 'Exception loading user role', { error })
+      setUserRole(null)
     }
-  } catch (error) {
-    console.error('Exception loading user role:', error)
-    setUserRole(null)
   }
-}
+
+  // Authentication methods
   const signIn = async (email: string, password: string) => {
-  console.log('🔍 Auth hook signIn called:', email) // Debug log
-  
-  try {
-    const { error } = await supabase.auth.signInWithPassword({
+    debugLogger.info('AuthProvider', 'Sign in initiated', { email })
+
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+
+      if (error) {
+        debugLogger.error('AuthProvider', 'Sign in failed', { email, error: error.message })
+        return { error: error.message }
+      }
+
+      debugLogger.success('AuthProvider', 'Sign in successful', { email })
+      return { error: null }
+    } catch (err) {
+      debugLogger.error('AuthProvider', 'Sign in exception', { error: err })
+      return { error: 'Authentication failed' }
+    }
+  }
+
+  const signUp = async (
+    email: string,
+    password: string,
+    fullName: string,
+    invitationToken?: string
+  ) => {
+    debugLogger.info('AuthProvider', 'Sign up initiated', {
       email,
-      password,
+      fullName,
+      hasInvitation: !!invitationToken,
     })
 
-    console.log('🔍 Supabase signIn result:', { error }) // Debug log
+    try {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: fullName,
+            invitation_token: invitationToken || null,
+          },
+        },
+      })
 
-    if (error) {
-      console.error('❌ Supabase auth error:', error) // Debug log
-      return { error: error.message }
+      if (error) {
+        debugLogger.error('AuthProvider', 'Sign up failed', { email, error: error.message })
+        return { error: error.message }
+      }
+
+      debugLogger.success('AuthProvider', 'Sign up successful', {
+        email,
+        invitationTokenStored: !!invitationToken,
+      })
+      return { error: null }
+    } catch (err) {
+      debugLogger.error('AuthProvider', 'Sign up exception', { error: err })
+      return { error: 'Sign up failed' }
     }
-
-    console.log('✅ Supabase auth successful') // Debug log
-    return { error: null }
-  } catch (err) {
-    console.error('❌ Auth hook exception:', err) // Debug log
-    return { error: 'Authentication failed' }
-  }
-}
-
-  const signUp = async (email: string, password: string, fullName: string, invitationToken?: string) => {
-  console.log('🔍 SignUp called with invitation token:', invitationToken)
-
-  const { error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: {
-        full_name: fullName,
-        invitation_token: invitationToken || null,  // Store in user metadata
-      },
-    },
-  })
-
-  if (error) {
-    return { error: error.message }
   }
 
-  console.log('✅ SignUp successful, invitation token stored in metadata')
-  return { error: null }
-}
+  const resetPassword = async (email: string) => {
+    debugLogger.info('AuthProvider', 'Password reset initiated', { email })
 
-  const signOut = async () => {
-    const { error } = await supabase.auth.signOut()
-    if (error) {
-      console.error('Error signing out:', error)
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${typeof window !== 'undefined' ? window.location.origin : ''}/auth/reset-password`,
+      })
+
+      if (error) {
+        debugLogger.error('AuthProvider', 'Password reset failed', { email, error: error.message })
+        return { error: error.message }
+      }
+
+      debugLogger.success('AuthProvider', 'Password reset email sent', { email })
+      return { error: null }
+    } catch (err) {
+      debugLogger.error('AuthProvider', 'Password reset exception', { error: err })
+      return { error: 'Password reset request failed' }
     }
   }
 
   const refreshSession = async () => {
-    const { error } = await supabase.auth.refreshSession()
-    if (error) {
-      console.error('Error refreshing session:', error)
+    debugLogger.debug('AuthProvider', 'Manual session refresh triggered')
+
+    try {
+      const { data: { session }, error } = await supabase.auth.refreshSession()
+
+      if (error || !session) {
+        debugLogger.error('AuthProvider', 'Session refresh failed', { error: error?.message })
+        await signOut()
+        return
+      }
+
+      debugLogger.success('AuthProvider', 'Session refreshed successfully')
+      await setupRefreshTimer()
+    } catch (error) {
+      debugLogger.error('AuthProvider', 'Session refresh exception', { error })
+      await signOut()
     }
   }
+
+  const signOut = async () => {
+    debugLogger.info('AuthProvider', 'Sign out initiated')
+
+    try {
+      clearAllTimers()
+      const { error } = await supabase.auth.signOut()
+
+      if (error) {
+        debugLogger.error('AuthProvider', 'Sign out error', { error: error.message })
+      } else {
+        debugLogger.success('AuthProvider', 'Sign out successful')
+      }
+
+      setUser(null)
+      setUserRole(null)
+      setSessionStatus('unauthenticated')
+    } catch (error) {
+      debugLogger.error('AuthProvider', 'Sign out exception', { error })
+    }
+  }
+
+  // Permission checking with caching
+  const hasPermission = useCallback((requiredRole: string): boolean => {
+    if (!userRole) return false
+
+    // Check cache
+    if (permissionCacheRef.current) {
+      const { role, timestamp } = permissionCacheRef.current
+      if (Date.now() - timestamp < SESSION_CONFIG.PERMISSION_CACHE_TTL) {
+        return role === requiredRole || role === 'super_admin'
+      }
+    }
+
+    // Update cache
+    const hasAccess = userRole === requiredRole || userRole === 'super_admin'
+    permissionCacheRef.current = { role: userRole, timestamp: Date.now() }
+
+    return hasAccess
+  }, [userRole])
 
   const value: AuthContextType = {
     user,
     userRole,
     loading,
+    sessionStatus,
+    lastActivity,
     signIn,
     signUp,
     signOut,
     refreshSession,
+    resetPassword,
+    hasPermission,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

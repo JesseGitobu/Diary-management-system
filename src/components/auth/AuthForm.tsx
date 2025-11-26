@@ -1,3 +1,6 @@
+// src/components/auth/AuthForm.tsx - UPDATED WITH PASSWORD TOGGLE
+// Updated AuthForm component with password visibility toggle
+
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -7,17 +10,19 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { PasswordInput } from '@/components/ui/PasswordInput'
 import { Label } from '@/components/ui/Label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { useAuth } from '@/lib/hooks/useAuth'
-import { signUpSchema, signInSchema } from '@/lib/config/validation'
+import { signUpSchema, signInSchema, passwordRecoverySchema } from '@/lib/config/validation'
 import { Building2 } from 'lucide-react'
 
-type AuthMode = 'signin' | 'signup'
+type AuthMode = 'signin' | 'signup' | 'forgot-password'
 
 type SignInFormData = z.infer<typeof signInSchema>
 type SignUpFormData = z.infer<typeof signUpSchema>
+type PasswordRecoveryData = z.infer<typeof passwordRecoverySchema>
 
 interface AuthFormProps {
   mode?: AuthMode
@@ -28,19 +33,29 @@ export function AuthForm({ mode = 'signin' }: AuthFormProps) {
   const searchParams = useSearchParams()
   const invitationToken = searchParams.get('invitation')
   const urlMode = searchParams.get('mode') as AuthMode
+  const message = searchParams.get('message')
   
   const [authMode, setAuthMode] = useState<AuthMode>(urlMode || mode)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
   const [invitationData, setInvitationData] = useState<any>(null)
   const router = useRouter()
-  const { signIn, signUp } = useAuth()
+  const { signIn, signUp, resetPassword } = useAuth()
 
-  // Load invitation data if token is present
+  // Handle URL messages (like password reset success)
+  useEffect(() => {
+    if (message === 'password_reset_success') {
+      setSuccess('✓ Password reset successful! Please sign in with your new password.')
+      // Clear the message from URL
+      router.replace('/auth?mode=signin')
+    }
+  }, [message, router])
+
   useEffect(() => {
     if (invitationToken) {
       loadInvitationData(invitationToken)
-      setAuthMode('signup') // Force signup mode for invitations
+      setAuthMode('signup')
     }
   }, [invitationToken])
 
@@ -50,10 +65,7 @@ export function AuthForm({ mode = 'signin' }: AuthFormProps) {
       if (response.ok) {
         const data = await response.json()
         setInvitationData(data.invitation)
-        
-        // Pre-fill form with invitation data
         signUpForm.setValue('email', data.invitation.email)
-        // You can add more pre-filling here if you have the invitee name
       }
     } catch (error) {
       console.error('Error loading invitation data:', error)
@@ -76,72 +88,104 @@ export function AuthForm({ mode = 'signin' }: AuthFormProps) {
       password: '',
       confirmPassword: '',
       fullName: '',
+      agreeToTerms: false,
+    },
+  })
+
+  const passwordRecoveryForm = useForm<PasswordRecoveryData>({
+    resolver: zodResolver(passwordRecoverySchema),
+    defaultValues: {
+      email: '',
     },
   })
 
   const handleSignIn = async (data: SignInFormData) => {
-    console.log('🔍 Sign in attempt started:', data.email) // Debug log
     setLoading(true)
     setError(null)
+    setSuccess(null)
 
     try {
-      console.log('🔍 Calling signIn function...') // Debug log
       const { error } = await signIn(data.email, data.password)
 
-      console.log('🔍 Sign in response:', { error }) // Debug log
-
       if (error) {
-        console.error('❌ Sign in error:', error) // Debug log
         setError(error)
         setLoading(false)
       } else {
-        console.log('✅ Sign in successful, attempting redirect...') // Debug log
-        // Add a small delay to see if redirect happens
         setTimeout(() => {
-          console.log('🔍 Redirecting to dashboard...')
           router.push('/dashboard')
         }, 100)
       }
     } catch (err) {
-      console.error('❌ Sign in exception:', err) // Debug log
       setError('An unexpected error occurred')
       setLoading(false)
     }
   }
 
   const handleSignUp = async (data: SignUpFormData) => {
-  setLoading(true)
-  setError(null)
+    setLoading(true)
+    setError(null)
+    setSuccess(null)
 
-  console.log('🔍 AuthForm: Signing up with invitation token:', invitationToken)
+    const { error } = await signUp(data.email, data.password, data.fullName, invitationToken || undefined)
 
-  // Pass invitation token to signUp function
-  const { error } = await signUp(data.email, data.password, data.fullName, invitationToken || undefined)
-
-  if (error) {
-    setError(error)
-    setLoading(false)
-  } else {
-    // For invitations, redirect with token for reference (optional since it's in metadata now)
-    if (invitationToken) {
-      router.push(`/auth/confirm-email?invitation=${invitationToken}`)
+    if (error) {
+      setError(error)
+      setLoading(false)
     } else {
-      router.push('/auth/confirm-email')
+      if (invitationToken) {
+        router.push(`/auth/confirm-email?invitation=${invitationToken}`)
+      } else {
+        router.push('/auth/confirm-email')
+      }
     }
   }
-}
+
+  const handlePasswordRecovery = async (data: PasswordRecoveryData) => {
+    setLoading(true)
+    setError(null)
+    setSuccess(null)
+
+    try {
+      const { error } = await resetPassword(data.email)
+
+      if (error) {
+        setError(error)
+        setLoading(false)
+      } else {
+        setSuccess('✓ Check your email for password recovery instructions. The link will expire in 1 hour.')
+        setTimeout(() => {
+          setAuthMode('signin')
+          passwordRecoveryForm.reset()
+        }, 3000)
+      }
+    } catch (err) {
+      setError('An unexpected error occurred')
+      setLoading(false)
+    }
+  }
 
   const toggleMode = () => {
-    // Don't allow mode toggle if this is an invitation signup
     if (invitationToken) return
-    
     setAuthMode(authMode === 'signin' ? 'signup' : 'signin')
     setError(null)
+    setSuccess(null)
+  }
+
+  const goToForgotPassword = () => {
+    setAuthMode('forgot-password')
+    setError(null)
+    setSuccess(null)
+  }
+
+  const backToSignIn = () => {
+    setAuthMode('signin')
+    setError(null)
+    setSuccess(null)
   }
 
   return (
     <div className="auth-container">
-      <div className={"logo"}>DairyTrack Pro</div>
+      <div className="logo">DairyTrack Pro</div>
       <Card className="auth-card">
         {/* Invitation Banner */}
         {invitationData && (
@@ -162,22 +206,47 @@ export function AuthForm({ mode = 'signin' }: AuthFormProps) {
         
         <CardHeader>
           <CardTitle className="text-2xl text-center">
-            {invitationData ? 'Complete Your Registration' : (authMode === 'signin' ? 'Welcome Back' : 'Create Account')}
+            {authMode === 'forgot-password' 
+              ? 'Reset Password'
+              : invitationData 
+                ? 'Complete Your Registration' 
+                : (authMode === 'signin' ? 'Welcome Back' : 'Create Account')
+            }
           </CardTitle>
           <CardDescription className="text-center mb-5">
-            {invitationData 
-              ? 'Create your account to join the farm team'
-              : (authMode === 'signin' 
-                ? 'Sign in to your farm management account' 
-                : 'Get started with your dairy farm management'
-              )
+            {authMode === 'forgot-password'
+              ? 'Enter your email to receive password reset instructions'
+              : invitationData 
+                ? 'Create your account to join the farm team'
+                : (authMode === 'signin' 
+                  ? 'Sign in to your farm management account' 
+                  : 'Get started with your dairy farm management'
+                )
             }
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {/* Success Message */}
+          {success && (
+            <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-md text-green-700 text-sm">
+              <div className="flex items-start">
+                <svg className="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+                <span>{success}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Error Message */}
           {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">
-              {error}
+            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">
+              <div className="flex items-start">
+                <svg className="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+                <span>{error}</span>
+              </div>
             </div>
           )}
 
@@ -195,9 +264,8 @@ export function AuthForm({ mode = 'signin' }: AuthFormProps) {
               </div>
               <div>
                 <Label htmlFor="password">Password</Label>
-                <Input
+                <PasswordInput
                   id="password"
-                  type="password"
                   placeholder="Enter your password"
                   {...signInForm.register('password')}
                   error={signInForm.formState.errors.password?.message}
@@ -212,7 +280,7 @@ export function AuthForm({ mode = 'signin' }: AuthFormProps) {
                 {loading ? <LoadingSpinner size="sm" /> : 'Sign In'}
               </Button>
             </form>
-          ) : (
+          ) : authMode === 'signup' ? (
             <form onSubmit={signUpForm.handleSubmit(handleSignUp)} className="space-y-4">
               <div>
                 <Label htmlFor="fullName">Full Name</Label>
@@ -232,14 +300,13 @@ export function AuthForm({ mode = 'signin' }: AuthFormProps) {
                   placeholder="Enter your email"
                   {...signUpForm.register('email')}
                   error={signUpForm.formState.errors.email?.message}
-                  disabled={!!invitationData} // Disable if pre-filled from invitation
+                  disabled={!!invitationData}
                 />
               </div>
               <div>
                 <Label htmlFor="password">Password</Label>
-                <Input
+                <PasswordInput
                   id="password"
-                  type="password"
                   placeholder="Enter your password"
                   {...signUpForm.register('password')}
                   error={signUpForm.formState.errors.password?.message}
@@ -247,14 +314,47 @@ export function AuthForm({ mode = 'signin' }: AuthFormProps) {
               </div>
               <div>
                 <Label htmlFor="confirmPassword">Confirm Password</Label>
-                <Input
+                <PasswordInput
                   id="confirmPassword"
-                  type="password"
                   placeholder="Confirm your password"
                   {...signUpForm.register('confirmPassword')}
                   error={signUpForm.formState.errors.confirmPassword?.message}
                 />
               </div>
+
+              {/* Terms & Conditions Checkbox */}
+              <div className="flex items-start space-x-2 mt-4">
+                <input
+                  id="agreeToTerms"
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 text-farm-green rounded"
+                  {...signUpForm.register('agreeToTerms')}
+                />
+                <Label htmlFor="agreeToTerms" className="text-sm font-normal cursor-pointer">
+                  I agree to the{' '}
+                  <a 
+                    href="/terms-of-service" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-farm-green hover:underline"
+                  >
+                    Terms of Service
+                  </a>
+                  {' '}and{' '}
+                  <a 
+                    href="/privacy-policy" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-farm-green hover:underline"
+                  >
+                    Privacy Policy
+                  </a>
+                </Label>
+              </div>
+              {signUpForm.formState.errors.agreeToTerms && (
+                <p className="text-red-600 text-sm">{signUpForm.formState.errors.agreeToTerms.message}</p>
+              )}
+
               <Button
                 type="submit"
                 primary={true}
@@ -264,23 +364,71 @@ export function AuthForm({ mode = 'signin' }: AuthFormProps) {
                 {loading ? <LoadingSpinner size="sm" /> : (invitationData ? 'Join Team' : 'Create Account')}
               </Button>
             </form>
+          ) : (
+            // Forgot Password Form
+            <form onSubmit={passwordRecoveryForm.handleSubmit(handlePasswordRecovery)} className="space-y-4">
+              <div>
+                <Label htmlFor="recovery-email">Email Address</Label>
+                <Input
+                  id="recovery-email"
+                  type="email"
+                  placeholder="Enter your registered email"
+                  {...passwordRecoveryForm.register('email')}
+                  error={passwordRecoveryForm.formState.errors.email?.message}
+                />
+              </div>
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={loading}
+                primary={true}
+              >
+                {loading ? <LoadingSpinner size="sm" /> : 'Send Reset Link'}
+              </Button>
+            </form>
           )}
 
-          {/* Only show mode toggle if not an invitation */}
-          {!invitationToken && (
-            <div className="mt-6 text-center">
+          {/* Navigation Links */}
+          <div className="mt-6 text-center space-y-2">
+            {authMode === 'signin' ? (
+              <>
+                {!invitationToken && (
+                  <button
+                    type="button"
+                    onClick={toggleMode}
+                    className="block w-full text-sm text-dairy-gray hover:text-dairy-primary"
+                  >
+                    Don't have an account? Sign up
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={goToForgotPassword}
+                  className="block w-full text-sm text-dairy-gray hover:text-dairy-primary"
+                >
+                  Forgot your password?
+                </button>
+              </>
+            ) : authMode === 'signup' ? (
+              !invitationToken && (
+                <button
+                  type="button"
+                  onClick={toggleMode}
+                  className="text-sm text-dairy-gray hover:text-dairy-primary"
+                >
+                  Already have an account? Sign in
+                </button>
+              )
+            ) : (
               <button
                 type="button"
-                onClick={toggleMode}
+                onClick={backToSignIn}
                 className="text-sm text-dairy-gray hover:text-dairy-primary"
               >
-                {authMode === 'signin' 
-                  ? "Don't have an account? Sign up" 
-                  : "Already have an account? Sign in"
-                }
+                Back to Sign In
               </button>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Show invitation info if present */}
           {invitationData && (

@@ -1,3 +1,4 @@
+// src/app/auth/callback/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { createFarmOwnerProfile } from '@/lib/database/auth'

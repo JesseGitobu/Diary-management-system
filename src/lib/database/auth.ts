@@ -1,3 +1,4 @@
+// src/lib/database/auth.ts
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 //import { UserRole } from '@/lib/supabase/types'
 

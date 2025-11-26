@@ -1,3 +1,4 @@
+// src/app/layout.tsx
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
@@ -15,7 +16,7 @@ export const metadata: Metadata = {
   title: APP_CONFIG.name,
   description: APP_CONFIG.description,
   manifest: '/manifest.json',
-  themeColor: '#16a34a',
+  //themeColor: '#16a34a',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',

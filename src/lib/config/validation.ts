@@ -1,3 +1,4 @@
+// src/lib/config/validation.ts
 import { z } from 'zod'
 
 // Email validation schema
@@ -11,12 +12,15 @@ export const passwordSchema = z
   .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
   .regex(/[0-9]/, 'Password must contain at least one number')
 
-// Sign up schema
+// Sign up schema with terms acceptance
 export const signUpSchema = z.object({
   email: emailSchema,
   password: passwordSchema,
   fullName: z.string().min(2, 'Full name must be at least 2 characters'),
   confirmPassword: z.string(),
+  agreeToTerms: z.boolean().refine(val => val === true, {
+    message: 'You must agree to the Terms of Service and Privacy Policy'
+  }),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
   path: ["confirmPassword"],
@@ -26,6 +30,20 @@ export const signUpSchema = z.object({
 export const signInSchema = z.object({
   email: emailSchema,
   password: z.string().min(1, 'Password is required'),
+})
+
+// Password recovery schema
+export const passwordRecoverySchema = z.object({
+  email: emailSchema,
+})
+
+// Password reset schema (for when user receives reset link)
+export const passwordResetSchema = z.object({
+  password: passwordSchema,
+  confirmPassword: z.string(),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ["confirmPassword"],
 })
 
 // Farm basic info schema

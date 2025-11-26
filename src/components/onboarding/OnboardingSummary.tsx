@@ -197,7 +197,7 @@ export function OnboardingSummary({ userId, data, onEditStep }: OnboardingSummar
                   <h3 className="font-medium text-gray-900">Step 1: Farm Information</h3>
                 </div>
                 <button
-                  className='bg-[#6c757d] text-[white] rounded text-[0.85em] cursor-pointer flex items-center gap-[5px] transition-[background-color] duration-[0.2s] ease-[ease] px-3 py-1.5 border-[none] hover:bg-[#495057]'
+                  className='bg-[#6c757d] text-[white] rounded text-[0.85em] cursor-pointer flex items-center gap-[5px] transition-[background-color] duration-200 ease-in px-3 py-1.5 border-[none] hover:bg-[#495057]'
                   onClick={() => handleEditStep(1)}
                   type="button"
                 >
@@ -247,7 +247,7 @@ export function OnboardingSummary({ userId, data, onEditStep }: OnboardingSummar
                     <h3 className="font-medium text-gray-900">Step 2: Herd Management Features</h3>
                   </div>
                   <button
-                    className='bg-[#6c757d] text-[white] rounded text-[0.85em] cursor-pointer flex items-center gap-[5px] transition-[background-color] duration-[0.2s] ease-[ease] px-3 py-1.5 border-[none] hover:bg-[#495057]'
+                    className='bg-[#6c757d] text-[white] rounded text-[0.85em] cursor-pointer flex items-center gap-[5px] transition-[background-color] duration-200 ease-in px-3 py-1.5 border-[none] hover:bg-[#495057]'
                     onClick={() => handleEditStep(2)}
                     type="button"
                   >
@@ -275,7 +275,7 @@ export function OnboardingSummary({ userId, data, onEditStep }: OnboardingSummar
                     <h3 className="font-medium text-gray-900">Step 3: Tracking Setup</h3>
                   </div>
                   <button
-                    className='bg-[#6c757d] text-[white] rounded text-[0.85em] cursor-pointer flex items-center gap-[5px] transition-[background-color] duration-[0.2s] ease-[ease] px-3 py-1.5 border-[none] hover:bg-[#495057]'
+                    className='bg-[#6c757d] text-[white] rounded text-[0.85em] cursor-pointer flex items-center gap-[5px] transition-[background-color] duration-200 ease-in px-3 py-1.5 border-[none] hover:bg-[#495057]'
                     onClick={() => handleEditStep(3)}
                     type="button"
                   >
@@ -361,7 +361,7 @@ export function OnboardingSummary({ userId, data, onEditStep }: OnboardingSummar
                     <h3 className="font-medium text-gray-900">Step 4: Goals & Objectives</h3>
                   </div>
                   <button
-                    className='bg-[#6c757d] text-[white] rounded text-[0.85em] cursor-pointer flex items-center gap-[5px] transition-[background-color] duration-[0.2s] ease-[ease] px-3 py-1.5 border-[none] hover:bg-[#495057]'
+                    className='bg-[#6c757d] text-[white] rounded text-[0.85em] cursor-pointer flex items-center gap-[5px] transition-[background-color] duration-200 ease-in px-3 py-1.5 border-[none] hover:bg-[#495057]'
                     onClick={() => handleEditStep(4)}
                     type="button"
                   >
