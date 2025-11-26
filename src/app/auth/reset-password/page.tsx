@@ -39,11 +39,24 @@ export default function ResetPasswordPage() {
 
   // Check if user has an active session (from auth callback)
   useEffect(() => {
+    let mounted = true
+
     const checkSession = async () => {
       debugLogger.info('ResetPasswordPage', 'Checking for active session')
       
       try {
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+        // Create a timeout promise to prevent infinite loading
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Session check timeout')), 10000)
+        })
+
+        // Race getSession against the timeout
+        const { data: { session }, error: sessionError } = await Promise.race([
+          supabase.auth.getSession(),
+          timeoutPromise
+        ]) as any
+
+        if (!mounted) return
         
         debugLogger.debug('ResetPasswordPage', 'Session check result', {
           hasSession: !!session,
@@ -67,21 +80,36 @@ export default function ResetPasswordPage() {
           setIsRecoveryMode(true)
           setCheckingAuth(false)
         } else {
+          // If no session found immediately, checking if we might be in a hash flow
+          // If hash exists, we might want to wait for onAuthStateChange instead of failing immediately
+          // But to be safe, we'll default to error if no event fires shortly
           debugLogger.warning('ResetPasswordPage', 'No active session found')
-          setError('Invalid or expired reset link. Please request a new password reset.')
-          setCheckingAuth(false)
+          
+          if (window.location.hash && window.location.hash.includes('type=recovery')) {
+            debugLogger.info('ResetPasswordPage', 'Hash detected, waiting for auth event')
+            // Don't set error yet, let the listener handle it or the backup timeout
+          } else {
+            setError('Invalid or expired reset link. Please request a new password reset.')
+            setCheckingAuth(false)
+          }
         }
       } catch (err) {
+        if (!mounted) return
         debugLogger.error('ResetPasswordPage', 'Exception checking session', { error: err })
-        setError('An error occurred. Please try again.')
-        setCheckingAuth(false)
+        // If it was a timeout or other error, ensure we stop loading
+        if (checkingAuth) {
+           setError('Unable to verify session. Please try refreshing the page.')
+           setCheckingAuth(false)
+        }
       }
     }
 
     checkSession()
+    
+    return () => { mounted = false }
   }, [supabase])
 
-  // Listen for PASSWORD_RECOVERY event
+  // Listen for Auth events (Recovery or Sign In)
   useEffect(() => {
     debugLogger.info('ResetPasswordPage', 'Setting up auth state listener')
     
@@ -92,10 +120,18 @@ export default function ResetPasswordPage() {
           hasSession: !!session,
         })
         
+        // Handle Password Recovery Event
         if (event === 'PASSWORD_RECOVERY') {
           debugLogger.success('ResetPasswordPage', 'Password recovery event detected')
           setIsRecoveryMode(true)
           setCheckingAuth(false)
+        } 
+        // Also handle SIGNED_IN if we are still checking or had an error
+        else if (event === 'SIGNED_IN' && session) {
+          debugLogger.success('ResetPasswordPage', 'User signed in detected')
+          setIsRecoveryMode(true)
+          setCheckingAuth(false)
+          setError(null) // Clear any previous "no session" error
         }
       }
     )
