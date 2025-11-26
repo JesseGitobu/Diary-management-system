@@ -1,4 +1,4 @@
-// dashboard/production/page.tsx - Updated to pass complete animal data
+// src/app/dashboard/production/page.tsx
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { getProductionStats, getProductionRecords } from '@/lib/database/production'
@@ -6,6 +6,8 @@ import { getFarmAnimals } from '@/lib/database/animals'
 import { getDistributionStats, getDistributionRecords } from '@/lib/database/distribution'
 import { getDistributionChannels } from '@/lib/database/channels'
 import { getAvailableVolume } from '@/lib/database/inventory'
+import { getProductionSettings } from '@/lib/database/production-settings'
+import { getDistributionSettings } from '@/lib/database/distribution-settings'
 import { redirect } from 'next/navigation'
 import { ProductionDistributionDashboard } from '@/components/production/ProductionDistributionDashboard'
 
@@ -28,21 +30,25 @@ export default async function ProductionPage() {
     productionStats,
     productionRecords,
     animals,
+    productionSettings,
     // Distribution data
     distributionStats,
     distributionRecords,
     channels,
-    availableVolume
+    availableVolume,
+    distributionSettings
   ] = await Promise.all([
     // Production queries
     getProductionStats(userRole.farm_id, 30),
     getProductionRecords(userRole.farm_id, undefined, undefined, undefined),
     getFarmAnimals(userRole.farm_id), // This returns complete animal data
+    getProductionSettings(userRole.farm_id),
     // Distribution queries
     getDistributionStats(userRole.farm_id, 30),
     getDistributionRecords(userRole.farm_id, undefined, undefined, undefined),
     getDistributionChannels(userRole.farm_id),
-    getAvailableVolume(userRole.farm_id)
+    getAvailableVolume(userRole.farm_id),
+    getDistributionSettings(userRole.farm_id)
   ])
   
   // Filter eligible animals for production (only lactating females)
@@ -62,10 +68,12 @@ export default async function ProductionPage() {
             date: summary.record_date,
             volume: summary.total_milk_volume || 0,
             fat: summary.average_fat_content || 0,
-            protein: summary.average_protein_content || 0
+            protein: summary.average_protein_content || 0,
+            animalsMilked: summary.animals_milked || 0
           }))
         }}
         productionRecords={productionRecords.slice(0, 10)}
+        productionSettings={productionSettings}
         animals={productionEligibleAnimals.map(animal => ({
           id: animal.id,
           tag_number: animal.tag_number,
@@ -89,6 +97,7 @@ export default async function ProductionPage() {
           isActive: channel.isActive ?? true
         }))}
         availableVolume={availableVolume}
+        distributionSettings={distributionSettings}
         userRole={userRole.role_type}
       />
       

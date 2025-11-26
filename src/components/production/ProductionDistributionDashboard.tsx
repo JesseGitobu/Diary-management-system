@@ -1,7 +1,7 @@
-// Mobile-Optimized ProductionDistributionDashboard.tsx
+// src/components/production/ProductionDistributionDashboard.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
@@ -42,9 +42,11 @@ import {
   Upload,
   Download,
   FileText,
-  MapPin
+  MapPin,
+  Activity
 } from 'lucide-react'
 import Link from 'next/link'
+import { ProductionSettings, DistributionSettings } from '@/types/production-distribution-settings'
 
 interface ProductionDistributionDashboardProps {
   farmId: string
@@ -61,10 +63,12 @@ interface ProductionDistributionDashboardProps {
       volume: number
       fat: number
       protein: number
+      animalsMilked?: number
     }>
   }
   productionRecords: any[]
   animals: any[]
+  productionSettings: ProductionSettings | null
   // Distribution props
   distributionStats: {
     totalDistributed: number
@@ -108,6 +112,7 @@ interface ProductionDistributionDashboardProps {
     isActive: boolean
   }>
   availableVolume: number
+  distributionSettings: DistributionSettings | null
   userRole: string
 }
 
@@ -116,10 +121,12 @@ export function ProductionDistributionDashboard({
   productionStats,
   productionRecords: initialProductionRecords,
   animals,
+  productionSettings,
   distributionStats,
   distributionRecords: initialDistributionRecords,
   channels,
   availableVolume,
+  distributionSettings,
   userRole
 }: ProductionDistributionDashboardProps) {
   const { isMobile, isTablet } = useDeviceInfo()
@@ -153,41 +160,99 @@ export function ProductionDistributionDashboard({
     window.location.reload()
   }
 
+  // Determine if quality tracking is enabled (Advanced or Quality Focused modes)
+  const isQualityTracked = useMemo(() => {
+    if (!productionSettings) return true // Default to showing quality if settings not loaded
+    return productionSettings.productionTrackingMode !== 'basic' && productionSettings.enableQualityTracking !== false
+  }, [productionSettings])
+
+  // Calculate statistics for Basic Mode (Animals Milked & Yield)
+  const { animalsMilkedToday, avgYieldPerAnimal } = useMemo(() => {
+    // Sort summaries by date descending to get latest
+    const sortedSummaries = [...productionStats.dailySummaries].sort((a, b) => 
+      new Date(b.date).getTime() - new Date(a.date).getTime()
+    )
+    
+    // Get latest count (today or most recent entry)
+    const latestSummary = sortedSummaries[0]
+    const animalsMilkedToday = latestSummary?.animalsMilked || 0
+    
+    // Calculate average animals milked over the period
+    const totalAnimalsMilked = productionStats.dailySummaries.reduce((sum, day) => sum + (day.animalsMilked || 0), 0)
+    const daysWithRecords = productionStats.dailySummaries.filter(day => (day.animalsMilked || 0) > 0).length
+    const avgAnimals = daysWithRecords > 0 ? totalAnimalsMilked / daysWithRecords : 0
+    
+    // Calculate yield: Avg Daily Volume / Avg Animals
+    const avgYieldPerAnimal = avgAnimals > 0 ? productionStats.avgDailyVolume / avgAnimals : 0
+    
+    return { animalsMilkedToday, avgYieldPerAnimal }
+  }, [productionStats])
+
   // Stats configurations
-  const productionStatsConfig = [
-    {
-      title: 'Records',
-      value: productionStats.totalRecords,
-      icon: Calendar,
-      color: 'text-blue-600',
-      bgColor: 'bg-blue-50',
-      description: `Last ${productionStats.periodDays} days`
-    },
-    {
-      title: 'Total Volume',
-      value: `${productionStats.totalVolume.toFixed(1)}L`,
-      icon: Droplets,
-      color: 'text-cyan-600',
-      bgColor: 'bg-cyan-50',
-      description: `${productionStats.avgDailyVolume.toFixed(1)}L daily avg`
-    },
-    {
-      title: 'Avg Fat',
-      value: `${productionStats.avgFatContent.toFixed(2)}%`,
-      icon: Target,
-      color: 'text-orange-600',
-      bgColor: 'bg-orange-50',
-      description: 'Quality indicator'
-    },
-    {
-      title: 'Avg Protein',
-      value: `${productionStats.avgProteinContent.toFixed(2)}%`,
-      icon: TrendingUp,
-      color: 'text-green-600',
-      bgColor: 'bg-green-50',
-      description: 'Nutritional value'
+  const productionStatsConfig = useMemo(() => {
+    const baseStats = [
+      {
+        title: 'Records',
+        value: productionStats.totalRecords,
+        icon: Calendar,
+        color: 'text-blue-600',
+        bgColor: 'bg-blue-50',
+        description: `Last ${productionStats.periodDays} days`
+      },
+      {
+        title: 'Total Volume',
+        value: `${productionStats.totalVolume.toFixed(1)}${productionSettings?.productionUnit === 'kg' ? 'kg' : 'L'}`,
+        icon: Droplets,
+        color: 'text-cyan-600',
+        bgColor: 'bg-cyan-50',
+        description: `${productionStats.avgDailyVolume.toFixed(1)}${productionSettings?.productionUnit === 'kg' ? 'kg' : 'L'} daily avg`
+      }
+    ]
+
+    if (isQualityTracked) {
+      // Show Quality Stats
+      return [
+        ...baseStats,
+        {
+          title: 'Avg Fat',
+          value: `${productionStats.avgFatContent.toFixed(2)}%`,
+          icon: Target,
+          color: 'text-orange-600',
+          bgColor: 'bg-orange-50',
+          description: 'Quality indicator'
+        },
+        {
+          title: 'Avg Protein',
+          value: `${productionStats.avgProteinContent.toFixed(2)}%`,
+          icon: TrendingUp,
+          color: 'text-green-600',
+          bgColor: 'bg-green-50',
+          description: 'Nutritional value'
+        }
+      ]
+    } else {
+      // Show Volume/Animal Stats
+      return [
+        ...baseStats,
+        {
+          title: 'Animals Milked',
+          value: animalsMilkedToday,
+          icon: Activity,
+          color: 'text-purple-600',
+          bgColor: 'bg-purple-50',
+          description: 'Recorded in last session'
+        },
+        {
+          title: 'Avg Yield',
+          value: `${avgYieldPerAnimal.toFixed(1)} ${productionSettings?.productionUnit === 'kg' ? 'kg' : 'L'}`,
+          icon: BarChart3,
+          color: 'text-emerald-600',
+          bgColor: 'bg-emerald-50',
+          description: 'Per animal daily'
+        }
+      ]
     }
-  ]
+  }, [productionStats, isQualityTracked, animalsMilkedToday, avgYieldPerAnimal, productionSettings])
 
   const distributionStatsConfig = [
     {
@@ -460,9 +525,10 @@ export function ProductionDistributionDashboard({
                         total_milk_volume: summary.volume,
                         average_fat_content: summary.fat,
                         average_protein_content: summary.protein,
-                        animals_milked: 0 // Add a default value or get this from your data
+                        animals_milked: summary.animalsMilked || 0 // Pass through new prop
                       }))} 
                       isMobile={isMobile}
+                      settings={productionSettings}
                     />
                   </div>
                 </div>
@@ -654,6 +720,7 @@ export function ProductionDistributionDashboard({
               animals={animals}
               onSuccess={handleProductionRecordAdded}
               isMobile={isMobile}
+              settings={productionSettings}
             />
           </div>
         </Modal>
@@ -673,6 +740,7 @@ export function ProductionDistributionDashboard({
               availableVolume={availableVolume}
               onSuccess={handleDistributionRecordAdded}
               isMobile={isMobile}
+              settings={distributionSettings}
             />
           </div>
         </Modal>
@@ -691,6 +759,7 @@ export function ProductionDistributionDashboard({
               channels={channels}
               onSuccess={handleChannelUpdated}
               isMobile={isMobile}
+              settings={distributionSettings}
             />
           </div>
         </Modal>

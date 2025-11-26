@@ -1,3 +1,4 @@
+// src/lib/database/production.ts
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { Database } from '@/lib/supabase/types'
 

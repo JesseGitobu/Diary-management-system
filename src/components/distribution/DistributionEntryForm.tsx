@@ -1,7 +1,6 @@
-// Mobile-Optimized DistributionEntryForm.tsx
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
@@ -10,6 +9,7 @@ import { Textarea } from '@/components/ui/Textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Alert, AlertDescription } from '@/components/ui/Alert'
 import { Badge } from '@/components/ui/Badge'
+import { DistributionSettings } from '@/types/production-distribution-settings'
 
 import { 
   Truck, 
@@ -40,6 +40,7 @@ interface DistributionEntryFormProps {
   availableVolume: number
   onSuccess: () => void
   isMobile: boolean
+  settings: DistributionSettings | null
 }
 
 interface FormData {
@@ -51,7 +52,7 @@ interface FormData {
   driverName: string
   vehicleNumber: string
   notes: string
-  paymentMethod: 'cash' | 'mpesa' | 'bank' | 'credit'
+  paymentMethod: string
   expectedPaymentDate: string
 }
 
@@ -74,7 +75,8 @@ export function DistributionEntryForm({
   channels,
   availableVolume,
   onSuccess,
-  isMobile
+  isMobile,
+  settings
 }: DistributionEntryFormProps) {
   const [formData, setFormData] = useState<FormData>({
     channelId: '',
@@ -93,6 +95,24 @@ export function DistributionEntryForm({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null)
   const [calculatedTotal, setCalculatedTotal] = useState(0)
+
+  // Initialize defaults based on settings
+  useEffect(() => {
+    if (settings?.defaultPaymentMethod) {
+      setFormData(prev => ({ 
+        ...prev, 
+        paymentMethod: settings.defaultPaymentMethod as string 
+      }))
+    }
+  }, [settings])
+
+  // Filter allowed payment methods
+  const allowedPaymentMethods = useMemo(() => {
+    if (!settings?.paymentMethodsEnabled) return paymentMethods
+    return paymentMethods.filter(method => 
+      settings.paymentMethodsEnabled.includes(method.value as 'mpesa' | 'cash' | 'bank' | 'credit')
+    )
+  }, [settings])
 
   // Calculate total amount when volume or price changes
   useEffect(() => {
@@ -129,13 +149,27 @@ export function DistributionEntryForm({
     if (!formData.channelId) newErrors.channelId = 'Please select a distribution channel'
     if (!formData.volume) newErrors.volume = 'Please enter volume'
     if (parseFloat(formData.volume) <= 0) newErrors.volume = 'Volume must be greater than 0'
-    if (parseFloat(formData.volume) > availableVolume) {
-      newErrors.volume = `Volume cannot exceed available ${availableVolume}L`
+    
+    // Check available volume unless overdistribution is allowed
+    const canOverdistribute = settings?.allowOverdistribution
+    if (!canOverdistribute && parseFloat(formData.volume) > availableVolume) {
+      newErrors.volume = `Volume cannot exceed available ${availableVolume.toFixed(1)}L`
     }
+    
     if (!formData.pricePerLiter) newErrors.pricePerLiter = 'Please enter price per liter'
     if (parseFloat(formData.pricePerLiter) <= 0) newErrors.pricePerLiter = 'Price must be greater than 0'
     if (!formData.deliveryDate) newErrors.deliveryDate = 'Please select delivery date'
-    if (!formData.driverName.trim()) newErrors.driverName = 'Please enter driver name'
+    
+    // Conditional validation based on settings
+    const deliveryTrackingEnabled = settings?.enableDeliveryTracking !== false
+    if (deliveryTrackingEnabled) {
+      if (settings?.requireDriverDetails && !formData.driverName.trim()) {
+        newErrors.driverName = 'Please enter driver name'
+      }
+      if (settings?.requireVehicleDetails && !formData.vehicleNumber.trim()) {
+        newErrors.vehicleNumber = 'Please enter vehicle number'
+      }
+    }
 
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
@@ -169,6 +203,12 @@ export function DistributionEntryForm({
       setIsSubmitting(false)
     }
   }
+
+  // Determine visibility of sections/fields based on settings
+  const showDeliveryDetails = settings?.enableDeliveryTracking !== false
+  const showDriver = settings?.requireDriverDetails !== false // Default to showing if settings missing
+  const showVehicle = !!settings?.requireVehicleDetails
+  const showDeliveryTime = settings?.trackDeliveryTime !== false
 
   return (
     <div className={`space-y-6 ${isMobile ? '' : 'max-w-2xl mx-auto'}`}>
@@ -273,7 +313,7 @@ export function DistributionEntryForm({
                   type="number"
                   step="0.1"
                   min="0"
-                  max={availableVolume}
+                  max={settings?.allowOverdistribution ? undefined : availableVolume}
                   value={formData.volume}
                   onChange={(e) => handleInputChange('volume', e.target.value)}
                   placeholder="Enter volume in liters"
@@ -316,67 +356,77 @@ export function DistributionEntryForm({
         </Card>
 
         {/* Delivery Details */}
-        <Card>
-          <CardHeader className={`${isMobile ? 'pb-3' : ''}`}>
-            <CardTitle className={`${isMobile ? 'text-lg' : ''} flex items-center space-x-2`}>
-              <Truck className="w-5 h-5" />
-              <span>Delivery Details</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-2'} gap-4`}>
-                <div>
-                  <Label htmlFor="deliveryDate">Delivery Date *</Label>
-                  <Input
-                    id="deliveryDate"
-                    type="date"
-                    value={formData.deliveryDate}
-                    onChange={(e) => handleInputChange('deliveryDate', e.target.value)}
-                    className={errors.deliveryDate ? 'border-red-300' : ''}
-                  />
-                  {errors.deliveryDate && <p className="text-sm text-red-600 mt-1">{errors.deliveryDate}</p>}
+        {showDeliveryDetails && (
+          <Card>
+            <CardHeader className={`${isMobile ? 'pb-3' : ''}`}>
+              <CardTitle className={`${isMobile ? 'text-lg' : ''} flex items-center space-x-2`}>
+                <Truck className="w-5 h-5" />
+                <span>Delivery Details</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-2'} gap-4`}>
+                  <div>
+                    <Label htmlFor="deliveryDate">Delivery Date *</Label>
+                    <Input
+                      id="deliveryDate"
+                      type="date"
+                      value={formData.deliveryDate}
+                      onChange={(e) => handleInputChange('deliveryDate', e.target.value)}
+                      className={errors.deliveryDate ? 'border-red-300' : ''}
+                    />
+                    {errors.deliveryDate && <p className="text-sm text-red-600 mt-1">{errors.deliveryDate}</p>}
+                  </div>
+
+                  {showDeliveryTime && (
+                    <div>
+                      <Label htmlFor="deliveryTime">Delivery Time</Label>
+                      <Input
+                        id="deliveryTime"
+                        type="time"
+                        value={formData.deliveryTime}
+                        onChange={(e) => handleInputChange('deliveryTime', e.target.value)}
+                      />
+                    </div>
+                  )}
                 </div>
 
-                <div>
-                  <Label htmlFor="deliveryTime">Delivery Time</Label>
-                  <Input
-                    id="deliveryTime"
-                    type="time"
-                    value={formData.deliveryTime}
-                    onChange={(e) => handleInputChange('deliveryTime', e.target.value)}
-                  />
+                <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-2'} gap-4`}>
+                  {showDriver && (
+                    <div>
+                      <Label htmlFor="driverName">Driver Name {settings?.requireDriverDetails && '*'}</Label>
+                      <Input
+                        id="driverName"
+                        type="text"
+                        value={formData.driverName}
+                        onChange={(e) => handleInputChange('driverName', e.target.value)}
+                        placeholder="Enter driver's name"
+                        className={errors.driverName ? 'border-red-300' : ''}
+                      />
+                      {errors.driverName && <p className="text-sm text-red-600 mt-1">{errors.driverName}</p>}
+                    </div>
+                  )}
+
+                  {showVehicle && (
+                    <div>
+                      <Label htmlFor="vehicleNumber">Vehicle Number {settings?.requireVehicleDetails && '*'}</Label>
+                      <Input
+                        id="vehicleNumber"
+                        type="text"
+                        value={formData.vehicleNumber}
+                        onChange={(e) => handleInputChange('vehicleNumber', e.target.value)}
+                        placeholder="e.g., KCA 123A"
+                        className={errors.vehicleNumber ? 'border-red-300' : ''}
+                      />
+                      {errors.vehicleNumber && <p className="text-sm text-red-600 mt-1">{errors.vehicleNumber}</p>}
+                    </div>
+                  )}
                 </div>
               </div>
-
-              <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-2'} gap-4`}>
-                <div>
-                  <Label htmlFor="driverName">Driver Name *</Label>
-                  <Input
-                    id="driverName"
-                    type="text"
-                    value={formData.driverName}
-                    onChange={(e) => handleInputChange('driverName', e.target.value)}
-                    placeholder="Enter driver's name"
-                    className={errors.driverName ? 'border-red-300' : ''}
-                  />
-                  {errors.driverName && <p className="text-sm text-red-600 mt-1">{errors.driverName}</p>}
-                </div>
-
-                <div>
-                  <Label htmlFor="vehicleNumber">Vehicle Number</Label>
-                  <Input
-                    id="vehicleNumber"
-                    type="text"
-                    value={formData.vehicleNumber}
-                    onChange={(e) => handleInputChange('vehicleNumber', e.target.value)}
-                    placeholder="e.g., KCA 123A"
-                  />
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Payment Details */}
         <Card>
@@ -390,12 +440,12 @@ export function DistributionEntryForm({
             <div className="space-y-4">
               <div>
                 <Label htmlFor="paymentMethod">Payment Method</Label>
-                <Select value={formData.paymentMethod} onValueChange={(value) => handleInputChange('paymentMethod', value as any)}>
+                <Select value={formData.paymentMethod} onValueChange={(value) => handleInputChange('paymentMethod', value)}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {paymentMethods.map(method => (
+                    {allowedPaymentMethods.map(method => (
                       <SelectItem key={method.value} value={method.value}>
                         <div className="flex items-center space-x-2">
                           <span>{method.icon}</span>
@@ -449,7 +499,7 @@ export function DistributionEntryForm({
         <div className={`flex ${isMobile ? 'flex-col space-y-3' : 'flex-row space-x-4'} pt-4`}>
           <Button
             type="submit"
-            disabled={isSubmitting || availableVolume <= 0}
+            disabled={isSubmitting || (!settings?.allowOverdistribution && availableVolume <= 0)}
             className={`${isMobile ? 'w-full' : 'flex-1'} h-12`}
           >
             {isSubmitting ? (
@@ -476,7 +526,7 @@ export function DistributionEntryForm({
         </div>
 
         {/* Quick Actions for Mobile */}
-        {isMobile && (
+        {isMobile && availableVolume > 0 && (
           <div className="bg-gray-50 p-4 rounded-lg space-y-2">
             <h4 className="font-medium text-gray-900">Quick Actions</h4>
             <div className="grid grid-cols-2 gap-2">

@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 import { Animal } from '@/types/database'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { ProductionSettings } from '@/types/production-distribution-settings'
 
 interface ProductionRecord {
   id: string
@@ -66,6 +67,7 @@ export function AnimalProductionRecords({
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
   const [selectedPeriod, setSelectedPeriod] = useState<7 | 30 | 90>(30)
+  const [productionSettings, setProductionSettings] = useState<ProductionSettings | null>(null)
   
   // Determine if production records are applicable
   const isLactating = animal.production_status === 'lactating'
@@ -79,6 +81,24 @@ export function AnimalProductionRecords({
   
   const showProductionRecords = isProducingMilk
   const canAddProductionRecords = canAddRecords && isProducingMilk
+
+  useEffect(() => {
+    // Fetch settings independently
+    const fetchSettings = async () => {
+      try {
+        const response = await fetch(`/api/settings/production?farmId=${animal.farm_id}`)
+        if (response.ok) {
+          const result = await response.json()
+          if (result.success) {
+            setProductionSettings(result.settings)
+          }
+        }
+      } catch (error) {
+        console.error('Error loading production settings:', error)
+      }
+    }
+    fetchSettings()
+  }, [animal.farm_id])
 
   useEffect(() => {
     if (showProductionRecords) {
@@ -584,6 +604,7 @@ export function AnimalProductionRecords({
                 animal_id: animal.id
               }}
               onSuccess={handleRecordAdded}
+              settings={productionSettings}
             />
           </div>
         </Modal>

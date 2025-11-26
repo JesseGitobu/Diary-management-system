@@ -21,7 +21,8 @@ import {
   RotateCcw,
   Target,
   TrendingUp,
-  AlertCircle
+  AlertCircle,
+  Lock
 } from 'lucide-react'
 import { getDefaultProductionSettings } from '@/types/production-distribution-settings'
 
@@ -106,12 +107,106 @@ export default function ProductionSettingsTab({
     </div>
   )
 
+  // Determine if quality tab should be visible
+  const isQualityTabVisible = ['advanced', 'quality_focused'].includes(settings.productionTrackingMode)
+
   const sections = [
     { id: 'tracking', label: 'Tracking Mode', icon: Activity },
     { id: 'sessions', label: 'Sessions', icon: Clock },
-    { id: 'quality', label: 'Quality', icon: Droplets },
+    ...(isQualityTabVisible ? [{ id: 'quality', label: 'Quality', icon: Droplets }] : []),
     { id: 'charts', label: 'Charts', icon: BarChart3 }
   ]
+
+  // Reset activeSection if it becomes invalid
+  useEffect(() => {
+    if (activeSection === 'quality' && !isQualityTabVisible) {
+      setActiveSection('tracking')
+    }
+  }, [isQualityTabVisible, activeSection])
+
+  // Handle session toggle - ensure only one session when allowMultipleSessionsPerDay is false
+  const handleSessionToggle = (session: string, checked: boolean) => {
+    let updated = checked
+      ? [...settings.enabledSessions, session]
+      : settings.enabledSessions.filter((s: string) => s !== session)
+
+    // If allowMultipleSessionsPerDay is false and user is enabling a session, disable others
+    if (!settings.allowMultipleSessionsPerDay && checked) {
+      updated = [session]
+    }
+
+    updateSetting('enabledSessions', updated)
+  }
+
+  // Handle multiple sessions per day toggle
+  const handleMultipleSessionsToggle = (checked: boolean) => {
+    updateSetting('allowMultipleSessionsPerDay', checked)
+    
+    // If disabling multiple sessions, keep only the first enabled session
+    if (!checked && settings.enabledSessions.length > 1) {
+      updateSetting('enabledSessions', [settings.enabledSessions[0]])
+    }
+  }
+
+  // Validate session times based on interval
+  const validateSessionTime = (session: string, newTime: string) => {
+    const sessionOrder = ['morning', 'afternoon', 'evening']
+    const currentSessionIndex = sessionOrder.indexOf(session)
+    const currentHour = parseInt(newTime.split(':')[0])
+    const currentMinute = parseInt(newTime.split(':')[1]) || 0
+    const currentTotalMinutes = currentHour * 60 + currentMinute
+
+    // Check against previous session if exists
+    if (currentSessionIndex > 0) {
+      const prevSession = sessionOrder[currentSessionIndex - 1]
+      if (settings.enabledSessions.includes(prevSession)) {
+        const prevTime = settings.sessionTimes[prevSession]
+        const prevHour = parseInt(prevTime.split(':')[0])
+        const prevMinute = parseInt(prevTime.split(':')[1]) || 0
+        const prevTotalMinutes = prevHour * 60 + prevMinute
+        const diffMinutes = currentTotalMinutes - prevTotalMinutes
+
+        if (diffMinutes < settings.sessionIntervalHours * 60) {
+          toast.error(
+            `Minimum ${settings.sessionIntervalHours} hour(s) required between sessions`,
+            { duration: 4000 }
+          )
+          return false
+        }
+      }
+    }
+
+    // Check against next session if exists
+    if (currentSessionIndex < sessionOrder.length - 1) {
+      const nextSession = sessionOrder[currentSessionIndex + 1]
+      if (settings.enabledSessions.includes(nextSession)) {
+        const nextTime = settings.sessionTimes[nextSession]
+        const nextHour = parseInt(nextTime.split(':')[0])
+        const nextMinute = parseInt(nextTime.split(':')[1]) || 0
+        const nextTotalMinutes = nextHour * 60 + nextMinute
+        const diffMinutes = nextTotalMinutes - currentTotalMinutes
+
+        if (diffMinutes < settings.sessionIntervalHours * 60) {
+          toast.error(
+            `Minimum ${settings.sessionIntervalHours} hour(s) required between sessions`,
+            { duration: 4000 }
+          )
+          return false
+        }
+      }
+    }
+
+    return true
+  }
+
+  const handleSessionTimeChange = (session: string, newTime: string) => {
+    if (validateSessionTime(session, newTime)) {
+      updateSetting('sessionTimes', {
+        ...settings.sessionTimes,
+        [session]: newTime
+      })
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -137,6 +232,18 @@ export default function ProductionSettingsTab({
           )
         })}
       </div>
+
+      {/* Quality Tab Disabled Notice */}
+      {!isQualityTabVisible && (
+        <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
+          <div className="flex items-center gap-2 text-sm text-gray-700">
+            <Lock className="w-4 h-4 flex-shrink-0" />
+            <div>
+              <strong>Quality Parameters Hidden:</strong> The Quality tab is only available when using "Advanced" or "Quality Focused" tracking modes. Switch your tracking mode above to access quality settings.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tracking Mode Section */}
       {activeSection === 'tracking' && (
@@ -181,7 +288,8 @@ export default function ProductionSettingsTab({
 
               <InfoBox>
                 <strong>Mode Impact:</strong> Basic shows only volume input and chart. Advanced shows optional 
-                quality fields. Quality Focused makes fat, protein, and SCC required fields.
+                quality fields. Quality Focused makes fat, protein, and SCC required fields. <strong>Note:</strong> Quality parameters 
+                are only available in Advanced and Quality Focused modes.
               </InfoBox>
 
               <div className="grid md:grid-cols-2 gap-4">
@@ -255,12 +363,7 @@ export default function ProductionSettingsTab({
                       <input
                         type="checkbox"
                         checked={settings.enabledSessions.includes(session)}
-                        onChange={(e) => {
-                          const updated = e.target.checked
-                            ? [...settings.enabledSessions, session]
-                            : settings.enabledSessions.filter((s: string) => s !== session)
-                          updateSetting('enabledSessions', updated)
-                        }}
+                        onChange={(e) => handleSessionToggle(session, e.target.checked)}
                         className="w-4 h-4 text-blue-600 rounded"
                       />
                       <span className="capitalize">{session}</span>
@@ -269,24 +372,29 @@ export default function ProductionSettingsTab({
                 </div>
               </div>
 
-              <div>
-                <Label className="mb-2 block">Session Times</Label>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {['morning', 'afternoon', 'evening'].map(session => (
-                    <div key={session}>
-                      <label className="block text-sm text-gray-600 mb-1 capitalize">{session}</label>
-                      <Input
-                        type="time"
-                        value={settings.sessionTimes[session]}
-                        onChange={(e) => updateSetting('sessionTimes', {
-                          ...settings.sessionTimes,
-                          [session]: e.target.value
-                        })}
-                      />
-                    </div>
-                  ))}
+              {/* Session Times - Only visible if Require Session Time Recording is enabled */}
+              {settings.requireSessionTimeRecording && (
+                <div>
+                  <Label className="mb-2 block">Session Times</Label>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {['morning', 'afternoon', 'evening'].map(session => (
+                      settings.enabledSessions.includes(session) && (
+                        <div key={session}>
+                          <label className="block text-sm text-gray-600 mb-1 capitalize">{session}</label>
+                          <Input
+                            type="time"
+                            value={settings.sessionTimes[session]}
+                            onChange={(e) => handleSessionTimeChange(session, e.target.value)}
+                          />
+                        </div>
+                      )
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Minimum interval between sessions: {settings.sessionIntervalHours} hour(s)
+                  </p>
                 </div>
-              </div>
+              )}
 
               <div className="space-y-3">
                 <label className="flex items-center justify-between p-3 border rounded-lg">
@@ -296,7 +404,7 @@ export default function ProductionSettingsTab({
                   </div>
                   <Switch
                     checked={settings.allowMultipleSessionsPerDay}
-                    onCheckedChange={(checked) => updateSetting('allowMultipleSessionsPerDay', checked)}
+                    onCheckedChange={handleMultipleSessionsToggle}
                   />
                 </label>
 
@@ -321,15 +429,15 @@ export default function ProductionSettingsTab({
                   value={settings.sessionIntervalHours}
                   onChange={(e) => updateSetting('sessionIntervalHours', parseInt(e.target.value))}
                 />
-                <p className="text-xs text-gray-500 mt-1">Minimum time between sessions</p>
+                <p className="text-xs text-gray-500 mt-1">Minimum time required between sessions. Used for validation when recording session times.</p>
               </div>
             </CardContent>
           </Card>
         </div>
       )}
 
-      {/* Quality Parameters Section */}
-      {activeSection === 'quality' && (
+      {/* Quality Parameters Section - Only visible for Advanced and Quality Focused modes */}
+      {activeSection === 'quality' && isQualityTabVisible && (
         <div className="space-y-6">
           {/* Fat Content */}
           <Card>
@@ -566,9 +674,30 @@ export default function ProductionSettingsTab({
               </div>
 
               <div className="space-y-2">
+                {/* Show Volume Chart - Hidden when quality_only is selected */}
+                {settings.chartDisplayMode !== 'quality_only' && (
+                  <label className="flex items-center justify-between p-3 border rounded-lg">
+                    <span>Show Volume Chart</span>
+                    <Switch
+                      checked={settings.showVolumeChart}
+                      onCheckedChange={(checked) => updateSetting('showVolumeChart', checked)}
+                    />
+                  </label>
+                )}
+
+                {/* Show Fat & Protein Chart - Hidden when volume_only is selected */}
+                {settings.chartDisplayMode !== 'volume_only' && (
+                  <label className="flex items-center justify-between p-3 border rounded-lg">
+                    <span>Show Fat & Protein Chart</span>
+                    <Switch
+                      checked={settings.showFatProteinChart}
+                      onCheckedChange={(checked) => updateSetting('showFatProteinChart', checked)}
+                    />
+                  </label>
+                )}
+
+                {/* Other toggles always visible */}
                 {[
-                  { key: 'showVolumeChart', label: 'Show Volume Chart' },
-                  { key: 'showFatProteinChart', label: 'Show Fat & Protein Chart' },
                   { key: 'showTrendLines', label: 'Show Trend Lines' },
                   { key: 'showAverages', label: 'Show Average Lines' },
                   { key: 'showTargets', label: 'Show Target Lines' },
@@ -583,6 +712,11 @@ export default function ProductionSettingsTab({
                   </label>
                 ))}
               </div>
+
+              <InfoBox>
+                <strong>Chart Display Modes:</strong> "Volume Only" hides quality-related toggles, "Quality Only" hides volume chart toggle, 
+                "Combined" and "Separate" show all chart options.
+              </InfoBox>
             </CardContent>
           </Card>
         </div>

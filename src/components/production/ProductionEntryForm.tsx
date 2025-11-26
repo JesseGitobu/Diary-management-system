@@ -1,6 +1,7 @@
+// src/components/production/ProductionEntryForm.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -10,24 +11,21 @@ import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { ProductionSettings } from '@/types/production-distribution-settings'
 
-// Updated schema to handle null values properly
-const productionSchema = z.object({
-  animal_id: z.string().min(1, 'Please select an animal'),
-  record_date: z.string().min(1, 'Date is required'),
-  milking_session: z.enum(['morning', 'afternoon', 'evening']),
-  milk_volume: z.number().min(0, 'Volume must be positive').max(100, 'Volume seems too high'),
-  // Allow null values explicitly for optional fields
-  fat_content: z.number().min(0).max(10).nullable().optional(),
-  protein_content: z.number().min(0).max(10).nullable().optional(),
-  somatic_cell_count: z.number().min(0).nullable().optional(),
-  lactose_content: z.number().min(0).max(10).nullable().optional(),
-  temperature: z.number().min(0).max(50).nullable().optional(),
-  ph_level: z.number().min(6).max(8).nullable().optional(),
-  notes: z.string().nullable().optional(),
-})
-
-type ProductionFormData = z.infer<typeof productionSchema>
+type ProductionFormData = {
+  animal_id: string;
+  record_date: string;
+  milking_session: 'morning' | 'afternoon' | 'evening';
+  milk_volume: number;
+  fat_content?: number | null;
+  protein_content?: number | null;
+  somatic_cell_count?: number | null;
+  lactose_content?: number | null;
+  temperature?: number | null;
+  ph_level?: number | null;
+  notes?: string | null;
+}
 
 interface ProductionEntryFormProps {
   farmId: string
@@ -35,6 +33,7 @@ interface ProductionEntryFormProps {
   initialData?: Partial<ProductionFormData>
   onSuccess?: () => void
   isMobile?: boolean
+  settings: ProductionSettings | null
 }
 
 export function ProductionEntryForm({
@@ -42,18 +41,63 @@ export function ProductionEntryForm({
   animals,
   initialData,
   onSuccess,
-  isMobile
+  isMobile,
+  settings
 }: ProductionEntryFormProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
+
+  // Memoize schema construction to react to settings changes
+  const productionSchema = useMemo(() => {
+    // Determine if quality fields are required based on tracking mode and specific toggles
+    const isQualityFocused = settings?.productionTrackingMode === 'quality_focused'
+    
+    // Helper to create a number schema that matches the nullable/optional nature of ProductionFormData
+    // regardless of whether it is "required" in the UI/logic.
+    const createNumberSchema = (isRequired: boolean, label: string, min = 0, max = 100) => {
+      // Base schema matches ProductionFormData: number | null | undefined
+      const schema = z.number()
+        .min(min, `${label} must be at least ${min}`)
+        .max(max, `${label} cannot exceed ${max}`)
+        .nullable()
+        .optional()
+
+      // If strictly required, we refine the schema to disallow null/undefined
+      if (isRequired) {
+        return schema.refine((val) => val !== null && val !== undefined, {
+          message: `${label} is required`
+        })
+      }
+      return schema
+    }
+
+    return z.object({
+      animal_id: z.string().min(1, 'Please select an animal'),
+      record_date: z.string().min(1, 'Date is required'),
+      milking_session: z.enum(['morning', 'afternoon', 'evening']),
+      milk_volume: z.number()
+        .min(0.1, 'Volume must be positive')
+        .max(100, 'Volume seems too high'),
+      
+      // Dynamic validation based on settings
+      fat_content: createNumberSchema(isQualityFocused && !!settings?.fatContentRequired, "Fat Content", 0, 15),
+      protein_content: createNumberSchema(isQualityFocused && !!settings?.proteinContentRequired, "Protein Content", 0, 10),
+      somatic_cell_count: createNumberSchema(isQualityFocused && !!settings?.sccRequired, "SCC", 0, 9999999),
+      lactose_content: createNumberSchema(isQualityFocused && !!settings?.lactoseRequired, "Lactose", 0, 10),
+      temperature: createNumberSchema(isQualityFocused && !!settings?.temperatureRequired, "Temperature", 0, 50),
+      ph_level: createNumberSchema(isQualityFocused && !!settings?.phRequired, "pH Level", 0, 14),
+      
+      notes: z.string().nullable().optional(),
+    })
+  }, [settings])
 
   const form = useForm<ProductionFormData>({
     resolver: zodResolver(productionSchema),
     defaultValues: {
       animal_id: initialData?.animal_id || '',
       record_date: initialData?.record_date || new Date().toISOString().split('T')[0],
-      milking_session: initialData?.milking_session || 'morning',
+      milking_session: initialData?.milking_session || settings?.defaultSession || 'morning',
       milk_volume: initialData?.milk_volume || undefined,
       fat_content: initialData?.fat_content || null,
       protein_content: initialData?.protein_content || null,
@@ -65,6 +109,13 @@ export function ProductionEntryForm({
     },
   })
 
+  // Determine visibility
+  const isBasicMode = settings?.productionTrackingMode === 'basic'
+  const isQualityVisible = !isBasicMode && settings?.enableQualityTracking !== false
+
+  // Determine enabled sessions
+  const enabledSessions = settings?.enabledSessions || ['morning', 'afternoon', 'evening']
+
   // Function to convert empty strings to null for numeric fields
   const preprocessFormData = (data: ProductionFormData) => {
     return {
@@ -75,7 +126,6 @@ export function ProductionEntryForm({
       lactose_content: data.lactose_content === undefined ? null : data.lactose_content,
       temperature: data.temperature === undefined ? null : data.temperature,
       ph_level: data.ph_level === undefined ? null : data.ph_level,
-
       notes: data.notes === '' ? null : data.notes,
     }
   }
@@ -85,7 +135,6 @@ export function ProductionEntryForm({
     setError(null)
 
     try {
-      // Preprocess the data to handle null values
       const processedData = preprocessFormData(data)
 
       const response = await fetch('/api/production', {
@@ -110,11 +159,10 @@ export function ProductionEntryForm({
         router.push('/dashboard/production')
       }
 
-      // Reset form for next entry with null defaults for optional fields
       form.reset({
         animal_id: '',
         record_date: new Date().toISOString().split('T')[0],
-        milking_session: 'morning',
+        milking_session: settings?.defaultSession || 'morning',
         milk_volume: undefined,
         fat_content: null,
         protein_content: null,
@@ -142,11 +190,13 @@ export function ProductionEntryForm({
   )
 
   return (
-    <Card>
+    <Card className="w-full">
       <CardHeader>
         <CardTitle>Record Milk Production</CardTitle>
         <CardDescription>
-          Enter milk production data for individual animals
+          Enter milk production data. 
+          {isBasicMode && " (Basic Mode - Volume Only)"}
+          {!isBasicMode && " (Advanced Mode - Quality Parameters Enabled)"}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -155,8 +205,6 @@ export function ProductionEntryForm({
             {error}
           </div>
         )}
-
-
 
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
           {/* Basic Information */}
@@ -179,15 +227,6 @@ export function ProductionEntryForm({
                   ))
                 )}
               </select>
-
-              {/* Add a helpful message if no eligible animals */}
-              {eligibleAnimals.length === 0 && (
-                <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
-                  <p className="text-sm text-yellow-800">
-                    ℹ️ No lactating animals available. Only animals with "Lactating" status can have production records.
-                  </p>
-                </div>
-              )}
               {form.formState.errors.animal_id && (
                 <p className="text-sm text-red-600 mt-1">
                   {form.formState.errors.animal_id.message}
@@ -210,19 +249,26 @@ export function ProductionEntryForm({
               <select
                 id="milking_session"
                 {...form.register('milking_session')}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent capitalize"
               >
-                <option value="morning">Morning</option>
-                <option value="afternoon">Afternoon</option>
-                <option value="evening">Evening</option>
+                {enabledSessions.map(session => (
+                   <option key={session} value={session}>{session}</option>
+                ))}
+                {/* Fallback if enabledSessions is empty/invalid */}
+                {enabledSessions.length === 0 && <option value="morning">Morning</option>}
               </select>
+              {form.formState.errors.milking_session && (
+                <p className="text-sm text-red-600 mt-1">
+                  {form.formState.errors.milking_session.message}
+                </p>
+              )}
             </div>
           </div>
 
-          {/* Production Data */}
+          {/* Volume is always required */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="milk_volume">Milk Volume (Liters) *</Label>
+              <Label htmlFor="milk_volume">Milk Volume ({settings?.productionUnit || 'liters'}) *</Label>
               <Input
                 id="milk_volume"
                 type="number"
@@ -232,120 +278,166 @@ export function ProductionEntryForm({
                 placeholder="e.g., 25.5"
               />
             </div>
-
-            <div>
-              <Label htmlFor="fat_content">Fat Content (%)</Label>
-              <Input
-                id="fat_content"
-                type="number"
-                step="0.01"
-                {...form.register('fat_content', {
-                  valueAsNumber: true,
-                  setValueAs: (value) => value === '' ? null : parseFloat(value) || null
-                })}
-                error={form.formState.errors.fat_content?.message}
-                placeholder="e.g., 3.75"
-              />
-            </div>
+            
+            {/* Show notes alongside volume in basic mode to save space */}
+            {isBasicMode && (
+               <div>
+                <Label htmlFor="notes">Notes</Label>
+                <Input
+                  id="notes"
+                  {...form.register('notes')}
+                  placeholder="Optional notes"
+                />
+              </div>
+            )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="protein_content">Protein Content (%)</Label>
-              <Input
-                id="protein_content"
-                type="number"
-                step="0.01"
-                {...form.register('protein_content', {
-                  valueAsNumber: true,
-                  setValueAs: (value) => value === '' ? null : parseFloat(value) || null
-                })}
-                error={form.formState.errors.protein_content?.message}
-                placeholder="e.g., 3.25"
-              />
-            </div>
+          {/* Conditional Quality Fields */}
+          {isQualityVisible && (
+            <div className="space-y-4 pt-4 border-t border-gray-100">
+               <h4 className="text-sm font-medium text-gray-500">Quality Parameters</h4>
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Fat Content */}
+                  {settings?.trackFatContent && (
+                    <div>
+                      <Label htmlFor="fat_content">
+                        Fat Content (%) {settings.productionTrackingMode === 'quality_focused' && settings.fatContentRequired && '*'}
+                      </Label>
+                      <Input
+                        id="fat_content"
+                        type="number"
+                        step="0.01"
+                        {...form.register('fat_content', {
+                          valueAsNumber: true,
+                          setValueAs: (value) => value === '' ? null : parseFloat(value) || null
+                        })}
+                        error={form.formState.errors.fat_content?.message}
+                        placeholder="e.g., 3.75"
+                      />
+                    </div>
+                  )}
 
-            <div>
-              <Label htmlFor="somatic_cell_count">Somatic Cell Count</Label>
-              <Input
-                id="somatic_cell_count"
-                type="number"
-                {...form.register('somatic_cell_count', {
-                  valueAsNumber: true,
-                  setValueAs: (value) => value === '' ? null : parseInt(value) || null
-                })}
-                error={form.formState.errors.somatic_cell_count?.message}
-                placeholder="e.g., 200000"
-              />
-            </div>
-          </div>
+                  {/* Protein Content */}
+                  {settings?.trackProteinContent && (
+                    <div>
+                      <Label htmlFor="protein_content">
+                         Protein Content (%) {settings.productionTrackingMode === 'quality_focused' && settings.proteinContentRequired && '*'}
+                      </Label>
+                      <Input
+                        id="protein_content"
+                        type="number"
+                        step="0.01"
+                        {...form.register('protein_content', {
+                          valueAsNumber: true,
+                          setValueAs: (value) => value === '' ? null : parseFloat(value) || null
+                        })}
+                        error={form.formState.errors.protein_content?.message}
+                        placeholder="e.g., 3.25"
+                      />
+                    </div>
+                  )}
 
-          {/* Advanced Parameters */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <Label htmlFor="lactose_content">Lactose Content (%)</Label>
-              <Input
-                id="lactose_content"
-                type="number"
-                step="0.01"
-                {...form.register('lactose_content', {
-                  valueAsNumber: true,
-                  setValueAs: (value) => value === '' ? null : parseFloat(value) || null
-                })}
-                error={form.formState.errors.lactose_content?.message}
-                placeholder="e.g., 4.8"
-              />
-            </div>
+                  {/* SCC */}
+                  {settings?.trackSomaticCellCount && (
+                    <div>
+                      <Label htmlFor="somatic_cell_count">
+                        Somatic Cell Count {settings.productionTrackingMode === 'quality_focused' && settings.sccRequired && '*'}
+                      </Label>
+                      <Input
+                        id="somatic_cell_count"
+                        type="number"
+                        {...form.register('somatic_cell_count', {
+                          valueAsNumber: true,
+                          setValueAs: (value) => value === '' ? null : parseInt(value) || null
+                        })}
+                        error={form.formState.errors.somatic_cell_count?.message}
+                        placeholder="e.g., 200000"
+                      />
+                    </div>
+                  )}
 
-            <div>
-              <Label htmlFor="temperature">Temperature (°C)</Label>
-              <Input
-                id="temperature"
-                type="number"
-                step="0.1"
-                {...form.register('temperature', {
-                  valueAsNumber: true,
-                  setValueAs: (value) => value === '' ? null : parseFloat(value) || null
-                })}
-                error={form.formState.errors.temperature?.message}
-                placeholder="e.g., 37.5"
-              />
-            </div>
+                   {/* Lactose */}
+                   {settings?.trackLactoseContent && (
+                    <div>
+                      <Label htmlFor="lactose_content">
+                         Lactose (%) {settings.productionTrackingMode === 'quality_focused' && settings.lactoseRequired && '*'}
+                      </Label>
+                      <Input
+                        id="lactose_content"
+                        type="number"
+                        step="0.01"
+                        {...form.register('lactose_content', {
+                          valueAsNumber: true,
+                          setValueAs: (value) => value === '' ? null : parseFloat(value) || null
+                        })}
+                        error={form.formState.errors.lactose_content?.message}
+                      />
+                    </div>
+                  )}
+                  
+                  {/* Temperature */}
+                  {settings?.trackTemperature && (
+                     <div>
+                      <Label htmlFor="temperature">
+                         Temperature ({settings.temperatureUnit === 'celsius' ? '°C' : '°F'}) {settings.productionTrackingMode === 'quality_focused' && settings.temperatureRequired && '*'}
+                      </Label>
+                      <Input
+                        id="temperature"
+                        type="number"
+                        step="0.1"
+                        {...form.register('temperature', {
+                          valueAsNumber: true,
+                          setValueAs: (value) => value === '' ? null : parseFloat(value) || null
+                        })}
+                        error={form.formState.errors.temperature?.message}
+                      />
+                    </div>
+                  )}
 
-            <div>
-              <Label htmlFor="ph_level">pH Level</Label>
-              <Input
-                id="ph_level"
-                type="number"
-                step="0.1"
-                {...form.register('ph_level', {
-                  valueAsNumber: true,
-                  setValueAs: (value) => value === '' ? null : parseFloat(value) || null
-                })}
-                error={form.formState.errors.ph_level?.message}
-                placeholder="e.g., 6.7"
-              />
+                   {/* pH */}
+                   {settings?.trackPhLevel && (
+                     <div>
+                      <Label htmlFor="ph_level">
+                         pH Level {settings.productionTrackingMode === 'quality_focused' && settings.phRequired && '*'}
+                      </Label>
+                      <Input
+                        id="ph_level"
+                        type="number"
+                        step="0.1"
+                        {...form.register('ph_level', {
+                          valueAsNumber: true,
+                          setValueAs: (value) => value === '' ? null : parseFloat(value) || null
+                        })}
+                        error={form.formState.errors.ph_level?.message}
+                      />
+                    </div>
+                  )}
+               </div>
+               
+               {/* Notes in Advanced Mode */}
+               <div>
+                <Label htmlFor="notes">Notes</Label>
+                <textarea
+                  id="notes"
+                  {...form.register('notes', {
+                    setValueAs: (value) => value === '' ? null : value
+                  })}
+                  rows={2}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+                  placeholder="Any additional notes..."
+                />
+              </div>
             </div>
-          </div>
-
-          <div>
-            <Label htmlFor="notes">Notes</Label>
-            <textarea
-              id="notes"
-              {...form.register('notes', {
-                setValueAs: (value) => value === '' ? null : value
-              })}
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
-              placeholder="Any additional notes about this milking session..."
-            />
-          </div>
+          )}
 
           <div className="flex justify-end space-x-4">
             <Button
               type="button"
               variant="outline"
-              onClick={() => router.push('/dashboard/production')}
+              onClick={() => {
+                if (onSuccess) onSuccess() 
+                else router.push('/dashboard/production')
+              }}
             >
               Cancel
             </Button>

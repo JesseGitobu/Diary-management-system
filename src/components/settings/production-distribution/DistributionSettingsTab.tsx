@@ -200,16 +200,18 @@ export default function DistributionSettingsTab({
               </div>
 
               <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <Label>Low Inventory Threshold (Liters)</Label>
-                  <Input
-                    type="number"
-                    step="0.1"
-                    value={settings.lowInventoryThresholdLiters}
-                    onChange={(e) => updateSetting('lowInventoryThresholdLiters', parseFloat(e.target.value))}
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Alert when below this amount</p>
-                </div>
+                {settings.alertLowInventory && (
+                  <div>
+                    <Label>Low Inventory Threshold (Liters)</Label>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      value={settings.lowInventoryThresholdLiters}
+                      onChange={(e) => updateSetting('lowInventoryThresholdLiters', parseFloat(e.target.value))}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Alert when below this amount</p>
+                  </div>
+                )}
 
                 <div>
                   <Label>Reserve Volume (%)</Label>
@@ -277,57 +279,64 @@ export default function DistributionSettingsTab({
                 />
               </label>
 
-              <label className="flex items-center justify-between p-3 border rounded-lg">
-                <span>Allow Multiple Channels</span>
-                <Switch
-                  checked={settings.allowMultipleChannels}
-                  onCheckedChange={(checked) => updateSetting('allowMultipleChannels', checked)}
-                />
-              </label>
+              {settings.enableChannelManagement && (
+                <>
+                  <label className="flex items-center justify-between p-3 border rounded-lg">
+                    <span>Allow Multiple Channels</span>
+                    <Switch
+                      checked={settings.allowMultipleChannels}
+                      onCheckedChange={(checked) => updateSetting('allowMultipleChannels', checked)}
+                    />
+                  </label>
 
-              <div>
-                <Label>Maximum Active Channels</Label>
-                <Input
-                  type="number"
-                  min="1"
-                  max="50"
-                  value={settings.maxActiveChannels}
-                  onChange={(e) => updateSetting('maxActiveChannels', parseInt(e.target.value))}
-                />
-              </div>
-
-              <div>
-                <Label>Enabled Channel Types</Label>
-                <div className="space-y-2 mt-2">
-                  {['cooperative', 'processor', 'direct', 'retail'].map(type => (
-                    <label key={type} className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={settings.channelTypesEnabled.includes(type)}
-                        onChange={(e) => {
-                          const updated = e.target.checked
-                            ? [...settings.channelTypesEnabled, type]
-                            : settings.channelTypesEnabled.filter((t: string) => t !== type)
-                          updateSetting('channelTypesEnabled', updated)
-                        }}
-                        className="w-4 h-4 text-blue-600 rounded"
+                  {settings.allowMultipleChannels && (
+                    <div>
+                      <Label>Maximum Active Channels</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="50"
+                        value={settings.maxActiveChannels}
+                        onChange={(e) => updateSetting('maxActiveChannels', parseInt(e.target.value))}
                       />
-                      <span className="capitalize">{type}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
+                    </div>
+                  )}
 
-              <label className="flex items-center justify-between p-3 border rounded-lg">
-                <div>
-                  <div className="font-medium">Track Channel Performance</div>
-                  <div className="text-sm text-gray-500">Monitor volume, payment, and quality metrics</div>
-                </div>
-                <Switch
-                  checked={settings.trackChannelPerformance}
-                  onCheckedChange={(checked) => updateSetting('trackChannelPerformance', checked)}
-                />
-              </label>
+                  <div>
+                    <Label>Enabled Channel Types</Label>
+                    <div className="space-y-2 mt-2">
+                      {['cooperative', 'processor', 'direct', 'retail'].map(type => (
+                        <label key={type} className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={settings.channelTypesEnabled?.includes(type) || false}
+                            onChange={(e) => {
+                              const currentTypes = settings.channelTypesEnabled || []
+                              const updated = e.target.checked
+                                ? [...currentTypes, type]
+                                : currentTypes.filter((t: string) => t !== type)
+                              updateSetting('channelTypesEnabled', updated)
+                            }}
+                            className="w-4 h-4 text-blue-600 rounded"
+                          />
+                          <span className="capitalize">{type}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <label className="flex items-center justify-between p-3 border rounded-lg">
+                    <div>
+                      <div className="font-medium">Track Channel Performance</div>
+                      <div className="text-sm text-gray-500">Monitor volume, payment, and quality metrics</div>
+                    </div>
+                    <Switch
+                      checked={settings.trackChannelPerformance}
+                      onCheckedChange={(checked) => updateSetting('trackChannelPerformance', checked)}
+                    />
+                  </label>
+                </>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -502,88 +511,92 @@ export default function DistributionSettingsTab({
                 />
               </label>
 
-              <div className="space-y-2">
-                <label className="flex items-center justify-between p-3 border rounded-lg">
-                  <span>Require Driver Details</span>
-                  <Switch
-                    checked={settings.requireDriverDetails}
-                    onCheckedChange={(checked) => updateSetting('requireDriverDetails', checked)}
-                  />
-                </label>
+              {settings.enableDeliveryTracking && (
+                <>
+                  <div className="space-y-2">
+                    <label className="flex items-center justify-between p-3 border rounded-lg">
+                      <span>Require Driver Details</span>
+                      <Switch
+                        checked={settings.requireDriverDetails}
+                        onCheckedChange={(checked) => updateSetting('requireDriverDetails', checked)}
+                      />
+                    </label>
 
-                <label className="flex items-center justify-between p-3 border rounded-lg">
-                  <span>Require Vehicle Details</span>
-                  <Switch
-                    checked={settings.requireVehicleDetails}
-                    onCheckedChange={(checked) => updateSetting('requireVehicleDetails', checked)}
-                  />
-                </label>
+                    <label className="flex items-center justify-between p-3 border rounded-lg">
+                      <span>Require Vehicle Details</span>
+                      <Switch
+                        checked={settings.requireVehicleDetails}
+                        onCheckedChange={(checked) => updateSetting('requireVehicleDetails', checked)}
+                      />
+                    </label>
 
-                <label className="flex items-center justify-between p-3 border rounded-lg">
-                  <span>Track Delivery Time</span>
-                  <Switch
-                    checked={settings.trackDeliveryTime}
-                    onCheckedChange={(checked) => updateSetting('trackDeliveryTime', checked)}
-                  />
-                </label>
+                    <label className="flex items-center justify-between p-3 border rounded-lg">
+                      <span>Track Delivery Time</span>
+                      <Switch
+                        checked={settings.trackDeliveryTime}
+                        onCheckedChange={(checked) => updateSetting('trackDeliveryTime', checked)}
+                      />
+                    </label>
 
-                <label className="flex items-center justify-between p-3 border rounded-lg">
-                  <span>Require Delivery Confirmation</span>
-                  <Switch
-                    checked={settings.requireDeliveryConfirmation}
-                    onCheckedChange={(checked) => updateSetting('requireDeliveryConfirmation', checked)}
-                  />
-                </label>
-              </div>
+                    <label className="flex items-center justify-between p-3 border rounded-lg">
+                      <span>Require Delivery Confirmation</span>
+                      <Switch
+                        checked={settings.requireDeliveryConfirmation}
+                        onCheckedChange={(checked) => updateSetting('requireDeliveryConfirmation', checked)}
+                      />
+                    </label>
+                  </div>
 
-              {settings.requireDeliveryConfirmation && (
-                <div>
-                  <Label>Confirmation Method</Label>
-                  <Select
-                    value={settings.confirmationMethod}
-                    onValueChange={(value) => updateSetting('confirmationMethod', value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="signature">Signature</SelectItem>
-                      <SelectItem value="photo">Photo</SelectItem>
-                      <SelectItem value="code">Confirmation Code</SelectItem>
-                      <SelectItem value="gps">GPS Location</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                  {settings.requireDeliveryConfirmation && (
+                    <div>
+                      <Label>Confirmation Method</Label>
+                      <Select
+                        value={settings.confirmationMethod}
+                        onValueChange={(value) => updateSetting('confirmationMethod', value)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="signature">Signature</SelectItem>
+                          <SelectItem value="photo">Photo</SelectItem>
+                          <SelectItem value="code">Confirmation Code</SelectItem>
+                          <SelectItem value="gps">GPS Location</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <Label>Max Delivery Radius (km)</Label>
+                      <Input
+                        type="number"
+                        value={settings.maxDeliveryRadiusKm}
+                        onChange={(e) => updateSetting('maxDeliveryRadiusKm', parseInt(e.target.value))}
+                      />
+                    </div>
+
+                    <div>
+                      <Label>Preferred Delivery Time</Label>
+                      <Select
+                        value={settings.preferredDeliveryTime}
+                        onValueChange={(value) => updateSetting('preferredDeliveryTime', value)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="morning">Morning</SelectItem>
+                          <SelectItem value="afternoon">Afternoon</SelectItem>
+                          <SelectItem value="evening">Evening</SelectItem>
+                          <SelectItem value="any">Any Time</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </>
               )}
-
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <Label>Max Delivery Radius (km)</Label>
-                  <Input
-                    type="number"
-                    value={settings.maxDeliveryRadiusKm}
-                    onChange={(e) => updateSetting('maxDeliveryRadiusKm', parseInt(e.target.value))}
-                  />
-                </div>
-
-                <div>
-                  <Label>Preferred Delivery Time</Label>
-                  <Select
-                    value={settings.preferredDeliveryTime}
-                    onValueChange={(value) => updateSetting('preferredDeliveryTime', value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="morning">Morning</SelectItem>
-                      <SelectItem value="afternoon">Afternoon</SelectItem>
-                      <SelectItem value="evening">Evening</SelectItem>
-                      <SelectItem value="any">Any Time</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
             </CardContent>
           </Card>
         </div>
@@ -601,109 +614,132 @@ export default function DistributionSettingsTab({
               <CardDescription>Configure payment methods and terms</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div>
-                <Label>Enabled Payment Methods</Label>
-                <div className="space-y-2 mt-2">
-                  {[
-                    { value: 'cash', label: 'Cash' },
-                    { value: 'mpesa', label: 'M-Pesa' },
-                    { value: 'bank', label: 'Bank Transfer' },
-                    { value: 'credit', label: 'Credit (Pay Later)' }
-                  ].map(method => (
-                    <label key={method.value} className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={settings.paymentMethodsEnabled.includes(method.value)}
-                        onChange={(e) => {
-                          const updated = e.target.checked
-                            ? [...settings.paymentMethodsEnabled, method.value]
-                            : settings.paymentMethodsEnabled.filter((m: string) => m !== method.value)
-                          updateSetting('paymentMethodsEnabled', updated)
-                        }}
-                        className="w-4 h-4 text-blue-600 rounded"
-                      />
-                      <span>{method.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
+              <label className="flex items-center justify-between p-3 border rounded-lg">
+                <span>Enable Payment Tracking</span>
+                <Switch
+                  checked={settings.enablePaymentTracking}
+                  onCheckedChange={(checked) => updateSetting('enablePaymentTracking', checked)}
+                />
+              </label>
 
-              <div>
-                <Label>Default Payment Method</Label>
-                <Select
-                  value={settings.defaultPaymentMethod}
-                  onValueChange={(value) => updateSetting('defaultPaymentMethod', value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="cash">Cash</SelectItem>
-                    <SelectItem value="mpesa">M-Pesa</SelectItem>
-                    <SelectItem value="bank">Bank Transfer</SelectItem>
-                    <SelectItem value="credit">Credit</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="p-4 border rounded-lg space-y-4">
-                <div className="flex items-center justify-between">
-                  <Label>Enable Credit Management</Label>
-                  <Switch
-                    checked={settings.enableCreditManagement}
-                    onCheckedChange={(checked) => updateSetting('enableCreditManagement', checked)}
-                  />
-                </div>
-
-                {settings.enableCreditManagement && (
-                  <>
-                    <div>
-                      <Label>Default Credit Period (days)</Label>
-                      <Input
-                        type="number"
-                        value={settings.defaultCreditPeriodDays}
-                        onChange={(e) => updateSetting('defaultCreditPeriodDays', parseInt(e.target.value))}
-                      />
-                    </div>
-
-                    <div>
-                      <Label>Max Credit Limit (KSh)</Label>
-                      <Input
-                        type="number"
-                        value={settings.maxCreditLimit || ''}
-                        onChange={(e) => updateSetting('maxCreditLimit', parseFloat(e.target.value))}
-                        placeholder="Optional"
-                      />
-                    </div>
-                  </>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <label className="flex items-center justify-between p-3 border rounded-lg">
-                  <span>Enable Payment Reminders</span>
-                  <Switch
-                    checked={settings.enablePaymentReminders}
-                    onCheckedChange={(checked) => updateSetting('enablePaymentReminders', checked)}
-                  />
-                </label>
-
-                {settings.enablePaymentReminders && (
+              {settings.enablePaymentTracking && (
+                <>
                   <div>
-                    <Label>Reminder Days Before Due</Label>
-                    <Input
-                      type="number"
-                      value={settings.paymentReminderDaysBeforeDue}
-                      onChange={(e) => updateSetting('paymentReminderDaysBeforeDue', parseInt(e.target.value))}
-                    />
+                    <Label>Enabled Payment Methods</Label>
+                    <div className="space-y-2 mt-2">
+                      {[
+                        { value: 'cash', label: 'Cash' },
+                        { value: 'mpesa', label: 'M-Pesa' },
+                        { value: 'bank', label: 'Bank Transfer' },
+                        { value: 'credit', label: 'Credit (Pay Later)' }
+                      ].map(method => (
+                        <label key={method.value} className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={settings.paymentMethodsEnabled?.includes(method.value) || false}
+                            onChange={(e) => {
+                              const currentMethods = settings.paymentMethodsEnabled || []
+                              const updated = e.target.checked
+                                ? [...currentMethods, method.value]
+                                : currentMethods.filter((m: string) => m !== method.value)
+                              updateSetting('paymentMethodsEnabled', updated)
+                            }}
+                            className="w-4 h-4 text-blue-600 rounded"
+                          />
+                          <span>{method.label}</span>
+                        </label>
+                      ))}
+                    </div>
                   </div>
-                )}
-              </div>
 
-              <InfoBox>
-                <strong>Payment Terms:</strong> Credit management allows customers to pay later. 
-                Set appropriate credit limits based on customer trust and payment history.
-              </InfoBox>
+                  <div>
+                    <Label>Default Payment Method</Label>
+                    <Select
+                      value={settings.defaultPaymentMethod}
+                      onValueChange={(value) => updateSetting('defaultPaymentMethod', value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {settings.paymentMethodsEnabled?.includes('cash') && (
+                          <SelectItem value="cash">Cash</SelectItem>
+                        )}
+                        {settings.paymentMethodsEnabled?.includes('mpesa') && (
+                          <SelectItem value="mpesa">M-Pesa</SelectItem>
+                        )}
+                        {settings.paymentMethodsEnabled?.includes('bank') && (
+                          <SelectItem value="bank">Bank Transfer</SelectItem>
+                        )}
+                        {settings.paymentMethodsEnabled?.includes('credit') && (
+                          <SelectItem value="credit">Credit</SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {settings.paymentMethodsEnabled?.includes('credit') && (
+                    <div className="p-4 border rounded-lg space-y-4">
+                      <div className="flex items-center justify-between">
+                        <Label>Enable Credit Management</Label>
+                        <Switch
+                          checked={settings.enableCreditManagement}
+                          onCheckedChange={(checked) => updateSetting('enableCreditManagement', checked)}
+                        />
+                      </div>
+
+                      {settings.enableCreditManagement && (
+                        <>
+                          <div>
+                            <Label>Default Credit Period (days)</Label>
+                            <Input
+                              type="number"
+                              value={settings.defaultCreditPeriodDays}
+                              onChange={(e) => updateSetting('defaultCreditPeriodDays', parseInt(e.target.value))}
+                            />
+                          </div>
+
+                          <div>
+                            <Label>Max Credit Limit (KSh)</Label>
+                            <Input
+                              type="number"
+                              value={settings.maxCreditLimit || ''}
+                              onChange={(e) => updateSetting('maxCreditLimit', parseFloat(e.target.value))}
+                              placeholder="Optional"
+                            />
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <label className="flex items-center justify-between p-3 border rounded-lg">
+                      <span>Enable Payment Reminders</span>
+                      <Switch
+                        checked={settings.enablePaymentReminders}
+                        onCheckedChange={(checked) => updateSetting('enablePaymentReminders', checked)}
+                      />
+                    </label>
+
+                    {settings.enablePaymentReminders && (
+                      <div>
+                        <Label>Reminder Days Before Due</Label>
+                        <Input
+                          type="number"
+                          value={settings.paymentReminderDaysBeforeDue}
+                          onChange={(e) => updateSetting('paymentReminderDaysBeforeDue', parseInt(e.target.value))}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <InfoBox>
+                    <strong>Payment Terms:</strong> Credit management allows customers to pay later. 
+                    Set appropriate credit limits based on customer trust and payment history.
+                  </InfoBox>
+                </>
+              )}
             </CardContent>
           </Card>
         </div>

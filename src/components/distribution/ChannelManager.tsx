@@ -1,7 +1,6 @@
-// Mobile-Optimized ChannelManager.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
@@ -11,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/Alert'
 import { Badge } from '@/components/ui/Badge'
 import { Switch } from '@/components/ui/Switch'
+import { DistributionSettings } from '@/types/production-distribution-settings'
 
 import { 
   Plus, 
@@ -49,6 +49,7 @@ interface ChannelManagerProps {
   channels: Channel[]
   onSuccess: () => void
   isMobile: boolean
+  settings: DistributionSettings | null
 }
 
 interface FormData {
@@ -110,13 +111,27 @@ export function ChannelManager({
   farmId,
   channels: initialChannels,
   onSuccess,
-  isMobile
+  isMobile,
+  settings
 }: ChannelManagerProps) {
   const [channels, setChannels] = useState(initialChannels)
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // Determine allowed channel types from settings
+  const allowedChannelTypes = useMemo(() => {
+    if (!settings?.channelTypesEnabled) return channelTypes
+    return channelTypes.filter(t => settings.channelTypesEnabled.includes(t.value as 'cooperative' | 'processor' | 'direct' | 'retail'))
+  }, [settings])
+
+  // Check channel limit
+  const isChannelLimitReached = useMemo(() => {
+    if (!settings?.maxActiveChannels) return false
+    const activeChannels = channels.filter(c => c.isActive).length
+    return activeChannels >= settings.maxActiveChannels
+  }, [channels, settings])
 
   const [formData, setFormData] = useState<FormData>({
     name: '',
@@ -132,9 +147,11 @@ export function ChannelManager({
   })
 
   const resetForm = () => {
+    // Set default type to first available
+    const defaultType = allowedChannelTypes[0]?.value || 'cooperative' as any
     setFormData({
       name: '',
-      type: 'cooperative',
+      type: defaultType,
       contact: '',
       email: '',
       contactPerson: '',
@@ -250,6 +267,12 @@ export function ChannelManager({
   }
 
   const handleToggleActive = async (channelId: string, isActive: boolean) => {
+    // Check limit before enabling
+    if (isActive && isChannelLimitReached) {
+      alert(`Cannot enable channel. Maximum active channels limit (${settings?.maxActiveChannels}) reached.`)
+      return
+    }
+
     try {
       const response = await fetch(`/api/distribution/channels/${channelId}`, {
         method: 'PATCH',
@@ -285,18 +308,34 @@ export function ChannelManager({
           </p>
         </div>
         
-        <Button
-          onClick={() => {
-            resetForm()
-            setEditingChannel(null)
-            setShowAddForm(true)
-          }}
-          className={isMobile ? 'p-3' : ''}
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          {isMobile ? 'Add' : 'Add Channel'}
-        </Button>
+        {settings?.enableChannelManagement !== false && (
+          <Button
+            onClick={() => {
+              if (isChannelLimitReached && !editingChannel) {
+                alert(`Maximum active channels limit (${settings?.maxActiveChannels}) reached.`)
+                return
+              }
+              resetForm()
+              setEditingChannel(null)
+              setShowAddForm(true)
+            }}
+            className={isMobile ? 'p-3' : ''}
+            disabled={isChannelLimitReached && !editingChannel}
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            {isMobile ? 'Add' : 'Add Channel'}
+          </Button>
+        )}
       </div>
+      
+      {isChannelLimitReached && (
+        <Alert className="bg-yellow-50 border-yellow-200">
+          <AlertTriangle className="h-4 w-4 text-yellow-600" />
+          <AlertDescription className="text-yellow-700">
+             Maximum active channels limit ({settings?.maxActiveChannels}) reached. Disable an existing channel to add a new one.
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Add/Edit Form */}
       {showAddForm && (
@@ -319,7 +358,7 @@ export function ChannelManager({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {channelTypes.map(type => {
+                    {allowedChannelTypes.map(type => {
                       const Icon = type.icon
                       return (
                         <SelectItem key={type.value} value={type.value}>
