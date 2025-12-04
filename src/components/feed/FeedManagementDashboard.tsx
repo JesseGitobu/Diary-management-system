@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -65,6 +65,26 @@ export function FeedManagementDashboard({
   const [inventory, setInventory] = useState(initialInventory)
   const [consumptionRecords, setConsumptionRecords] = useState(initialConsumptionRecords)
   const [editingRecord, setEditingRecord] = useState<any>(null)
+
+  useEffect(() => {
+  const handleMobileNavAction = (event: Event) => {
+    const customEvent = event as CustomEvent
+    const { action } = customEvent.detail
+
+    if (action === 'showRecordFeedingModal') {
+      handleOpenConsumptionModal()
+    } else if (action === 'showAddFeedTypeModal') {
+      setShowAddTypeModal(true)
+    } else if (action === 'showAddInventoryModal') {
+      setShowAddInventoryModal(true)
+    }
+  }
+
+  window.addEventListener('mobileNavModalAction', handleMobileNavAction)
+  return () => {
+    window.removeEventListener('mobileNavModalAction', handleMobileNavAction)
+  }
+}, [])
 
   const { isMobile, isTablet } = useDeviceInfo()
   const canManageFeed = ['farm_owner', 'farm_manager'].includes(userRole)

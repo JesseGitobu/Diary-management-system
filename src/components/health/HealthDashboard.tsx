@@ -376,6 +376,35 @@ export function HealthRecordsContent({
     setCurrentPage(1)
   }, [searchTerms['health-records'], selectedRecordType, selectedAnimalFilter])
 
+  useEffect(() => {
+  const handleMobileNavAction = (event: Event) => {
+    const customEvent = event as CustomEvent
+    const { action } = customEvent.detail
+
+    const healthModalMap: Record<string, string> = {
+      'showHealthRecordModal': 'health-record',
+      'showVaccinationModal': 'vaccination',
+      'showVetVisitModal': 'vet-visit',
+      'showVeterinarianModal': 'veterinarian'
+    }
+
+    if (action === 'showHealthRecordModal') {
+      setShowAddModal(true)
+    } else if (action === 'showVaccinationModal') {
+      setShowVaccinationModal(true)
+    } else if (action === 'showVetVisitModal') {
+      setShowScheduleVisitModal(true)
+    } else if (action === 'showVeterinarianModal') {
+      setShowVeterinarianModal(true)
+    }
+  }
+
+  window.addEventListener('mobileNavModalAction', handleMobileNavAction)
+  return () => {
+    window.removeEventListener('mobileNavModalAction', handleMobileNavAction)
+  }
+}, [])
+
   // Tab configuration with mobile-optimized layout
   const tabs = [
     {

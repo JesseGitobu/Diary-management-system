@@ -11,141 +11,167 @@ export async function GET(request: NextRequest) {
   const invitationToken = searchParams.get('invitation')
   const next = searchParams.get('next') ?? '/'
 
-  if (token_hash && type) {
-    const supabase = await createServerSupabaseClient()
-    
-    try {
-      // Email verification
-      const { data, error } = await supabase.auth.verifyOtp({
-        type: type as any,
-        token_hash,
-      })
-      
-      if (error) {
-        console.error('Email verification error:', error)
-        return NextResponse.redirect(`${origin}/auth?error=verification_failed`)
-      }
-      
-      if (data.user) {
-        // Check for invitation token from URL or user metadata
-        const tokenToUse = invitationToken || data.user.user_metadata?.invitation_token
-        
-        console.log('🔍 User verified, checking flow type...', {
-          userId: data.user.id,
-          email: data.user.email,
-          hasInvitationTokenURL: !!invitationToken,
-          hasInvitationTokenMetadata: !!data.user.user_metadata?.invitation_token,
-          tokenToUse: tokenToUse,
-          userMetadata: data.user.user_metadata
-        })
-        
-        // 🎯 NEW: Ensure user has a role immediately after verification
-        const userRole = await ensureUserHasRole(data.user, tokenToUse, supabase)
-        
-        if (!userRole) {
-          console.error('❌ Failed to assign user role')
-          return NextResponse.redirect(`${origin}/auth?error=role_assignment_failed`)
-        }
-        
-        // Route user based on their role and status
-        return routeUserBasedOnStatus(data.user, userRole, origin)
-      }
-    } catch (error) {
-      console.error('❌ Auth callback error:', error)
-      return NextResponse.redirect(`${origin}/auth?error=auth_failed`)
-    }
+  console.log('🔍 [CALLBACK] Initial params:', {
+    hasTokenHash: !!token_hash,
+    type,
+    hasInvitation: !!invitationToken,
+  })
+
+  if (!token_hash || !type) {
+    console.error('❌ [CALLBACK] Missing token_hash or type')
+    return NextResponse.redirect(`${origin}/auth?error=invalid_callback`)
   }
 
-  // Return the user to an error page with instructions
-  return NextResponse.redirect(`${origin}/auth?error=invalid_callback`)
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    // Email verification
+    console.log('🔍 [CALLBACK] Attempting email verification...')
+    const { data, error } = await supabase.auth.verifyOtp({
+      type: type as any,
+      token_hash,
+    })
+    
+    if (error) {
+      console.error('❌ [CALLBACK] Email verification failed:', error.message)
+      return NextResponse.redirect(`${origin}/auth?error=verification_failed&details=${encodeURIComponent(error.message)}`)
+    }
+    
+    if (!data.user) {
+      console.error('❌ [CALLBACK] No user returned from verification')
+      return NextResponse.redirect(`${origin}/auth?error=no_user_returned`)
+    }
+
+    const userId = data.user.id
+    const userEmail = data.user.email
+    console.log('✅ [CALLBACK] Email verified successfully:', { userId, userEmail })
+
+    // Check for invitation token
+    const tokenToUse = invitationToken || data.user.user_metadata?.invitation_token
+    console.log('🔍 [CALLBACK] Looking for invitation token:', { 
+      urlToken: !!invitationToken,
+      metadataToken: !!data.user.user_metadata?.invitation_token,
+    })
+
+    // Attempt to assign role
+    const userRole = await ensureUserHasRole(data.user, tokenToUse, supabase)
+    
+    if (!userRole) {
+      console.error('❌ [CALLBACK] Failed to assign user role')
+      return NextResponse.redirect(`${origin}/auth?error=role_assignment_failed`)
+    }
+
+    console.log('✅ [CALLBACK] User role assigned:', userRole)
+
+    // Route user based on their role and status
+    const redirectUrl = routeUserBasedOnStatus(data.user, userRole, origin)
+    console.log('🔍 [CALLBACK] Redirecting to:', redirectUrl.toString())
+    return redirectUrl
+
+  } catch (error) {
+    console.error('❌ [CALLBACK] Exception:', error)
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+    return NextResponse.redirect(`${origin}/auth?error=auth_failed&details=${encodeURIComponent(errorMsg)}`)
+  }
 }
 
-// 🎯 NEW: Ensure user has a role immediately after email verification
 async function ensureUserHasRole(user: any, invitationToken: string | null, supabase: any) {
   try {
+    console.log('🔍 [ENSURE_ROLE] Starting for user:', user.id)
+
     // Check if user already has a role
-    const { data: existingRole } = await supabase
+    const { data: existingRole, error: roleError } = await supabase
       .from('user_roles')
       .select('role_type, farm_id, status')
       .eq('user_id', user.id)
-      .single()
+      .maybeSingle()
     
+    if (roleError) {
+      console.error('❌ [ENSURE_ROLE] Error checking existing role:', roleError.message)
+      return null
+    }
+
     if (existingRole) {
-      console.log('🔍 User already has role:', existingRole)
+      console.log('✅ [ENSURE_ROLE] User already has role:', existingRole)
       return existingRole
     }
-    
-    // FIRST: Handle invitation flow if invitation token exists
+
+    console.log('🔍 [ENSURE_ROLE] No existing role, proceeding with creation')
+
+    // FIRST: Handle invitation flow
     if (invitationToken) {
-      console.log('🔍 Processing team member invitation:', invitationToken)
+      console.log('🔍 [ENSURE_ROLE] Processing invitation...')
       
       const result = await acceptInvitation(invitationToken, user.id)
       
       if (result.success) {
-        console.log('✅ Team member invitation accepted successfully')
+        console.log('✅ [ENSURE_ROLE] Invitation accepted')
         
-        // Clear the invitation token from user metadata after successful acceptance
         try {
           await supabase.auth.updateUser({
             data: {
               ...user.user_metadata,
-              invitation_token: null  // Clear the token
+              invitation_token: null
             }
           })
-          console.log('✅ Invitation token cleared from user metadata')
+          console.log('✅ [ENSURE_ROLE] Cleared invitation token from metadata')
         } catch (clearError) {
-          console.log('⚠️ Could not clear invitation token from metadata:', clearError)
+          console.warn('⚠️ [ENSURE_ROLE] Could not clear token:', clearError)
         }
         
-        // Return the team member role
         return {
           role_type: result.roleType,
           farm_id: result.farmId,
           status: 'active'
         }
       } else {
-        console.error('❌ Failed to accept invitation:', result.error)
+        console.error('❌ [ENSURE_ROLE] Invitation acceptance failed:', result.error)
         return null
       }
     }
-    
-    // SECOND: Check if user is admin
-    const { data: adminUser } = await supabase
+
+    // SECOND: Check if admin
+    const { data: adminUser, error: adminError } = await supabase
       .from('admin_users')
       .select('id')
       .eq('user_id', user.id)
-      .single()
+      .maybeSingle()
     
+    if (adminError) {
+      console.warn('⚠️ [ENSURE_ROLE] Error checking admin status:', adminError.message)
+    }
+
     if (adminUser) {
-      console.log('🔍 Admin user detected')
-      // Admins don't need user_roles entry, return special admin role
+      console.log('✅ [ENSURE_ROLE] User is admin')
       return {
         role_type: 'super_admin',
         farm_id: null,
         status: 'active'
       }
     }
-    
-    // THIRD: 🎯 NEW - Assign farm_owner role immediately (pending setup)
-    console.log('🔍 Creating pending farm owner role for new user')
+
+    // THIRD: Create pending farm owner role
+    console.log('🔍 [ENSURE_ROLE] Creating pending farm owner role...')
     const newRole = await createPendingFarmOwnerRole(user.id, supabase)
     
     if (newRole) {
-      console.log('✅ Pending farm owner role created:', newRole)
+      console.log('✅ [ENSURE_ROLE] Pending role created:', newRole)
       return newRole
     }
-    
+
+    console.error('❌ [ENSURE_ROLE] Failed to create pending role')
     return null
     
   } catch (error) {
-    console.error('❌ Error ensuring user has role:', error)
+    console.error('❌ [ENSURE_ROLE] Exception:', error)
     return null
   }
 }
 
-// 🎯 NEW: Create pending farm owner role immediately
 async function createPendingFarmOwnerRole(userId: string, supabase: any) {
   try {
+    console.log('🔍 [CREATE_PENDING] Creating role for:', userId)
+    
     const { data, error } = await supabase
       .from('user_roles')
       .insert({
@@ -158,56 +184,56 @@ async function createPendingFarmOwnerRole(userId: string, supabase: any) {
       .single()
     
     if (error) {
-      console.error('❌ Error creating pending farm owner role:', error)
+      console.error('❌ [CREATE_PENDING] Insert error:', error.message, error.details)
       return null
     }
-    
+
+    console.log('✅ [CREATE_PENDING] Role created:', data)
     return data
+    
   } catch (error) {
-    console.error('❌ Exception creating pending farm owner role:', error)
+    console.error('❌ [CREATE_PENDING] Exception:', error)
     return null
   }
 }
 
-// 🎯 NEW: Route user based on role and status
-function routeUserBasedOnStatus(user: any, userRole: any, origin: string) {
-  console.log('🔍 Routing user based on status:', {
+function routeUserBasedOnStatus(user: any, userRole: any, origin: string): NextResponse {
+  console.log('🔍 [ROUTE] Routing user:', {
     userId: user.id,
     roleType: userRole.role_type,
     status: userRole.status,
     farmId: userRole.farm_id
   })
-  
-  // Handle admin users
+
+  // Admin users
   if (userRole.role_type === 'super_admin') {
-    console.log('🔍 Redirecting admin to admin dashboard')
+    console.log('✅ [ROUTE] Routing admin to admin dashboard')
     return NextResponse.redirect(`${origin}/admin/dashboard`)
   }
-  
-  // Handle team members (active status with farm)
+
+  // Active users with farm
   if (userRole.status === 'active' && userRole.farm_id) {
     if (userRole.role_type === 'farm_owner') {
-      console.log('🔍 Redirecting active farm owner to dashboard')
+      console.log('✅ [ROUTE] Routing farm owner to dashboard')
       return NextResponse.redirect(`${origin}/dashboard`)
     } else {
-      // Team member
-      console.log('🔍 Redirecting team member to dashboard')
-      return NextResponse.redirect(`${origin}/dashboard?welcome=team&farm=${userRole.farm_id}&role=${userRole.role_type}`)
+      console.log('✅ [ROUTE] Routing team member to dashboard')
+      return NextResponse.redirect(`${origin}/dashboard?welcome=team`)
     }
   }
-  
-  // Handle pending setup (farm owners who haven't completed onboarding)
+
+  // Pending setup
   if (userRole.status === 'pending_setup') {
-    console.log('🔍 Redirecting to onboarding for pending setup')
+    console.log('✅ [ROUTE] Routing to onboarding')
     return NextResponse.redirect(`${origin}/onboarding`)
   }
-  
-  // Handle edge cases - users with role but no clear status
+
+  // Fallback
   if (userRole.role_type === 'farm_owner') {
-    console.log('🔍 Farm owner with unclear status, redirecting to onboarding')
+    console.log('⚠️ [ROUTE] Unclear status, routing farm owner to onboarding')
     return NextResponse.redirect(`${origin}/onboarding`)
-  } else {
-    console.log('🔍 Team member with unclear status, redirecting to dashboard')
-    return NextResponse.redirect(`${origin}/dashboard`)
   }
+
+  console.log('⚠️ [ROUTE] Default routing to dashboard')
+  return NextResponse.redirect(`${origin}/dashboard`)
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -67,6 +67,33 @@ export function BreedingDashboard({
   const [showQuickActions, setShowQuickActions] = useState(false)
   const [upcomingEventsExpanded, setUpcomingEventsExpanded] = useState(false)
   const [selectedAnimal, setSelectedAnimal] = useState<{ id?: string, gender?: 'male' | 'female' } | null>(null)
+
+  useEffect(() => {
+  const handleMobileNavAction = (event: Event) => {
+    const customEvent = event as CustomEvent
+    const { action } = customEvent.detail
+
+    // Map breeding modal actions
+    const breedingModalMap: Record<string, BreedingEventType> = {
+      'showHeatDetectionModal': 'heat_detection',
+      'showInseminationModal': 'insemination',
+      'showPregnancyCheckModal': 'pregnancy_check',
+      'showCalvingEventModal': 'calving'
+    }
+
+    if (action in breedingModalMap) {
+      setActiveModal(breedingModalMap[action])
+    }
+  }
+
+  // Listen for mobile nav modal actions
+  window.addEventListener('mobileNavModalAction', handleMobileNavAction)
+
+  // Cleanup listener on unmount
+  return () => {
+    window.removeEventListener('mobileNavModalAction', handleMobileNavAction)
+  }
+}, [])
 
   const { isMobile, isTouch } = useDeviceInfo()
   const canManageBreeding = ['farm_owner', 'farm_manager'].includes(userRole)
@@ -205,21 +232,11 @@ export function BreedingDashboard({
                   }
                 </Button>
 
-                {/* <Button asChild variant="outline" className="w-full">
-                  <Link href="/dashboard/breeding/calendar">
-                    <Calendar className="mr-2 h-4 w-4" />
-                    Breeding Calendar
-                  </Link>
-                </Button> */}
+
               </>
             ) : (
               <>
-                {/* <Button asChild variant="outline">
-                  <Link href="/components/animals/breeding/calendar">
-                    <Calendar className="mr-2 h-4 w-4" />
-                    Breeding Calendar
-                  </Link>
-                </Button> */}
+
                 <Button onClick={() => setActiveModal('heat_detection')}>
                   <Plus className="mr-2 h-4 w-4" />
                   Quick Record

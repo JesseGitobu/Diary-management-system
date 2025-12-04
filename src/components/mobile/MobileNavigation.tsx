@@ -1,3 +1,4 @@
+// src/components/mobile/MobileNavigation.tsx
 'use client'
 
 import { useState } from 'react'

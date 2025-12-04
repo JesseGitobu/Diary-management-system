@@ -1,3 +1,4 @@
+// src/components/layout/DashboardSidebar.tsx
 'use client'
 
 import Link from 'next/link'

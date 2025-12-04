@@ -1,3 +1,4 @@
+// src/components/layout/DashboardHeader.tsx
 'use client'
 
 import { useAuth } from '@/lib/hooks/useAuth'

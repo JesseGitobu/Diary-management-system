@@ -104,6 +104,25 @@ export function AnimalsClientPage({
   loadWeightRequirements()
 }, [farmId])
 
+useEffect(() => {
+  const handleMobileNavAction = (event: Event) => {
+    const customEvent = event as CustomEvent
+    const { action } = customEvent.detail
+
+    if (action === 'showAddAnimalModal') {
+      setShowAddModal(true)
+    }
+  }
+
+  // Listen for mobile nav modal actions
+  window.addEventListener('mobileNavModalAction', handleMobileNavAction)
+
+  // Cleanup listener on unmount
+  return () => {
+    window.removeEventListener('mobileNavModalAction', handleMobileNavAction)
+  }
+}, [])
+
 const loadWeightRequirements = async () => {
   setLoadingWeightRequirements(true)
   try {

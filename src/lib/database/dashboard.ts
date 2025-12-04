@@ -1,3 +1,4 @@
+// src/lib/database/dashboard.ts
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { getAnimalStats } from '@/lib/database/animals'
 import { getTeamStats } from '@/lib/database/team'

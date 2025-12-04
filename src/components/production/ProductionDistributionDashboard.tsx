@@ -1,7 +1,7 @@
 // src/components/production/ProductionDistributionDashboard.tsx
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
@@ -139,6 +139,41 @@ export function ProductionDistributionDashboard({
   const [showActionSheet, setShowActionSheet] = useState(false)
   const [productionRecords, setProductionRecords] = useState(initialProductionRecords)
   const [distributionRecords, setDistributionRecords] = useState(initialDistributionRecords)
+
+  useEffect(() => {
+  const handleMobileNavAction = (event: Event) => {
+    const customEvent = event as CustomEvent
+    const { action } = customEvent.detail
+
+    // Production modals
+    if (action === 'showRecordProductionModal') {
+      setShowProductionEntryModal(true)
+    } else if (action === 'showBulkEntryModal') {
+      window.location.href = '/dashboard/production/bulk'
+    } else if (action === 'showProductionExportModal') {
+      console.log('Export production data')
+    } else if (action === 'showProductionReportsModal') {
+      window.location.href = '/dashboard/production/reports'
+    }
+    // Distribution modals
+    else if (action === 'showRecordDistributionModal') {
+      setShowDistributionEntryModal(true)
+    } else if (action === 'showManageChannelsModal') {
+      setShowChannelModal(true)
+    } else if (action === 'showDistributionExportModal') {
+      console.log('Export distribution data')
+    } else if (action === 'showDistributionRoutesModal') {
+      window.location.href = '/dashboard/distribution/routes'
+    } else if (action === 'showDistributionReportsModal') {
+      window.location.href = '/dashboard/distribution/reports'
+    }
+  }
+
+  window.addEventListener('mobileNavModalAction', handleMobileNavAction)
+  return () => {
+    window.removeEventListener('mobileNavModalAction', handleMobileNavAction)
+  }
+}, [])
   
   // Permissions
   const canAddRecords = ['farm_owner', 'farm_manager', 'worker'].includes(userRole)
