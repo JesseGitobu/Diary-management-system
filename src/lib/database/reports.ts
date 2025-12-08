@@ -16,7 +16,7 @@ export async function generateProductionReport(filters: ReportFilters) {
   
   try {
     // Production summary data
-    const { data: productionSummary } = await supabase
+    const { data: productionSummaryData } = await supabase
       .from('daily_production_summary')
       .select('*')
       .eq('farm_id', filters.farmId)
@@ -24,8 +24,11 @@ export async function generateProductionReport(filters: ReportFilters) {
       .lte('record_date', filters.dateRange.end)
       .order('record_date', { ascending: true })
     
+    // FIXED: Cast to any[] to bypass 'never' type error
+    const productionSummary = (productionSummaryData as any[]) || []
+
     // Individual animal production
-    const { data: animalProduction } = await supabase
+    const { data: animalProductionData } = await supabase
       .from('production_records')
       .select(`
         *,
@@ -41,14 +44,17 @@ export async function generateProductionReport(filters: ReportFilters) {
       .lte('record_date', filters.dateRange.end)
       .order('record_date', { ascending: true })
     
+    // FIXED: Cast to any[]
+    const animalProduction = (animalProductionData as any[]) || []
+
     // Calculate totals and averages
-    const totalMilk = productionSummary?.reduce((sum, day) => sum + (day.total_milk_volume || 0), 0) || 0
-    const averageDaily = totalMilk / (productionSummary?.length || 1)
-    const averageFatContent = (productionSummary ?? []).reduce((sum, day) => sum + (day.average_fat_content || 0), 0) / ((productionSummary?.length || 1)) || 0
-    const averageProteinContent = (productionSummary ?? []).reduce((sum, day) => sum + (day.average_protein_content || 0), 0) / ((productionSummary?.length || 1)) || 0
+    const totalMilk = productionSummary.reduce((sum, day) => sum + (day.total_milk_volume || 0), 0) || 0
+    const averageDaily = totalMilk / (productionSummary.length || 1)
+    const averageFatContent = productionSummary.reduce((sum, day) => sum + (day.average_fat_content || 0), 0) / ((productionSummary.length || 1)) || 0
+    const averageProteinContent = productionSummary.reduce((sum, day) => sum + (day.average_protein_content || 0), 0) / ((productionSummary.length || 1)) || 0
     
     // Top performing animals
-    const animalPerformance = animalProduction?.reduce((acc: { [key: string]: any }, record) => {
+    const animalPerformance = animalProduction.reduce((acc: { [key: string]: any }, record) => {
       const animalId = record.animal_id
       if (!acc[animalId]) {
         acc[animalId] = {
@@ -69,7 +75,7 @@ export async function generateProductionReport(filters: ReportFilters) {
     const topAnimals = Object.values(animalPerformance || {})
       .map((animal: any) => ({
         ...animal,
-        averageDaily: animal.totalMilk / (productionSummary?.length || 1),
+        averageDaily: animal.totalMilk / (productionSummary.length || 1),
         averageQuality: {
           fat: animal.averageQuality.fat / animal.recordCount,
           protein: animal.averageQuality.protein / animal.recordCount
@@ -84,12 +90,12 @@ export async function generateProductionReport(filters: ReportFilters) {
         averageDailyProduction: averageDaily,
         averageFatContent,
         averageProteinContent,
-        daysReported: productionSummary?.length || 0,
-        animalsReported: new Set(animalProduction?.map(r => r.animal_id)).size
+        daysReported: productionSummary.length || 0,
+        animalsReported: new Set(animalProduction.map(r => r.animal_id)).size
       },
       dailyData: productionSummary,
       topPerformers: topAnimals,
-      qualityTrends: productionSummary?.map(day => ({
+      qualityTrends: productionSummary.map(day => ({
         date: day.record_date,
         fat: day.average_fat_content,
         protein: day.average_protein_content,
@@ -107,7 +113,7 @@ export async function generateFeedReport(filters: ReportFilters) {
   
   try {
     // Feed summary data
-    const { data: feedSummary } = await supabase
+    const { data: feedSummaryData } = await supabase
       .from('daily_feed_summary')
       .select('*')
       .eq('farm_id', filters.farmId)
@@ -115,8 +121,11 @@ export async function generateFeedReport(filters: ReportFilters) {
       .lte('summary_date', filters.dateRange.end)
       .order('summary_date', { ascending: true })
     
+    // FIXED: Cast to any[]
+    const feedSummary = (feedSummaryData as any[]) || []
+
     // Feed consumption by type
-    const { data: feedConsumption } = await supabase
+    const { data: feedConsumptionData } = await supabase
       .from('feed_consumption')
       .select(`
         *,
@@ -129,14 +138,17 @@ export async function generateFeedReport(filters: ReportFilters) {
       .gte('consumption_date', filters.dateRange.start)
       .lte('consumption_date', filters.dateRange.end)
     
+    // FIXED: Cast to any[]
+    const feedConsumption = (feedConsumptionData as any[]) || []
+
     // Calculate feed metrics
-    const totalFeedCost = feedSummary?.reduce((sum, day) => sum + (day.total_feed_cost || 0), 0) || 0
-    const totalFeedQuantity = feedSummary?.reduce((sum, day) => sum + (day.total_quantity_kg || 0), 0) || 0
-    const averageCostPerDay = totalFeedCost / (feedSummary?.length || 1)
-    const averageCostPerAnimal = (feedSummary ?? []).reduce((sum, day) => sum + (day.cost_per_animal || 0), 0) / ((feedSummary?.length || 1)) || 0
+    const totalFeedCost = feedSummary.reduce((sum, day) => sum + (day.total_feed_cost || 0), 0) || 0
+    const totalFeedQuantity = feedSummary.reduce((sum, day) => sum + (day.total_quantity_kg || 0), 0) || 0
+    const averageCostPerDay = totalFeedCost / (feedSummary.length || 1)
+    const averageCostPerAnimal = feedSummary.reduce((sum, day) => sum + (day.cost_per_animal || 0), 0) / ((feedSummary.length || 1)) || 0
     
     // Feed type breakdown
-    const feedTypeBreakdown = feedConsumption?.reduce((acc: { [key: string]: { name: string, totalQuantity: number, totalCost: number, recordCount: number } }, record) => {
+    const feedTypeBreakdown = feedConsumption.reduce((acc: { [key: string]: { name: string, totalQuantity: number, totalCost: number, recordCount: number } }, record) => {
       const feedType = record.feed_types?.name || 'Unknown'
       if (!acc[feedType]) {
         acc[feedType] = {
@@ -158,12 +170,12 @@ export async function generateFeedReport(filters: ReportFilters) {
         totalFeedQuantity,
         averageDailyCost: averageCostPerDay,
         averageCostPerAnimal,
-        daysReported: feedSummary?.length || 0,
+        daysReported: feedSummary.length || 0,
         feedTypesUsed: Object.keys(feedTypeBreakdown || {}).length
       },
       dailyData: feedSummary,
       feedTypeBreakdown: Object.values(feedTypeBreakdown || {}),
-      costTrends: feedSummary?.map(day => ({
+      costTrends: feedSummary.map(day => ({
         date: day.summary_date,
         totalCost: day.total_feed_cost,
         costPerAnimal: day.cost_per_animal,
@@ -200,8 +212,9 @@ export async function generateFinancialReport(filters: ReportFilters) {
       totalCosts / productionReport.summary.totalMilkVolume : 0
     
     // Daily financial trends
-    const dailyFinancials = productionReport.dailyData?.map(prodDay => {
-      const feedDay = feedReport.dailyData?.find(f => f.summary_date === prodDay.record_date)
+    // FIXED: Add any[] typing to map callback parameters if needed
+    const dailyFinancials = productionReport.dailyData?.map((prodDay: any) => {
+      const feedDay = feedReport.dailyData?.find((f: any) => f.summary_date === prodDay.record_date)
       const dailyRevenue = (prodDay.total_milk_volume || 0) * averageMilkPrice
       const dailyCosts = feedDay?.total_feed_cost || 0
       
@@ -307,7 +320,7 @@ export async function getReportingKPIs(farmId: string) {
       },
       kpis: {
         milkProductionTrend: productionChange,
-        feedEfficiency: currentData.production.summary.totalMilkVolume / currentData.feed.summary.totalFeedQuantity,
+        feedEfficiency: currentData.production.summary.totalMilkVolume / (currentData.feed.summary.totalFeedQuantity || 1), // Avoid division by zero
         profitability: currentData.financial.summary.profitMargin,
         costControl: costChange
       }

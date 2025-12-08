@@ -27,7 +27,9 @@ export async function PUT(request: NextRequest) {
     }
 
     // Verify user has access to this farm
-    const userRole = await getUserRole(user.id)
+    // Cast to any to fix "Property 'farm_id' does not exist on type 'never'"
+    const userRole = await getUserRole(user.id) as any
+    
     if (!userRole || userRole.farm_id !== farmId) {
       return NextResponse.json(
         { error: 'You do not have access to this farm' },
@@ -101,7 +103,9 @@ export async function GET(request: NextRequest) {
     }
 
     // Verify user has access to this farm
-    const userRole = await getUserRole(user.id)
+    // Cast to any here as well
+    const userRole = await getUserRole(user.id) as any
+    
     if (!userRole || userRole.farm_id !== farmId) {
       return NextResponse.json(
         { error: 'You do not have access to this farm' },

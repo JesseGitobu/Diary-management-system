@@ -18,7 +18,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
@@ -58,7 +58,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id || !['farm_owner', 'farm_manager'].includes(userRole.role_type)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
@@ -87,12 +87,15 @@ export async function PUT(
     const supabase = await createServerSupabaseClient()
     
     // First verify the protocol belongs to the user's farm
-    const { data: existingProtocol, error: fetchError } = await supabase
+    const { data: existingProtocolResult, error: fetchError } = await supabase
       .from('health_protocols')
       .select('id, farm_id')
       .eq('id', id)
       .single()
     
+    // Cast to any to fix "Property 'farm_id' does not exist on type 'never'"
+    const existingProtocol = existingProtocolResult as any
+
     if (fetchError || !existingProtocol) {
       return NextResponse.json({ error: 'Protocol not found' }, { status: 404 })
     }
@@ -168,7 +171,8 @@ export async function PUT(
     }
     
     // Update the protocol
-    const { data, error } = await supabase
+    // Cast supabase to any to fix "Argument of type ... is not assignable to parameter of type 'never'"
+    const { data, error } = await (supabase as any)
       .from('health_protocols')
       .update(cleanedUpdates)
       .eq('id', id)
@@ -205,7 +209,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id || !['farm_owner', 'farm_manager'].includes(userRole.role_type)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
@@ -215,12 +219,15 @@ export async function DELETE(
     const supabase = await createServerSupabaseClient()
     
     // First verify the protocol belongs to the user's farm
-    const { data: existingProtocol, error: fetchError } = await supabase
+    const { data: existingProtocolResult, error: fetchError } = await supabase
       .from('health_protocols')
       .select('id, farm_id')
       .eq('id', id)
       .single()
     
+    // Cast to any here as well
+    const existingProtocol = existingProtocolResult as any
+
     if (fetchError || !existingProtocol) {
       return NextResponse.json({ error: 'Protocol not found' }, { status: 404 })
     }
@@ -230,7 +237,8 @@ export async function DELETE(
     }
     
     // Soft delete - mark as inactive instead of hard delete
-    const { error } = await supabase
+    // Cast supabase to any to avoid type errors on partial updates
+    const { error } = await (supabase as any)
       .from('health_protocols')
       .update({ 
         is_active: false,

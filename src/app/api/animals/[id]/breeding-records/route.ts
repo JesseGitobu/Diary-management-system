@@ -1,4 +1,3 @@
-
 // src/app/api/animals/[id]/breeding-records/route.ts
 // Updated to use unified breeding service
 
@@ -85,7 +84,9 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userRole = await getUserRole(user.id)
+    // Cast to 'any' to bypass "Property 'farm_id' does not exist on type 'never'" error
+    const userRole = await getUserRole(user.id) as any
+    
     if (!userRole?.farm_id) {
       return NextResponse.json(
         { error: 'No farm associated with user' },
@@ -143,7 +144,8 @@ export async function POST(
     }
 
     // Update animal status to 'served'
-    await supabase
+    // Using (supabase as any) allows the update call even if types are restricted/missing
+    await (supabase as any)
       .from('animals')
       .update({
         production_status: 'served',

@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm access' }, { status: 403 })
     }
@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     if (!userRole?.farm_id || !['farm_owner', 'farm_manager', 'worker'].includes(userRole.role_type)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
@@ -99,12 +99,15 @@ export async function POST(request: NextRequest) {
     const supabase = await createServerSupabaseClient()
     
     // Validate channel belongs to farm
-    const { data: channel, error: channelError } = await supabase
+    const { data: channelResult, error: channelError } = await supabase
       .from('distribution_channels')
       .select('id, is_active')
       .eq('id', channelId)
       .eq('farm_id', userRole.farm_id)
       .single()
+
+    // Cast to any to fix "Property 'is_active' does not exist on type 'never'"
+    const channel = channelResult as any
 
     if (channelError || !channel) {
       return NextResponse.json({ error: 'Invalid channel' }, { status: 400 })
@@ -114,7 +117,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Channel is not active' }, { status: 400 })
     }
 
-    const { data: record, error } = await supabase
+    // Cast supabase to any to prevent insert type errors
+    const { data: record, error } = await (supabase as any)
       .from('distribution_records')
       .insert({
         farm_id: userRole.farm_id,

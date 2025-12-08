@@ -51,8 +51,8 @@ export async function getBreedingSettings(farmId: string): Promise<BreedingSetti
   try {
     const supabase = await createServerSupabaseClient()
 
-    const { data, error } = await supabase
-      .from('farm_breeding_settings')
+      const { data, error } = await (supabase
+        .from('farm_breeding_settings') as any)
       .select('*')
       .eq('farm_id', farmId)
       .single()
@@ -205,8 +205,8 @@ export async function updateBreedingSettings(
       updated_at: new Date().toISOString()
     }
 
-        const { error } = await supabase
-            .from('farm_breeding_settings')
+        const { error } = await (supabase
+            .from('farm_breeding_settings') as any)
             .upsert(dbSettings, { onConflict: 'farm_id' })
 
         if (error) throw error

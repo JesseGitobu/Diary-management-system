@@ -14,7 +14,7 @@ export async function POST(request: NextRequest, context: any) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
 
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
@@ -50,7 +50,9 @@ export async function POST(request: NextRequest, context: any) {
     }
 
     // Check if animal exists
-    const existingAnimal = await getAnimalById(animalId)
+    // Cast to 'any' to fix "Property 'status' does not exist on type 'never'"
+    const existingAnimal = await getAnimalById(animalId) as any
+    
     if (!existingAnimal) {
       return NextResponse.json({ error: 'Animal not found or does not belong to your farm' }, { status: 404 })
     }
@@ -102,7 +104,8 @@ export async function GET(request: NextRequest, context: any) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userRole = await getUserRole(user.id)
+    // Cast to 'any' to prevent potential type errors in GET as well
+    const userRole = await getUserRole(user.id) as any
 
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })

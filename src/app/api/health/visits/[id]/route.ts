@@ -18,7 +18,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
@@ -27,7 +27,7 @@ export async function GET(
     const { id } = await params
     const supabase = await createServerSupabaseClient()
     
-    const { data: visit, error } = await supabase
+    const { data: visitResult, error } = await supabase
       .from('veterinary_visits')
       .select(`
         *,
@@ -45,6 +45,9 @@ export async function GET(
       .eq('farm_id', userRole.farm_id)
       .single()
     
+    // Cast to any to fix "Property 'visit_animals' does not exist on type 'never'"
+    const visit = visitResult as any
+
     if (error || !visit) {
       return NextResponse.json({ error: 'Veterinary visit not found' }, { status: 404 })
     }
@@ -78,7 +81,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id || !['farm_owner', 'farm_manager', 'worker'].includes(userRole.role_type)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
@@ -149,7 +152,8 @@ export async function PUT(
     }
     
     // Update the visit record
-    const { data: visit, error: updateError } = await supabase
+    // Cast supabase to any to avoid update type mismatch errors
+    const { data: visit, error: updateError } = await (supabase as any)
       .from('veterinary_visits')
       .update({
         visit_type: visit_type.trim(),
@@ -199,7 +203,8 @@ export async function PUT(
           animal_id: animalId
         }))
         
-        const { error: animalsError } = await supabase
+        // Cast supabase to any to fix insert type error
+        const { error: animalsError } = await (supabase as any)
           .from('visit_animals')
           .insert(animalAssociations)
         
@@ -234,7 +239,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id || !['farm_owner', 'farm_manager', 'worker'].includes(userRole.role_type)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })

@@ -20,8 +20,9 @@ export async function handlePostBreedingAutomation(
   if (!animal) return
 
   // Update production status to 'served'
-  await supabase
-    .from('animals')
+  // FIXED: Cast to any to bypass 'never' type on update
+  await (supabase
+    .from('animals') as any)
     .update({
       production_status: 'served',
       service_date: breedingDate,
@@ -34,8 +35,9 @@ export async function handlePostBreedingAutomation(
     const checkDate = new Date(breedingDate)
     checkDate.setDate(checkDate.getDate() + settings.pregnancyCheckDays)
 
-    await supabase
-      .from('breeding_calendar')
+    // FIXED: Cast to any to bypass 'never' type on insert
+    await (supabase
+      .from('breeding_calendar') as any)
       .insert({
         farm_id: farmId,
         animal_id: animalId,
@@ -58,8 +60,9 @@ export async function handlePostPregnancyConfirmationAutomation(
   const supabase = await createServerSupabaseClient()
 
   // Update production status remains 'served' until calving
-  await supabase
-    .from('animals')
+  // FIXED: Cast to any
+  await (supabase
+    .from('animals') as any)
     .update({
       expected_calving_date: expectedCalvingDate,
       updated_at: new Date().toISOString()
@@ -73,8 +76,9 @@ export async function handlePostPregnancyConfirmationAutomation(
       dryOffDate.getDate() - (settings.defaultGestation - settings.daysPregnantAtDryoff)
     )
 
-    await supabase
-      .from('breeding_calendar')
+    // FIXED: Cast to any
+    await (supabase
+      .from('breeding_calendar') as any)
       .insert({
         farm_id: farmId,
         animal_id: animalId,
@@ -86,8 +90,9 @@ export async function handlePostPregnancyConfirmationAutomation(
   }
 
   // Schedule calving reminder
-  await supabase
-    .from('breeding_calendar')
+  // FIXED: Cast to any
+  await (supabase
+    .from('breeding_calendar') as any)
     .insert({
       farm_id: farmId,
       animal_id: animalId,
@@ -108,8 +113,9 @@ export async function handlePostCalvingAutomation(
   const supabase = await createServerSupabaseClient()
 
   // Update production status to 'lactating'
-  await supabase
-    .from('animals')
+  // FIXED: Cast to any
+  await (supabase
+    .from('animals') as any)
     .update({
       production_status: 'lactating',
       service_date: null,
@@ -123,8 +129,9 @@ export async function handlePostCalvingAutomation(
   nextBreedingDate.setDate(nextBreedingDate.getDate() + settings.postpartumBreedingDelayDays)
 
   // Schedule breeding reminder
-  await supabase
-    .from('breeding_calendar')
+  // FIXED: Cast to any
+  await (supabase
+    .from('breeding_calendar') as any)
     .insert({
       farm_id: farmId,
       animal_id: animalId,

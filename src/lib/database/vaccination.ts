@@ -28,8 +28,8 @@ export interface VaccinationSchedule {
 export async function createVaccinationProtocol(protocol: VaccinationProtocol) {
   const supabase = await createServerSupabaseClient()
   
-  const { data, error } = await supabase
-    .from('vaccination_protocols')
+  const { data, error } = await (supabase
+    .from('vaccination_protocols') as any)
     .insert(protocol)
     .select()
     .single()
@@ -57,7 +57,8 @@ export async function getVaccinationProtocols(farmId: string) {
     return []
   }
   
-  return data || []
+  // FIXED: Cast to any[]
+  return (data as any[]) || []
 }
 
 export async function generateVaccinationSchedule(animalId: string, protocolId: string, birthDate?: string) {
@@ -65,7 +66,7 @@ export async function generateVaccinationSchedule(animalId: string, protocolId: 
   
   try {
     // Get protocol details
-    const { data: protocol, error: protocolError } = await supabase
+    const { data: protocolData, error: protocolError } = await supabase
       .from('vaccination_protocols')
       .select('*')
       .eq('id', protocolId)
@@ -73,6 +74,9 @@ export async function generateVaccinationSchedule(animalId: string, protocolId: 
     
     if (protocolError) throw protocolError
     
+    // FIXED: Cast to any to access properties like age_at_first_dose_days
+    const protocol = protocolData as any
+
     const schedules: Omit<VaccinationSchedule, 'id'>[] = []
     
     // Calculate first vaccination date
@@ -96,7 +100,7 @@ export async function generateVaccinationSchedule(animalId: string, protocolId: 
     
     // Create booster schedules
     if (protocol.booster_schedule?.length) {
-      protocol.booster_schedule.forEach((boosterInterval, index) => {
+      protocol.booster_schedule.forEach((boosterInterval: string) => {
         const boosterDays = parseInt(boosterInterval)
         const boosterDate = addDays(firstVaccinationDate, boosterDays)
         
@@ -110,8 +114,9 @@ export async function generateVaccinationSchedule(animalId: string, protocolId: 
     }
     
     // Insert all schedules
-    const { data, error } = await supabase
-      .from('vaccination_schedules')
+    // FIXED: Cast to any for insert
+    const { data, error } = await (supabase
+      .from('vaccination_schedules') as any)
       .insert(schedules)
       .select()
     
@@ -127,11 +132,15 @@ export async function generateVaccinationSchedule(animalId: string, protocolId: 
 export async function getVaccinationSchedules(farmId: string, status?: string) {
   const supabase = await createServerSupabaseClient()
   
-  const animalIds = await supabase
+  // Get animals for the farm first
+  const { data: animals } = await supabase
     .from('animals')
     .select('id')
     .eq('farm_id', farmId)
-    .then(result => result.data?.map(row => row.id) || [])
+    
+  const animalIds = (animals as any[])?.map(row => row.id) || []
+
+  if (animalIds.length === 0) return []
 
   let query = supabase
     .from('vaccination_schedules')
@@ -164,7 +173,8 @@ export async function getVaccinationSchedules(farmId: string, status?: string) {
     return []
   }
   
-  return data || []
+  // FIXED: Cast to any[]
+  return (data as any[]) || []
 }
 
 export async function completeVaccination(scheduleId: string, data: {
@@ -174,8 +184,9 @@ export async function completeVaccination(scheduleId: string, data: {
 }) {
   const supabase = await createServerSupabaseClient()
   
-  const { error } = await supabase
-    .from('vaccination_schedules')
+  // FIXED: Cast to any for update
+  const { error } = await (supabase
+    .from('vaccination_schedules') as any)
     .update({
       status: 'completed',
       actual_date: data.actual_date,
@@ -197,13 +208,16 @@ export async function getOverdueVaccinations(farmId: string) {
   
   const today = format(new Date(), 'yyyy-MM-dd')
   
-  const animalIds = await supabase
+  const { data: animals } = await supabase
     .from('animals')
     .select('id')
     .eq('farm_id', farmId)
-    .then(result => result.data?.map(row => row.id) || [])
+    
+  const animalIds = (animals as any[])?.map(row => row.id) || []
 
-  const { data, error } = await supabase
+  if (animalIds.length === 0) return []
+
+  const { data: overdueData, error } = await supabase
     .from('vaccination_schedules')
     .select(`
       *,
@@ -225,14 +239,18 @@ export async function getOverdueVaccinations(farmId: string) {
     console.error('Error fetching overdue vaccinations:', error)
     return []
   }
+
+  // FIXED: Cast to any[]
+  const data = (overdueData as any[]) || []
   
   // Update status to overdue
-  if (data?.length) {
-    await supabase
-      .from('vaccination_schedules')
+  if (data.length) {
+    // FIXED: Cast to any for update
+    await (supabase
+      .from('vaccination_schedules') as any)
       .update({ status: 'overdue' })
       .in('id', data.map(v => v.id))
   }
   
-  return data || []
+  return data
 }

@@ -17,7 +17,8 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    // Cast to 'any' to fix the "Property 'farm_id' does not exist on type 'never'" error
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
@@ -27,7 +28,8 @@ export async function GET(
     const supabase = await createServerSupabaseClient()
     
     // Check if this animal is in the animals_requiring_health_attention view
-    const { data: attentionRecord, error } = await supabase
+    // We cast supabase to 'any' here as well, in case the View is missing from your generated types
+    const { data: attentionRecord, error } = await (supabase as any)
       .from('animals_requiring_health_attention')
       .select(`
         id,

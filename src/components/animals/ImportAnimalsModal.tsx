@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/Label'
 import { Alert, AlertDescription } from '@/components/ui/Alert'
 import { Progress } from '@/components/ui/Progress'
 import { importAnimalsActionWithAuth } from '@/app/actions/import-animals'
-import { downloadWorkingTemplate } from '@/lib/enhanced-template-generator' // You'll need to create this file
+import { downloadWorkingTemplate } from '@/lib/enhanced-template-generator'
 import { 
   Upload, 
   Download, 
@@ -21,7 +21,7 @@ import {
   Sparkles
 } from 'lucide-react'
 import Papa from 'papaparse'
-import * as XLSX from 'xlsx'
+import ExcelJS from 'exceljs' // Changed import
 import { Animal } from '@/types/database'
 
 interface ImportAnimalsModalProps {
@@ -135,49 +135,83 @@ export function ImportAnimalsModal({
     })
   }
 
-  const parseExcel = (file: File): Promise<ParsedAnimal[]> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        try {
-          const data = new Uint8Array(e.target?.result as ArrayBuffer)
-          const workbook = XLSX.read(data, { type: 'array' })
-          
-          // Find the Animals worksheet (skip validation and instructions sheets)
-          let animalSheet = workbook.Sheets['Animals']
-          if (!animalSheet) {
-            // Fallback to first sheet if Animals sheet not found
-            animalSheet = workbook.Sheets[workbook.SheetNames[0]]
-          }
-          
-          const jsonData = XLSX.utils.sheet_to_json(animalSheet)
-          
-          const animals = jsonData.map((row: any, index: number) => {
-            const normalizedRow: any = {}
-            Object.keys(row).forEach(key => {
-              const normalizedKey = key.replace('*', '').toLowerCase().replace(/\s+/g, '_')
-              normalizedRow[normalizedKey] = row[key]
-            })
-            
+  // UPDATED: Excel parsing using exceljs
+  const parseExcel = async (file: File): Promise<ParsedAnimal[]> => {
+    try {
+      const arrayBuffer = await file.arrayBuffer()
+      const workbook = new ExcelJS.Workbook()
+      await workbook.xlsx.load(arrayBuffer)
+      
+      // Find the Animals worksheet (skip validation and instructions sheets)
+      let animalSheet = workbook.getWorksheet('Animals')
+      if (!animalSheet) {
+        // Fallback to first sheet if Animals sheet not found
+        animalSheet = workbook.worksheets[0]
+      }
+
+      if (!animalSheet) {
+        throw new Error('No worksheet found in the Excel file.')
+      }
+
+      const animals: ParsedAnimal[] = []
+      const headers: { [colNumber: number]: string } = {}
+
+      animalSheet.eachRow((row, rowNumber) => {
+        if (rowNumber === 1) {
+          // Process Headers
+          row.eachCell((cell, colNumber) => {
+            const cellValue = cell.value ? String(cell.value) : ''
+            // Normalize header: remove *, lowercase, replace spaces with _
+            const normalizedKey = cellValue.replace('*', '').toLowerCase().replace(/\s+/g, '_')
+            headers[colNumber] = normalizedKey
+          })
+        } else {
+          // Process Data Rows
+          const normalizedRow: any = {}
+          let hasData = false
+
+          row.eachCell((cell, colNumber) => {
+            const key = headers[colNumber]
+            if (key) {
+              let value = cell.value
+
+              // Handle Rich Text or Hyperlinks which return objects
+              if (typeof value === 'object' && value !== null) {
+                if ('text' in value) {
+                  value = (value as any).text
+                } else if ('result' in value) {
+                  value = (value as any).result // Formula result
+                } else if ('hyperlink' in value) {
+                  value = (value as any).text
+                }
+              }
+
+              // ExcelJS returns actual Date objects for dates, or strings/numbers
+              normalizedRow[key] = value
+              hasData = true
+            }
+          })
+
+          if (hasData) {
             let animalSource: 'newborn_calf' | 'purchased_animal' = 'purchased_animal'
             if (normalizedRow.mother_tag || normalizedRow.father_tag || normalizedRow.birth_weight_kg) {
               animalSource = 'newborn_calf'
             }
-            
-            return {
+
+            animals.push({
               ...normalizedRow,
               animal_source: animalSource,
-              row_index: index + 2
-            }
-          })
-          
-          resolve(animals)
-        } catch (error) {
-          reject(error)
+              row_index: rowNumber
+            })
+          }
         }
-      }
-      reader.readAsArrayBuffer(file)
-    })
+      })
+      
+      return animals
+    } catch (error) {
+      console.error('Excel parsing error:', error)
+      throw error
+    }
   }
 
   // Validation function
@@ -225,22 +259,29 @@ export function ImportAnimalsModal({
         })
       }
       
-      if (animal.date_of_birth && isNaN(new Date(animal.date_of_birth).getTime())) {
-        warnings.push({
-          row,
-          field: 'date_of_birth',
-          value: animal.date_of_birth,
-          message: 'Invalid date format. Please use YYYY-MM-DD format'
-        })
+      if (animal.date_of_birth) {
+        // Handle JS Date objects from ExcelJS or string dates
+        const dateVal = new Date(animal.date_of_birth)
+        if (isNaN(dateVal.getTime())) {
+          warnings.push({
+            row,
+            field: 'date_of_birth',
+            value: String(animal.date_of_birth),
+            message: 'Invalid date format. Please use YYYY-MM-DD format'
+          })
+        }
       }
       
-      if (animal.purchase_date && isNaN(new Date(animal.purchase_date).getTime())) {
-        warnings.push({
-          row,
-          field: 'purchase_date',
-          value: animal.purchase_date,
-          message: 'Invalid date format. Please use YYYY-MM-DD format'
-        })
+      if (animal.purchase_date) {
+        const dateVal = new Date(animal.purchase_date)
+        if (isNaN(dateVal.getTime())) {
+          warnings.push({
+            row,
+            field: 'purchase_date',
+            value: String(animal.purchase_date),
+            message: 'Invalid date format. Please use YYYY-MM-DD format'
+          })
+        }
       }
       
       if (animal.birth_weight_kg && (isNaN(Number(animal.birth_weight_kg)) || Number(animal.birth_weight_kg) <= 0)) {
@@ -315,7 +356,10 @@ export function ImportAnimalsModal({
 
       const validatedAnimals = parsedData.map(animal => ({
         ...animal,
-        health_status: (animal.health_status?.toLowerCase() as "healthy" | "sick" | "injured" | "quarantine" | undefined) || undefined
+        health_status: (animal.health_status?.toLowerCase() as "healthy" | "sick" | "injured" | "quarantine" | undefined) || undefined,
+        // Ensure dates are strings for the server action if they came as objects from Excel
+        date_of_birth: animal.date_of_birth ? new Date(animal.date_of_birth).toISOString().split('T')[0] : undefined,
+        purchase_date: animal.purchase_date ? new Date(animal.purchase_date).toISOString().split('T')[0] : undefined
       }))
 
       const result = await importAnimalsActionWithAuth(farmId, validatedAnimals)

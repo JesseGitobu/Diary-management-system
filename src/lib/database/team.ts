@@ -10,13 +10,15 @@ export async function getTeamMembers(farmId: string) {
     console.log('🔍 Fetching team members for farm:', farmId)
     
     // Get user roles for this farm - NO JOINS, just the roles
-    const { data: userRoles, error: rolesError } = await supabase
-      .from('user_roles')
+    const { data: userRolesData, error: rolesError } = await (supabase
+      .from('user_roles') as any)
       .select('*')  // Remove the profiles join completely
       .eq('farm_id', farmId)
       .eq('status', 'active')
       .order('created_at', { ascending: false })
     
+    const userRoles = userRolesData as any[]
+
     if (rolesError) {
       console.error('❌ Error fetching user roles:', rolesError)
       return []
@@ -101,7 +103,8 @@ export async function getPendingInvitations(farmId: string) {
     return []
   }
   
-  return data || []
+  // FIXED: Cast to any[]
+  return (data as any[]) || []
 }
 
 export async function createTeamInvitation(
@@ -139,8 +142,9 @@ export async function createTeamInvitation(
       expires_at: expiresAt.toISOString(),
     }
     
-    const { data: invitation, error: invitationError } = await adminSupabase
-      .from('invitations')
+    // FIXED: Cast to any on insert
+    const { data: invitation, error: invitationError } = await (adminSupabase
+      .from('invitations') as any)
       .insert(invitationRecord)
       .select()
       .single()
@@ -175,12 +179,15 @@ export async function validateInvitationToken(token: string) {
   try {
     console.log('🔍 Validating invitation token:', token)
 
-    const { data: invitation, error } = await supabase
+    const { data: invitationData, error } = await supabase
       .from('invitations')
       .select('*')
       .eq('token', token)
       .eq('status', 'pending')
       .single()
+
+    // FIXED: Cast invitation to any
+    const invitation = invitationData as any
 
       console.log('🔍 Token validation result:', { 
       found: !!invitation, 
@@ -223,7 +230,7 @@ export async function getInvitationDetails(token: string) {
     console.log('🔍 Looking for invitation with token:', token)
     
     // First, get the invitation with farm details
-    const { data: invitation, error } = await supabase
+    const { data: invitationData, error } = await supabase
       .from('invitations')
       .select(`
         *,
@@ -237,6 +244,9 @@ export async function getInvitationDetails(token: string) {
       .eq('status', 'pending')
       .single()
     
+    // FIXED: Cast invitation to any
+    const invitation = invitationData as any
+
     console.log('🔍 Invitation query result:', { 
       found: !!invitation, 
       error: error?.message || 'no error'
@@ -302,13 +312,16 @@ export async function acceptInvitation(token: string, userId: string) {
   
   try {
     // Get invitation details
-    const { data: invitation, error: invitationError } = await adminSupabase
+    const { data: invitationData, error: invitationError } = await adminSupabase
       .from('invitations')
       .select('*')
       .eq('token', token)
       .eq('status', 'pending')
       .single()
     
+    // FIXED: Cast to any
+    const invitation = invitationData as any
+
     if (invitationError || !invitation) {
       return { success: false, error: 'Invitation not found' }
     }
@@ -319,8 +332,9 @@ export async function acceptInvitation(token: string, userId: string) {
     }
     
     // Create user role
-    const { error: roleError } = await adminSupabase
-      .from('user_roles')
+    // FIXED: Cast to any on insert
+    const { error: roleError } = await (adminSupabase
+      .from('user_roles') as any)
       .insert({
         user_id: userId,
         farm_id: invitation.farm_id,
@@ -334,8 +348,9 @@ export async function acceptInvitation(token: string, userId: string) {
     }
     
     // Mark invitation as accepted
-    const { error: updateError } = await adminSupabase
-      .from('invitations')
+    // FIXED: Cast to any on update
+    const { error: updateError } = await (adminSupabase
+      .from('invitations') as any)
       .update({ status: 'accepted' })
       .eq('token', token)
     
@@ -360,13 +375,16 @@ export async function resendInvitation(invitationId: string, farmId: string) {
   
   try {
     // Get existing invitation
-    const { data: invitation, error: fetchError } = await adminSupabase
+    const { data: invitationData, error: fetchError } = await adminSupabase
       .from('invitations')
       .select('*')
       .eq('id', invitationId)
       .eq('farm_id', farmId)
       .single()
     
+    // FIXED: Cast to any to fix 'Spread types may only be created from object types'
+    const invitation = invitationData as any
+
     if (fetchError || !invitation) {
       return { success: false, error: 'Invitation not found' }
     }
@@ -376,8 +394,9 @@ export async function resendInvitation(invitationId: string, farmId: string) {
     const newExpiresAt = addDays(new Date(), 7).toISOString()
     
     // Update invitation
-    const { error: updateError } = await adminSupabase
-      .from('invitations')
+    // FIXED: Cast to any on update
+    const { error: updateError } = await (adminSupabase
+      .from('invitations') as any)
       .update({
         token: newToken,
         expires_at: newExpiresAt,
@@ -407,8 +426,9 @@ export async function resendInvitation(invitationId: string, farmId: string) {
 export async function cancelInvitation(invitationId: string, farmId: string) {
   const adminSupabase = createAdminClient()
   
-  const { error } = await adminSupabase
-    .from('invitations')
+  // FIXED: Cast to any on update
+  const { error } = await (adminSupabase
+    .from('invitations') as any)
     .update({ status: 'declined' })
     .eq('id', invitationId)
     .eq('farm_id', farmId)
@@ -426,13 +446,16 @@ export async function removeTeamMember(userRoleId: string, farmId: string) {
   
   try {
     // Get the user role to check if it's the farm owner
-    const { data: userRole, error: fetchError } = await adminSupabase
+    const { data: userRoleData, error: fetchError } = await adminSupabase
       .from('user_roles')
       .select('role_type')
       .eq('id', userRoleId)
       .eq('farm_id', farmId)
       .single()
     
+    // FIXED: Cast to any
+    const userRole = userRoleData as any
+
     if (fetchError || !userRole) {
       return { success: false, error: 'Team member not found' }
     }
@@ -442,8 +465,9 @@ export async function removeTeamMember(userRoleId: string, farmId: string) {
     }
     
     // Update status to inactive instead of deleting
-    const { error: updateError } = await adminSupabase
-      .from('user_roles')
+    // FIXED: Cast to any on update
+    const { error: updateError } = await (adminSupabase
+      .from('user_roles') as any)
       .update({ status: 'inactive' })
       .eq('id', userRoleId)
       .eq('farm_id', farmId)
@@ -479,15 +503,18 @@ export async function getTeamStats(farmId: string) {
     .gt('expires_at', new Date().toISOString())
   
   // Get members by role
-  const { data: roleStats } = await supabase
+  const { data: roleStatsData } = await supabase
     .from('user_roles')
     .select('role_type')
     .eq('farm_id', farmId)
     .eq('status', 'active')
   
-  const owners = roleStats?.filter(r => r.role_type === 'farm_owner').length || 0
-  const managers = roleStats?.filter(r => r.role_type === 'farm_manager').length || 0
-  const workers = roleStats?.filter(r => r.role_type === 'worker').length || 0
+  // FIXED: Cast to any[]
+  const roleStats = (roleStatsData as any[]) || []
+
+  const owners = roleStats.filter(r => r.role_type === 'farm_owner').length || 0
+  const managers = roleStats.filter(r => r.role_type === 'farm_manager').length || 0
+  const workers = roleStats.filter(r => r.role_type === 'worker').length || 0
   
   return {
     total: totalMembers || 0,

@@ -18,19 +18,23 @@ export async function POST(request: NextRequest) {
     const supabase = await createServerSupabaseClient()
     
     // Get current user status
-    const { data: currentRole, error: roleError } = await supabase
+    const { data: currentRoleResult, error: roleError } = await supabase
       .from('user_roles')
       .select('status, farm_id, role_type')
       .eq('user_id', user.id)
       .single()
     
+    // Cast to any to fix "Property 'status' does not exist on type 'never'"
+    const currentRole = currentRoleResult as any
+
     if (roleError || !currentRole) {
       console.error('❌ Error fetching user role:', roleError)
       return NextResponse.json({ error: 'User role not found' }, { status: 404 })
     }
     
     // Simply update the user's status to pending_setup without creating a farm
-    const { error: updateError } = await supabase
+    // Cast supabase to any to fix "Argument of type ... is not assignable to parameter of type 'never'"
+    const { error: updateError } = await (supabase as any)
       .from('user_roles')
       .update({
         status: 'pending_setup',

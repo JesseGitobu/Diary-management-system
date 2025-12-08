@@ -12,7 +12,7 @@ export async function PUT(request: NextRequest, context: any) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     if (!userRole?.farm_id || !['farm_owner', 'farm_manager'].includes(userRole.role_type)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
@@ -32,7 +32,9 @@ export async function PUT(request: NextRequest, context: any) {
     } = body
 
     const supabase = await createServerSupabaseClient()
-    const { data: channel, error } = await supabase
+    
+    // Cast supabase to any to fix "Argument of type ... is not assignable to parameter of type 'never'"
+    const { data: channel, error } = await (supabase as any)
       .from('distribution_channels')
       .update({
         name: name?.trim(),
@@ -74,14 +76,16 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     if (!userRole?.farm_id || !['farm_owner', 'farm_manager'].includes(userRole.role_type)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
 
     const body = await request.json()
     const supabase = await createServerSupabaseClient()
-    const { data: channel, error } = await supabase
+    
+    // Cast supabase to any
+    const { data: channel, error } = await (supabase as any)
       .from('distribution_channels')
       .update(body)
       .eq('id', id)
@@ -109,7 +113,7 @@ export async function DELETE(request: NextRequest, context: any) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     if (!userRole?.farm_id || !['farm_owner', 'farm_manager'].includes(userRole.role_type)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
@@ -127,7 +131,8 @@ export async function DELETE(request: NextRequest, context: any) {
 
     if (records && records.length > 0) {
       // Don't delete channels with records, just deactivate
-      const { data: channel, error } = await supabase
+      // Cast supabase to any
+      const { data: channel, error } = await (supabase as any)
         .from('distribution_channels')
         .update({ is_active: false })
         .eq('id', channelId)

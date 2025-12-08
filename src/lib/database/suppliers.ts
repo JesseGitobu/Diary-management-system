@@ -16,7 +16,8 @@ export async function getSuppliers(farmId: string) {
     return []
   }
   
-  return data || []
+  // FIXED: Cast to any[] or Supplier[] to avoid 'never' type issues downstream
+  return (data as any[]) || []
 }
 
 export async function createSupplier(farmId: string, supplierData: Partial<Supplier>) {
@@ -27,8 +28,8 @@ export async function createSupplier(farmId: string, supplierData: Partial<Suppl
     return { success: false, error: 'Supplier name is required.' }
   }
 
-  const { data, error } = await supabase
-    .from('suppliers')
+  const { data, error } = await (supabase
+    .from('suppliers') as any)
     .insert({
       ...supplierData,
       name: supplierData.name ?? '', // fallback to empty string if undefined
@@ -48,8 +49,8 @@ export async function createSupplier(farmId: string, supplierData: Partial<Suppl
 export async function updateSupplier(supplierId: string, farmId: string, supplierData: Partial<Supplier>) {
   const supabase = await createServerSupabaseClient()
   
-  const { data, error } = await supabase
-    .from('suppliers')
+  const { data, error } = await (supabase
+    .from('suppliers') as any)
     .update(supplierData)
     .eq('id', supplierId)
     .eq('farm_id', farmId)
@@ -82,7 +83,8 @@ export async function getSupplierStats(farmId: string) {
       .eq('farm_id', farmId)
       .eq('status', 'active')
     
-    const supplierTypes = typeData?.reduce((acc, supplier) => {
+    // FIXED: Cast typeData to any[] to fix "Property does not exist on type 'never'"
+    const supplierTypes = (typeData as any[])?.reduce((acc, supplier) => {
       const type = supplier.supplier_type || 'other'
       acc[type] = (acc[type] || 0) + 1
       return acc

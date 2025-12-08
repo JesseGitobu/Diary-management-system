@@ -472,8 +472,8 @@ export async function updateHealthSettings(
       updated_at: new Date().toISOString()
     }
 
-    const { error } = await supabase
-      .from('farm_health_settings')
+    const { error } = await (supabase
+      .from('farm_health_settings') as any)
       .upsert(dbSettings, { onConflict: 'farm_id' })
 
     if (error) throw error

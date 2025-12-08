@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm access' }, { status: 403 })
     }
@@ -42,10 +42,11 @@ export async function GET(request: NextRequest) {
     if (error) throw error
 
     // Calculate statistics
-    const totalDistributed = records?.reduce((sum, record) => sum + record.volume, 0) || 0
-    const totalRevenue = records?.reduce((sum, record) => sum + record.total_amount, 0) || 0
+    // Cast record to any to fix "Property 'volume' does not exist on type 'never'"
+    const totalDistributed = records?.reduce((sum, record: any) => sum + record.volume, 0) || 0
+    const totalRevenue = records?.reduce((sum, record: any) => sum + record.total_amount, 0) || 0
     const avgPricePerLiter = totalDistributed > 0 ? totalRevenue / totalDistributed : 0
-    const uniqueChannels = new Set(records?.map(r => r.channel_id))
+    const uniqueChannels = new Set(records?.map((r: any) => r.channel_id))
     const totalChannels = uniqueChannels.size
 
     // Create daily summaries
@@ -58,7 +59,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Populate with actual data
-    records?.forEach(record => {
+    records?.forEach((record: any) => {
       const dateKey = record.delivery_date
       const existing = dailyMap.get(dateKey)
       if (existing) {
@@ -78,7 +79,7 @@ export async function GET(request: NextRequest) {
     // Get top channels
     const channelStats = new Map<string, { volume: number, revenue: number, lastDelivery: string, channelData: any }>()
     
-    records?.forEach(record => {
+    records?.forEach((record: any) => {
       const channelId = record.channel_id
       const existing = channelStats.get(channelId)
       

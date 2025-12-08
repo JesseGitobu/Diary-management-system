@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     if (!userRole || userRole.farm_id !== farmId) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
@@ -61,7 +61,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Farm ID and settings are required' }, { status: 400 })
     }
 
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     if (!userRole || userRole.farm_id !== farmId) {
       console.log('❌ Access denied for user:', user.id, 'farm:', farmId)
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })

@@ -13,8 +13,8 @@ export async function createFinancialTransaction(
 ) {
   const supabase = await createServerSupabaseClient()
   
-  const { data, error } = await supabase
-    .from('financial_transactions')
+  const { data, error } = await (supabase
+    .from('financial_transactions') as any)
     .insert({
       ...transactionData,
       farm_id: farmId,
@@ -85,7 +85,7 @@ export async function getFinancialSummary(farmId: string, year?: number) {
   const endDate = `${currentYear}-12-31`
   
   // Get income summary
-  const { data: incomeData } = await supabase
+  const { data: incomeDataResult } = await supabase
     .from('financial_transactions')
     .select('amount, income_category')
     .eq('farm_id', farmId)
@@ -93,8 +93,11 @@ export async function getFinancialSummary(farmId: string, year?: number) {
     .gte('transaction_date', startDate)
     .lte('transaction_date', endDate)
   
+  // FIXED: Cast to any[]
+  const incomeData = (incomeDataResult as any[]) || []
+
   // Get expense summary
-  const { data: expenseData } = await supabase
+  const { data: expenseDataResult } = await supabase
     .from('financial_transactions')
     .select('amount, expense_category')
     .eq('farm_id', farmId)
@@ -102,19 +105,22 @@ export async function getFinancialSummary(farmId: string, year?: number) {
     .gte('transaction_date', startDate)
     .lte('transaction_date', endDate)
   
+  // FIXED: Cast to any[]
+  const expenseData = (expenseDataResult as any[]) || []
+
   // Calculate totals
-  const totalIncome = incomeData?.reduce((sum, record) => sum + Number(record.amount), 0) || 0
-  const totalExpenses = expenseData?.reduce((sum, record) => sum + Number(record.amount), 0) || 0
+  const totalIncome = incomeData.reduce((sum, record) => sum + Number(record.amount), 0) || 0
+  const totalExpenses = expenseData.reduce((sum, record) => sum + Number(record.amount), 0) || 0
   const netProfit = totalIncome - totalExpenses
   
   // Group by category
-  const incomeByCategory = incomeData?.reduce((acc, record) => {
+  const incomeByCategory = incomeData.reduce((acc, record) => {
     const category = record.income_category || 'other_income'
     acc[category] = (acc[category] || 0) + Number(record.amount)
     return acc
   }, {} as Record<string, number>) || {}
   
-  const expensesByCategory = expenseData?.reduce((acc, record) => {
+  const expensesByCategory = expenseData.reduce((acc, record) => {
     const category = record.expense_category || 'other_expense'
     acc[category] = (acc[category] || 0) + Number(record.amount)
     return acc
@@ -136,8 +142,9 @@ export async function createMilkSale(farmId: string, milkSaleData: any) {
   
   try {
     // Start a transaction
-    const { data: milkSale, error: milkSaleError } = await supabase
-      .from('milk_sales')
+    // FIXED: Cast to any
+    const { data: milkSale, error: milkSaleError } = await (supabase
+      .from('milk_sales') as any)
       .insert({
         ...milkSaleData,
         farm_id: farmId,
@@ -148,8 +155,9 @@ export async function createMilkSale(farmId: string, milkSaleData: any) {
     if (milkSaleError) throw milkSaleError
     
     // Create corresponding financial transaction
-    const { data: transaction, error: transactionError } = await supabase
-      .from('financial_transactions')
+    // FIXED: Cast to any
+    const { data: transaction, error: transactionError } = await (supabase
+      .from('financial_transactions') as any)
       .insert({
         farm_id: farmId,
         transaction_type: 'income',
@@ -166,8 +174,9 @@ export async function createMilkSale(farmId: string, milkSaleData: any) {
     if (transactionError) throw transactionError
     
     // Link the milk sale to the transaction
-    await supabase
-      .from('milk_sales')
+    // FIXED: Cast to any
+    await (supabase
+      .from('milk_sales') as any)
       .update({ transaction_id: transaction.id })
       .eq('id', milkSale.id)
     
@@ -183,8 +192,9 @@ export async function createAnimalSale(farmId: string, animalSaleData: any) {
   
   try {
     // Create animal sale record
-    const { data: animalSale, error: animalSaleError } = await supabase
-      .from('animal_sales')
+    // FIXED: Cast to any
+    const { data: animalSale, error: animalSaleError } = await (supabase
+      .from('animal_sales') as any)
       .insert({
         ...animalSaleData,
         farm_id: farmId,
@@ -195,8 +205,9 @@ export async function createAnimalSale(farmId: string, animalSaleData: any) {
     if (animalSaleError) throw animalSaleError
     
     // Create corresponding financial transaction
-    const { data: transaction, error: transactionError } = await supabase
-      .from('financial_transactions')
+    // FIXED: Cast to any
+    const { data: transaction, error: transactionError } = await (supabase
+      .from('financial_transactions') as any)
       .insert({
         farm_id: farmId,
         transaction_type: 'income',
@@ -214,14 +225,16 @@ export async function createAnimalSale(farmId: string, animalSaleData: any) {
     if (transactionError) throw transactionError
     
     // Update animal status to 'sold'
-    await supabase
-      .from('animals')
+    // FIXED: Cast to any
+    await (supabase
+      .from('animals') as any)
       .update({ status: 'sold' })
       .eq('id', animalSaleData.animal_id)
     
     // Link the animal sale to the transaction
-    await supabase
-      .from('animal_sales')
+    // FIXED: Cast to any
+    await (supabase
+      .from('animal_sales') as any)
       .update({ transaction_id: transaction.id })
       .eq('id', animalSale.id)
     
@@ -241,19 +254,22 @@ export async function getMonthlyFinancialData(farmId: string, year: number) {
       const startDate = `${year}-${month.toString().padStart(2, '0')}-01`
       const endDate = `${year}-${month.toString().padStart(2, '0')}-31`
       
-      const { data: transactions } = await supabase
+      const { data: transactionsData } = await supabase
         .from('financial_transactions')
         .select('amount, transaction_type')
         .eq('farm_id', farmId)
         .gte('transaction_date', startDate)
         .lte('transaction_date', endDate)
       
+      // FIXED: Cast to any[]
+      const transactions = (transactionsData as any[]) || []
+
       const income = transactions
-        ?.filter(t => t.transaction_type === 'income')
+        .filter(t => t.transaction_type === 'income')
         .reduce((sum, t) => sum + Number(t.amount), 0) || 0
       
       const expenses = transactions
-        ?.filter(t => t.transaction_type === 'expense')
+        .filter(t => t.transaction_type === 'expense')
         .reduce((sum, t) => sum + Number(t.amount), 0) || 0
       
       return {

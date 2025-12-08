@@ -42,8 +42,8 @@ export async function getActiveOutbreaks(farmId: string) {
 export async function resolveOutbreak(outbreakId: string, resolvedDate: string) {
   const supabase = await createServerSupabaseClient()
   
-  const { data, error } = await supabase
-    .from('disease_outbreaks')
+  const { data, error } = await (supabase
+    .from('disease_outbreaks') as any)
     .update({ 
       status: 'resolved', 
       resolved_date: resolvedDate 

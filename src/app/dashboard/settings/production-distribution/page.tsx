@@ -27,7 +27,7 @@ export default async function ProductionDistributionPage({ searchParams }: PageP
       redirect('/auth/login')
     }
 
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     if (!userRole || userRole.farm_id !== farmId) {
       redirect('/dashboard')
     }

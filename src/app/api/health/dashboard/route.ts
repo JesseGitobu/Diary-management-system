@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated' }, { status: 400 })
@@ -20,11 +20,12 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const farmId = searchParams.get('farmId')
     
-    if (farmId !== userRole.farm_id) {
+    if (!farmId || farmId !== userRole.farm_id) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
     
     // Get health reminders and alerts
+    // farmId is guaranteed to be a string here due to the check above
     const [reminders, withdrawalAlerts] = await Promise.all([
       generateHealthReminders(farmId),
       checkWithdrawalPeriods(farmId)
@@ -38,8 +39,8 @@ export async function GET(request: NextRequest) {
     }
     
     const vaccinationStats = {
-      pending: reminders.filter(r => r.type === 'vaccination' && r.status === 'pending').length,
-      overdue: reminders.filter(r => r.type === 'vaccination' && r.status === 'overdue').length,
+      pending: reminders.filter((r: any) => r.type === 'vaccination' && r.status === 'pending').length,
+      overdue: reminders.filter((r: any) => r.type === 'vaccination' && r.status === 'overdue').length,
       completed_this_month: 12 // You'll calculate this from actual data
     }
     

@@ -195,8 +195,8 @@ export async function saveQRCodeToDatabase(
     const { createServerSupabaseClient } = await import('@/lib/supabase/server')
     const supabase = await createServerSupabaseClient()
 
-    const { error } = await supabase
-      .from('animal_qr_codes')
+    const { error } = await (supabase
+      .from('animal_qr_codes') as any)
       .upsert({
         animal_id: animalId,
         qr_data: qrData,

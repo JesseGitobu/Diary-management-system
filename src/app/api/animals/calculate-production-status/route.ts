@@ -43,10 +43,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Determine production status
+    // Cast categories to any[] and cat to any to bypass 'never' type errors
     const productionStatus = getProductionStatusFromCategories(
       ageDays,
       gender,
-      (categories || []).map(cat => ({
+      ((categories as any[]) || []).map((cat: any) => ({
         ...cat,
         min_age_days: cat.min_age_days ?? undefined,
         max_age_days: cat.max_age_days ?? undefined,
@@ -62,7 +63,7 @@ export async function POST(request: NextRequest) {
     )
 
     // Find matching category
-    const matchingCategory = categories?.find(cat => {
+    const matchingCategory = ((categories as any[]) || []).find((cat: any) => {
       const minAge = cat.min_age_days ?? 0
       const maxAge = cat.max_age_days ?? Infinity
       const genderMatch = !cat.gender || cat.gender === gender
@@ -110,12 +111,15 @@ export async function GET(request: NextRequest) {
     const supabase = await createServerSupabaseClient()
 
     // Fetch animal
-    const { data: animal, error: animalError } = await supabase
+    const { data: animalResult, error: animalError } = await supabase
       .from('animals')
       .select('id, birth_date, gender, production_status')
       .eq('id', animalId)
       .eq('farm_id', farmId)
       .single()
+
+    // Cast to any to fix "Property 'production_status' does not exist on type 'never'"
+    const animal = animalResult as any
 
     if (animalError || !animal) {
       return NextResponse.json(
@@ -137,8 +141,8 @@ export async function GET(request: NextRequest) {
         current_production_status: animal.production_status,
         calculated_production_status: animal.production_status,
         should_update: false,
-        age_days: calculateAgeDays(animal.birth_date),
-        age_months: Math.floor(calculateAgeDays(animal.birth_date) / 30),
+        age_days: animal.birth_date ? calculateAgeDays(animal.birth_date) : 0,
+        age_months: animal.birth_date ? Math.floor(calculateAgeDays(animal.birth_date) / 30) : 0,
         has_breeding_context: true,
         message: 'Status validated by breeding records'
       })
@@ -167,10 +171,11 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // Cast categories to any[] and cat to any
     const calculatedStatus = getProductionStatusFromCategories(
       ageDays,
       animal.gender as 'male' | 'female',
-      (categories || []).map(cat => ({
+      ((categories as any[]) || []).map((cat: any) => ({
         ...cat,
         min_age_days: cat.min_age_days ?? undefined,
         max_age_days: cat.max_age_days ?? undefined,

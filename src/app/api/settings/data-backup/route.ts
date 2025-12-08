@@ -14,12 +14,15 @@ export async function GET(request: NextRequest) {
 
     let targetFarmId = farmId
     if (!targetFarmId) {
-      const { data: userRole } = await supabase
+      const { data: userRoleResult } = await supabase
         .from('user_roles')
         .select('farm_id')
         .eq('user_id', user.id)
         .single()
       
+      // Cast to any to fix "Property 'farm_id' does not exist on type 'never'"
+      const userRole = userRoleResult as any
+
       if (!userRole) return NextResponse.json({ error: 'No farm found' }, { status: 400 })
       targetFarmId = userRole.farm_id
     }
@@ -49,12 +52,15 @@ export async function PUT(request: NextRequest) {
     const { farmId, settings } = body
 
     // Verify permissions
-    const { data: userRole } = await supabase
+    const { data: userRoleResult } = await supabase
       .from('user_roles')
       .select('role_type')
       .eq('user_id', user.id)
       .eq('farm_id', farmId)
       .single()
+
+    // Cast to any here as well
+    const userRole = userRoleResult as any
 
     if (!userRole || !['farm_owner', 'farm_manager'].includes(userRole.role_type)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })

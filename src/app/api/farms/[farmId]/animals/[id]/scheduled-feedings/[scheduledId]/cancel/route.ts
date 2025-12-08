@@ -16,7 +16,7 @@ export async function POST(
     }
     
     const { farmId, scheduledId } = await params
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id || userRole.farm_id !== farmId) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })

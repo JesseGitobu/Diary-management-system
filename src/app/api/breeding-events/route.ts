@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     if (!userRole?.farm_id) {
       return NextResponse.json(
         { error: 'No farm associated with user' },
@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
     // Handle different event types
     if (eventData.event_type === 'calving') {
       // Find the breeding record for this animal
-      const { data: breedingRecord } = await supabase
+      const { data: breedingRecordResult } = await supabase
         .from('breeding_records')
         .select('id')
         .eq('animal_id', eventData.animal_id)
@@ -45,6 +45,9 @@ export async function POST(request: NextRequest) {
         .order('breeding_date', { ascending: false })
         .limit(1)
         .single()
+
+      // Cast to any to fix "Property 'id' does not exist on type 'never'"
+      const breedingRecord = breedingRecordResult as any
 
       if (!breedingRecord) {
         return NextResponse.json(
@@ -86,7 +89,8 @@ export async function POST(request: NextRequest) {
 
     // For other events (heat detection, insemination, pregnancy check)
     // Create standalone event
-    const { data: event, error } = await supabase
+    // Cast supabase to any to prevent insertion type errors
+    const { data: event, error } = await (supabase as any)
       .from('breeding_events')
       .insert({
         ...eventData,
@@ -122,7 +126,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     if (!userRole?.farm_id) {
       return NextResponse.json(
         { error: 'No farm associated with user' },

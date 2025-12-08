@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
@@ -28,12 +28,15 @@ export async function POST(request: NextRequest) {
     const { createServerSupabaseClient } = await import('@/lib/supabase/server')
     const supabase = await createServerSupabaseClient()
     
-    const { data: equipment, error: equipmentError } = await supabase
+    const { data: equipmentResult, error: equipmentError } = await supabase
       .from('equipment')
       .select('farm_id')
       .eq('id', body.equipment_id)
       .single()
     
+    // Cast to any to fix "Property 'farm_id' does not exist on type 'never'"
+    const equipment = equipmentResult as any
+
     if (equipmentError || !equipment) {
       return NextResponse.json({ error: 'Equipment not found' }, { status: 404 })
     }

@@ -1,4 +1,4 @@
-// src/lib/health/automation.ts (Fixed version)
+// src/lib/health/automation.ts
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { addDays, format, isBefore, differenceInDays } from 'date-fns'
 
@@ -22,7 +22,7 @@ export async function generateHealthReminders(farmId: string) {
   
   try {
     // First, get all farm animals
-    const { data: farmAnimals, error: animalsError } = await supabase
+    const { data: farmAnimalsData, error: animalsError } = await supabase
       .from('animals')
       .select('id, tag_number, name, birth_date')
       .eq('farm_id', farmId)
@@ -33,14 +33,17 @@ export async function generateHealthReminders(farmId: string) {
       return []
     }
     
-    if (!farmAnimals || farmAnimals.length === 0) {
+    // FIXED: Cast to any[]
+    const farmAnimals = (farmAnimalsData as any[]) || []
+
+    if (farmAnimals.length === 0) {
       return [] // No animals to generate reminders for
     }
     
     const animalIds = farmAnimals.map(animal => animal.id)
     
     // Get overdue vaccinations
-    const { data: overdueVaccinations, error: vaccinationError } = await supabase
+    const { data: overdueVaccinationsData, error: vaccinationError } = await supabase
       .from('vaccination_schedules')
       .select(`
         *,
@@ -55,104 +58,114 @@ export async function generateHealthReminders(farmId: string) {
       console.error('Error fetching overdue vaccinations:', vaccinationError)
     }
     
-    // Fixed section of src/lib/health/automation.ts
+    // FIXED: Cast to any[]
+    const overdueVaccinations = (overdueVaccinationsData as any[]) || []
 
-// Add vaccination reminders
-overdueVaccinations?.forEach(vaccination => {
-  const daysOverdue = differenceInDays(today, new Date(vaccination.scheduled_date))
-  reminders.push({
-    type: 'vaccination',
-    title: `Overdue Vaccination: ${vaccination.protocol?.vaccine_name || 'Unknown'}`,
-    description: `${vaccination.animal?.name || vaccination.animal?.tag_number || 'Unknown animal'} vaccination is ${daysOverdue} days overdue`,
-    animal_id: vaccination.animal_id,
-    farm_id: farmId, // Changed from farm_id to farm_id: farmId
-    due_date: vaccination.scheduled_date,
-    status: 'overdue',
-    priority: daysOverdue > 30 ? 'high' : 'medium'
-  })
-})
-
-// Get animals needing health checks (no health record in last 90 days)
-const { data: healthRecords, error: healthError } = await supabase
-  .from('animal_health_records')
-  .select('animal_id, record_date')
-  .in('animal_id', animalIds)
-  .gte('record_date', format(addDays(today, -90), 'yyyy-MM-dd'))
-
-if (healthError) {
-  console.error('Error fetching health records:', healthError)
-}
-
-// Find animals without recent health records
-const animalsWithRecentRecords = new Set(
-  healthRecords?.map(record => record.animal_id) || []
-)
-
-farmAnimals.forEach(animal => {
-  if (!animalsWithRecentRecords.has(animal.id)) {
-    reminders.push({
-      type: 'health_check',
-      title: `Routine Health Check Due`,
-      description: `${animal.name || animal.tag_number} hasn't had a health check in over 90 days`,
-      animal_id: animal.id,
-      farm_id: farmId, // Changed from farm_id to farm_id: farmId
-      due_date: format(today, 'yyyy-MM-dd'),
-      status: 'pending',
-      priority: 'medium'
+    // Add vaccination reminders
+    overdueVaccinations.forEach(vaccination => {
+      const daysOverdue = differenceInDays(today, new Date(vaccination.scheduled_date))
+      reminders.push({
+        type: 'vaccination',
+        title: `Overdue Vaccination: ${vaccination.protocol?.vaccine_name || 'Unknown'}`,
+        description: `${vaccination.animal?.name || vaccination.animal?.tag_number || 'Unknown animal'} vaccination is ${daysOverdue} days overdue`,
+        animal_id: vaccination.animal_id,
+        farm_id: farmId,
+        due_date: vaccination.scheduled_date,
+        status: 'overdue',
+        priority: daysOverdue > 30 ? 'high' : 'medium'
+      })
     })
-  }
-})
 
-// Get follow-up visits that are due
-const { data: followUpVisits, error: followUpError } = await supabase
-  .from('veterinary_visits')
-  .select('*')
-  .eq('farm_id', farmId)
-  .eq('follow_up_required', true)
-  .lte('follow_up_date', format(today, 'yyyy-MM-dd'))
+    // Get animals needing health checks (no health record in last 90 days)
+    const { data: healthRecordsData, error: healthError } = await supabase
+      .from('animal_health_records')
+      .select('animal_id, record_date')
+      .in('animal_id', animalIds)
+      .gte('record_date', format(addDays(today, -90), 'yyyy-MM-dd'))
 
-if (followUpError) {
-  console.error('Error fetching follow-up visits:', followUpError)
-}
+    if (healthError) {
+      console.error('Error fetching health records:', healthError)
+    }
 
-followUpVisits?.forEach(visit => {
-  reminders.push({
-    type: 'follow_up',
-    title: 'Veterinary Follow-up Due',
-    description: `Follow-up required for ${visit.visit_type} visit`,
-    farm_id: farmId, // Changed from farm_id to farm_id: farmId
-    due_date: visit.follow_up_date ?? '',
-    status: 'pending',
-    priority: 'medium'
-  })
-})
+    // FIXED: Cast to any[]
+    const healthRecords = (healthRecordsData as any[]) || []
 
-// Get medications expiring soon
-const { data: expiringMedications, error: medicationError } = await supabase
-  .from('medications')
-  .select('*')
-  .eq('farm_id', farmId)
-  .lte('expiry_date', format(addDays(today, 30), 'yyyy-MM-dd'))
-  .gt('quantity_available', 0)
+    // Find animals without recent health records
+    const animalsWithRecentRecords = new Set(
+      healthRecords.map(record => record.animal_id)
+    )
 
-if (medicationError) {
-  console.error('Error fetching expiring medications:', medicationError)
-}
-
-expiringMedications?.forEach(medication => {
-  if (medication.expiry_date) {
-    const daysUntilExpiry = differenceInDays(new Date(medication.expiry_date), today)
-    reminders.push({
-      type: 'medication',
-      title: 'Medication Expiring Soon',
-      description: `${medication.name} expires in ${daysUntilExpiry} days`,
-      farm_id: farmId, // Changed from farm_id to farm_id: farmId
-      due_date: medication.expiry_date,
-      status: 'pending',
-      priority: daysUntilExpiry < 7 ? 'high' : 'medium'
+    farmAnimals.forEach(animal => {
+      if (!animalsWithRecentRecords.has(animal.id)) {
+        reminders.push({
+          type: 'health_check',
+          title: `Routine Health Check Due`,
+          description: `${animal.name || animal.tag_number} hasn't had a health check in over 90 days`,
+          animal_id: animal.id,
+          farm_id: farmId,
+          due_date: format(today, 'yyyy-MM-dd'),
+          status: 'pending',
+          priority: 'medium'
+        })
+      }
     })
-  }
-})
+
+    // Get follow-up visits that are due
+    const { data: followUpVisitsData, error: followUpError } = await supabase
+      .from('veterinary_visits')
+      .select('*')
+      .eq('farm_id', farmId)
+      .eq('follow_up_required', true)
+      .lte('follow_up_date', format(today, 'yyyy-MM-dd'))
+
+    if (followUpError) {
+      console.error('Error fetching follow-up visits:', followUpError)
+    }
+
+    // FIXED: Cast to any[]
+    const followUpVisits = (followUpVisitsData as any[]) || []
+
+    followUpVisits.forEach(visit => {
+      reminders.push({
+        type: 'follow_up',
+        title: 'Veterinary Follow-up Due',
+        description: `Follow-up required for ${visit.visit_type} visit`,
+        farm_id: farmId,
+        due_date: visit.follow_up_date ?? '',
+        status: 'pending',
+        priority: 'medium'
+      })
+    })
+
+    // Get medications expiring soon
+    const { data: expiringMedicationsData, error: medicationError } = await supabase
+      .from('medications')
+      .select('*')
+      .eq('farm_id', farmId)
+      .lte('expiry_date', format(addDays(today, 30), 'yyyy-MM-dd'))
+      .gt('quantity_available', 0)
+
+    if (medicationError) {
+      console.error('Error fetching expiring medications:', medicationError)
+    }
+
+    // FIXED: Cast to any[]
+    const expiringMedications = (expiringMedicationsData as any[]) || []
+
+    expiringMedications.forEach(medication => {
+      if (medication.expiry_date) {
+        const daysUntilExpiry = differenceInDays(new Date(medication.expiry_date), today)
+        reminders.push({
+          type: 'medication',
+          title: 'Medication Expiring Soon',
+          description: `${medication.name} expires in ${daysUntilExpiry} days`,
+          farm_id: farmId,
+          due_date: medication.expiry_date,
+          status: 'pending',
+          priority: daysUntilExpiry < 7 ? 'high' : 'medium'
+        })
+      }
+    })
     
     return reminders.sort((a, b) => {
       // Sort by priority (high first) then by due date
@@ -174,7 +187,7 @@ export async function scheduleAutomaticVaccinations(farmId: string) {
   
   try {
     // Get all active protocols
-    const { data: protocols, error: protocolsError } = await supabase
+    const { data: protocolsData, error: protocolsError } = await supabase
       .from('vaccination_protocols')
       .select('*')
       .eq('farm_id', farmId)
@@ -186,7 +199,7 @@ export async function scheduleAutomaticVaccinations(farmId: string) {
     }
     
     // Get all animals that might need scheduling
-    const { data: animals, error: animalsError } = await supabase
+    const { data: animalsData, error: animalsError } = await supabase
       .from('animals')
       .select('id, birth_date')
       .eq('farm_id', farmId)
@@ -196,11 +209,15 @@ export async function scheduleAutomaticVaccinations(farmId: string) {
       console.error('Error fetching animals:', animalsError)
       return { success: false, error: animalsError.message }
     }
+
+    // FIXED: Cast to any[]
+    const protocols = (protocolsData as any[]) || []
+    const animals = (animalsData as any[]) || []
     
     const schedulesToCreate = []
     
-    for (const protocol of protocols || []) {
-      for (const animal of animals || []) {
+    for (const protocol of protocols) {
+      for (const animal of animals) {
         // Check if animal already has this protocol scheduled
         const { data: existingSchedule, error: checkError } = await supabase
           .from('vaccination_schedules')
@@ -238,13 +255,15 @@ export async function scheduleAutomaticVaccinations(farmId: string) {
     
     // Insert new schedules
     if (schedulesToCreate.length > 0) {
-      const { data, error } = await supabase
-        .from('vaccination_schedules')
+      // FIXED: Cast to any for insert
+      const { data, error } = await (supabase
+        .from('vaccination_schedules') as any)
         .insert(schedulesToCreate)
         .select()
       
       if (error) throw error
-      return { success: true, created: data?.length || 0 }
+      // FIXED: Cast data to any[]
+      return { success: true, created: (data as any[])?.length || 0 }
     }
     
     return { success: true, created: 0 }
@@ -266,14 +285,17 @@ export async function checkWithdrawalPeriods(farmId: string) {
       .eq('farm_id', farmId)
       .eq('status', 'active')
     
-    if (animalsError || !farmAnimals || farmAnimals.length === 0) {
+    // FIXED: Cast to any[]
+    const animals = (farmAnimals as any[]) || []
+
+    if (animalsError || !animals || animals.length === 0) {
       return []
     }
     
-    const animalIds = farmAnimals.map(animal => animal.id)
+    const animalIds = animals.map(animal => animal.id)
     
     // Get animals with active withdrawal periods
-    const { data: withdrawalAnimals, error: withdrawalError } = await supabase
+    const { data: withdrawalAnimalsData, error: withdrawalError } = await supabase
       .from('medication_administrations')
       .select(`
         *,
@@ -289,7 +311,10 @@ export async function checkWithdrawalPeriods(farmId: string) {
       return []
     }
     
-    const alerts = withdrawalAnimals?.map(admin => ({
+    // FIXED: Cast to any[]
+    const withdrawalAnimals = (withdrawalAnimalsData as any[]) || []
+
+    const alerts = withdrawalAnimals.map(admin => ({
       animal_id: admin.animal_id,
       animal_name: admin.animal?.name || admin.animal?.tag_number || 'Unknown',
       medication: admin.medication?.name || 'Unknown medication',
@@ -297,7 +322,7 @@ export async function checkWithdrawalPeriods(farmId: string) {
       days_remaining: admin.withdrawal_end_date
         ? differenceInDays(new Date(admin.withdrawal_end_date), today)
         : null
-    })) || []
+    }))
     
     return alerts
   } catch (error) {

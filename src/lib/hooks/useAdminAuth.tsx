@@ -38,11 +38,14 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
       // Check if user is admin with more detailed error handling
       console.log('Checking admin status for user:', currentUser.id)
       
-      const { data: adminUser, error: adminError } = await supabase
+      const { data: adminUserData, error: adminError } = await supabase
         .from('admin_users')
         .select('id, created_at')
         .eq('user_id', currentUser.id)
         .maybeSingle() // Use maybeSingle instead of single to avoid errors when no record found
+
+      // FIXED: Cast to any to bypass 'never' type error
+      const adminUser = adminUserData as any
 
       console.log('Admin check result:', { adminUser, adminError })
 

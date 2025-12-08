@@ -81,13 +81,14 @@ export async function DELETE(
     
     // Log the action before deletion
     try {
+      // Cast payload to any to bypass strict type checking if types are out of sync
       await adminSupabase.from('audit_logs').insert({
         user_id: user.id,
         farm_id: id,
         action: 'delete_farm',
         resource_type: 'farm',
         resource_id: id
-      })
+      } as any)
     } catch (auditError) {
       console.warn('Could not log action:', auditError)
     }

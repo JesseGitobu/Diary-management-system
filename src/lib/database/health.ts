@@ -1,4 +1,3 @@
-
 // Health Records Database Operations
 // src/lib/database/health.ts
 
@@ -96,8 +95,8 @@ export async function createHealthRecord(data: HealthRecordData & {
     }
     
     // Create the health record with ALL comprehensive fields
-    const { data: record, error: recordError } = await supabase
-      .from('animal_health_records')
+    const { data: record, error: recordError } = await (supabase
+      .from('animal_health_records') as any)
       .insert({
         farm_id: data.farm_id,
         animal_id: data.animal_id,
@@ -187,8 +186,8 @@ export async function createHealthRecord(data: HealthRecordData & {
 
     // Update the health attention tracking table
     if (data.is_auto_generated) {
-      await supabase
-        .from('animals_requiring_health_attention')
+      await (supabase
+        .from('animals_requiring_health_attention') as any)
         .update({
           health_record_id: record.id,
           health_record_created: true,
@@ -210,8 +209,8 @@ export async function markHealthAttentionCompleted(animalId: string, farmId: str
   const supabase = await createServerSupabaseClient()
   
   try {
-    const { data, error } = await supabase
-      .from('animals_requiring_health_attention')
+    const { data, error } = await (supabase
+      .from('animals_requiring_health_attention') as any)
       .update({
         health_record_completed: true,
         resolved_at: new Date().toISOString(),
@@ -257,7 +256,7 @@ export async function getAnimalHealthRecords(
       return []
     }
 
-    const animalIds = (farmAnimals || []).map(animal => animal.id)
+    const animalIds = (farmAnimals as any[] || []).map(animal => animal.id)
     
     if (animalIds.length === 0) {
       return []
@@ -298,7 +297,8 @@ export async function getAnimalHealthRecords(
       return []
     }
     
-    return data || []
+    // FIXED: Cast to any[]
+    return (data as any[]) || []
   } catch (error) {
     console.error('Error in getAnimalHealthRecords:', error)
     return []
@@ -348,8 +348,8 @@ export async function updateHealthRecord(
       return { success: false, error: 'Health record not found or access denied' }
     }
     
-    const { data, error } = await supabase
-      .from('animal_health_records')
+    const { data, error } = await (supabase
+      .from('animal_health_records') as any)
       .update(updates)
       .eq('id', recordId)
       .select(`
@@ -420,7 +420,7 @@ export async function getUpcomingHealthTasks(farmId: string, days: number = 30) 
       return []
     }
 
-    const animalIds = (farmAnimals || []).map(animal => animal.id)
+    const animalIds = (farmAnimals as any[] || []).map(animal => animal.id)
     
     if (animalIds.length === 0) {
       return []
@@ -448,7 +448,8 @@ export async function getUpcomingHealthTasks(farmId: string, days: number = 30) 
       return []
     }
     
-    return data || []
+    // FIXED: Cast to any[]
+    return (data as any[]) || []
   } catch (error) {
     console.error('Error in getUpcomingHealthTasks:', error)
     return []
@@ -470,7 +471,7 @@ export async function getHealthStats(farmId: string) {
       console.error('Error fetching farm animals for stats:', animalError)
     }
 
-    const animalIds = (farmAnimals || []).map(animal => animal.id)
+    const animalIds = (farmAnimals as any[] || []).map(animal => animal.id)
     
     // Get total health records for farm animals
     const { count: totalRecords } = await supabase
@@ -562,7 +563,8 @@ export async function getHealthRecordsByAnimal(animalId: string, farmId: string)
     return []
   }
   
-  return data || []
+  // FIXED: Cast to any[]
+  return (data as any[]) || []
 }
 
 
@@ -571,8 +573,8 @@ export async function createVeterinaryVisit(farmId: string, visitData: any) {
   
   try {
     // Create the visit
-    const { data: visit, error: visitError } = await supabase
-      .from('veterinary_visits')
+    const { data: visit, error: visitError } = await (supabase
+      .from('veterinary_visits') as any)
       .insert({
         farm_id: farmId,
         visit_type: visitData.visit_type,
@@ -667,7 +669,8 @@ export async function getVeterinaryVisits(farmId: string, options: {
     return []
   }
 
-  return data || []
+  // FIXED: Cast to any[]
+  return (data as any[]) || []
 }
 
 export async function getUpcomingVisits(farmId: string) {
@@ -695,7 +698,8 @@ export async function getUpcomingVisits(farmId: string) {
     return []
   }
 
-  return data || []
+  // FIXED: Cast to any[]
+  return (data as any[]) || []
 }
 
 export async function getFollowUpVisits(farmId: string) {
@@ -723,7 +727,8 @@ export async function getFollowUpVisits(farmId: string) {
     return []
   }
 
-  return data || []
+  // FIXED: Cast to any[]
+  return (data as any[]) || []
 }
 
 export async function createVaccination(farmId: string, vaccinationData: any) {
@@ -775,8 +780,8 @@ export async function createVaccination(farmId: string, vaccinationData: any) {
     console.log('Cleaned vaccination data:', cleanedData)
     
     // Create vaccination record
-    const { data: vaccination, error: vaccinationError } = await supabase
-      .from('vaccinations')
+    const { data: vaccination, error: vaccinationError } = await (supabase
+      .from('vaccinations') as any)
       .insert(cleanedData)
       .select()
       .single()
@@ -867,7 +872,7 @@ export async function getVaccinations(farmId: string, filters: {
         .select('vaccination_id')
         .eq('animal_id', filters.animalId)
 
-      const vaccinationIds = animalVaccinations?.map(v => v.vaccination_id) || []
+      const vaccinationIds = animalVaccinations?.map((v: any) => v.vaccination_id) || []
       
       if (vaccinationIds.length > 0) {
         query = query.in('id', vaccinationIds)
@@ -893,7 +898,8 @@ export async function getVaccinations(farmId: string, filters: {
       throw error
     }
 
-    return { success: true, data: data || [], total: count || 0 }
+    // FIXED: Cast to any[]
+    return { success: true, data: (data as any[]) || [], total: count || 0 }
   } catch (error) {
     console.error('Error in getVaccinations:', error)
     return { success: false, error: error instanceof Error ? error.message : String(error), data: [], total: 0 }
@@ -934,8 +940,8 @@ export async function updateVaccination(vaccinationId: string, farmId: string, u
   const supabase = await createServerSupabaseClient()
 
   try {
-    const { data, error } = await supabase
-      .from('vaccinations')
+    const { data, error } = await (supabase
+      .from('vaccinations') as any)
       .update(updateData)
       .eq('id', vaccinationId)
       .eq('farm_id', farmId)
@@ -1073,12 +1079,15 @@ export async function createFollowUpRecord(
       return { success: false, error: 'Original record not found or access denied' }
     }
     
+    // FIXED: Cast originalRecord to any to access properties
+    const recordAnimalId = (originalRecord as any).animal_id
+
     // Create the follow-up record with comprehensive fields
-    const { data: record, error: recordError } = await supabase
-      .from('animal_health_records')
+    const { data: record, error: recordError } = await (supabase
+      .from('animal_health_records') as any)
       .insert({
         farm_id: farmId,
-        animal_id: originalRecord.animal_id,
+        animal_id: recordAnimalId,
         record_date: followUpData.record_date,
         record_type: 'treatment', // Follow-ups are typically treatments/checkups
         description: followUpData.description,
@@ -1149,8 +1158,8 @@ export async function createFollowUpRecord(
     }
     
     // Create the relationship in the junction table
-    const { error: relationError } = await supabase
-      .from('health_record_follow_ups')
+    const { error: relationError } = await (supabase
+      .from('health_record_follow_ups') as any)
       .insert({
         original_record_id: originalRecordId,
         follow_up_record_id: record.id,
@@ -1172,8 +1181,8 @@ export async function createFollowUpRecord(
     
     // If this follow-up marks the record as resolved, update the original record
     if (followUpData.resolved) {
-      await supabase
-        .from('animal_health_records')
+      await (supabase
+        .from('animal_health_records') as any)
         .update({
           is_resolved: true,
           resolved_date: followUpData.record_date,
@@ -1185,8 +1194,8 @@ export async function createFollowUpRecord(
     
     // If there's a next follow-up date, update the original record's next_due_date
     if (followUpData.next_followup_date && !followUpData.resolved) {
-      await supabase
-        .from('animal_health_records')
+      await (supabase
+        .from('animal_health_records') as any)
         .update({
           next_due_date: followUpData.next_followup_date,
           updated_at: new Date().toISOString()
@@ -1227,7 +1236,8 @@ export async function deleteHealthRecordWithFollowUps(recordId: string, farmId: 
       .select('follow_up_record_id')
       .eq('original_record_id', recordId)
     
-    const followUpIds = followUpRelations?.map(rel => rel.follow_up_record_id) || []
+    // FIXED: Cast to any[]
+    const followUpIds = (followUpRelations as any[])?.map((rel: any) => rel.follow_up_record_id) || []
     
     // Delete follow-up relationships first
     await supabase
@@ -1277,7 +1287,7 @@ export async function getUnresolvedHealthRecords(farmId: string) {
       return []
     }
 
-    const animalIds = (farmAnimals || []).map(animal => animal.id)
+    const animalIds = (farmAnimals as any[]  || []).map(animal => animal.id)
     
     if (animalIds.length === 0) {
       return []
@@ -1305,7 +1315,8 @@ export async function getUnresolvedHealthRecords(farmId: string) {
       return []
     }
     
-    return data || []
+    // FIXED: Cast to any[]
+    return (data as any[]) || []
   } catch (error) {
     console.error('Error in getUnresolvedHealthRecords:', error)
     return []
@@ -1330,33 +1341,36 @@ export async function getHealthStatsWithFollowUps(farmId: string) {
       console.error('Error fetching farm animals for stats:', animalError)
     }
 
-    const animalIds = (farmAnimals || []).map(animal => animal.id)
+    const animalIds = (farmAnimals as any[]  || []).map(animal => animal.id)
     
     // Get additional follow-up stats
-    const { data: followUpData } = await supabase
+    const { data: followUpDataResult } = await supabase
       .from('animal_health_records')
       .select('id, is_resolved, is_follow_up, record_type')
       .in('animal_id', animalIds)
     
+    // FIXED: Cast to any[]
+    const followUpData = (followUpDataResult as any[]) || []
+
     // Get follow-up relationships count
     const { count: totalFollowUpRelations } = await supabase
       .from('health_record_follow_ups')
       .select('*', { count: 'exact', head: true })
       .in('original_record_id', 
-        followUpData?.filter(r => !r.is_follow_up).map(r => r.id) || []
+        followUpData.filter(r => !r.is_follow_up).map(r => r.id) || []
       )
     
     const followUpStats = {
       totalFollowUps: totalFollowUpRelations || 0,
-      unresolvedIssues: followUpData?.filter(r => 
+      unresolvedIssues: followUpData.filter(r => 
         ['illness', 'injury', 'treatment'].includes(r.record_type) && 
         !r.is_follow_up &&
         !r.is_resolved
       ).length || 0,
-      resolvedIssues: followUpData?.filter(r => 
+      resolvedIssues: followUpData.filter(r => 
         !r.is_follow_up && r.is_resolved
       ).length || 0,
-      recordsWithFollowUps: followUpData?.filter(r => !r.is_follow_up).length || 0
+      recordsWithFollowUps: followUpData.filter(r => !r.is_follow_up).length || 0
     }
     
     return {
@@ -1380,7 +1394,7 @@ export async function getFollowUpRecords(originalRecordId: string, farmId: strin
 
   try {
     // Get follow-up relationships first
-    const { data: followUpRelations, error: relationsError } = await supabase
+    const { data: followUpRelationsResult, error: relationsError } = await supabase
       .from('health_record_follow_ups')
       .select(`
         follow_up_record_id,
@@ -1398,14 +1412,17 @@ export async function getFollowUpRecords(originalRecordId: string, farmId: strin
       return []
     }
 
-    if (!followUpRelations || followUpRelations.length === 0) {
+    // FIXED: Cast to any[]
+    const followUpRelations = (followUpRelationsResult as any[]) || []
+
+    if (followUpRelations.length === 0) {
       return []
     }
 
     // Get the actual health records for the follow-ups
     const followUpIds = followUpRelations.map(rel => rel.follow_up_record_id)
     
-    const { data: followUpRecords, error: recordsError } = await supabase
+    const { data: followUpRecordsResult, error: recordsError } = await supabase
       .from('animal_health_records')
       .select('*')
       .in('id', followUpIds)
@@ -1417,9 +1434,12 @@ export async function getFollowUpRecords(originalRecordId: string, farmId: strin
       return []
     }
 
+    // FIXED: Cast to any[]
+    const followUpRecords = (followUpRecordsResult as any[]) || []
+
     // Combine the follow-up data with the relation data
     // This is the KEY FIX - match the structure expected by HealthRecordCard
-    const enrichedFollowUps = (followUpRecords || []).map(record => {
+    const enrichedFollowUps = followUpRecords.map(record => {
       const relation = followUpRelations.find(rel => rel.follow_up_record_id === record.id)
       return {
         id: record.id,
@@ -1467,7 +1487,7 @@ export async function getHealthRecordsWithFollowUps(
       return []
     }
 
-    const animalIds = (farmAnimals || []).map(animal => animal.id)
+    const animalIds = (farmAnimals as any[] || []).map(animal => animal.id)
     
     if (animalIds.length === 0) {
       return []
@@ -1512,9 +1532,8 @@ export async function getHealthRecordsWithFollowUps(
       return []
     }
 
-    // For each record, get its follow-ups (if needed)
-    // This part stays the same as the existing implementation
-    return records
+    // FIXED: Cast to any[]
+    return (records as any[]) || []
   } catch (error) {
     console.error('Error in getHealthRecordsWithFollowUps:', error)
     return []
@@ -1546,7 +1565,8 @@ export async function getUnresolvedHealthIssues(farmId: string) {
       return []
     }
     
-    return data || []
+    // FIXED: Cast to any[]
+    return (data as any[]) || []
   } catch (error) {
     console.error('Error in getUnresolvedHealthIssues:', error)
     return []
@@ -1557,8 +1577,8 @@ export async function markHealthIssueResolved(recordId: string, farmId: string, 
   const supabase = await createServerSupabaseClient()
 
   try {
-    const { data, error } = await supabase
-      .from('animal_health_records')
+    const { data, error } = await (supabase
+      .from('animal_health_records') as any)
       .update({
         is_resolved: true,
         resolved_date: resolvedDate,
@@ -1589,18 +1609,21 @@ export async function getHealthRecordStats(farmId: string) {
     const basicStats = await getHealthStats(farmId)
     
     // Get additional follow-up stats
-    const { data: followUpData } = await supabase
+    const { data: followUpDataResult } = await supabase
       .from('animal_health_records')
       .select('id, is_resolved, is_follow_up, record_type')
       .eq('farm_id', farmId)
     
+    // FIXED: Cast to any[]
+    const followUpData = (followUpDataResult as any[]) || []
+
     const followUpStats = {
-      totalFollowUps: followUpData?.filter(r => r.is_follow_up).length || 0,
-      unresolvedIssues: followUpData?.filter(r => 
+      totalFollowUps: followUpData.filter(r => r.is_follow_up).length || 0,
+      unresolvedIssues: followUpData.filter(r => 
         ['illness', 'injury', 'treatment'].includes(r.record_type) && 
         !r.is_resolved
       ).length || 0,
-      resolvedIssues: followUpData?.filter(r => r.is_resolved).length || 0
+      resolvedIssues: followUpData.filter(r => r.is_resolved).length || 0
     }
     
     return {
@@ -1709,8 +1732,8 @@ export async function updateVeterinaryVisit(visitId: string, farmId: string, upd
     // Add updated timestamp
     cleanedData.updated_at = new Date().toISOString()
 
-    const { data, error } = await supabase
-      .from('veterinary_visits')
+    const { data, error } = await (supabase
+      .from('veterinary_visits') as any)
       .update(cleanedData)
       .eq('id', visitId)
       .eq('farm_id', farmId)
@@ -1819,8 +1842,8 @@ export async function markVisitCompleted(visitId: string, farmId: string, comple
       updated_at: new Date().toISOString()
     }
 
-    const { data, error } = await supabase
-      .from('veterinary_visits')
+    const { data, error } = await (supabase
+      .from('veterinary_visits') as any)
       .update(updateData)
       .eq('id', visitId)
       .eq('farm_id', farmId)
@@ -1850,8 +1873,8 @@ export async function cancelVisit(visitId: string, farmId: string, reason?: stri
       updated_at: new Date().toISOString()
     }
 
-    const { data, error } = await supabase
-      .from('veterinary_visits')
+    const { data, error } = await (supabase
+      .from('veterinary_visits') as any)
       .update(updateData)
       .eq('id', visitId)
       .eq('farm_id', farmId)
@@ -1896,8 +1919,8 @@ export async function createAutoHealthRecord(
       is_auto_generated: true
     }
     
-    const { data, error } = await supabase
-      .from('animal_health_records')
+    const { data, error } = await (supabase
+      .from('animal_health_records') as any)
       .insert(recordData)
       .select(`
         *,
@@ -2004,8 +2027,11 @@ export async function getIncompleteHealthRecords(farmId: string, limit: number =
       return []
     }
     
+    // FIXED: Cast to any[]
+    const records = (data as any[]) || []
+
     // Filter for records that appear incomplete
-    const incompleteRecords = (data || []).filter(record => {
+    const incompleteRecords = records.filter(record => {
       // Auto-generated records are always considered incomplete
       if (record.is_auto_generated) {
         return true
@@ -2043,13 +2069,16 @@ export async function checkAnimalHealthStatus(animalId: string, farmId: string) 
   
   try {
     // Get the animal's current health status
-    const { data: animal, error: animalError } = await supabase
+    const { data: animalData, error: animalError } = await supabase
       .from('animals')
       .select('id, health_status, tag_number, name')
       .eq('id', animalId)
       .eq('farm_id', farmId)
       .single()
     
+    // FIXED: Cast to any
+    const animal = animalData as any
+
     if (animalError || !animal) {
       return { needsAttention: false, reason: null }
     }
@@ -2157,8 +2186,8 @@ export async function completeHealthRecord(
       }
     })
     
-    const { data, error } = await supabase
-      .from('animal_health_records')
+    const { data, error } = await (supabase
+      .from('animal_health_records') as any)
       .update(updateData)
       .eq('id', recordId)
       .eq('farm_id', farmId)
@@ -2235,14 +2264,17 @@ export async function getHealthAlerts(farmId: string) {
     }
     
     // Get animals with concerning health status but no recent records
-    const { data: concerningAnimals } = await supabase
+    const { data: concerningAnimalsData } = await supabase
       .from('animals')
       .select('id, tag_number, name, health_status')
       .eq('farm_id', farmId)
       .eq('status', 'active')
       .in('health_status', ['sick', 'requires_attention', 'quarantined'])
     
-    if (concerningAnimals && concerningAnimals.length > 0) {
+    // FIXED: Cast to any[]
+    const concerningAnimals = (concerningAnimalsData as any[]) || []
+
+    if (concerningAnimals.length > 0) {
       // Check which ones don't have recent records
       const animalsNeedingRecords = []
       
@@ -2282,8 +2314,9 @@ export async function updateAnimalHealthStatus(animalId: string, farmId: string)
   
   try {
     // Call the database function to recalculate health status
+    // FIXED: Cast rpc args to any
     const { data, error } = await supabase
-      .rpc('determine_animal_health_status', { animal_id_param: animalId })
+      .rpc('determine_animal_health_status', { animal_id_param: animalId } as any)
     
     if (error) {
       console.error('Error determining health status:', error)
@@ -2293,8 +2326,8 @@ export async function updateAnimalHealthStatus(animalId: string, farmId: string)
     const newHealthStatus = data
     
     // Update the animal's health status
-    const { data: updatedAnimal, error: updateError } = await supabase
-      .from('animals')
+    const { data: updatedAnimal, error: updateError } = await (supabase
+      .from('animals') as any)
       .update({ 
         health_status: newHealthStatus,
         updated_at: new Date().toISOString()
@@ -2381,13 +2414,16 @@ export async function createFollowUpRecordWithStatusUpdate(
 
   try {
     // Get the original record details
-    const { data: originalRecord } = await supabase
+    const { data: originalRecordData } = await supabase
       .from('animal_health_records')
       .select('animal_id, record_type, root_checkup_id, original_record_id')
       .eq('id', originalRecordId)
       .eq('farm_id', farmId)
       .single()
     
+    // FIXED: Cast to any
+    const originalRecord = originalRecordData as any
+
     if (!originalRecord) {
       return { success: false, error: 'Original record not found' }
     }
@@ -2410,8 +2446,8 @@ export async function createFollowUpRecordWithStatusUpdate(
     // If marking as resolved, cascade the resolution
     if (followUpData.resolved) {
       // 1. Mark the immediate parent record as resolved
-      await supabase
-        .from('animal_health_records')
+      await (supabase
+        .from('animal_health_records') as any)
         .update({
           is_resolved: true,
           resolved_date: followUpData.record_date,
@@ -2424,8 +2460,8 @@ export async function createFollowUpRecordWithStatusUpdate(
       
       // 2. If there's a root checkup, resolve it too
       if (originalRecord.root_checkup_id) {
-        await supabase
-          .from('animal_health_records')
+        await (supabase
+          .from('animal_health_records') as any)
           .update({
             is_resolved: true,
             resolved_date: followUpData.record_date,
@@ -2439,8 +2475,8 @@ export async function createFollowUpRecordWithStatusUpdate(
       
       // 3. Check if the original record is itself a follow-up (nested case)
       if (originalRecord.original_record_id) {
-        await supabase
-          .from('animal_health_records')
+        await (supabase
+          .from('animal_health_records') as any)
           .update({
             is_resolved: true,
             resolved_date: followUpData.record_date,
@@ -2475,8 +2511,9 @@ export async function recalculateAllAnimalHealthStatuses(farmId: string) {
   const supabase = await createServerSupabaseClient()
   
   try {
+    // FIXED: Cast rpc args to any
     const { data, error } = await supabase
-      .rpc('recalculate_farm_animal_health_status', { farm_id_param: farmId })
+      .rpc('recalculate_farm_animal_health_status', { farm_id_param: farmId } as any)
     
     if (error) {
       console.error('Error recalculating health statuses:', error)
@@ -2546,13 +2583,16 @@ export async function completeHealthRecordWithStatusUpdate(
   
   try {
     // Get the original record to check if it affects health status
-    const { data: originalRecord } = await supabase
+    const { data: originalRecordData } = await supabase
       .from('animal_health_records')
       .select('animal_id, record_type')
       .eq('id', recordId)
       .eq('farm_id', farmId)
       .single()
     
+    // FIXED: Cast to any
+    const originalRecord = originalRecordData as any
+
     if (!originalRecord) {
       return { success: false, error: 'Health record not found' }
     }

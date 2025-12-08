@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
@@ -68,7 +68,8 @@ export async function GET(request: NextRequest) {
     // Transform data for the component
     const today = new Date()
     
-    const pregnantAnimals = pregnancyRecords?.map(record => {
+    // Cast record to any to fix "Property 'breeding_records' does not exist on type 'never'"
+    const pregnantAnimals = pregnancyRecords?.map((record: any) => {
       const breedingDate = record.breeding_records?.breeding_date
       const expectedDueDate = record.expected_calving_date
       

@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
@@ -45,7 +45,8 @@ export async function GET(request: NextRequest) {
     }
     
     // Filter breedings that don't have confirmed/completed pregnancy status
-    const pendingBreedings = breedings?.filter(breeding => {
+    // Cast 'breeding' to 'any' to fix "Property 'pregnancy_records' does not exist on type 'never'"
+    const pendingBreedings = breedings?.filter((breeding: any) => {
       const hasConfirmedPregnancy = breeding.pregnancy_records?.some(
         (p: any) => ['confirmed', 'false', 'aborted', 'completed'].includes(p.pregnancy_status)
       )

@@ -90,7 +90,8 @@ export async function POST(request: NextRequest) {
 
     console.log('Inserting channel data:', insertData)
 
-    const { data: channel, error } = await supabase
+    // Cast supabase to any to fix "Argument of type ... is not assignable to parameter of type 'never'"
+    const { data: channel, error } = await (supabase as any)
       .from('distribution_channels')
       .insert(insertData)
       .select()

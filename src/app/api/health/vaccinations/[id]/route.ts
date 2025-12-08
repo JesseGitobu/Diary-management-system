@@ -18,7 +18,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
@@ -27,7 +27,7 @@ export async function GET(
     const { id } = await params
     const supabase = await createServerSupabaseClient()
     
-    const { data: vaccination, error } = await supabase
+    const { data: vaccinationResult, error } = await supabase
       .from('vaccinations')
       .select(`
         *,
@@ -45,6 +45,9 @@ export async function GET(
       .eq('farm_id', userRole.farm_id)
       .single()
     
+    // Cast to any to fix "Property 'vaccination_animals' does not exist on type 'never'"
+    const vaccination = vaccinationResult as any
+
     if (error || !vaccination) {
       return NextResponse.json({ error: 'Vaccination not found' }, { status: 404 })
     }
@@ -78,7 +81,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id || !['farm_owner', 'farm_manager', 'worker'].includes(userRole.role_type)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
@@ -146,7 +149,8 @@ export async function PUT(
     }
     
     // Update the vaccination record
-    const { data: vaccination, error: updateError } = await supabase
+    // Cast supabase to any to avoid update type mismatch errors
+    const { data: vaccination, error: updateError } = await (supabase as any)
       .from('vaccinations')
       .update({
         vaccine_name: vaccine_name.trim(),
@@ -203,7 +207,7 @@ export async function PUT(
     }
     
     // Update related health records if needed
-    const { error: healthRecordsError } = await supabase
+    const { error: healthRecordsError } = await (supabase as any)
       .from('animal_health_records')
       .update({
         description: `Vaccination: ${vaccine_name}`,
@@ -250,7 +254,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id || !['farm_owner', 'farm_manager', 'worker'].includes(userRole.role_type)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
@@ -260,7 +264,7 @@ export async function DELETE(
     const supabase = await createServerSupabaseClient()
     
     // First verify the vaccination exists and belongs to the farm
-    const { data: existingVaccination, error: fetchError } = await supabase
+    const { data: existingVaccinationResult, error: fetchError } = await supabase
       .from('vaccinations')
       .select(`
         id, 
@@ -275,6 +279,8 @@ export async function DELETE(
       .eq('farm_id', userRole.farm_id)
       .single()
     
+    const existingVaccination = existingVaccinationResult as any
+
     if (fetchError || !existingVaccination) {
       return NextResponse.json({ error: 'Vaccination not found or access denied' }, { status: 404 })
     }
@@ -284,7 +290,7 @@ export async function DELETE(
     
     // Delete related health records first
     if (affectedAnimalIds.length > 0) {
-      const { error: healthRecordsError } = await supabase
+      const { error: healthRecordsError } = await (supabase as any)
         .from('animal_health_records')
         .delete()
         .eq('record_type', 'vaccination')
@@ -305,7 +311,7 @@ export async function DELETE(
       .eq('vaccination_id', id)
     
     // Delete the vaccination record
-    const { error: deleteError } = await supabase
+    const { error: deleteError } = await (supabase as any)
       .from('vaccinations')
       .delete()
       .eq('id', id)

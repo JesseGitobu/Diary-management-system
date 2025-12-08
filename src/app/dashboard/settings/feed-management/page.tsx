@@ -27,12 +27,12 @@ export default async function FeedManagementSettingsPage({
   }
   
   // Verify user access
-  const user = await getCurrentUser()
+  const user = await getCurrentUser() 
   if (!user) {
     redirect('/auth/signin')
   }
   
-  const userRole = await getUserRole(user.id)
+  const userRole = await getUserRole(user.id) as any
   if (!userRole || userRole.farm_id !== farmId) {
     redirect('/dashboard')
   }

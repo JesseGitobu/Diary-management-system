@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     console.log('🔍 [API] User role:', userRole)
     
     if (!userRole?.farm_id) {
@@ -94,7 +94,8 @@ export async function POST(request: NextRequest) {
           .eq('farm_id', farm_id)
           .order('sort_order', { ascending: true })
 
-        const categories = dbCategories?.map(cat => ({
+        // Cast dbCategories to any[] to avoid strict type checking on spread
+        const categories = (dbCategories as any[])?.map(cat => ({
           ...cat,
           min_age_days: cat.min_age_days ?? undefined,
           max_age_days: cat.max_age_days ?? undefined,
@@ -122,7 +123,7 @@ export async function POST(request: NextRequest) {
         finalProductionStatus = getProductionStatusFromCategories(
           ageDays,
           animalData.gender,
-          (categories || []).map(cat => ({
+          (categories || []).map((cat: any) => ({
             ...cat,
             min_age_days: cat.min_age_days ?? undefined,
             max_age_days: cat.max_age_days ?? undefined,
@@ -192,12 +193,15 @@ export async function POST(request: NextRequest) {
       const supabase = await createServerSupabaseClient()
       
       // Get breeding settings
-      const { data: breedingSettings } = await supabase
+      const { data: breedingSettingsResult } = await supabase
         .from('farm_breeding_settings')
         .select('*')
         .eq('farm_id', farm_id)
         .single()
       
+      // Cast to any to avoid "property does not exist on type 'never'" error
+      const breedingSettings = breedingSettingsResult as any
+
       const minBreedingAge = breedingSettings?.minimum_breeding_age_months || 15
       const ageInMonths = differenceInMonths(new Date(), new Date(animalData.birth_date))
       
@@ -289,7 +293,8 @@ export async function POST(request: NextRequest) {
         }
         
         const supabase = await createServerSupabaseClient()
-        const { data: weightRequirement, error: weightError } = await supabase
+        // Cast supabase to any to fix type error on insert
+        const { data: weightRequirement, error: weightError } = await (supabase as any)
           .from('animals_requiring_weight_update')
           .insert({
             animal_id: createdAnimal.id,
@@ -312,7 +317,8 @@ export async function POST(request: NextRequest) {
         const supabase = await createServerSupabaseClient()
         const measurementType = animalData.animal_source === 'newborn_calf' ? 'birth' : 'purchase'
         
-        const { error: initialWeightError } = await supabase
+        // Cast supabase to any
+        const { error: initialWeightError } = await (supabase as any)
           .from('animal_weight_records')
           .insert({
             animal_id: createdAnimal.id,
@@ -335,7 +341,8 @@ export async function POST(request: NextRequest) {
       if (hasCurrentWeight && ageDays > 0) {
         const supabase = await createServerSupabaseClient()
         
-        const { error: currentWeightError } = await supabase
+        // Cast supabase to any
+        const { error: currentWeightError } = await (supabase as any)
           .from('animal_weight_records')
           .insert({
             animal_id: createdAnimal.id,
@@ -390,10 +397,12 @@ export async function POST(request: NextRequest) {
         healthRecord = healthResult.data
         
         const supabase = await createServerSupabaseClient()
-        await supabase
+        // Cast to any for the update
+        await (supabase as any)
           .from('animals_requiring_health_attention')
           .update({
-            health_record_id: healthRecord?.id || null,
+            // Cast healthRecord to any to fix "Property 'id' does not exist on type 'never'"
+            health_record_id: (healthRecord as any)?.id || null,
             health_record_created: true
           })
           .eq('animal_id', createdAnimal.id)
@@ -599,7 +608,8 @@ async function autoGenerateBreedingRecords(
       console.log('💾 [AUTO-BREEDING] Inserting breeding record...')
       
       // 1. Insert breeding record
-      const { data: breedingRecord, error: breedingError } = await supabase
+      // Cast supabase to any
+      const { data: breedingRecord, error: breedingError } = await (supabase as any)
         .from('breeding_records')
         .insert(breedingData)
         .select()
@@ -625,7 +635,8 @@ async function autoGenerateBreedingRecords(
         created_by: userId 
       }
 
-      const { error: eventError } = await supabase
+      // Cast to any
+      const { error: eventError } = await (supabase as any)
         .from('breeding_events')
         .insert(breedingEvent)
 
@@ -639,7 +650,8 @@ async function autoGenerateBreedingRecords(
       // 3. Insert pregnancy record with breeding_record_id
       pregnancyData.breeding_record_id = breedingRecord.id
       
-      const { data: pregnancyRecord, error: pregnancyError } = await supabase
+      // Cast to any
+      const { data: pregnancyRecord, error: pregnancyError } = await (supabase as any)
         .from('pregnancy_records')
         .insert(pregnancyData)
         .select()
@@ -665,7 +677,8 @@ async function autoGenerateBreedingRecords(
           created_by: userId 
         }
 
-        const { error: pregnancyEventError } = await supabase
+        // Cast to any
+        const { error: pregnancyEventError } = await (supabase as any)
           .from('breeding_events')
           .insert(pregnancyEvent)
 

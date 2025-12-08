@@ -23,8 +23,8 @@ export async function updateProfile(userId: string, updates: {
 }) {
   const supabase = await createServerSupabaseClient()
   
-  const { data, error } = await supabase
-    .from('profiles')
+  const { data, error } = await (supabase
+    .from('profiles') as any)
     .update({
       ...updates,
       updated_at: new Date().toISOString()
@@ -44,8 +44,8 @@ export async function updateProfile(userId: string, updates: {
 export async function createProfile(userId: string, email: string, fullName?: string) {
   const supabase = await createServerSupabaseClient()
   
-  const { data, error } = await supabase
-    .from('profiles')
+  const { data, error } = await (supabase
+    .from('profiles') as any)
     .insert({
       id: userId,
       email,

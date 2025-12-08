@@ -25,7 +25,7 @@ export default async function FarmProfilePage({
     redirect('/auth')
   }
   
-  const userRole = await getUserRole(user.id)
+  const userRole = await getUserRole(user.id) as any
   
   if (!userRole) {
     redirect('/auth')

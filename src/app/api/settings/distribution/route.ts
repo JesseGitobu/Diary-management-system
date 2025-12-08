@@ -21,11 +21,14 @@ export async function GET(request: NextRequest) {
     let targetFarmId = farmId
 
     if (!targetFarmId) {
-      const { data: userRole, error: roleError } = await supabase
+      const { data: userRoleResult, error: roleError } = await supabase
         .from('user_roles')
         .select('farm_id')
         .eq('user_id', user.id)
         .single()
+
+      // Cast to any to fix "Property 'farm_id' does not exist on type 'never'"
+      const userRole = userRoleResult as any
 
       if (roleError || !userRole?.farm_id) {
         return NextResponse.json(
@@ -37,12 +40,17 @@ export async function GET(request: NextRequest) {
       targetFarmId = userRole.farm_id
     }
 
-    const { data: userRole, error: roleError } = await supabase
+    // Cast supabase to any to prevent type errors on query
+    // Ensure targetFarmId is treated as string since we validated it exists or fetched it
+    const { data: userRoleResult, error: roleError } = await (supabase as any)
       .from('user_roles')
       .select('role_type')
       .eq('user_id', user.id)
-      .eq('farm_id', targetFarmId)
+      .eq('farm_id', targetFarmId!)
       .single()
+
+    // Cast to any here as well
+    const userRole = userRoleResult as any
 
     if (roleError || !userRole) {
       return NextResponse.json(
@@ -51,7 +59,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const settings = await getDistributionSettings(targetFarmId)
+    const settings = await getDistributionSettings(targetFarmId!)
 
     if (!settings) {
       return NextResponse.json(
@@ -95,12 +103,15 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    const { data: userRole, error: roleError } = await supabase
+    const { data: userRoleResult, error: roleError } = await supabase
       .from('user_roles')
       .select('role_type')
       .eq('user_id', user.id)
       .eq('farm_id', farmId)
       .single()
+
+    // Cast to any to fix type errors
+    const userRole = userRoleResult as any
 
     if (roleError || !userRole) {
       return NextResponse.json(

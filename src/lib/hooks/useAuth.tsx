@@ -208,8 +208,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Get user role
-      const { data, error } = await supabase
-        .from('user_roles')
+      const { data, error } = await (supabase
+        .from('user_roles') as any)
         .select('role_type, farm_id, status')
         .eq('user_id', userId)
         .maybeSingle()

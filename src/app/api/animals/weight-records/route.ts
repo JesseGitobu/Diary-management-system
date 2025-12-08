@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated' }, { status: 400 })
     }
@@ -41,7 +41,8 @@ export async function POST(request: NextRequest) {
     })
 
     // Insert weight record
-    const { data: weightRecord, error: insertError } = await supabase
+    // Cast supabase to any to fix "Argument of type ... is not assignable to parameter of type 'never'"
+    const { data: weightRecord, error: insertError } = await (supabase as any)
       .from('animal_weight_records')
       .insert({
         animal_id,
@@ -64,7 +65,8 @@ export async function POST(request: NextRequest) {
     console.log('✅ [Weight Record] Created:', weightRecord.id)
 
     // Update animal's current weight
-    const { error: updateError } = await supabase
+    // Cast supabase to any here as well
+    const { error: updateError } = await (supabase as any)
       .from('animals')
       .update({ 
         weight: weight_kg, 
@@ -77,7 +79,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Resolve any pending weight update requirements
-    const { error: resolveError } = await supabase
+    // Cast supabase to any here too
+    const { error: resolveError } = await (supabase as any)
       .from('animals_requiring_weight_update')
       .update({
         is_resolved: true,

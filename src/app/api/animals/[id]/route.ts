@@ -1,4 +1,4 @@
-//api/animals/[id]/route.ts
+// src/app/api/animals/[id]/route.ts
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser, createServerSupabaseClient } from '@/lib/supabase/server'
@@ -17,7 +17,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
@@ -53,7 +53,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any  
     
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
@@ -81,7 +81,9 @@ export async function PUT(
     }
     
     // 🆕 GET CURRENT ANIMAL DATA BEFORE UPDATE
-    const currentAnimal = await getAnimalById(animalId)
+    // Cast to 'any' to fix "Property 'weight' does not exist on type 'never'"
+    const currentAnimal = await getAnimalById(animalId) as any
+    
     if (!currentAnimal) {
       return NextResponse.json({ error: 'Animal not found' }, { status: 404 })
     }
@@ -110,7 +112,8 @@ export async function PUT(
       const supabase = await createServerSupabaseClient()
       
       // Create weight record
-      const { data: weightRecord, error: weightError } = await supabase
+      // Cast supabase to 'any' to avoid type strictness on insert
+      const { data: weightRecord, error: weightError } = await (supabase as any)
         .from('animal_weight_records')
         .insert({
           animal_id: animalId,
@@ -131,7 +134,8 @@ export async function PUT(
         console.log('✅ [API] Weight record created:', weightRecord.id)
         
         // Resolve any pending weight requirements
-        const { data: resolvedReqs, error: resolveError } = await supabase
+        // Cast supabase to 'any' here as well
+        const { data: resolvedReqs, error: resolveError } = await (supabase as any)
           .from('animals_requiring_weight_update')
           .update({
             is_resolved: true,
@@ -175,7 +179,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })

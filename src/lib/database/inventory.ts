@@ -34,7 +34,8 @@ export async function getInventoryItems(
     return []
   }
   
-  return data || []
+  // FIXED: Cast to any[]
+  return (data as any[]) || []
 }
 
 export async function getInventoryAlerts(farmId: string) {
@@ -42,7 +43,7 @@ export async function getInventoryAlerts(farmId: string) {
   
   try {
     // Get all active inventory items
-    const { data: items, error } = await supabase
+    const { data: itemsData, error } = await supabase
       .from('inventory_items')
       .select('*')
       .eq('farm_id', farmId)
@@ -53,7 +54,8 @@ export async function getInventoryAlerts(farmId: string) {
       return []
     }
     
-    if (!items) return []
+    // FIXED: Cast to any[] to fix 'never' type error
+    const items = (itemsData as any[]) || []
     
     // Filter in JavaScript for low stock and expiring items
     const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
@@ -102,8 +104,9 @@ export async function createInventoryItem(
     status: itemData.status || 'active',
   }
   
-  const { data, error } = await supabase
-    .from('inventory_items')
+  // FIXED: Cast to any
+  const { data, error } = await (supabase
+    .from('inventory_items') as any)
     .insert(insertData)
     .select()
     .single()
@@ -132,8 +135,9 @@ export async function updateInventoryStock(
   
   try {
     // Start transaction
-    const { data: item, error: itemError } = await supabase
-      .from('inventory_items')
+    // FIXED: Cast to any
+    const { data: item, error: itemError } = await (supabase
+      .from('inventory_items') as any)
       .select('current_stock, unit_cost')
       .eq('id', itemId)
       .eq('farm_id', farmId)
@@ -152,16 +156,18 @@ export async function updateInventoryStock(
     }
     
     // Update inventory item stock
-    const { error: updateError } = await supabase
-      .from('inventory_items')
+    // FIXED: Cast to any
+    const { error: updateError } = await (supabase
+      .from('inventory_items') as any)
       .update({ current_stock: newStock })
       .eq('id', itemId)
     
     if (updateError) throw updateError
     
     // Create transaction record
-    const { error: transactionError } = await supabase
-      .from('inventory_transactions')
+    // FIXED: Cast to any
+    const { error: transactionError } = await (supabase
+      .from('inventory_transactions') as any)
       .insert({
         farm_id: farmId,
         inventory_item_id: itemId,
@@ -196,13 +202,16 @@ export async function getInventoryStats(farmId: string) {
       .eq('status', 'active')
     
     // Get all active items for calculations
-    const { data: items } = await supabase
+    const { data: itemsData } = await supabase
       .from('inventory_items')
       .select('current_stock, minimum_stock, unit_cost, expiry_date')
       .eq('farm_id', farmId)
       .eq('status', 'active')
     
-    if (!items) {
+    // FIXED: Cast to any[]
+    const items = (itemsData as any[]) || []
+    
+    if (items.length === 0) {
       return {
         totalItems: 0,
         lowStockItems: 0,
@@ -253,7 +262,7 @@ export async function getAvailableVolume(farmId: string): Promise<number> {
       .rpc('get_available_volume', { 
         target_farm_id: farmId,
         check_date: new Date().toISOString().split('T')[0]
-      })
+      } as any)
 
     if (error) {
       console.log('Database function not available, using fallback calculation')
@@ -277,7 +286,7 @@ export async function getAvailableVolume(farmId: string): Promise<number> {
     const yesterdayStr = yesterday.toISOString().split('T')[0]
 
     // Get production records for available dates
-    const { data: production, error: productionError } = await supabase
+    const { data: productionData, error: productionError } = await supabase
       .from('production_records')
       .select('milk_volume')
       .eq('farm_id', farmId)
@@ -285,10 +294,13 @@ export async function getAvailableVolume(farmId: string): Promise<number> {
 
     if (productionError) throw productionError
 
-    const totalProduced = production?.reduce((sum, record) => sum + record.milk_volume, 0) || 0
+    // FIXED: Cast to any[]
+    const production = (productionData as any[]) || []
+
+    const totalProduced = production.reduce((sum, record) => sum + record.milk_volume, 0) || 0
 
     // Get distributed volume for the same period
-    const { data: distributed, error: distributionError } = await supabase
+    const { data: distributedData, error: distributionError } = await supabase
       .from('distribution_records')
       .select('volume')
       .eq('farm_id', farmId)
@@ -296,7 +308,10 @@ export async function getAvailableVolume(farmId: string): Promise<number> {
 
     if (distributionError) throw distributionError
 
-    const totalDistributed = distributed?.reduce((sum, record) => sum + record.volume, 0) || 0
+    // FIXED: Cast to any[]
+    const distributed = (distributedData as any[]) || []
+
+    const totalDistributed = distributed.reduce((sum, record) => sum + record.volume, 0) || 0
 
     // Calculate available volume (produced but not yet distributed)
     const availableVolume = Math.max(0, totalProduced - totalDistributed)
@@ -327,8 +342,9 @@ export async function createDistributionRecord(data: {
   try {
     const supabase = getSupabaseClient()
     
-    const { data: record, error } = await supabase
-      .from('distribution_records')
+    // FIXED: Cast to any
+    const { data: record, error } = await (supabase
+      .from('distribution_records') as any)
       .insert({
         farm_id: data.farmId,
         channel_id: data.channelId,
@@ -369,8 +385,9 @@ export async function updateDistributionRecord(
   try {
     const supabase = getSupabaseClient()
     
-    const { data: record, error } = await supabase
-      .from('distribution_records')
+    // FIXED: Cast to any
+    const { data: record, error } = await (supabase
+      .from('distribution_records') as any)
       .update(updates)
       .eq('id', recordId)
       .select()
@@ -401,14 +418,15 @@ export async function getSuppliers(farmId: string) {
     return []
   }
   
-  return data || []
+  // FIXED: Cast to any[]
+  return (data as any[]) || []
 }
 
 export async function getSupplierStats(farmId: string) {
   const supabase = await createServerSupabaseClient()
   
   try {
-    const { data: suppliers, error } = await supabase
+    const { data: suppliersData, error } = await supabase
       .from('suppliers')
       .select('supplier_type')
       .eq('farm_id', farmId)
@@ -416,14 +434,17 @@ export async function getSupplierStats(farmId: string) {
     
     if (error) throw error
     
-    const supplierTypes = suppliers?.reduce((acc: any, supplier) => {
+    // FIXED: Cast to any[]
+    const suppliers = (suppliersData as any[]) || []
+
+    const supplierTypes = suppliers.reduce((acc: any, supplier) => {
       const type = supplier.supplier_type || 'other'
       acc[type] = (acc[type] || 0) + 1
       return acc
     }, {})
     
     return {
-      totalSuppliers: suppliers?.length || 0,
+      totalSuppliers: suppliers.length || 0,
       supplierTypes: supplierTypes || {}
     }
   } catch (error) {

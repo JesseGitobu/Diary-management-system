@@ -18,7 +18,7 @@ export default async function ProductionPage() {
     redirect('/auth')
   }
   
-  const userRole = await getUserRole(user.id)
+  const userRole = await getUserRole(user.id) as any
   
   if (!userRole?.farm_id) {
     redirect('/dashboard')
@@ -64,7 +64,8 @@ export default async function ProductionPage() {
         // Production props - pass complete animal data with all fields
         productionStats={{
           ...productionStats,
-          dailySummaries: productionStats.dailySummaries.map(summary => ({
+          // Cast summary to any to fix "Property 'record_date' does not exist on type 'never'"
+          dailySummaries: productionStats.dailySummaries.map((summary: any) => ({
             date: summary.record_date,
             volume: summary.total_milk_volume || 0,
             fat: summary.average_fat_content || 0,
@@ -92,8 +93,8 @@ export default async function ProductionPage() {
           id: channel.id,
           name: channel.name,
           type: channel.type as "cooperative" | "processor" | "direct" | "retail",
-          contact: channel.contact,
-          pricePerLiter: channel.pricePerLiter,
+          contact: channel.contact || "", // FIXED: Handle null value
+          pricePerLiter: channel.pricePerLiter || 0, // FIXED: Handle null value
           isActive: channel.isActive ?? true
         }))}
         availableVolume={availableVolume}

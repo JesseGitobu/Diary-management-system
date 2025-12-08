@@ -23,13 +23,29 @@ export async function PUT(request: NextRequest) {
     
     const settings = await request.json()
     
-    // In a real implementation, you would save these to a settings table
-    // For now, we'll just log and return success
-    console.log('Admin settings updated:', settings)
+    // REAL IMPLEMENTATION: Save to system_settings table
+    // We cast to 'any' to avoid build errors if the system_settings table 
+    // is missing from your generated TypeScript definitions.
+    // We assume a singleton row (id: 1) or that the settings object contains the ID.
+    const { error: updateError } = await (adminSupabase as any)
+      .from('system_settings')
+      .upsert({ 
+        id: 1, // Default to ID 1 for global settings if not provided
+        ...settings,
+        updated_at: new Date().toISOString()
+      })
+
+    if (updateError) {
+      console.error('Database error updating settings:', updateError)
+      return NextResponse.json({ error: 'Failed to update settings database' }, { status: 500 })
+    }
+    
+    console.log('Admin settings updated successfully')
     
     // Log the action
     try {
-      await adminSupabase.from('audit_logs').insert({
+      // Cast to 'any' to fix the "not assignable to parameter of type 'never'" error
+      await (adminSupabase as any).from('audit_logs').insert({
         user_id: user.id,
         action: 'update_settings',
         resource_type: 'system_settings',

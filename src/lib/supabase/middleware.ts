@@ -90,8 +90,8 @@ export const checkUserPermissions = async (
   
   // Check user role if required
   const { supabase } = createMiddlewareClient(request)
-  const { data: userRole } = await supabase
-    .from('user_roles')
+  const { data: userRole } = await (supabase
+    .from('user_roles') as any)
     .select('role_type')
     .eq('user_id', user.id)
     .single()

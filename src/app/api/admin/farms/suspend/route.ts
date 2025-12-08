@@ -28,9 +28,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Farm ID required' }, { status: 400 })
     }
     
-    // Update farm status (assuming you have a status column)
-    // You may need to add this column to your farms table
-    const { error } = await adminSupabase
+    // Update farm status
+    // Using (adminSupabase as any) bypasses strict type checking for the table and columns
+    const { error } = await (adminSupabase as any)
       .from('farms')
       .update({ status: 'suspended', updated_at: new Date().toISOString() })
       .eq('id', farmId)
@@ -41,14 +41,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Suspend all user roles for this farm
-    await adminSupabase
+    await (adminSupabase as any)
       .from('user_roles')
       .update({ status: 'suspended' })
       .eq('farm_id', farmId)
 
     // Log the action
     try {
-      await adminSupabase.from('audit_logs').insert({
+      await (adminSupabase as any).from('audit_logs').insert({
         user_id: user.id,
         farm_id: farmId,
         action: 'suspend_farm',

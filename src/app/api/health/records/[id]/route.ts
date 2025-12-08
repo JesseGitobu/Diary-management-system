@@ -19,7 +19,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
@@ -52,7 +52,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id || !['farm_owner', 'farm_manager', 'worker'].includes(userRole.role_type)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
@@ -136,7 +136,8 @@ export async function PUT(
     const supabase = await createServerSupabaseClient()
     
     // First verify the record belongs to the user's farm and get current state
-    const { data: existingRecord, error: fetchError } = await supabase
+    // Cast supabase to any to prevent 'never' type inference on the result
+    const { data: existingRecord, error: fetchError } = await (supabase as any)
       .from('animal_health_records')
       .select('id, farm_id, is_auto_generated, completion_status, animal_id, resolved_date')
       .eq('id', id)
@@ -227,7 +228,7 @@ export async function PUT(
       updateData.completion_status = 'completed'
       
       // Update the corresponding animal's health tracking status
-      await supabase
+      await (supabase as any)
         .from('animals_requiring_health_attention')
         .update({ 
           health_record_completed: true 
@@ -268,7 +269,8 @@ export async function PUT(
     })
     
     // Update with comprehensive field support
-    const { data, error } = await supabase
+    // Cast supabase to any to prevent type errors on update
+    const { data, error } = await (supabase as any)
       .from('animal_health_records')
       .update(updateData)
       .eq('id', id)
@@ -316,7 +318,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id || !['farm_owner', 'farm_manager', 'worker'].includes(userRole.role_type)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
@@ -326,7 +328,8 @@ export async function DELETE(
     const supabase = await createServerSupabaseClient()
     
     // First verify the record belongs to the user's farm and get details
-    const { data: existingRecord, error: fetchError } = await supabase
+    // Cast supabase to any for the select to avoid 'never' issues
+    const { data: existingRecord, error: fetchError } = await (supabase as any)
       .from('animal_health_records')
       .select('id, farm_id, animal_id, is_auto_generated')
       .eq('id', id)
@@ -342,7 +345,7 @@ export async function DELETE(
     
     // If this is an auto-generated record, update the animal's tracking status
     if (existingRecord.is_auto_generated) {
-      await supabase
+      await (supabase as any)
         .from('animals_requiring_health_attention')
         .update({ 
           health_record_created: false,
@@ -354,13 +357,13 @@ export async function DELETE(
     }
     
     // Delete any follow-up relationships first
-    await supabase
+    await (supabase as any)
       .from('health_record_follow_ups')
       .delete()
       .or(`original_record_id.eq.${id},follow_up_record_id.eq.${id}`)
     
     // Delete the record
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from('animal_health_records')
       .delete()
       .eq('id', id)
@@ -393,7 +396,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const userRole = await getUserRole(user.id);
+    const userRole = await getUserRole(user.id) as any;
     if (!userRole?.farm_id || !['farm_owner', 'farm_manager', 'worker'].includes(userRole.role_type)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
     }
@@ -468,7 +471,8 @@ export async function PATCH(
         deworming_administered_by: body.deworming_administered_by || null
       };
 
-      const { data, error } = await supabase
+      // Cast supabase to any
+      const { data, error } = await (supabase as any)
         .from('animal_health_records')
         .insert(createData)
         .select('*, animals!animal_health_records_animal_id_fkey(id, tag_number, name)')
@@ -479,7 +483,7 @@ export async function PATCH(
         return NextResponse.json({ error }, { status: 400 });
       }
 
-      await supabase
+      await (supabase as any)
         .from('animals_requiring_health_attention')
         .update({ health_record_completed: true, health_record_created: true })
         .eq('id', animalId);
@@ -493,7 +497,8 @@ export async function PATCH(
     
     // Handle existing record updates
     else {
-      const { data: existingRecord, error: fetchError } = await supabase
+      // Cast supabase to any
+      const { data: existingRecord, error: fetchError } = await (supabase as any)
         .from('animal_health_records')
         .select('id, farm_id, is_auto_generated, animal_id, original_health_status, requires_record_type_selection, record_type')
         .eq('id', id)
@@ -520,13 +525,14 @@ export async function PATCH(
         updateData.is_auto_generated = false;
         updateData.completion_status = 'completed';
         
-        await supabase
+        await (supabase as any)
           .from('animals_requiring_health_attention')
           .update({ health_record_completed: true })
           .eq('id', existingRecord.animal_id);
       }
       
-      const { data, error } = await supabase
+      // Cast supabase to any
+      const { data, error } = await (supabase as any)
         .from('animal_health_records')
         .update(updateData)
         .eq('id', id)

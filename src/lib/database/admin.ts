@@ -30,7 +30,7 @@ export async function getSystemOverview() {
     }
 
     // Get recent metrics with error handling
-    let recentSignups = []
+    let recentSignups: any[] = []
     try {
       const signupsResult = await adminSupabase
         .from('user_roles')
@@ -199,8 +199,8 @@ export async function suspendUser(userId: string, reason: string) {
   
   try {
     // Update user roles to inactive
-    const { error: roleError } = await adminSupabase
-      .from('user_roles')
+    const { error: roleError } = await (adminSupabase
+      .from('user_roles') as any)
       .update({ status: 'suspended' })
       .eq('user_id', userId)
 
@@ -208,7 +208,7 @@ export async function suspendUser(userId: string, reason: string) {
 
     // Log the action (only if audit_logs table exists)
     try {
-      await adminSupabase.from('audit_logs').insert({
+      await (adminSupabase.from('audit_logs') as any).insert({
         action: 'suspend_user',
         resource_type: 'user',
         resource_id: userId,
@@ -320,8 +320,8 @@ export async function recordSystemMetric(metricType: string, metricName: string,
   const adminSupabase = createAdminClient()
   
   try {
-    const result = await adminSupabase
-      .from('system_metrics')
+    const result = await (adminSupabase
+      .from('system_metrics') as any)
       .insert({
         metric_type: metricType,
         metric_name: metricName,
@@ -380,8 +380,8 @@ export async function logAdminAction(actionData: {
   
   try {
     // Note: This won't work until we have a way to get current admin user ID in server context
-    const { error } = await adminSupabase
-      .from('audit_logs')
+    const { error } = await (adminSupabase
+      .from('audit_logs') as any)
       .insert({
         // user_id: will need to be passed in or obtained differently
         ...actionData
@@ -394,8 +394,6 @@ export async function logAdminAction(actionData: {
     console.error('Error in logAdminAction:', error)
   }
 }
-
-// src/lib/database/admin.ts - Additional functions to add
 
 // Analytics Data
 export async function getAnalyticsData(timeRange: string = '30d') {
@@ -460,12 +458,14 @@ export async function getAnalyticsData(timeRange: string = '30d') {
     }
 
     // Get revenue data
-    const { data: subscriptions } = await adminSupabase
+    const { data: subscriptionsData } = await adminSupabase
       .from('billing_subscriptions')
       .select('monthly_price, status')
       .eq('status', 'active')
 
-    const currentRevenue = subscriptions?.reduce((sum, sub) => sum + (Number(sub.monthly_price) || 0), 0) || 0
+    const subscriptions = (subscriptionsData || []) as any[]
+
+    const currentRevenue = subscriptions.reduce((sum, sub) => sum + (Number(sub.monthly_price) || 0), 0) || 0
 
     const revenueGrowth = {
       current: currentRevenue,
@@ -586,8 +586,9 @@ export async function toggleUserStatus(userId: string, newStatus: 'active' | 'su
   const adminSupabase = createAdminClient()
   
   try {
-    const { error } = await adminSupabase
-      .from('user_roles')
+    // Update user roles
+    const { error } = await (adminSupabase
+      .from('user_roles') as any)
       .update({ status: newStatus })
       .eq('user_id', userId)
 
@@ -595,7 +596,7 @@ export async function toggleUserStatus(userId: string, newStatus: 'active' | 'su
 
     // Log the action
     try {
-      await adminSupabase.from('audit_logs').insert({
+      await (adminSupabase.from('audit_logs') as any).insert({
         action: newStatus === 'active' ? 'activate_user' : 'suspend_user',
         resource_type: 'user',
         resource_id: userId,
@@ -617,8 +618,9 @@ export async function updateSubscriptionStatus(subscriptionId: string, newStatus
   const adminSupabase = createAdminClient()
   
   try {
-    const { error } = await adminSupabase
-      .from('billing_subscriptions')
+    // FIXED: Cast .from('billing_subscriptions') to any to bypass 'never' type on .update()
+    const { error } = await (adminSupabase
+      .from('billing_subscriptions') as any)
       .update({ 
         status: newStatus,
         updated_at: new Date().toISOString()
@@ -667,8 +669,9 @@ export async function updateTicket(ticketId: string, updates: any) {
   const adminSupabase = createAdminClient()
   
   try {
-    const { error } = await adminSupabase
-      .from('support_tickets')
+    // FIXED: Cast .from('support_tickets') to any to bypass 'never' type on .update()
+    const { error } = await (adminSupabase
+      .from('support_tickets') as any)
       .update({
         ...updates,
         updated_at: new Date().toISOString()
@@ -696,7 +699,7 @@ export async function getPlatformStats(days: number = 30) {
       { count: totalFarms },
       { count: totalUsers },
       { count: totalAnimals },
-      { data: subscriptions }
+      { data: subscriptionsData }
     ] = await Promise.all([
       adminSupabase.from('farms').select('*', { count: 'exact', head: true }),
       adminSupabase.from('user_roles').select('*', { count: 'exact', head: true }),
@@ -704,7 +707,8 @@ export async function getPlatformStats(days: number = 30) {
       adminSupabase.from('billing_subscriptions').select('monthly_price, status')
     ])
 
-    const activeSubscriptions = subscriptions?.filter(s => s.status === 'active') || []
+    const subscriptions = (subscriptionsData || []) as any[]
+    const activeSubscriptions = subscriptions.filter(s => s.status === 'active')
     const mrr = activeSubscriptions.reduce((sum, sub) => sum + (Number(sub.monthly_price) || 0), 0)
 
     return {

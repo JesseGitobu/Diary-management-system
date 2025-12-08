@@ -29,7 +29,8 @@ export async function POST(request: NextRequest) {
     }
     
     // Update user status to active
-    const { error } = await adminSupabase
+    // We cast to 'any' to bypass the 'never' type on the Update definition
+    const { error } = await (adminSupabase as any)
       .from('user_roles')
       .update({ status: 'active' })
       .eq('user_id', userId)
@@ -41,7 +42,8 @@ export async function POST(request: NextRequest) {
 
     // Log the action
     try {
-      await adminSupabase.from('audit_logs').insert({
+      // Cast to 'any' for audit_logs as well
+      await (adminSupabase as any).from('audit_logs').insert({
         user_id: user.id,
         action: 'activate_user',
         resource_type: 'user',

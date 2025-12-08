@@ -60,8 +60,8 @@ export interface VeterinaryVisit {
 export async function createVeterinarian(vet: Veterinarian) {
   const supabase = await createServerSupabaseClient()
   
-  const { data, error } = await supabase
-    .from('veterinarians')
+  const { data, error } = await (supabase
+    .from('veterinarians') as any)
     .insert(vet)
     .select()
     .single()
@@ -89,21 +89,22 @@ export async function getVeterinarians(farmId: string) {
     return []
   }
   
-  return data || []
+  // FIXED: Cast to any[]
+  return (data as any[]) || []
 }
 
 export async function createVeterinaryVisit(visit: VeterinaryVisit) {
   const supabase = await createServerSupabaseClient()
   
-  const { data, error } = await supabase
-    .from('veterinary_visits')
+  const { data, error } = await (supabase
+    .from('veterinary_visits') as any)
     .insert(visit)
     .select(`
       *,
       veterinarian:veterinarians (
         name,
-        practice_name,
-        phone
+        clinic_name,
+        phone_primary
       )
     `)
     .single()
@@ -125,16 +126,13 @@ export async function getVeterinaryVisits(farmId: string, limit?: number) {
       *,
       veterinarian:veterinarians (
         name,
-        practice_name,
-        phone,
+        clinic_name,
+        phone_primary,
         email
-      ),
-      created_by_user:created_by (
-        user_metadata
       )
     `)
     .eq('farm_id', farmId)
-    .order('visit_date', { ascending: false })
+    .order('scheduled_datetime', { ascending: false }) // Fixed sorting column name based on interface
   
   if (limit) {
     query = query.limit(limit)
@@ -147,13 +145,14 @@ export async function getVeterinaryVisits(farmId: string, limit?: number) {
     return []
   }
   
-  return data || []
+  // FIXED: Cast to any[]
+  return (data as any[]) || []
 }
 
 export async function getUpcomingVeterinaryVisits(farmId: string) {
   const supabase = await createServerSupabaseClient()
   
-  const today = format(new Date(), 'yyyy-MM-dd')
+  const today = new Date().toISOString()
   
   const { data, error } = await supabase
     .from('veterinary_visits')
@@ -161,13 +160,13 @@ export async function getUpcomingVeterinaryVisits(farmId: string) {
       *,
       veterinarian:veterinarians (
         name,
-        practice_name,
-        phone
+        clinic_name,
+        phone_primary
       )
     `)
     .eq('farm_id', farmId)
-    .gte('visit_date', today)
-    .order('visit_date')
+    .gte('scheduled_datetime', today) // Fixed column name based on interface
+    .order('scheduled_datetime')
     .limit(10)
   
   if (error) {
@@ -175,13 +174,14 @@ export async function getUpcomingVeterinaryVisits(farmId: string) {
     return []
   }
   
-  return data || []
+  // FIXED: Cast to any[]
+  return (data as any[]) || []
 }
 
 export async function getFollowUpVisits(farmId: string) {
   const supabase = await createServerSupabaseClient()
   
-  const today = format(new Date(), 'yyyy-MM-dd')
+  const today = new Date().toISOString().split('T')[0]
   
   const { data, error } = await supabase
     .from('veterinary_visits')
@@ -189,7 +189,7 @@ export async function getFollowUpVisits(farmId: string) {
       *,
       veterinarian:veterinarians (
         name,
-        practice_name
+        clinic_name
       )
     `)
     .eq('farm_id', farmId)
@@ -202,7 +202,8 @@ export async function getFollowUpVisits(farmId: string) {
     return []
   }
   
-  return data || []
+  // FIXED: Cast to any[]
+  return (data as any[]) || []
 }
 
 export async function getVeterinaryStats(farmId: string) {
@@ -212,18 +213,21 @@ export async function getVeterinaryStats(farmId: string) {
   const yearStart = `${currentYear}-01-01`
   
   // Get visit counts by type
-  const { data: visits } = await supabase
+  const { data: visitsData } = await supabase
     .from('veterinary_visits')
     .select('visit_type, actual_cost')
     .eq('farm_id', farmId)
-    .gte('visit_date', yearStart)
+    .gte('scheduled_datetime', yearStart) // Fixed column name
   
+  // FIXED: Cast to any[]
+  const visits = (visitsData as any[]) || []
+
   // Get upcoming visits count
   const { count: upcomingCount } = await supabase
     .from('veterinary_visits')
     .select('*', { count: 'exact', head: true })
     .eq('farm_id', farmId)
-    .gte('visit_date', format(new Date(), 'yyyy-MM-dd'))
+    .gte('scheduled_datetime', new Date().toISOString()) // Fixed column name
   
   // Get follow-ups needed
   const { count: followUpCount } = await supabase
@@ -234,10 +238,12 @@ export async function getVeterinaryStats(farmId: string) {
     .lte('follow_up_date', format(new Date(), 'yyyy-MM-dd'))
   
   // Calculate statistics
-  const totalVisits = visits?.length || 0
-  const totalCost = visits?.reduce((sum, visit) => sum + (visit.actual_cost || 0), 0) || 0
+  const totalVisits = visits.length || 0
   
-  const visitTypes = visits?.reduce((acc, visit) => {
+  // FIXED: Typed as any to avoid property access error
+  const totalCost = visits.reduce((sum, visit) => sum + (visit.actual_cost || 0), 0) || 0
+  
+  const visitTypes = visits.reduce((acc, visit) => {
     acc[visit.visit_type] = (acc[visit.visit_type] || 0) + 1
     return acc
   }, {} as Record<string, number>) || {}

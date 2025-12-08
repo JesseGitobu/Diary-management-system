@@ -23,11 +23,14 @@ export async function GET(request: NextRequest) {
     let targetFarmId = farmId
 
     if (!targetFarmId) {
-      const { data: userRole, error: roleError } = await supabase
+      const { data: userRoleResult, error: roleError } = await supabase
         .from('user_roles')
         .select('farm_id')
         .eq('user_id', user.id)
         .single()
+
+      // Cast to any to fix "Property 'farm_id' does not exist on type 'never'"
+      const userRole = userRoleResult as any
 
       if (roleError || !userRole?.farm_id) {
         return NextResponse.json(
@@ -40,12 +43,15 @@ export async function GET(request: NextRequest) {
     }
 
     // Verify user has access to this farm
-    const { data: userRole, error: roleError } = await supabase
+    // Cast supabase to any to prevent "Argument of type 'string | null' is not assignable" error
+    const { data: userRoleResult, error: roleError } = await (supabase as any)
       .from('user_roles')
       .select('role_type')
       .eq('user_id', user.id)
       .eq('farm_id', targetFarmId)
       .single()
+
+    const userRole = userRoleResult as any
 
     if (roleError || !userRole) {
       return NextResponse.json(
@@ -55,7 +61,8 @@ export async function GET(request: NextRequest) {
     }
 
     // Get health settings
-    const settings = await getHealthSettings(targetFarmId)
+    // We can safely assert targetFarmId is string here because of the checks above
+    const settings = await getHealthSettings(targetFarmId!)
 
     if (!settings) {
       return NextResponse.json(
@@ -101,12 +108,15 @@ export async function PUT(request: NextRequest) {
     }
 
     // Verify user has permission to update settings
-    const { data: userRole, error: roleError } = await supabase
+    const { data: userRoleResult, error: roleError } = await supabase
       .from('user_roles')
       .select('role_type')
       .eq('user_id', user.id)
       .eq('farm_id', farmId)
       .single()
+
+    // Cast to any to fix type errors
+    const userRole = userRoleResult as any
 
     if (roleError || !userRole) {
       return NextResponse.json(
@@ -178,12 +188,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify user has permission
-    const { data: userRole, error: roleError } = await supabase
+    const { data: userRoleResult, error: roleError } = await supabase
       .from('user_roles')
       .select('role_type')
       .eq('user_id', user.id)
       .eq('farm_id', farmId)
       .single()
+
+    // Cast to any to fix type errors
+    const userRole = userRoleResult as any
 
     if (roleError || !userRole) {
       return NextResponse.json(

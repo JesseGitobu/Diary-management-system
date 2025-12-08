@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf'
 import 'jspdf-autotable'
-import * as XLSX from 'xlsx'
+import ExcelJS from 'exceljs'
 
 export interface ExportData {
   title: string
@@ -64,30 +64,68 @@ export async function exportToPDF(data: ExportData): Promise<Blob> {
 }
 
 export async function exportToExcel(data: ExportData): Promise<Blob> {
-  const workbook = XLSX.utils.book_new()
+  const workbook = new ExcelJS.Workbook()
+  workbook.creator = 'Farm App'
+  workbook.created = new Date()
   
-  // Summary worksheet
-  const summaryData = Object.entries(data.summary).map(([key, value]) => ({
-    Metric: key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()),
-    Value: value
-  }))
+  // 1. Summary worksheet
+  const summarySheet = workbook.addWorksheet('Summary')
   
-  const summaryWS = XLSX.utils.json_to_sheet(summaryData)
-  XLSX.utils.book_append_sheet(workbook, summaryWS, 'Summary')
+  // Define columns for Summary
+  summarySheet.columns = [
+    { header: 'Metric', key: 'metric', width: 30 },
+    { header: 'Value', key: 'value', width: 20 }
+  ]
+
+  // Style the header row
+  summarySheet.getRow(1).font = { bold: true }
+
+  // Add summary data
+  Object.entries(data.summary).forEach(([key, value]) => {
+    summarySheet.addRow({
+      metric: key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()),
+      value: value
+    })
+  })
   
-  // Detailed data worksheet
+  // 2. Detailed data worksheet
   if (data.tableData.length > 0) {
-    const dataWS = XLSX.utils.json_to_sheet(data.tableData)
-    XLSX.utils.book_append_sheet(workbook, dataWS, 'Detailed Data')
+    const dataSheet = workbook.addWorksheet('Detailed Data')
+    
+    // Dynamic columns based on the keys of the first object
+    const keys = Object.keys(data.tableData[0])
+    
+    dataSheet.columns = keys.map(key => ({
+      header: key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()),
+      key: key,
+      width: 20 // Default width
+    }))
+
+    // Style the header row
+    dataSheet.getRow(1).font = { bold: true }
+
+    // Add rows
+    dataSheet.addRows(data.tableData)
   }
   
-  // Chart data worksheet (if available)
+  // 3. Chart data worksheet (if available)
   if (data.chartData && data.chartData.length > 0) {
-    const chartWS = XLSX.utils.json_to_sheet(data.chartData)
-    XLSX.utils.book_append_sheet(workbook, chartWS, 'Chart Data')
+    const chartSheet = workbook.addWorksheet('Chart Data')
+    
+    const keys = Object.keys(data.chartData[0])
+    
+    chartSheet.columns = keys.map(key => ({
+      header: key,
+      key: key,
+      width: 15
+    }))
+
+    chartSheet.getRow(1).font = { bold: true }
+    chartSheet.addRows(data.chartData)
   }
   
-  const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' })
+  // Generate buffer
+  const excelBuffer = await workbook.xlsx.writeBuffer()
   return new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
 }
 

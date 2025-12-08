@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
@@ -63,7 +63,8 @@ export async function POST(request: NextRequest) {
     const supabase = await createServerSupabaseClient()
     
     // Create the outbreak record
-    const { data: outbreak, error: outbreakError } = await supabase
+    // Cast supabase to any to fix "Argument of type ... is not assignable to parameter of type 'never'"
+    const { data: outbreak, error: outbreakError } = await (supabase as any)
       .from('disease_outbreaks')
       .insert({
         farm_id: userRole.farm_id,
@@ -108,7 +109,8 @@ export async function POST(request: NextRequest) {
     }))
     
     // Insert health records
-    const { error: healthRecordsError } = await supabase
+    // Cast supabase to any here as well
+    const { error: healthRecordsError } = await (supabase as any)
       .from('animal_health_records')
       .insert(healthRecords)
     
@@ -119,7 +121,8 @@ export async function POST(request: NextRequest) {
     
     // If quarantine is required, update animal statuses
     if (quarantine_required && affected_animals.length > 0) {
-      const { error: quarantineError } = await supabase
+      // Cast supabase to any
+      const { error: quarantineError } = await (supabase as any)
         .from('animals')
         .update({ 
           status: 'quarantined',
@@ -155,7 +158,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })

@@ -48,7 +48,7 @@ export async function getBreedingStats(farmId: string): Promise<BreedingStats> {
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0)
     
     // Get ALL breeding events for this farm
-    const { data: allEvents, error: eventsError } = await supabase
+    const { data: allEventsData, error: eventsError } = await supabase
       .from('breeding_events')
       .select('*')
       .eq('farm_id', farmId)
@@ -58,27 +58,30 @@ export async function getBreedingStats(farmId: string): Promise<BreedingStats> {
       console.error('Error fetching breeding events:', eventsError)
       return getDefaultBreedingStats()
     }
+
+    // FIXED: Cast to any[] to fix 'never' type error
+    const allEvents = (allEventsData || []) as any[]
     
-    console.log('Total breeding events found:', allEvents?.length || 0)
+    console.log('Total breeding events found:', allEvents.length)
     
     // Get recent events (last 30 days)
-    const recentEvents = allEvents?.filter(event => 
+    const recentEvents = allEvents.filter(event => 
       new Date(event.event_date) >= thirtyDaysAgo
-    ) || []
+    )
     
     console.log('Recent events (last 30 days):', recentEvents.length)
     
     // Get previous period events (30-60 days ago) for trends
-    const previousEvents = allEvents?.filter(event => {
+    const previousEvents = allEvents.filter(event => {
       const eventDate = new Date(event.event_date)
       return eventDate >= sixtyDaysAgo && eventDate < thirtyDaysAgo
-    }) || []
+    })
     
     // Calculate basic counts
-    const heatDetections = allEvents?.filter(e => e.event_type === 'heat_detection') || []
-    const inseminations = allEvents?.filter(e => e.event_type === 'insemination') || []
-    const pregnancyChecks = allEvents?.filter(e => e.event_type === 'pregnancy_check') || []
-    const calvings = allEvents?.filter(e => e.event_type === 'calving') || []
+    const heatDetections = allEvents.filter(e => e.event_type === 'heat_detection')
+    const inseminations = allEvents.filter(e => e.event_type === 'insemination')
+    const pregnancyChecks = allEvents.filter(e => e.event_type === 'pregnancy_check')
+    const calvings = allEvents.filter(e => e.event_type === 'calving')
     
     console.log('Event counts:', {
       heat: heatDetections.length,
@@ -143,14 +146,17 @@ async function getCurrentlyPregnantAnimals(farmId: string) {
   const supabase = await createServerSupabaseClient()
   
   // Get the latest pregnancy check for each animal
-  const { data: latestChecks } = await supabase
+  const { data: latestChecksData } = await supabase
     .from('breeding_events')
     .select('animal_id, pregnancy_result, event_date')
     .eq('farm_id', farmId)
     .eq('event_type', 'pregnancy_check')
     .order('event_date', { ascending: false })
   
-  if (!latestChecks) return []
+  if (!latestChecksData) return []
+
+  // FIXED: Cast to any[]
+  const latestChecks = latestChecksData as any[]
   
   // Group by animal and get the most recent result
   const animalLatestResults = new Map()
@@ -184,7 +190,7 @@ async function getExpectedCalvingsThisMonth(farmId: string) {
     .lte('estimated_due_date', endOfMonth.toISOString().split('T')[0])
     .not('estimated_due_date', 'is', null)
   
-  return dueDates || []
+  return (dueDates || []) as any[]
 }
 
 // Get upcoming breeding events
@@ -195,7 +201,7 @@ export async function getUpcomingBreedingEvents(farmId: string) {
   const sevenDaysFromNow = addDays(today, 7)
   
   // Get recent breeding events that might need follow-up
-  const { data: events } = await supabase
+  const { data: eventsData } = await supabase
     .from('breeding_events')
     .select(`
       *,
@@ -206,14 +212,17 @@ export async function getUpcomingBreedingEvents(farmId: string) {
     .lte('event_date', sevenDaysFromNow.toISOString().split('T')[0])
     .order('event_date', { ascending: true })
   
-  return events?.map(event => ({
+  // FIXED: Cast to any[]
+  const events = (eventsData || []) as any[]
+  
+  return events.map(event => ({
     id: event.id,
     event_type: event.event_type,
     scheduled_date: event.event_date,
     status: 'scheduled',
     animal_tag: event.animals?.tag_number,
     animal_name: event.animals?.name
-  })) || []
+  }))
 }
 
 // Get breeding alerts
@@ -223,7 +232,7 @@ export async function getBreedingAlerts(farmId: string): Promise<BreedingAlert[]
   
   try {
     // Alert 1: Animals due for calving soon
-    const { data: dueSoon } = await supabase
+    const { data: dueSoonData } = await supabase
       .from('breeding_events')
       .select(`
         animal_id,
@@ -237,7 +246,10 @@ export async function getBreedingAlerts(farmId: string): Promise<BreedingAlert[]
       .lte('estimated_due_date', addDays(new Date(), 14).toISOString().split('T')[0])
       .gte('estimated_due_date', new Date().toISOString().split('T')[0])
     
-    dueSoon?.forEach(animal => {
+    // FIXED: Cast to any[]
+    const dueSoon = (dueSoonData || []) as any[]
+
+    dueSoon.forEach(animal => {
       if (animal.estimated_due_date) {
         const daysRemaining = Math.ceil(
           (new Date(animal.estimated_due_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
@@ -259,7 +271,7 @@ export async function getBreedingAlerts(farmId: string): Promise<BreedingAlert[]
     })
     
     // Alert 2: Animals needing pregnancy checks
-    const { data: needingCheck } = await supabase
+    const { data: needingCheckData } = await supabase
       .from('breeding_events')
       .select(`
         animal_id,
@@ -271,9 +283,12 @@ export async function getBreedingAlerts(farmId: string): Promise<BreedingAlert[]
       .lte('event_date', subDays(new Date(), 30).toISOString().split('T')[0])
       .gte('event_date', subDays(new Date(), 60).toISOString().split('T')[0])
     
+    // FIXED: Cast to any[]
+    const needingCheck = (needingCheckData || []) as any[]
+
     // Filter animals that haven't had pregnancy check
-    for (const insemination of needingCheck || []) {
-      const { data: hasCheck } = await supabase
+    for (const insemination of needingCheck) {
+      const { data: hasCheckData } = await supabase
         .from('breeding_events')
         .select('id')
         .eq('animal_id', insemination.animal_id)
@@ -281,6 +296,8 @@ export async function getBreedingAlerts(farmId: string): Promise<BreedingAlert[]
         .gte('event_date', insemination.event_date)
         .limit(1)
       
+      const hasCheck = hasCheckData as any[]
+
       if (!hasCheck || hasCheck.length === 0) {
         const daysSinceInsemination = Math.ceil(
           (new Date().getTime() - new Date(insemination.event_date).getTime()) / (1000 * 60 * 60 * 24)
@@ -335,83 +352,3 @@ function calculateTrendPercentage(current: number, previous: number): number {
   if (previous === 0) return current > 0 ? 100 : 0
   return Math.round(((current - previous) / previous) * 100)
 }
-
-// Generate breeding alerts based on current farm status
-// export async function getBreedingAlerts(farmId: string): Promise<BreedingAlert[]> {
-//   const supabase = createClient()
-//   const alerts: BreedingAlert[] = []
-  
-//   try {
-//     const stats = await getBreedingStats(farmId)
-//     const upcomingEvents = await getUpcomingBreedingEvents(farmId)
-    
-//     // Alert for expected calvings this month
-//     if (stats.expectedCalvingsThisMonth > 0) {
-//       alerts.push({
-//         id: 'calvings_this_month',
-//         type: 'calving_due',
-//         title: 'Calvings Expected This Month',
-//         message: `${stats.expectedCalvingsThisMonth} animals are due to calve this month. Monitor closely for signs of labor.`,
-//         severity: 'info',
-//         count: stats.expectedCalvingsThisMonth
-//       })
-//     }
-    
-//     // Alert for low conception rate
-//     if (stats.conceptionRate < 50 && stats.totalBreedings > 5) {
-//       alerts.push({
-//         id: 'low_conception_rate',
-//         type: 'low_conception_rate',
-//         title: 'Low Conception Rate Alert',
-//         message: `Current conception rate is ${stats.conceptionRate}%. Industry average is 50-60%. Consider reviewing breeding practices, nutrition, or consulting a veterinarian.`,
-//         severity: stats.conceptionRate < 30 ? 'critical' : 'warning'
-//       })
-//     }
-    
-//     // Alert for overdue events
-//     const overdueEvents = upcomingEvents.filter(event => event.status === 'overdue')
-//     if (overdueEvents.length > 0) {
-//       alerts.push({
-//         id: 'overdue_events',
-//         type: 'overdue_breeding',
-//         title: 'Overdue Breeding Events',
-//         message: `${overdueEvents.length} breeding events are overdue. Update these records to maintain accurate breeding data.`,
-//         severity: 'warning',
-//         count: overdueEvents.length
-//       })
-//     }
-    
-//     // Alert for animals needing pregnancy checks
-//     const pregnancyChecks = upcomingEvents.filter(event => 
-//       event.event_type === 'pregnancy_check' && 
-//       new Date(event.scheduled_date) <= new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-//     )
-//     if (pregnancyChecks.length > 0) {
-//       alerts.push({
-//         id: 'pregnancy_checks_due',
-//         type: 'pregnancy_check_due',
-//         title: 'Pregnancy Checks Due Soon',
-//         message: `${pregnancyChecks.length} animals need pregnancy checks within 7 days. Early detection improves breeding management.`,
-//         severity: 'info',
-//         count: pregnancyChecks.length
-//       })
-//     }
-    
-//     // Alert for high heat detection activity
-//     if (stats.heatDetected > 5) {
-//       alerts.push({
-//         id: 'high_heat_activity',
-//         type: 'overdue_breeding',
-//         title: 'High Heat Detection Activity',
-//         message: `${stats.heatDetected} heat detection events in the last 30 days. Ensure timely breeding services.`,
-//         severity: 'info',
-//         count: stats.heatDetected
-//       })
-//     }
-    
-//     return alerts
-//   } catch (error) {
-//     console.error('Error generating breeding alerts:', error)
-//     return []
-//   }
-// }

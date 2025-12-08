@@ -11,21 +11,18 @@ export const metadata: Metadata = {
   description: 'Configure pricing, payments, and financial tracking',
 }
 
-
-
 export default async function FinancialPage() {
   const user = await getCurrentUser()
   
-    if (!user) {
-      redirect('/auth')
-    }
-    
-    const userRole = await getUserRole(user.id)
-    
-    if (!userRole?.farm_id) {
-      redirect('/dashboard')
-    }
+  if (!user) {
+    redirect('/auth')
+  }
   
+  const userRole = await getUserRole(user.id) as any
+  
+  if (!userRole?.farm_id) {
+    redirect('/dashboard')
+  }
   
   // Check if user can access financial settings
   const canAccessFinancial = ['farm_owner', 'farm_manager'].includes(userRole.role_type)
@@ -35,7 +32,8 @@ export default async function FinancialPage() {
   }
 
   // Get financial settings
-  const financialSettings = await getFinancialSettings(userRole.farm_id)
+  // Cast to any if getFinancialSettings returns a type that TS thinks is missing properties
+  const financialSettings = await getFinancialSettings(userRole.farm_id) as any
 
   return (
     <FinancialSettings
@@ -45,7 +43,8 @@ export default async function FinancialPage() {
         ...financialSettings, 
         currency: financialSettings.currency as "KSH" | "USD", 
         default_payment_method: financialSettings.default_payment_method as "cash" | "bank_transfer" | "mpesa" | "cheque",
-        buyers: financialSettings.buyers.map(buyer => ({
+        // Add fallback array [] to prevent "Cannot read properties of undefined (reading 'map')"
+        buyers: (financialSettings.buyers || []).map((buyer: any) => ({
           ...buyer,
           contact_person: buyer.contact_person ?? undefined,
           email: buyer.email ?? undefined,

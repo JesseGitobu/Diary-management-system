@@ -36,8 +36,8 @@ export interface AnimalDiseaseRecord {
 export async function createDiseaseOutbreak(outbreak: DiseaseOutbreak) {
   const supabase = await createServerSupabaseClient()
   
-  const { data, error } = await supabase
-    .from('disease_outbreaks')
+    const { data, error } = await (supabase
+      .from('disease_outbreaks') as any)
     .insert(outbreak)
     .select(`
       *,
@@ -89,7 +89,8 @@ export async function getDiseaseOutbreaks(farmId: string, status?: string) {
     return []
   }
   
-  return data || []
+  // FIXED: Cast to any[]
+  return (data as any[]) || []
 }
 
 export async function addAnimalToDiseaseOutbreak(
@@ -121,8 +122,8 @@ export async function addAnimalToDiseaseOutbreak(
       } 
     
     if (Object.keys(updates).length > 0) {
-      const { error: updateError } = await supabase
-        .from('disease_outbreaks')
+      const { error: updateError } = await (supabase
+        .from('disease_outbreaks') as any)
         .update(updates)
         .eq('id', outbreakId)
       
@@ -139,8 +140,8 @@ export async function addAnimalToDiseaseOutbreak(
 export async function createAnimalDiseaseRecord(record: AnimalDiseaseRecord) {
   const supabase = await createServerSupabaseClient()
   
-  const { data, error } = await supabase
-    .from('animal_disease_records')
+  const { data, error } = await (supabase
+    .from('animal_disease_records') as any)
     .insert(record)
     .select(`
       *,
@@ -188,7 +189,8 @@ export async function getAnimalDiseaseHistory(animalId: string) {
     return []
   }
   
-  return data || []
+  // FIXED: Cast to any[]
+  return (data as any[]) || []
 }
 
 export async function getActiveDiseaseAlerts(farmId: string) {
@@ -220,7 +222,8 @@ export async function getActiveDiseaseAlerts(farmId: string) {
   const alerts: DiseaseAlert[] = [];
   
   // Add outbreak alerts
-  outbreaks?.forEach(outbreak => {
+  // FIXED: Cast outbreaks to any[] to bypass 'never' type error when accessing joined 'disease' property
+  (outbreaks as any[])?.forEach(outbreak => {
     alerts.push({
       type: 'outbreak',
       severity: outbreak.disease?.is_contagious ? 'high' : 'medium',
@@ -247,5 +250,6 @@ export async function getAllDiseases() {
     return []
   }
   
-  return data || []
+  // FIXED: Cast to any[]
+  return (data as any[]) || []
 }

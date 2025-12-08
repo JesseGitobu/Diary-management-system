@@ -1,4 +1,3 @@
-
 // API route for health status changes
 // src/app/api/health/status-changes/route.ts
 
@@ -15,7 +14,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
@@ -66,7 +65,8 @@ export async function GET(request: NextRequest) {
     }
 
     // Transform data for frontend
-    const changes: HealthStatusChange[] = (statusChanges || []).map(change => ({
+    // Cast change to any to fix "Property 'id' does not exist on type 'never'"
+    const changes: HealthStatusChange[] = (statusChanges || []).map((change: any) => ({
       id: change.id,
       animalId: change.animal_id,
       animalName: change.animals.name || `Animal ${change.animals.tag_number}`,

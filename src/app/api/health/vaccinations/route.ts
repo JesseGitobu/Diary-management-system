@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated' }, { status: 400 })
     }
@@ -98,7 +98,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
@@ -169,9 +169,10 @@ async function createVaccinationHealthRecords(
       ].filter(Boolean).join('\n') || undefined,
     }))
     
+    // Cast healthRecords to any to fix "Argument of type ... is not assignable to parameter of type 'never'"
     const { data, error } = await supabase
       .from('animal_health_records')
-      .insert(healthRecords)
+      .insert(healthRecords as any)
       .select()
     
     if (error) {

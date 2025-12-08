@@ -33,7 +33,7 @@ export async function getDistributionStats(farmId: string, days: number = 30): P
     const supabase = await createServerSupabaseClient()
     
     // Get distribution records for the period
-    const { data: records, error } = await supabase
+    const { data: recordsdata, error } = await supabase
       .from('distribution_records')
       .select(`
         *,
@@ -49,6 +49,7 @@ export async function getDistributionStats(farmId: string, days: number = 30): P
       .order('delivery_date', { ascending: true })
 
     if (error) throw error
+    const records = (recordsdata as any[]) || []
 
     // Calculate totals
     const totalDistributed = records?.reduce((sum, record) => sum + record.volume, 0) || 0
@@ -191,7 +192,7 @@ export async function getDistributionRecords(
     if (error) throw error
 
     // Transform data to match component interface
-    return records?.map(record => ({
+    return  (records as any[]).map(record => ({
       id: record.id,
       date: record.delivery_date,
       channelName: record.distribution_channels?.name || 'Unknown Channel',

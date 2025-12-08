@@ -24,11 +24,14 @@ export async function POST(
     const { createServerSupabaseClient } = await import('@/lib/supabase/server')
     const supabase = await createServerSupabaseClient()
 
-    const { data: breeding } = await supabase
+    const { data: breedingResult } = await supabase
       .from('breeding_records')
       .select('animal_id, farm_id')
       .eq('id', recordId)
       .single()
+
+    // Cast to any to fix "Property 'animal_id' does not exist on type 'never'"
+    const breeding = breedingResult as any
 
     if (!breeding) {
       return NextResponse.json(

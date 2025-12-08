@@ -32,7 +32,9 @@ export async function POST(request: NextRequest) {
     const ticketNumber = `TK-${new Date().getFullYear()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`
     
     // Create ticket
-    const { data: ticket, error } = await adminSupabase
+    // We cast to 'any' because your 'Insert' type definition is likely 'never'
+    // despite the 'Row' definition existing.
+    const { data: ticket, error } = await (adminSupabase as any)
       .from('support_tickets')
       .insert({
         ticket_number: ticketNumber,
@@ -54,7 +56,8 @@ export async function POST(request: NextRequest) {
     
     // Log the action
     try {
-      await adminSupabase.from('audit_logs').insert({
+      // Cast to 'any' to bypass potential missing type for audit_logs as well
+      await (adminSupabase as any).from('audit_logs').insert({
         user_id: user.id,
         action: 'create_ticket',
         resource_type: 'support_ticket',

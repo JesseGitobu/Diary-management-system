@@ -10,7 +10,7 @@ export async function createFarmOwnerProfile(userId: string, email: string) {
     console.log('🔍 Creating farm owner profile for user:', userId)
     
     // 🎯 NEW: Check if user already has a pending role
-    const existingRole = await getUserRole(userId)
+    const existingRole = await getUserRole(userId) as any
     
     if (existingRole) {
       console.log('🔍 User already has role:', existingRole)
@@ -45,8 +45,9 @@ async function createFarmForExistingUser(userId: string) {
     console.log('🔍 Creating farm for existing pending user:', userId)
     
     // Create farm
-    const { data: farm, error: farmError } = await supabase
-      .from('farms')
+    // FIXED: Cast to any to bypass 'never' type on insert
+    const { data: farm, error: farmError } = await (supabase
+      .from('farms') as any)
       .insert({
         name: 'My Farm',
         location: null,
@@ -63,8 +64,9 @@ async function createFarmForExistingUser(userId: string) {
     console.log('✅ Farm created:', farm.id)
 
     // Update existing user role with farm_id and active status
-    const { error: roleError } = await supabase
-      .from('user_roles')
+    // FIXED: Cast to any
+    const { error: roleError } = await (supabase
+      .from('user_roles') as any)
       .update({
         farm_id: farm.id,
         status: 'active'
@@ -80,8 +82,9 @@ async function createFarmForExistingUser(userId: string) {
     console.log('✅ User role updated with farm_id')
 
     // Create farm profile
-    const { error: profileError } = await supabase
-      .from('farm_profiles')
+    // FIXED: Cast to any
+    const { error: profileError } = await (supabase
+      .from('farm_profiles') as any)
       .insert({
         user_id: userId,
         farm_id: farm.id,
@@ -112,8 +115,9 @@ async function createFarmAndRole(userId: string, email: string) {
     console.log('🔍 Creating farm and role for new user:', userId)
     
     // Create farm
-    const { data: farm, error: farmError } = await supabase
-      .from('farms')
+    // FIXED: Cast to any
+    const { data: farm, error: farmError } = await (supabase
+      .from('farms') as any)
       .insert({
         name: 'My Farm', // Default name, will be updated in onboarding
         location: null,
@@ -130,8 +134,9 @@ async function createFarmAndRole(userId: string, email: string) {
     console.log('✅ Farm created:', farm.id)
 
     // Create user role
-    const { error: roleError } = await supabase
-      .from('user_roles')
+    // FIXED: Cast to any
+    const { error: roleError } = await (supabase
+      .from('user_roles') as any)
       .insert({
         user_id: userId,
         farm_id: farm.id,
@@ -147,8 +152,9 @@ async function createFarmAndRole(userId: string, email: string) {
     console.log('✅ User role created')
 
     // Create farm profile
-    const { error: profileError } = await supabase
-      .from('farm_profiles')
+    // FIXED: Cast to any
+    const { error: profileError } = await (supabase
+      .from('farm_profiles') as any)
       .insert({
         user_id: userId,
         farm_id: farm.id,
@@ -181,12 +187,15 @@ export async function createTeamMemberProfile(
     console.log('🔍 Creating team member profile for user:', userId, 'with token:', invitationToken)
     
     // Get invitation details
-    const { data: invitation, error: invitationError } = await supabase
+    const { data: invitationData, error: invitationError } = await supabase
       .from('invitations')
       .select('*')
       .eq('token', invitationToken)
       .eq('status', 'pending')
       .single()
+
+    // FIXED: Cast invitation to any
+    const invitation = invitationData as any
 
     if (invitationError) {
       console.error('❌ Error getting invitation:', invitationError)
@@ -201,8 +210,9 @@ export async function createTeamMemberProfile(
     console.log('✅ Valid invitation found:', invitation.id)
 
     // Create user role
-    const { error: roleError } = await supabase
-      .from('user_roles')
+    // FIXED: Cast to any
+    const { error: roleError } = await (supabase
+      .from('user_roles') as any)
       .insert({
         user_id: userId,
         farm_id: invitation.farm_id,
@@ -218,8 +228,9 @@ export async function createTeamMemberProfile(
     console.log('✅ Team member role created')
 
     // Update invitation status
-    const { error: updateError } = await supabase
-      .from('invitations')
+    // FIXED: Cast to any
+    const { error: updateError } = await (supabase
+      .from('invitations') as any)
       .update({ status: 'accepted' })
       .eq('token', invitationToken)
 
@@ -297,8 +308,9 @@ export async function updateUserRoleStatus(userId: string, status: string, farmI
       updateData.farm_id = farmId
     }
     
-    const { data, error } = await supabase
-      .from('user_roles')
+    // FIXED: Cast to any
+    const { data, error } = await (supabase
+      .from('user_roles') as any)
       .update(updateData)
       .eq('user_id', userId)
       .select() // Return the updated record to verify
@@ -327,8 +339,8 @@ export async function userNeedsOnboarding(userId: string) {
   const supabase = await createServerSupabaseClient()
   
   try {
-    const { data, error } = await supabase
-      .from('user_roles')
+    const { data, error } = await (supabase
+      .from('user_roles') as any)
       .select('status, role_type, farm_id')
       .eq('user_id', userId)
       .single()

@@ -8,12 +8,12 @@ export async function PATCH(
 ) {
   try {
     const params = await props.params;
-    const user = await getCurrentUser()
+    const user = await getCurrentUser() 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     if (!userRole?.farm_id || !['farm_owner', 'farm_manager'].includes(userRole.role_type)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
@@ -30,7 +30,9 @@ export async function PATCH(
     }
 
     const supabase = await createServerSupabaseClient()
-    const { data: record, error } = await supabase
+    
+    // Cast supabase to any to fix "Argument of type 'any' is not assignable to parameter of type 'never'"
+    const { data: record, error } = await (supabase as any)
       .from('distribution_records')
       .update(updates)
       .eq('id', params.id)

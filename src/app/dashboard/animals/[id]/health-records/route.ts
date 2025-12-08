@@ -14,7 +14,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
@@ -24,12 +24,15 @@ export async function GET(
     const supabase = await createServerSupabaseClient()
     
     // Verify animal belongs to user's farm
-    const { data: animal, error: animalError } = await supabase
+    const { data: animalResult, error: animalError } = await supabase
       .from('animals')
       .select('farm_id')
       .eq('id', params.id)
       .single()
     
+    // Cast to any to fix "Property 'farm_id' does not exist on type 'never'"
+    const animal = animalResult as any
+
     if (animalError || !animal) {
       return NextResponse.json({ error: 'Animal not found' }, { status: 404 })
     }
@@ -72,7 +75,7 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
@@ -105,12 +108,15 @@ export async function POST(
     const supabase = await createServerSupabaseClient()
     
     // Verify animal belongs to user's farm
-    const { data: animal, error: animalError } = await supabase
+    const { data: animalResult, error: animalError } = await supabase
       .from('animals')
       .select('farm_id')
       .eq('id', params.id)
       .single()
     
+    // Cast to any here as well
+    const animal = animalResult as any
+
     if (animalError || !animal) {
       return NextResponse.json({ error: 'Animal not found' }, { status: 404 })
     }
@@ -120,7 +126,8 @@ export async function POST(
     }
     
     // Create health record
-    const { data: record, error: recordError } = await supabase
+    // Cast supabase to any to prevent insert type error
+    const { data: record, error: recordError } = await (supabase as any)
       .from('animal_health_records')
       .insert({
         animal_id: params.id,

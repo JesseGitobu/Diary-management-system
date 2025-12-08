@@ -40,7 +40,8 @@ export default async function DashboardPage() {
     redirect('/auth')
   }
 
-  const userRole = await getUserRole(user.id)
+  // Cast to any to fix "Property 'status' does not exist on type 'never'"
+  const userRole = await getUserRole(user.id) as any
 
   if (!userRole) {
     redirect('/auth')
@@ -51,18 +52,22 @@ export default async function DashboardPage() {
 
   // 🎯 NEW: Get farm profile to check onboarding completion
   const supabase = await createServerSupabaseClient()
-  const { data: farmProfile } = await supabase
+  const { data: farmProfileResult } = await supabase
     .from('farm_profiles')
     .select('onboarding_completed, completion_percentage, farm_name')
     .eq('user_id', user.id)
     .maybeSingle()
+  
+  const farmProfile = farmProfileResult as any
 
   const isOnboardingIncomplete = !farmProfile?.onboarding_completed || needsOnboarding
 
   // Get comprehensive dashboard data (only if we have a farm_id)
-  const dashboardStats = userRole.farm_id
+  // Cast to any to fix "Property 'name' does not exist on type 'never'"
+  const dashboardStats = (userRole.farm_id
     ? await getDashboardStats(userRole.farm_id)
-    : null
+    : null) as any
+
   const canManageTeam = ['farm_owner', 'farm_manager'].includes(userRole.role_type)
   const canManageAnimals = ['farm_owner', 'farm_manager', 'worker'].includes(userRole.role_type)
 
@@ -132,7 +137,7 @@ export default async function DashboardPage() {
             </CardHeader>
             <CardContent className="pt-0">
               <div className="space-y-2">
-                {dashboardStats?.alerts?.slice(0, 3).map((alert, index) => (
+                {dashboardStats?.alerts?.slice(0, 3).map((alert: any, index: number) => (
                   <div key={index} className="flex items-center justify-between p-2 bg-white rounded-lg">
                     <div className="flex items-center space-x-3">
                       <div className={`w-2 h-2 rounded-full ${alert.priority === 'high' ? 'bg-red-500' :
@@ -322,7 +327,7 @@ export default async function DashboardPage() {
                     <Baby className="w-4 h-4 mr-1 text-pink-500" />
                     Recent Calvings
                   </p>
-                  {dashboardStats?.breeding?.recentCalvings?.slice(0, 2).map((calving, index) => (
+                  {dashboardStats?.breeding?.recentCalvings?.slice(0, 2).map((calving: any, index: number) => (
                     <div key={index} className="flex items-center justify-between text-xs py-1">
                       <span>{calving.cowName}</span>
                       <span className="text-gray-500">{calving.daysAgo}d ago</span>
@@ -469,7 +474,7 @@ export default async function DashboardPage() {
             <CardContent>
               {(dashboardStats?.activities?.length ?? 0) > 0 ? (
                 <div className="space-y-3">
-                  {(dashboardStats?.activities ?? []).slice(0, 5).map((activity, index) => (
+                  {(dashboardStats?.activities ?? []).slice(0, 5).map((activity: any, index: number) => (
                     <div key={index} className="flex items-start space-x-3">
                       <div className={`w-2 h-2 rounded-full mt-2 ${activity.type === 'health' ? 'bg-red-500' :
                         activity.type === 'production' ? 'bg-blue-500' :

@@ -115,7 +115,8 @@ export async function GET(
       }
 
       // Group inventory by feed type
-      const inventoryByFeedType = (inventoryData || []).reduce((acc, item) => {
+      const inventoryByFeedType = (inventoryData || []).reduce((acc, item: any) => {
+        // Cast item to any to fix "Property 'feed_type_id' does not exist on type 'never'"
         if (!acc[item.feed_type_id]) {
           acc[item.feed_type_id] = []
         }

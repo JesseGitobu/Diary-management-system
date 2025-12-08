@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id || !['farm_owner', 'farm_manager', 'worker'].includes(userRole.role_type)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
@@ -208,7 +208,8 @@ export async function POST(request: NextRequest) {
     
     // If this is a follow-up record, create the relationship in health_record_follow_ups table
     if (is_follow_up && original_record_id && result.data) {
-      const { error: relationError } = await supabase
+      // Cast supabase to any to fix "Argument of type ... is not assignable to parameter of type 'never'"
+      const { error: relationError } = await (supabase as any)
         .from('health_record_follow_ups')
         .insert({
           original_record_id: original_record_id,
@@ -263,7 +264,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })

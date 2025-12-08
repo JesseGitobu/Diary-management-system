@@ -303,8 +303,8 @@ export async function updateDistributionSettings(
       updated_at: new Date().toISOString()
     }
 
-    const { error } = await supabase
-      .from('farm_distribution_settings')
+    const { error } = await (supabase
+      .from('farm_distribution_settings') as any)
       .upsert(dbSettings, { onConflict: 'farm_id' })
 
     if (error) throw error

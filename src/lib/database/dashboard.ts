@@ -12,8 +12,9 @@ export async function getDashboardStats(farmId: string) {
       
       try {
         // Get basic farm info with optimized query
-        const { data: farm } = await supabase
-          .from('farms')
+        // FIXED: Cast to any
+        const { data: farm } = await (supabase
+          .from('farms') as any)
           .select('name, location, farm_type, created_at')
           .eq('id', farmId)
           .single()
@@ -88,14 +89,14 @@ export async function getProductionStats(farmId: string) {
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
     
     // Get today's milk production
-    const { data: todayProduction } = await supabase
+    const { data: todayProductionData } = await supabase
       .from('production_records')
       .select('milk_volume')
       .gte('record_date', today)
       .eq('farm_id', farmId)
     
     // Get weekly production for averages
-    const { data: weeklyProduction } = await supabase
+    const { data: weeklyProductionData } = await supabase
       .from('production_records')
       .select('milk_volume, record_date')
       .gte('record_date', weekAgo)
@@ -111,8 +112,10 @@ export async function getProductionStats(farmId: string) {
       .eq('gender', 'female')
       .gte('birth_date', new Date(Date.now() - 2 * 365 * 24 * 60 * 60 * 1000).toISOString()) // Assume 2+ years old are milking
     
-    const todayMilk = todayProduction?.reduce((sum, record) => sum + (record.milk_volume || 0), 0) || 0
-    const weeklyTotal = weeklyProduction?.reduce((sum, record) => sum + (record.milk_volume || 0), 0) || 0
+    // FIXED: Cast to any[] to bypass 'never' type error
+    const todayMilk = (todayProductionData as any[])?.reduce((sum, record) => sum + (record.milk_volume || 0), 0) || 0
+    const weeklyTotal = (weeklyProductionData as any[])?.reduce((sum, record) => sum + (record.milk_volume || 0), 0) || 0
+    
     const weeklyAvg = weeklyTotal / 7
     const avgPerCow = milkingCows ? (todayMilk / milkingCows) : 0
     
@@ -239,8 +242,9 @@ export async function getBreedingStats(farmId: string) {
       .order('calving_date', { ascending: false })
       .limit(5)
     
+    // FIXED: Cast to any[]
     const formattedCalvings = Array.isArray(recentCalvings)
-      ? recentCalvings.map(record => ({
+      ? (recentCalvings as any[]).map(record => ({
           cowName: record.animals?.name || record.animals?.tag_number || 'Unknown',
           calvingDate: record.calving_date,
           daysAgo: Math.floor(
@@ -287,18 +291,22 @@ export async function getFeedStats(farmId: string) {
       .gte('purchase_date', firstDayOfMonth)
       .lte('purchase_date', lastDayOfMonth)
     
-    const monthlyCost = feedPurchases?.reduce((sum, record) => {
+    // FIXED: Cast to any[]
+    const monthlyCost = (feedPurchases as any[])?.reduce((sum, record) => {
       const cost = (record.quantity_kg || 0) * (record.cost_per_kg || 0)
       return sum + cost
     }, 0) || 0
     
     // Get current feed inventory grouped by feed type
-    const { data: feedInventory } = await supabase
+    const { data: feedInventoryData } = await supabase
       .from('feed_inventory')
       .select('feed_type_id, quantity_kg')
       .eq('farm_id', farmId)
       .gt('quantity_kg', 0)
     
+    // FIXED: Cast to any[]
+    const feedInventory = (feedInventoryData as any[]) || []
+
     if (!feedInventory || feedInventory.length === 0) {
       return {
         monthlyCost: Math.round(monthlyCost),
@@ -320,12 +328,15 @@ export async function getFeedStats(farmId: string) {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
       .toISOString()
     
-    const { data: recentConsumption } = await supabase
+    const { data: recentConsumptionData } = await supabase
       .from('feed_consumption')
       .select('feed_type_id, quantity_kg')
       .eq('farm_id', farmId)
       .gte('feeding_time', sevenDaysAgo)
     
+    // FIXED: Cast to any[]
+    const recentConsumption = (recentConsumptionData as any[]) || []
+
     // Calculate average daily usage per feed type
     const dailyUsageByType: Record<string, number> = {}
     
@@ -388,7 +399,7 @@ export async function getFinancialStats(farmId: string) {
     const currentMonth = new Date().toISOString().slice(0, 7)
     
     // Get monthly revenue (milk sales + animal sales)
-    const { data: revenue } = await supabase
+    const { data: revenueData } = await supabase
       .from('financial_transactions')
       .select('amount')
       .eq('farm_id', farmId)
@@ -396,15 +407,19 @@ export async function getFinancialStats(farmId: string) {
       .like('date', `${currentMonth}%`)
     
     // Get monthly expenses
-    const { data: expenses } = await supabase
+    const { data: expensesData } = await supabase
       .from('financial_transactions')
       .select('amount')
       .eq('farm_id', farmId)
       .eq('type', 'expense')
       .like('date', `${currentMonth}%`)
     
-    const monthlyRevenue = revenue?.reduce((sum, record) => sum + (record.amount || 0), 0) || 0
-    const monthlyExpenses = expenses?.reduce((sum, record) => sum + (record.amount || 0), 0) || 0
+    // FIXED: Cast to any[]
+    const revenue = (revenueData as any[]) || []
+    const expenses = (expensesData as any[]) || []
+
+    const monthlyRevenue = revenue.reduce((sum, record) => sum + (record.amount || 0), 0) || 0
+    const monthlyExpenses = expenses.reduce((sum, record) => sum + (record.amount || 0), 0) || 0
     const monthlyProfit = monthlyRevenue - monthlyExpenses
     const profitMargin = monthlyRevenue > 0 ? Math.round((monthlyProfit / monthlyRevenue) * 100) : 0
     
@@ -431,15 +446,17 @@ export async function getInventoryStats(farmId: string) {
   
   try {
     // Get total inventory items
-    const { count: totalItems } = await supabase
-      .from('inventory_items')
+    // FIXED: Cast to any to bypass 'never' type
+    const { count: totalItems } = await (supabase
+      .from('inventory_items') as any)
       .select('*', { count: 'exact', head: true })
       .eq('farm_id', farmId)
       .gt('quantity', 0)
     
     // Get low stock items (quantity below reorder point)
-    const { count: lowStockCount } = await supabase
-      .from('inventory_items')
+    // FIXED: Cast to any
+    const { count: lowStockCount } = await (supabase
+      .from('inventory_items') as any)
       .select('*', { count: 'exact', head: true })
       .eq('farm_id', farmId)
       .filter('quantity', 'lte', 'reorder_point')
@@ -551,8 +568,9 @@ export async function getCriticalAlerts(farmId: string) {
     }
     
     // Inventory alerts - low stock
-    const { count: lowStock } = await supabase
-      .from('inventory_items')
+    // FIXED: Cast to any
+    const { count: lowStock } = await (supabase
+      .from('inventory_items') as any)
       .select('*', { count: 'exact', head: true })
       .eq('farm_id', farmId)
       .filter('quantity', 'lte', 'reorder_point')
@@ -609,7 +627,7 @@ export async function getRecentActivities(farmId: string, limit: number = 10) {
     const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()
     
     // Recent animal additions
-    const { data: newAnimals } = await supabase
+    const { data: newAnimalsData } = await supabase
       .from('animals')
       .select('name, tag_number, created_at')
       .eq('farm_id', farmId)
@@ -617,7 +635,10 @@ export async function getRecentActivities(farmId: string, limit: number = 10) {
       .order('created_at', { ascending: false })
       .limit(3)
     
-    newAnimals?.forEach(animal => {
+    // FIXED: Cast to any[]
+    const newAnimals = (newAnimalsData as any[]) || []
+
+    newAnimals.forEach(animal => {
       const timeAgo = getTimeAgo(animal.created_at || new Date().toISOString())
       activities.push({
         type: 'animal',
@@ -629,7 +650,7 @@ export async function getRecentActivities(farmId: string, limit: number = 10) {
     })
     
     // Recent health records
-    const { data: healthRecords } = await supabase
+    const { data: healthRecordsData } = await supabase
       .from('animal_health_records')
       .select(`
         record_type,
@@ -641,7 +662,10 @@ export async function getRecentActivities(farmId: string, limit: number = 10) {
       .order('created_at', { ascending: false })
       .limit(3)
     
-    healthRecords?.forEach(record => {
+    // FIXED: Cast to any[]
+    const healthRecords = (healthRecordsData as any[]) || []
+
+    healthRecords.forEach(record => {
       const timeAgo = getTimeAgo(record.created_at || new Date().toISOString())
       activities.push({
         type: 'health',
@@ -653,7 +677,7 @@ export async function getRecentActivities(farmId: string, limit: number = 10) {
     })
     
     // Recent production records
-    const { data: productionRecords } = await supabase
+    const { data: productionRecordsData } = await supabase
       .from('production_records')
       .select(`
         milk_volume,
@@ -665,7 +689,10 @@ export async function getRecentActivities(farmId: string, limit: number = 10) {
       .order('created_at', { ascending: false })
       .limit(2)
     
-    productionRecords?.forEach(record => {
+    // FIXED: Cast to any[]
+    const productionRecords = (productionRecordsData as any[]) || []
+
+    productionRecords.forEach(record => {
       const timeAgo = getTimeAgo(record.created_at || new Date().toISOString())
       activities.push({
         type: 'production',
@@ -677,7 +704,7 @@ export async function getRecentActivities(farmId: string, limit: number = 10) {
     })
     
     // Recent breeding events
-    const { data: breedingRecords } = await supabase
+    const { data: breedingRecordsData } = await supabase
       .from('breeding_records')
       .select(`
         breeding_type,
@@ -689,7 +716,10 @@ export async function getRecentActivities(farmId: string, limit: number = 10) {
       .order('created_at', { ascending: false })
       .limit(2)
     
-    breedingRecords?.forEach(record => {
+    // FIXED: Cast to any[]
+    const breedingRecords = (breedingRecordsData as any[]) || []
+
+    breedingRecords.forEach(record => {
       const timeAgo = getTimeAgo(record.created_at || new Date().toISOString())
       activities.push({
         type: 'breeding',

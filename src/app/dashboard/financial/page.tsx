@@ -11,7 +11,7 @@ export default async function FinancialPage() {
     redirect('/auth')
   }
   
-  const userRole = await getUserRole(user.id)
+  const userRole = await getUserRole(user.id) as any
   
   if (!userRole?.farm_id) {
     redirect('/dashboard')

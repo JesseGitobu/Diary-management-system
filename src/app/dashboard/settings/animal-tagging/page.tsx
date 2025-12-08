@@ -31,7 +31,7 @@ export default async function AnimalTaggingPage({ searchParams }: PageProps) {
     }
 
     // Get user role and verify access
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     if (!userRole || userRole.farm_id !== farmId) {
       redirect('/dashboard')
     }

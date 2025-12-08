@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole || userRole.role_type !== 'farm_owner') {
       return NextResponse.json({ error: 'Invalid user state' }, { status: 400 })
@@ -53,7 +53,8 @@ async function setupFarmForUser(userId: string, userRole: any, farmData: any) {
       console.log('🔍 Updating existing farm:', userRole.farm_id)
       
       // Update existing farm
-      const { data: updatedFarm, error: farmError } = await supabase
+      // Cast supabase to any to fix "Argument of type ... is not assignable to parameter of type 'never'"
+      const { data: updatedFarm, error: farmError } = await (supabase as any)
         .from('farms')
         .update({
           name: farmData.farm_name,
@@ -74,7 +75,8 @@ async function setupFarmForUser(userId: string, userRole: any, farmData: any) {
       console.log('🔍 Creating new farm for user:', userId)
       
       // Create new farm
-      const { data: newFarm, error: farmError } = await supabase
+      // Cast supabase to any here as well
+      const { data: newFarm, error: farmError } = await (supabase as any)
         .from('farms')
         .insert({
           name: farmData.farm_name,
@@ -92,7 +94,8 @@ async function setupFarmForUser(userId: string, userRole: any, farmData: any) {
       console.log('✅ Farm created:', newFarm.id)
 
       // Update user role with farm_id
-      const { error: roleError } = await supabase
+      // Cast supabase to any
+      const { error: roleError } = await (supabase as any)
         .from('user_roles')
         .update({
           farm_id: newFarm.id,
@@ -110,7 +113,8 @@ async function setupFarmForUser(userId: string, userRole: any, farmData: any) {
     }
 
     // Create or update farm profile
-    const { error: profileError } = await supabase
+    // Cast supabase to any
+    const { error: profileError } = await (supabase as any)
       .from('farm_profiles')
       .upsert({
         user_id: userId,

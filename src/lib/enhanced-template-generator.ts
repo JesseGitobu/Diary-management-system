@@ -1,7 +1,7 @@
 // lib/enhanced-template-generator.ts
 // Completely rewritten with a different approach for Excel dropdowns
 
-import * as XLSX from 'xlsx'
+import ExcelJS from 'exceljs'
 
 export interface ValidationOptions {
   breeds?: string[]
@@ -25,11 +25,16 @@ const defaultValidationOptions: Required<ValidationOptions> = {
   productionStatuses: ['calf', 'heifer', 'served', 'lactating', 'dry']
 }
 
-// Alternative approach: Create Excel with embedded validation lists
-export function createWorkingExcelTemplate(
+// Helper to get column letter from index (0 -> A, 1 -> B, etc.)
+const getColLetter = (colIndex: number): string => {
+  return String.fromCharCode(65 + colIndex)
+}
+
+// Main approach: Create Excel with embedded validation lists using ExcelJS
+export async function createWorkingExcelTemplate(
   type: 'newborn' | 'purchased',
   customOptions: Partial<ValidationOptions> = {}
-): ArrayBuffer {
+): Promise<ArrayBuffer> {
   
   const validationOptions = {
     breeds: customOptions.breeds || defaultValidationOptions.breeds,
@@ -39,7 +44,12 @@ export function createWorkingExcelTemplate(
   }
 
   // Create workbook
-  const wb = XLSX.utils.book_new()
+  const workbook = new ExcelJS.Workbook()
+  workbook.creator = 'Farm App'
+  workbook.created = new Date()
+
+  // 1. Create Animals Sheet
+  const animalSheet = workbook.addWorksheet('Animals')
 
   // Define headers
   const baseHeaders = [
@@ -59,256 +69,190 @@ export function createWorkingExcelTemplate(
 
   const headers = [...baseHeaders, ...specificHeaders]
 
+  // Set Columns and Headers
+  animalSheet.columns = headers.map(header => {
+    let width = 15
+    if (['name', 'seller_name', 'seller_contact'].includes(header)) width = 20
+    if (header === 'notes') width = 30
+    return { header: header, key: header, width: width }
+  })
+
   // Create sample data
   const sampleData = type === 'newborn'
-    ? ['CALF001', 'Bella', 'Holstein', 'female', '2024-01-15', 'calf', 'healthy', 'Born healthy', 'COW123', 'BULL456', 35]
-    : ['COW002', 'Max', 'Jersey', 'female', '2023-06-10', 'heifer', 'healthy', 'Purchased from Smith Farm', 'John Smith', '+254712345678', '2024-01-10', 50000]
+    ? {
+        tag_number: 'CALF001', name: 'Bella', breed: 'Holstein', gender: 'female', 
+        date_of_birth: '2024-01-15', production_status: 'calf', health_status: 'healthy', 
+        notes: 'Born healthy', mother_tag: 'COW123', father_tag: 'BULL456', birth_weight_kg: 35
+      }
+    : {
+        tag_number: 'COW002', name: 'Max', breed: 'Jersey', gender: 'female',
+        date_of_birth: '2023-06-10', production_status: 'heifer', health_status: 'healthy',
+        notes: 'Purchased from Smith Farm', seller_name: 'John Smith', seller_contact: '+254712345678',
+        purchase_date: '2024-01-10', purchase_price: 50000
+      }
 
-  // Create main worksheet data
-  const wsData = [
-    headers,
-    sampleData,
-    // Add 50 empty rows for data entry
-    ...Array(50).fill(null).map(() => Array(headers.length).fill(''))
-  ]
+  animalSheet.addRow(sampleData)
 
-  const ws = XLSX.utils.aoa_to_sheet(wsData)
+  // 2. Create Hidden Lists Sheet for Validation
+  const listSheet = workbook.addWorksheet('Lists')
+  listSheet.state = 'hidden'
 
-  // Set column widths
-  const colWidths = headers.map(header => {
-    switch(header) {
-      case 'tag_number': return { width: 15 }
-      case 'name': return { width: 20 }
-      case 'breed': return { width: 18 }
-      case 'gender': return { width: 12 }
-      case 'date_of_birth': return { width: 15 }
-      case 'production_status': return { width: 18 }
-      case 'health_status': return { width: 16 }
-      case 'notes': return { width: 30 }
-      case 'purchase_date': return { width: 15 }
-      case 'purchase_price': return { width: 15 }
-      case 'seller_name': return { width: 20 }
-      case 'seller_contact': return { width: 20 }
-      case 'mother_tag': return { width: 15 }
-      case 'father_tag': return { width: 15 }
-      case 'birth_weight_kg': return { width: 15 }
-      default: return { width: 15 }
-    }
-  })
-  ws['!cols'] = colWidths
-
-  // Create hidden validation data sheet with more space
-  const validationData = []
-  
-  // Calculate max length needed
-  const maxValidationLength = Math.max(
+  // Prepare data for columns: A=Breeds, B=Genders, C=Health, D=Production
+  const maxRows = Math.max(
     validationOptions.breeds.length,
-    validationOptions.genders.length, 
+    validationOptions.genders.length,
     validationOptions.healthStatuses.length,
     validationOptions.productionStatuses.length
-  ) + 5 // Add buffer
+  )
 
-  // Create validation lists in columns
-  for (let i = 0; i < maxValidationLength; i++) {
-    validationData.push([
-      i < validationOptions.breeds.length ? validationOptions.breeds[i] : '',
-      i < validationOptions.genders.length ? validationOptions.genders[i] : '',
-      i < validationOptions.healthStatuses.length ? validationOptions.healthStatuses[i] : '',
-      i < validationOptions.productionStatuses.length ? validationOptions.productionStatuses[i] : ''
+  for (let i = 0; i < maxRows; i++) {
+    listSheet.addRow([
+      validationOptions.breeds[i] || null,
+      validationOptions.genders[i] || null,
+      validationOptions.healthStatuses[i] || null,
+      validationOptions.productionStatuses[i] || null,
     ])
   }
 
-  const validationWs = XLSX.utils.aoa_to_sheet(validationData)
-  validationWs['!cols'] = [
-    { width: 20, hidden: false },
-    { width: 15, hidden: false },
-    { width: 20, hidden: false },
-    { width: 20, hidden: false }
-  ]
+  // 3. Apply Data Validation to Animals Sheet
+  // We apply to rows 2 through 1000
+  const breedColIndex = headers.indexOf('breed') + 1 // ExcelJS is 1-based
+  const genderColIndex = headers.indexOf('gender') + 1
+  const healthColIndex = headers.indexOf('health_status') + 1
+  const productionColIndex = headers.indexOf('production_status') + 1
 
-  // Add sheets to workbook
-  XLSX.utils.book_append_sheet(wb, ws, 'Animals')
-  XLSX.utils.book_append_sheet(wb, validationWs, 'Lists')
+  const rowsToValidate = 1000
 
-  // Now create the data validation using a different approach
-  // We'll modify the worksheet after creation to add validation
+  for (let i = 2; i <= rowsToValidate; i++) {
+    const row = animalSheet.getRow(i)
+
+    // Breed Validation
+    if (breedColIndex > 0) {
+      row.getCell(breedColIndex).dataValidation = {
+        type: 'list',
+        allowBlank: true,
+        formulae: [`Lists!$A$1:$A$${validationOptions.breeds.length}`],
+        showErrorMessage: true,
+        errorTitle: 'Invalid Selection',
+        error: 'Please choose a breed from the dropdown list'
+      }
+    }
+
+    // Gender Validation
+    if (genderColIndex > 0) {
+      row.getCell(genderColIndex).dataValidation = {
+        type: 'list',
+        allowBlank: false,
+        formulae: [`Lists!$B$1:$B$${validationOptions.genders.length}`],
+        showErrorMessage: true,
+        errorTitle: 'Gender Required',
+        error: 'Gender must be selected from the list'
+      }
+    }
+
+    // Health Status Validation
+    if (healthColIndex > 0) {
+      row.getCell(healthColIndex).dataValidation = {
+        type: 'list',
+        allowBlank: true,
+        formulae: [`Lists!$C$1:$C$${validationOptions.healthStatuses.length}`],
+        showErrorMessage: true,
+        errorTitle: 'Invalid Health Status',
+        error: 'Please select from the health status list'
+      }
+    }
+
+    // Production Status Validation
+    if (productionColIndex > 0) {
+      row.getCell(productionColIndex).dataValidation = {
+        type: 'list',
+        allowBlank: true,
+        formulae: [`Lists!$D$1:$D$${validationOptions.productionStatuses.length}`],
+        showErrorMessage: true,
+        errorTitle: 'Invalid Production Status',
+        error: 'Please select from the production status list'
+      }
+    }
+  }
+
+  // 4. Create Instructions Sheet
+  const instructionsSheet = workbook.addWorksheet('Instructions')
   
-  // Find column indices
-  const breedCol = headers.indexOf('breed')
-  const genderCol = headers.indexOf('gender') 
-  const healthCol = headers.indexOf('health_status')
-  const productionCol = headers.indexOf('production_status')
-
-  // Create validation objects using the correct XLSX format
-  const validationRules = []
-
-  if (breedCol >= 0) {
-    const colLetter = XLSX.utils.encode_col(breedCol)
-    validationRules.push({
-      ref: `${colLetter}2:${colLetter}1000`,
-      type: 'list',
-      operator: 'between',
-      formula1: `Lists!$A$1:$A$${validationOptions.breeds.length}`,
-      allowBlank: true,
-      showInputMessage: true,
-      promptTitle: 'Select Breed',
-      prompt: 'Choose from the available breeds',
-      showErrorMessage: true,
-      errorTitle: 'Invalid Selection',
-      error: 'Please choose a breed from the dropdown list'
-    })
-  }
-
-  if (genderCol >= 0) {
-    const colLetter = XLSX.utils.encode_col(genderCol)
-    validationRules.push({
-      ref: `${colLetter}2:${colLetter}1000`,
-      type: 'list',
-      operator: 'between', 
-      formula1: `Lists!$B$1:$B$${validationOptions.genders.length}`,
-      allowBlank: false,
-      showInputMessage: true,
-      promptTitle: 'Select Gender (Required)',
-      prompt: 'Choose male or female',
-      showErrorMessage: true,
-      errorTitle: 'Gender Required',
-      error: 'Gender must be selected from the list'
-    })
-  }
-
-  if (healthCol >= 0) {
-    const colLetter = XLSX.utils.encode_col(healthCol)
-    validationRules.push({
-      ref: `${colLetter}2:${colLetter}1000`,
-      type: 'list',
-      operator: 'between',
-      formula1: `Lists!$C$1:$C$${validationOptions.healthStatuses.length}`,
-      allowBlank: true,
-      showInputMessage: true,
-      promptTitle: 'Select Health Status',
-      prompt: 'Choose the health status',
-      showErrorMessage: true,
-      errorTitle: 'Invalid Health Status',
-      error: 'Please select from the health status list'
-    })
-  }
-
-  if (productionCol >= 0) {
-    const colLetter = XLSX.utils.encode_col(productionCol)
-    validationRules.push({
-      ref: `${colLetter}2:${colLetter}1000`,
-      type: 'list',
-      operator: 'between',
-      formula1: `Lists!$D$1:$D$${validationOptions.productionStatuses.length}`,
-      allowBlank: true,
-      showInputMessage: true,
-      promptTitle: 'Select Production Status',
-      prompt: 'Choose the production status',
-      showErrorMessage: true,
-      errorTitle: 'Invalid Production Status', 
-      error: 'Please select from the production status list'
-    })
-  }
-
-  // Apply validation to the worksheet
-  if (validationRules.length > 0) {
-    ws['!dataValidation'] = validationRules
-  }
-
-  // Create comprehensive instructions
   const instructions = [
-    ['EXCEL TEMPLATE WITH DROPDOWN VALIDATION - INSTRUCTIONS'],
-    [''],
-    ['🔥 HOW TO USE THE DROPDOWNS:'],
-    ['1. Click on any cell in columns: breed, gender, health_status, or production_status'],
-    ['2. Look for a small dropdown arrow (▼) on the right side of the cell'],
-    ['3. Click the dropdown arrow to see the list of valid options'],
-    ['4. Select your choice from the dropdown list'],
-    ['5. ⚠️ IMPORTANT: Do NOT type manually - always use the dropdown!'],
-    [''],
-    ['📋 COLUMN GUIDE:'],
-    ['• tag_number: Unique ID for the animal (REQUIRED - must be unique)'],
-    ['• name: Animal name (optional)'],
-    ['• breed: 🔽 Use dropdown to select breed (optional)'],
-    ['• gender: 🔽 Use dropdown - male or female (REQUIRED)'],
-    ['• date_of_birth: Date format: YYYY-MM-DD (example: 2024-01-15)'],
-    ['• production_status: 🔽 Use dropdown for production stage (optional)'],
-    ['• health_status: 🔽 Use dropdown for health condition (optional)'],
-    ['• notes: Free text for additional information (optional)'],
-    [''],
+    'EXCEL TEMPLATE WITH DROPDOWN VALIDATION - INSTRUCTIONS',
+    '',
+    '🔥 HOW TO USE THE DROPDOWNS:',
+    '1. Click on any cell in columns: breed, gender, health_status, or production_status',
+    '2. Look for a small dropdown arrow (▼) on the right side of the cell',
+    '3. Click the dropdown arrow to see the list of valid options',
+    '4. Select your choice from the dropdown list',
+    '5. ⚠️ IMPORTANT: Do NOT type manually - always use the dropdown!',
+    '',
+    '📋 COLUMN GUIDE:',
+    '• tag_number: Unique ID for the animal (REQUIRED - must be unique)',
+    '• name: Animal name (optional)',
+    '• breed: 🔽 Use dropdown to select breed (optional)',
+    '• gender: 🔽 Use dropdown - male or female (REQUIRED)',
+    '• date_of_birth: Date format: YYYY-MM-DD (example: 2024-01-15)',
+    '• production_status: 🔽 Use dropdown for production stage (optional)',
+    '• health_status: 🔽 Use dropdown for health condition (optional)',
+    '• notes: Free text for additional information (optional)',
+    '',
     ...(type === 'newborn' ? [
-      ['👶 NEWBORN CALF FIELDS:'],
-      ['• mother_tag: Tag number of the mother cow'],
-      ['• father_tag: Tag number of the father bull'],
-      ['• birth_weight_kg: Birth weight in kilograms (numbers only)']
+      '👶 NEWBORN CALF FIELDS:',
+      '• mother_tag: Tag number of the mother cow',
+      '• father_tag: Tag number of the father bull',
+      '• birth_weight_kg: Birth weight in kilograms (numbers only)'
     ] : [
-      ['🛒 PURCHASED ANIMAL FIELDS:'],
-      ['• seller_name: Name of the person/farm you bought from'],
-      ['• seller_contact: Phone number or contact info'],
-      ['• purchase_date: Date of purchase (YYYY-MM-DD format)'],
-      ['• purchase_price: Amount paid (numbers only, no currency symbols)']
+      '🛒 PURCHASED ANIMAL FIELDS:',
+      '• seller_name: Name of the person/farm you bought from',
+      '• seller_contact: Phone number or contact info',
+      '• purchase_date: Date of purchase (YYYY-MM-DD format)',
+      '• purchase_price: Amount paid (numbers only, no currency symbols)'
     ]),
-    [''],
-    ['✅ AVAILABLE DROPDOWN OPTIONS:'],
-    [`🐄 Breeds (${validationOptions.breeds.length} options):`],
-    [validationOptions.breeds.join(', ')],
-    [''],
-    [`⚥ Genders (${validationOptions.genders.length} options):`],
-    [validationOptions.genders.join(', ')],
-    [''],
-    [`🏥 Health Status (${validationOptions.healthStatuses.length} options):`],
-    [validationOptions.healthStatuses.join(', ')],
-    [''],
-    [`🥛 Production Status (${validationOptions.productionStatuses.length} options):`],
-    [validationOptions.productionStatuses.join(', ')],
-    [''],
-    ['🔧 TROUBLESHOOTING:'],
-    ['❌ No dropdown appears: Make sure you\'re using Microsoft Excel (not Google Sheets)'],
-    ['❌ Can\'t select options: Click the dropdown arrow (▼), don\'t type'],
-    ['❌ Getting error messages: Only use options from the dropdown lists'],
-    ['❌ Lost your dropdowns: Don\'t copy/paste cells - type in each cell individually'],
-    [''],
-    ['📁 DATA VALIDATION LISTS:'],
-    ['The dropdown options are stored in the "Lists" worksheet.'],
-    ['You can view but should not modify this sheet.'],
-    [''],
-    ['💾 IMPORTANT SAVE INSTRUCTIONS:'],
-    ['• Always save as .xlsx format (Excel format)'],
-    ['• Do NOT save as .csv - this will remove all dropdowns'],
-    ['• Test your dropdowns after saving and reopening'],
-    [''],
-    ['🧪 TESTING YOUR TEMPLATE:'],
-    ['1. Go to the "Animals" worksheet'],
-    ['2. Click on cell C2 (breed column)'],
-    ['3. Look for a dropdown arrow'],
-    ['4. Click the arrow and select "Holstein"'],
-    ['5. If this works, your template is ready to use!'],
-    [''],
-    ['📞 NEED HELP?'],
-    ['If dropdowns still don\'t work, you may need to:'],
-    ['• Use a newer version of Microsoft Excel'],
-    ['• Enable macros/data validation in Excel settings'],
-    ['• Contact your system administrator for Excel permissions']
+    '',
+    '✅ AVAILABLE DROPDOWN OPTIONS:',
+    `🐄 Breeds (${validationOptions.breeds.length} options):`,
+    validationOptions.breeds.join(', '),
+    '',
+    `⚥ Genders (${validationOptions.genders.length} options):`,
+    validationOptions.genders.join(', '),
+    '',
+    `🏥 Health Status (${validationOptions.healthStatuses.length} options):`,
+    validationOptions.healthStatuses.join(', '),
+    '',
+    `🥛 Production Status (${validationOptions.productionStatuses.length} options):`,
+    validationOptions.productionStatuses.join(', '),
+    '',
+    '🔧 TROUBLESHOOTING:',
+    '❌ No dropdown appears: Make sure you\'re using Microsoft Excel (not Google Sheets)',
+    '❌ Can\'t select options: Click the dropdown arrow (▼), don\'t type',
+    '❌ Getting error messages: Only use options from the dropdown lists',
+    '❌ Lost your dropdowns: Don\'t copy/paste cells - type in each cell individually',
+    '',
+    '📁 DATA VALIDATION LISTS:',
+    'The dropdown options are stored in the "Lists" worksheet (Hidden).',
+    '',
+    '💾 IMPORTANT SAVE INSTRUCTIONS:',
+    '• Always save as .xlsx format (Excel format)',
+    '• Do NOT save as .csv - this will remove all dropdowns'
   ]
 
-  const instructionsWs = XLSX.utils.aoa_to_sheet(instructions.map(row => Array.isArray(row) ? row : [row]))
-  instructionsWs['!cols'] = [{ width: 100 }]
-  XLSX.utils.book_append_sheet(wb, instructionsWs, 'Instructions')
-
-  // Write workbook with enhanced options for compatibility
-  return XLSX.write(wb, {
-    bookType: 'xlsx',
-    type: 'array',
-    compression: false, // Disable compression to improve compatibility
-    bookSST: false      // Disable shared string table for better compatibility
+  instructions.forEach(line => {
+    instructionsSheet.addRow([line])
   })
+  
+  instructionsSheet.getColumn(1).width = 100
+
+  // Write buffer
+  return await workbook.xlsx.writeBuffer()
 }
 
-// Alternative: Create a simpler template with inline validation
-export function createSimpleValidationTemplate(
+// Fallback: Create a simpler template using ExcelJS
+export async function createSimpleValidationTemplate(
   type: 'newborn' | 'purchased', 
   customOptions: Partial<ValidationOptions> = {}
-): ArrayBuffer {
+): Promise<ArrayBuffer> {
   
   const validationOptions = {
     breeds: customOptions.breeds || defaultValidationOptions.breeds,
@@ -317,57 +261,52 @@ export function createSimpleValidationTemplate(
     productionStatuses: customOptions.productionStatuses || defaultValidationOptions.productionStatuses,
   }
 
-  const wb = XLSX.utils.book_new()
+  const workbook = new ExcelJS.Workbook()
+  const sheet = workbook.addWorksheet('Animals_Template')
 
-  // Create a template with validation values right in the same sheet
   const headers = type === 'newborn' 
     ? ['tag_number', 'name', 'breed', 'gender', 'date_of_birth', 'production_status', 'health_status', 'notes', 'mother_tag', 'father_tag', 'birth_weight_kg']
     : ['tag_number', 'name', 'breed', 'gender', 'date_of_birth', 'production_status', 'health_status', 'notes', 'seller_name', 'seller_contact', 'purchase_date', 'purchase_price']
+
+  sheet.addRow(headers)
 
   const sampleData = type === 'newborn'
     ? ['CALF001', 'Bella', 'Holstein', 'female', '2024-01-15', 'calf', 'healthy', 'Born healthy', 'COW123', 'BULL456', 35]
     : ['COW002', 'Max', 'Jersey', 'female', '2023-06-10', 'heifer', 'healthy', 'Purchased from Smith Farm', 'John Smith', '+254712345678', '2024-01-10', 50000]
 
-  // Create main data with validation areas
-  const wsData = [
-    // Main headers
-    headers,
-    sampleData,
-    // Empty rows for data
-    ...Array(20).fill(null).map(() => Array(headers.length).fill('')),
-    // Separator
-    Array(headers.length).fill(''),
-    Array(headers.length).fill(''),
-    // Validation lists headers
-    ['BREED_OPTIONS', 'GENDER_OPTIONS', 'HEALTH_OPTIONS', 'PRODUCTION_OPTIONS'],
-    // Validation data
-    ...Array.from({ length: Math.max(
-      validationOptions.breeds.length,
-      validationOptions.genders.length,
-      validationOptions.healthStatuses.length,
-      validationOptions.productionStatuses.length
-    )}, (_, i) => [
+  sheet.addRow(sampleData)
+
+  // Add spacing
+  for (let i = 0; i < 22; i++) sheet.addRow([])
+
+  // Add reference lists at the bottom
+  sheet.addRow(['BREED_OPTIONS', 'GENDER_OPTIONS', 'HEALTH_OPTIONS', 'PRODUCTION_OPTIONS'])
+  
+  const maxRows = Math.max(
+    validationOptions.breeds.length,
+    validationOptions.genders.length,
+    validationOptions.healthStatuses.length,
+    validationOptions.productionStatuses.length
+  )
+
+  for (let i = 0; i < maxRows; i++) {
+    sheet.addRow([
       validationOptions.breeds[i] || '',
       validationOptions.genders[i] || '',  
       validationOptions.healthStatuses[i] || '',
       validationOptions.productionStatuses[i] || ''
     ])
-  ]
+  }
 
-  const ws = XLSX.utils.aoa_to_sheet(wsData)
-  ws['!cols'] = headers.map(() => ({ width: 18 }))
-
-  // Add the sheet
-  XLSX.utils.book_append_sheet(wb, ws, 'Animals_Template')
-
-  return XLSX.write(wb, {
-    bookType: 'xlsx',
-    type: 'array',
-    compression: false
+  // Set widths
+  sheet.columns.forEach(col => {
+    col.width = 18
   })
+
+  return await workbook.xlsx.writeBuffer()
 }
 
-export function downloadWorkingTemplate(
+export async function downloadWorkingTemplate(
   type: 'newborn' | 'purchased',
   format: 'csv' | 'xlsx' = 'xlsx',
   customOptions?: Partial<ValidationOptions>
@@ -376,13 +315,12 @@ export function downloadWorkingTemplate(
     if (format === 'xlsx') {
       console.log('Creating Excel template with validation...')
       
-      // Try the main approach first
       let buffer: ArrayBuffer
       try {
-        buffer = createWorkingExcelTemplate(type, customOptions)
+        buffer = await createWorkingExcelTemplate(type, customOptions)
       } catch (mainError) {
         console.warn('Main template creation failed, trying simple approach:', mainError)
-        buffer = createSimpleValidationTemplate(type, customOptions)
+        buffer = await createSimpleValidationTemplate(type, customOptions)
       }
       
       const blob = new Blob([buffer], {

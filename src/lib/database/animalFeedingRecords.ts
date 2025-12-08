@@ -88,8 +88,9 @@ export async function getAnimalFeedingRecords(
     }
 
     // Transform the data to match expected format
-    const transformedRecords: AnimalFeedingRecord[] = records.map(record => {
-      const costPerKg = record.feed_types.typical_cost_per_kg || 0
+    // FIXED: Cast records to any[] to bypass 'never' type inference
+    const transformedRecords: AnimalFeedingRecord[] = (records as any[] || []).map(record => {
+      const costPerKg = record.feed_types?.typical_cost_per_kg || 0
       const totalCost = record.quantity_kg * costPerKg
 
       // Extract batch info from notes if present
@@ -110,7 +111,7 @@ export async function getAnimalFeedingRecords(
         animal_id: animalId,
         feeding_time: record.feeding_time,
         feed_type_id: record.feed_type_id,
-        feed_name: record.feed_types.name,
+        feed_name: record.feed_types?.name || 'Unknown Feed',
         quantity_kg: record.quantity_kg,
         cost_per_kg: costPerKg,
         total_cost: totalCost,
@@ -138,7 +139,6 @@ export async function getAnimalFeedingRecords(
 }
 
 // Get farm feeding schedules that might affect an animal
-// Get farm feeding schedules that might affect an animal
 export async function getFarmFeedingSchedulesForAnimal(
   farmId: string,
   animalId: string
@@ -159,7 +159,7 @@ export async function getFarmFeedingSchedulesForAnimal(
     }
 
     // Get animal details to check category matching
-    const { data: animal, error: animalError } = await supabase
+    const { data: animalData, error: animalError } = await supabase
       .from('animals')
       .select('id, breed, gender, production_status, health_status, birth_date, weight')
       .eq('id', animalId)
@@ -170,6 +170,8 @@ export async function getFarmFeedingSchedulesForAnimal(
       console.error('Error fetching animal details:', animalError)
       return { success: false, error: animalError.message, data: [] }
     }
+
+    const animal = animalData as any
 
     // Calculate animal age in days for age-based filtering
     const calculateAgeInDays = (birthDate: string | null): number => {
@@ -182,7 +184,8 @@ export async function getFarmFeedingSchedulesForAnimal(
     const animalAgeInDays = calculateAgeInDays(animal.birth_date)
 
     // Filter schedules that target this animal
-    const relevantSchedules = schedules?.filter(schedule => {
+    // FIXED: Cast schedules to any[] to safely access properties
+    const relevantSchedules = (schedules as any[] || []).filter(schedule => {
       if (!schedule.target_animals) return false
 
       const targetAnimals = schedule.target_animals as any
@@ -243,7 +246,7 @@ export async function getFarmFeedingSchedulesForAnimal(
       }
 
       return false
-    }) || []
+    })
 
     // Transform to expected format
     const transformedSchedules = relevantSchedules.map(schedule => {
@@ -318,8 +321,9 @@ export async function upsertAnimalNutritionTargets(
   try {
     const supabase = await createServerSupabaseClient()
 
-    const { data, error } = await supabase
-      .from('animal_nutrition_targets')
+    // FIXED: Cast .from(...) to any to bypass 'never' type on .upsert()
+    const { data, error } = await (supabase
+      .from('animal_nutrition_targets') as any)
       .upsert({
         farm_id: farmId,
         animal_id: animalId,
@@ -353,8 +357,9 @@ export async function deleteAnimalNutritionTargets(
   try {
     const supabase = await createServerSupabaseClient()
 
-    const { error } = await supabase
-      .from('animal_nutrition_targets')
+    // FIXED: Cast .from(...) to any to bypass 'never' type on .delete()
+    const { error } = await (supabase
+      .from('animal_nutrition_targets') as any)
       .delete()
       .eq('farm_id', farmId)
       .eq('animal_id', animalId)
@@ -419,18 +424,21 @@ export async function getAnimalFeedingStats(
       }
     }
 
-    const totalQuantity = records?.reduce((sum, record) => sum + record.quantity_kg, 0) || 0
-    const totalCost = records?.reduce((sum, record) => {
-      const cost = (record.feed_types.typical_cost_per_kg ?? 0) * record.quantity_kg
+    // FIXED: Cast records to any[] to safely access joined properties
+    const safeRecords = (records as any[]) || []
+
+    const totalQuantity = safeRecords.reduce((sum, record) => sum + record.quantity_kg, 0) || 0
+    const totalCost = safeRecords.reduce((sum, record) => {
+      const cost = (record.feed_types?.typical_cost_per_kg ?? 0) * record.quantity_kg
       return sum + cost
     }, 0) || 0
 
     const stats = {
       totalQuantity,
       totalCost,
-      feedingCount: records?.length || 0,
-      avgDailyQuantity: totalQuantity / days,
-      avgDailyCost: totalCost / days
+      feedingCount: safeRecords.length || 0,
+      avgDailyQuantity: days > 0 ? totalQuantity / days : 0,
+      avgDailyCost: days > 0 ? totalCost / days : 0
     }
 
     return { success: true, data: stats }

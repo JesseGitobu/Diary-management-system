@@ -68,8 +68,8 @@ export async function updateDataBackupSettings(farmId: string, settings: DataBac
   
   const dbSettings = transformBackupSettingsToDb(farmId, settings)
   
-  const { error } = await supabase
-    .from('farm_data_backup_settings')
+  const { error } = await (supabase
+    .from('farm_data_backup_settings') as any)
     .upsert(dbSettings, { onConflict: 'farm_id' })
   
   if (error) throw error

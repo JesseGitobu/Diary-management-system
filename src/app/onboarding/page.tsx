@@ -13,7 +13,7 @@ export default async function OnboardingPage() {
     redirect('/auth')
   }
   
-  const userRole = await getUserRole(user.id)
+  const userRole = await getUserRole(user.id) as any
   
   if (!userRole) {
     // This shouldn't happen anymore, but handle gracefully

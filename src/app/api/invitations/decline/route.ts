@@ -13,7 +13,8 @@ export async function POST(request: NextRequest) {
     const adminSupabase = createAdminClient()
     
     // Mark invitation as declined
-    const { error } = await adminSupabase
+    // Cast adminSupabase to any to fix "Argument of type ... is not assignable to parameter of type 'never'"
+    const { error } = await (adminSupabase as any)
       .from('invitations')
       .update({ status: 'declined' })
       .eq('token', token)

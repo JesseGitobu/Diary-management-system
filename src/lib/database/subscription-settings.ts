@@ -103,8 +103,8 @@ export async function updateSubscription(farmId: string, updates: Partial<Subscr
   
   const dbUpdates = transformSubscriptionToDb(updates)
   
-  const { error } = await supabase
-    .from('farm_subscriptions')
+  const { error } = await (supabase
+    .from('farm_subscriptions') as any)
     .update(dbUpdates)
     .eq('farm_id', farmId)
   

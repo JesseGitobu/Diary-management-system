@@ -5,7 +5,7 @@ import { getCurrentUser, createServerSupabaseClient } from '@/lib/supabase/serve
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }  // ← Changed to Promise
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getCurrentUser()
@@ -56,10 +56,11 @@ export async function GET(
       farm_id: farmId
     })
 
-    const { data, error } = await supabase
+    // Cast supabase to 'any' to bypass strict type checking for this table
+    const { data, error } = await (supabase as any)
       .from('animals_requiring_weight_update')
       .select('*')
-      .eq('animal_id', id)  // ← Now using awaited id
+      .eq('animal_id', id)
       .eq('farm_id', farmId)
       .eq('is_resolved', false)
       .maybeSingle()

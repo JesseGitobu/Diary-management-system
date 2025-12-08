@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
     }
@@ -50,7 +50,8 @@ export async function GET(request: NextRequest) {
     }
     
     // Transform the data to match the expected format
-    const transformedRecords = (incompleteRecords || []).map(record => ({
+    // Cast record to any to fix "Property 'health_record_id' does not exist on type 'never'"
+    const transformedRecords = (incompleteRecords || []).map((record: any) => ({
       id: record.health_record_id || record.id,
       animal_id: record.animal_id,
       description: record.animal_health_records?.description || `Health attention needed for ${record.animals?.name || record.animals?.tag_number}`,

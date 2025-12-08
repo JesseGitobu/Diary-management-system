@@ -20,7 +20,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
@@ -82,7 +82,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
@@ -97,12 +97,15 @@ export async function DELETE(
 
     // Check if this is a default category (cannot be deleted)
     const supabase = await createServerSupabaseClient()
-    const { data: category } = await supabase
+    const { data: categoryResult } = await supabase
       .from('animal_categories')
       .select('is_default')
       .eq('id', categoryId)
       .eq('farm_id', userRole.farm_id)
       .single()
+
+    // Cast to any to fix "Property 'is_default' does not exist on type 'never'"
+    const category = categoryResult as any
 
     if (category?.is_default) {
       return NextResponse.json(

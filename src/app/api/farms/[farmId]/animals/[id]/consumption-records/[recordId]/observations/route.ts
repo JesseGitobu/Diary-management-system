@@ -36,7 +36,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Invalid UUID format' }, { status: 400 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
@@ -101,7 +101,8 @@ export async function PATCH(
     }
 
     // Update the consumption record with observations
-    const { data: updatedRecord, error: updateError } = await supabase
+    // Cast supabase to any to fix "Argument of type ... is not assignable to parameter of type 'never'"
+    const { data: updatedRecord, error: updateError } = await (supabase as any)
       .from('feed_consumption')
       .update({
         appetite_score: appetite_score !== undefined ? appetite_score : undefined,

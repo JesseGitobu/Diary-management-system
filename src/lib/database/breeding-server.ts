@@ -10,8 +10,9 @@ export async function createBreedingEventServer(eventData: BreedingEvent & { cre
   
   console.log('Creating breeding event with data:', eventData)
   
-  const { data, error } = await supabase
-    .from('breeding_events')
+  // FIXED: Cast to any to bypass 'never' type on insert
+  const { data, error } = await (supabase
+    .from('breeding_events') as any)
     .insert(eventData)
     .select()
     .single()
@@ -42,11 +43,12 @@ export async function createCalfFromEventServer(calvingEvent: CalvingEvent, farm
     weight: calvingEvent.calf_weight,
     status: 'active',
     notes: `Born from animal ID: ${calvingEvent.animal_id}. Health status: ${calvingEvent.calf_health_status || 'Good'}`,
-    animal_source: 'born', // or another appropriate value based on your schema
+    animal_source: 'born', // or 'newborn_calf' depending on your enum
   }
   
-  const { data, error } = await supabase
-    .from('animals')
+  // FIXED: Cast to any to bypass 'never' type on insert
+  const { data, error } = await (supabase
+    .from('animals') as any)
     .insert(calfData)
     .select()
     .single()

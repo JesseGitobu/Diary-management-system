@@ -15,12 +15,15 @@ export async function POST(request: NextRequest) {
     const { farmId } = body
 
     // Verify user has permission
-    const { data: userRole } = await supabase
+    const { data: userRoleResult } = await supabase
       .from('user_roles')
       .select('role_type')
       .eq('user_id', user.id)
       .eq('farm_id', farmId)
       .single()
+
+    // Cast to any to fix "Property 'role_type' does not exist on type 'never'"
+    const userRole = userRoleResult as any
 
     if (!userRole || !['farm_owner', 'farm_manager'].includes(userRole.role_type)) {
       return NextResponse.json(
@@ -30,7 +33,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Create backup record
-    const { data: backup, error: backupError } = await supabase
+    // Cast supabase to any to prevent insert type error
+    const { data: backup, error: backupError } = await (supabase as any)
       .from('farm_backup_history')
       .insert({
         farm_id: farmId,
@@ -54,7 +58,8 @@ export async function POST(request: NextRequest) {
     // For now, simulate a successful backup
     setTimeout(async () => {
       try {
-        await supabase
+        // Cast supabase to any for update as well
+        await (supabase as any)
           .from('farm_backup_history')
           .update({
             status: 'completed',

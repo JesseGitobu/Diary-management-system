@@ -66,12 +66,15 @@ export async function PUT(
     console.log('✅ Using farm ID:', actualFarmId)
 
     // Check if user has permission to edit farm profile
-    const { data: userRole, error: roleError } = await supabase
+    const { data: roleResult, error: roleError } = await supabase
       .from('user_roles')
       .select('role_type, farm_id')
       .eq('farm_id', actualFarmId)
       .eq('user_id', user.id)
       .single()
+
+    // Cast to any to fix "Property 'role_type' does not exist on type 'never'"
+    const userRole = roleResult as any
 
     if (roleError || !userRole) {
       console.error('❌ User role not found:', roleError)

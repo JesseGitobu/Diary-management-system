@@ -84,7 +84,8 @@ export async function getEligibleAnimals(farmId: string, eventType: BreedingEven
     return []
   }
   
-  return data || []
+  // FIXED: Cast to any[]
+  return (data || []) as any[]
 }
 
 // Get animals eligible for pregnancy check (recently inseminated)
@@ -112,7 +113,8 @@ export async function getAnimalsForPregnancyCheck(farmId: string) {
     return []
   }
   
-  return data || []
+  // FIXED: Cast to any[]
+  return (data || []) as any[]
 }
 
 // Get pregnant animals near calving date
@@ -142,7 +144,8 @@ export async function getAnimalsForCalving(farmId: string) {
     return []
   }
   
-  return data || []
+  // FIXED: Cast to any[]
+  return (data || []) as any[]
 }
 
 // CLIENT-SIDE: This should call the API, not database directly
@@ -190,8 +193,8 @@ export async function createCalfFromEvent(calvingEvent: CalvingEvent, farmId: st
     animal_source: 'calving' // or another appropriate value if required by your schema
   }
   
-  const { data, error } = await supabase
-    .from('animals')
+  const { data, error } = await (supabase
+    .from('animals') as any)
     .insert(calfData)
     .select()
     .single()
@@ -219,7 +222,8 @@ export async function getAnimalBreedingEvents(animalId: string) {
     return []
   }
   
-  return data || []
+  // FIXED: Cast to any[]
+  return (data || []) as any[]
 }
 
 // Get recent breeding events for farm
@@ -241,7 +245,8 @@ export async function getRecentBreedingEvents(farmId: string, limit: number = 10
     return []
   }
   
-  return data || []
+  // FIXED: Cast to any[]
+  return (data || []) as any[]
 }
 
 // NEW FUNCTION: Get animals suitable for breeding (general breeding, not event-specific)
@@ -261,7 +266,8 @@ export async function getAnimalsForBreeding(farmId: string) {
     return []
   }
   
-  return data || []
+  // FIXED: Cast to any[]
+  return (data || []) as any[]
 }
 
 // NEW FUNCTION: Get breeding statistics for dashboard
@@ -272,13 +278,16 @@ export async function getBreedingStats(farmId: string) {
     // Get total breeding events in last 12 months
     const twelveMonthsAgo = subDays(new Date(), 365)
     
-    const { data: allEvents } = await supabase
+    const { data: allEventsData } = await supabase
       .from('breeding_events')
       .select('event_type, event_date, pregnancy_result')
       .eq('farm_id', farmId)
       .gte('event_date', twelveMonthsAgo.toISOString())
     
-    if (!allEvents) return getDefaultBreedingStats()
+    // FIXED: Cast to any[] to bypass 'never' type error
+    const allEvents = (allEventsData || []) as any[]
+    
+    if (!allEvents.length) return getDefaultBreedingStats()
     
     // Calculate statistics
     const heatDetections = allEvents.filter(e => e.event_type === 'heat_detection').length
@@ -301,7 +310,7 @@ export async function getBreedingStats(farmId: string) {
       .eq('pregnancy_result', 'pregnant')
       .order('event_date', { ascending: false })
     
-    const currentlyPregnant = pregnantAnimals ? new Set(pregnantAnimals.map(a => a.animal_id)).size : 0
+    const currentlyPregnant = pregnantAnimals ? new Set(pregnantAnimals.map((a: any) => a.animal_id)).size : 0
     
     // Get animals due for calving in next 30 days
     const thirtyDaysFromNow = addDays(new Date(), 30)
@@ -314,7 +323,7 @@ export async function getBreedingStats(farmId: string) {
       .lte('estimated_due_date', thirtyDaysFromNow.toISOString())
       .gte('estimated_due_date', new Date().toISOString())
     
-    const dueForCalving = dueAnimals ? new Set(dueAnimals.map(a => a.animal_id)).size : 0
+    const dueForCalving = dueAnimals ? new Set(dueAnimals.map((a: any) => a.animal_id)).size : 0
     
     return {
       totalEvents: allEvents.length,
@@ -340,7 +349,7 @@ export async function getBreedingCalendar(farmId: string, startDate: string, end
   
   try {
     // Get breeding events in date range
-    const { data: events, error } = await supabase
+    const { data: eventsData, error } = await supabase
       .from('breeding_events')
       .select(`
         *,
@@ -357,7 +366,7 @@ export async function getBreedingCalendar(farmId: string, startDate: string, end
     }
     
     // Also get upcoming due dates
-    const { data: dueDates } = await supabase
+    const { data: dueDatesData } = await supabase
       .from('breeding_events')
       .select(`
         estimated_due_date,
@@ -400,6 +409,10 @@ export async function getBreedingCalendar(farmId: string, startDate: string, end
 
     const calendarEvents: CalendarEvent[] = []
     
+    // FIXED: Cast to any[] to bypass 'never' type error
+    const events = (eventsData || []) as any[]
+    const dueDates = (dueDatesData || []) as any[]
+
     // Add breeding events
     if (events) {
       events.forEach(event => {
@@ -468,29 +481,35 @@ async function calculateRecentTrends(farmId: string) {
     const sixtyDaysAgo = subDays(now, 60)
     
     // Get recent 30 days
-    const { data: recent } = await supabase
+    const { data: recentData } = await supabase
       .from('breeding_events')
       .select('event_type')
       .eq('farm_id', farmId)
       .gte('event_date', thirtyDaysAgo.toISOString())
       .lte('event_date', now.toISOString())
     
+    // FIXED: Cast to any[]
+    const recent = (recentData || []) as any[]
+
     // Get previous 30 days
-    const { data: previous } = await supabase
+    const { data: previousData } = await supabase
       .from('breeding_events')
       .select('event_type')
       .eq('farm_id', farmId)
       .gte('event_date', sixtyDaysAgo.toISOString())
       .lt('event_date', thirtyDaysAgo.toISOString())
     
-    const recentHeat = recent?.filter(e => e.event_type === 'heat_detection').length || 0
-    const previousHeat = previous?.filter(e => e.event_type === 'heat_detection').length || 0
+    // FIXED: Cast to any[]
+    const previous = (previousData || []) as any[]
     
-    const recentInsemination = recent?.filter(e => e.event_type === 'insemination').length || 0
-    const previousInsemination = previous?.filter(e => e.event_type === 'insemination').length || 0
+    const recentHeat = recent.filter(e => e.event_type === 'heat_detection').length
+    const previousHeat = previous.filter(e => e.event_type === 'heat_detection').length
     
-    const recentCalving = recent?.filter(e => e.event_type === 'calving').length || 0
-    const previousCalving = previous?.filter(e => e.event_type === 'calving').length || 0
+    const recentInsemination = recent.filter(e => e.event_type === 'insemination').length
+    const previousInsemination = previous.filter(e => e.event_type === 'insemination').length
+    
+    const recentCalving = recent.filter(e => e.event_type === 'calving').length
+    const previousCalving = previous.filter(e => e.event_type === 'calving').length
     
     return {
       heatDetectionTrend: calculateTrendPercentage(recentHeat, previousHeat),
@@ -549,9 +568,6 @@ interface Result {
   data?: any
 }
 
-
-
-
 export async function updatePregnancyStatus(
   breedingRecordId: string,
   animalId: string,
@@ -579,12 +595,15 @@ export async function updatePregnancyStatus(
     }
 
     // Verify breeding record exists and belongs to farm
-    const { data: breeding, error: breedingError } = await supabase
+    const { data: breedingData, error: breedingError } = await supabase
       .from('breeding_records')
       .select('id, animal_id')
       .eq('id', breedingRecordId)
       .eq('farm_id', farmId)
       .single()
+
+    // FIXED: Cast to any to access properties
+    const breeding = breedingData as any
 
     if (breedingError || !breeding) {
       return {
@@ -602,8 +621,9 @@ export async function updatePregnancyStatus(
     }
 
     // Start a transaction to update both breeding record and animal
-    const { data: pregnancy, error: updateError } = await supabase
-      .from('breeding_records')
+    // FIXED: Cast to any to bypass 'never' type on update
+    const { data: pregnancy, error: updateError } = await (supabase
+      .from('breeding_records') as any)
       .update({
         pregnancy_status: data.pregnancy_status,
         pregnancy_confirmation_date: data.confirmation_date,
@@ -635,8 +655,9 @@ export async function updatePregnancyStatus(
                         data.pregnancy_status === 'not_pregnant' ? 'open' :
                         'bred'
 
-    const { error: animalError } = await supabase
-      .from('animals')
+    // FIXED: Cast to any to bypass 'never' type on update
+    const { error: animalError } = await (supabase
+      .from('animals') as any)
       .update({ 
         status: animalStatus,
         pregnancy_status: data.pregnancy_status,

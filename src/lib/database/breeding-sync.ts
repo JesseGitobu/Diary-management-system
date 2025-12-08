@@ -44,8 +44,8 @@ export async function createUnifiedBreedingRecord(
   
   try {
     // 1. Create the breeding record (source of truth)
-    const { data: breedingRecord, error: recordError } = await supabase
-      .from('breeding_records')
+    const { data: breedingRecord, error: recordError } = await (supabase
+      .from('breeding_records') as any)
       .insert({
         animal_id: data.animal_id,
         farm_id: data.farm_id,
@@ -64,8 +64,8 @@ export async function createUnifiedBreedingRecord(
     if (recordError) throw recordError
     
     // 2. Create corresponding insemination event for timeline
-    const { error: eventError } = await supabase
-      .from('breeding_events')
+    const { error: eventError } = await (supabase
+      .from('breeding_events') as any)
       .insert({
         farm_id: data.farm_id,
         animal_id: data.animal_id,
@@ -88,8 +88,8 @@ export async function createUnifiedBreedingRecord(
     const expectedDate = new Date(data.breeding_date)
     expectedDate.setDate(expectedDate.getDate() + gestationDays)
     
-    const { error: pregnancyError } = await supabase
-      .from('pregnancy_records')
+    const { error: pregnancyError } = await (supabase
+      .from('pregnancy_records') as any)
       .insert({
         breeding_record_id: breedingRecord.id,
         animal_id: data.animal_id,
@@ -135,8 +135,8 @@ export async function updatePregnancyStatusUnified(
   
   try {
     // 1. Update pregnancy record
-    const { error: pregnancyError } = await supabase
-      .from('pregnancy_records')
+    const { error: pregnancyError } = await (supabase
+      .from('pregnancy_records') as any)
       .update({
         pregnancy_status: data.pregnancy_status,
         confirmed_date: data.check_date,
@@ -150,8 +150,8 @@ export async function updatePregnancyStatusUnified(
     if (pregnancyError) throw pregnancyError
     
     // 2. Create pregnancy check event
-    const { error: eventError } = await supabase
-      .from('breeding_events')
+    const { error: eventError } = await (supabase
+      .from('breeding_events')  as any)
       .insert({
         farm_id: farmId,
         animal_id: animalId,
@@ -171,8 +171,8 @@ export async function updatePregnancyStatusUnified(
     
     // 3. Update animal status
     const animalStatus = data.pregnancy_status === 'confirmed' ? 'pregnant' : 'open'
-    const { error: animalError } = await supabase
-      .from('animals')
+    const { error: animalError } = await (supabase
+      .from('animals') as any)
       .update({
         production_status: animalStatus,
         expected_calving_date: data.estimated_due_date,
@@ -218,8 +218,8 @@ export async function recordCalvingUnified(
   
   try {
     // 1. Update pregnancy record
-    const { error: pregnancyError } = await supabase
-      .from('pregnancy_records')
+    const { error: pregnancyError } = await (supabase
+      .from('pregnancy_records') as any)
       .update({
         pregnancy_status: 'completed',
         actual_calving_date: data.calving_date
@@ -229,8 +229,8 @@ export async function recordCalvingUnified(
     if (pregnancyError) throw pregnancyError
     
     // 2. Create calving event
-    const { error: eventError } = await supabase
-      .from('breeding_events')
+    const { error: eventError } = await (supabase
+      .from('breeding_events')  as any)
       .insert({
         farm_id: farmId,
         animal_id: animalId,
@@ -250,8 +250,8 @@ export async function recordCalvingUnified(
     // 3. Create calf if requested
     let calfData = null
     if (data.create_calf && data.calf_tag) {
-      const { data: calf, error: calfError } = await supabase
-        .from('animals')
+      const { data: calf, error: calfError } = await (supabase
+        .from('animals') as any)
         .insert({
           farm_id: farmId,
           tag_number: data.calf_tag,
@@ -274,11 +274,13 @@ export async function recordCalvingUnified(
     }
     
     // 4. Update mother animal status
-    const { error: animalError } = await supabase
-      .from('animals')
+    // FIXED: Cast .from('animals') to any to bypass 'never' type error
+    // FIXED: Cast rpc args to any to bypass 'undefined' argument error
+    const { error: animalError } = await (supabase
+      .from('animals') as any)
       .update({
         production_status: 'lactating',
-        lactation_number: (await supabase.rpc('increment_lactation', { animal_id: animalId })).data,
+        lactation_number: (await supabase.rpc('increment_lactation', { animal_id: animalId } as any)).data,
         expected_calving_date: null,
         updated_at: new Date().toISOString()
       })
@@ -352,13 +354,16 @@ export async function syncEventsToRecords(
   
   try {
     // Get all insemination events without corresponding breeding records
-    const { data: events } = await supabase
+    const { data: eventsData } = await supabase
       .from('breeding_events')
       .select('*')
       .eq('farm_id', farmId)
       .eq('event_type', 'insemination')
     
-    if (!events || events.length === 0) {
+    // FIXED: Cast to any[] to avoid 'never' type on iteration
+    const events = (eventsData || []) as any[]
+
+    if (events.length === 0) {
       return { success: true, synced: 0, errors: [] }
     }
     

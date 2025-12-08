@@ -20,13 +20,13 @@ export default async function AnimalPage({ params }: AnimalPageProps) {
     redirect('/auth')
   }
   
-  const userRole = await getUserRole(user.id)
+  const userRole = await getUserRole(user.id) as any
   
   if (!userRole?.farm_id) {
     redirect('/dashboard')
   }
   
-  const animal = await getAnimalById(id)
+  const animal = await getAnimalById(id) as any
   
   if (!animal) {
     notFound()

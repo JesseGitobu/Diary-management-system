@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
@@ -102,7 +102,8 @@ export async function POST(request: NextRequest) {
 
     // If this veterinarian is being set as primary, update existing primary
     if (is_primary) {
-      await supabase
+      // Cast supabase to any to fix "Argument of type ... is not assignable to parameter of type 'never'"
+      await (supabase as any)
         .from('veterinarians')
         .update({ is_primary: false })
         .eq('farm_id', userRole.farm_id)
@@ -110,7 +111,8 @@ export async function POST(request: NextRequest) {
     }
     
     // Create the veterinarian record
-    const { data: veterinarian, error: insertError } = await supabase
+    // Cast supabase to any here as well
+    const { data: veterinarian, error: insertError } = await (supabase as any)
       .from('veterinarians')
       .insert({
         farm_id: userRole.farm_id,
@@ -167,7 +169,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
@@ -184,12 +186,15 @@ export async function PUT(request: NextRequest) {
     const supabase = await createServerSupabaseClient()
 
     // Verify the veterinarian belongs to the user's farm
-    const { data: existingVet, error: fetchError } = await supabase
+    const { data: existingVetResult, error: fetchError } = await supabase
       .from('veterinarians')
       .select('farm_id')
       .eq('id', id)
       .single()
     
+    // Cast to any to check farm_id
+    const existingVet = existingVetResult as any
+
     if (fetchError || !existingVet) {
       return NextResponse.json({ error: 'Veterinarian not found' }, { status: 404 })
     }
@@ -200,7 +205,8 @@ export async function PUT(request: NextRequest) {
     
     // If this veterinarian is being set as primary, update existing primary
     if (updateData.is_primary) {
-      await supabase
+      // Cast supabase to any
+      await (supabase as any)
         .from('veterinarians')
         .update({ is_primary: false })
         .eq('farm_id', userRole.farm_id)
@@ -209,7 +215,8 @@ export async function PUT(request: NextRequest) {
     }
     
     // Update the veterinarian record
-    const { data: veterinarian, error: updateError } = await supabase
+    // Cast supabase to any
+    const { data: veterinarian, error: updateError } = await (supabase as any)
       .from('veterinarians')
       .update({
         ...updateData,
@@ -244,7 +251,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
@@ -265,12 +272,15 @@ export async function DELETE(request: NextRequest) {
     const supabase = await createServerSupabaseClient()
     
     // Verify the veterinarian belongs to the user's farm
-    const { data: existingVet, error: fetchError } = await supabase
+    const { data: existingVetResult, error: fetchError } = await supabase
       .from('veterinarians')
       .select('farm_id, is_primary')
       .eq('id', veterinarianId)
       .single()
     
+    // Cast to any
+    const existingVet = existingVetResult as any
+
     if (fetchError || !existingVet) {
       return NextResponse.json({ error: 'Veterinarian not found' }, { status: 404 })
     }
@@ -280,7 +290,8 @@ export async function DELETE(request: NextRequest) {
     }
     
     // Soft delete - mark as inactive instead of hard delete
-    const { error: deleteError } = await supabase
+    // Cast supabase to any
+    const { error: deleteError } = await (supabase as any)
       .from('veterinarians')
       .update({ 
         is_active: false,

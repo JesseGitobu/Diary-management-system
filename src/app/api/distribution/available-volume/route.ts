@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm access' }, { status: 403 })
     }
@@ -21,7 +21,8 @@ export async function GET(request: NextRequest) {
     
     try {
       // Try to use the database function first
-      const { data, error } = await supabase
+      // Cast supabase to any to fix "Argument of type ... is not assignable to parameter of type 'undefined'"
+      const { data, error } = await (supabase as any)
         .rpc('get_available_volume', { 
           target_farm_id: userRole.farm_id,
           check_date: checkDate
@@ -43,7 +44,8 @@ export async function GET(request: NextRequest) {
 
       if (productionError) throw productionError
 
-      const totalProduced = production?.reduce((sum, record) => sum + record.milk_volume, 0) || 0
+      // Cast record to any to fix "Property 'milk_volume' does not exist on type 'never'"
+      const totalProduced = production?.reduce((sum, record: any) => sum + record.milk_volume, 0) || 0
 
       // Get distributed volume for the date
       const { data: distributed, error: distributionError } = await supabase
@@ -54,7 +56,8 @@ export async function GET(request: NextRequest) {
 
       if (distributionError) throw distributionError
 
-      const totalDistributed = distributed?.reduce((sum, record) => sum + record.volume, 0) || 0
+      // Cast record to any here as well
+      const totalDistributed = distributed?.reduce((sum, record: any) => sum + record.volume, 0) || 0
 
       const availableVolume = Math.max(0, totalProduced - totalDistributed)
 

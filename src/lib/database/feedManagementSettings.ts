@@ -151,7 +151,8 @@ export async function getFeedTypeCategories(farmId: string): Promise<FeedTypeCat
     return []
   }
   
-  return data?.map(category => ({
+  // FIXED: Cast data to any[] to avoid 'spread types' error
+  return (data as any[])?.map(category => ({
     ...category,
     feed_count: category.feed_count?.[0]?.count || 0
   })) || []
@@ -164,8 +165,8 @@ export async function createFeedTypeCategory(
   const supabase = await createServerSupabaseClient()
   
   // Get the next sort order
-  const { data: maxOrder } = await supabase
-    .from('feed_type_categories')
+  const { data: maxOrder } = await (supabase
+    .from('feed_type_categories') as any)
     .select('sort_order')
     .eq('farm_id', farmId)
     .order('sort_order', { ascending: false })
@@ -173,8 +174,9 @@ export async function createFeedTypeCategory(
   
   const nextOrder = (maxOrder?.[0]?.sort_order || 0) + 1
   
-  const { data: category, error } = await supabase
-    .from('feed_type_categories')
+  // FIXED: Cast to any for insert
+  const { data: category, error } = await (supabase
+    .from('feed_type_categories') as any)
     .insert({
       ...data,
       farm_id: farmId,
@@ -198,8 +200,8 @@ export async function updateFeedTypeCategory(
 ) {
   const supabase = await createServerSupabaseClient()
   
-  const { data: category, error } = await supabase
-    .from('feed_type_categories')
+  const { data: category, error } = await (supabase
+    .from('feed_type_categories') as any)
     .update({
       ...data,
       updated_at: new Date().toISOString()
@@ -229,14 +231,15 @@ export async function deleteFeedTypeCategory(categoryId: string, farmId: string)
   
   if (feedTypes && feedTypes.length > 0) {
     // Remove category reference from feed types
-    await supabase
-      .from('feed_types')
+    await (supabase
+      .from('feed_types') as any)
       .update({ category_id: null })
       .eq('category_id', categoryId)
   }
   
-  const { error } = await supabase
-    .from('feed_type_categories')
+  // FIXED: Cast to any for delete
+  const { error } = await (supabase
+    .from('feed_type_categories') as any)
     .delete()
     .eq('id', categoryId)
     .eq('farm_id', farmId)
@@ -256,8 +259,8 @@ export async function reorderFeedTypeCategory(
 ) {
   const supabase = await createServerSupabaseClient()
   
-  const { data: category, error } = await supabase
-    .from('feed_type_categories')
+  const { data: category, error } = await (supabase
+    .from('feed_type_categories') as any)
     .update({ sort_order: newSortOrder })
     .eq('id', categoryId)
     .eq('farm_id', farmId)
@@ -283,7 +286,8 @@ export async function getAnimalCategories(farmId: string): Promise<AnimalCategor
     .eq('farm_id', farmId)
     .order('sort_order', { ascending: true })
     .then(({ data, error }) => ({
-      data: data?.map(category => ({
+      // FIXED: Cast data to any[]
+      data: (data as any[])?.map(category => ({
         ...category,
         characteristics: category.characteristics as {
           lactating?: boolean;
@@ -344,8 +348,8 @@ export async function createAnimalCategory(
     }
   }
   
-  const { data: maxOrder } = await supabase
-    .from('animal_categories')
+  const { data: maxOrder } = await (supabase
+    .from('animal_categories') as any)
     .select('sort_order')
     .eq('farm_id', farmId)
     .order('sort_order', { ascending: false })
@@ -353,8 +357,8 @@ export async function createAnimalCategory(
   
   const nextOrder = (maxOrder?.[0]?.sort_order || 0) + 1
   
-  const { data: category, error } = await supabase
-    .from('animal_categories')
+  const { data: category, error } = await (supabase
+    .from('animal_categories') as any)
     .insert({
       ...data,
       farm_id: farmId,
@@ -379,8 +383,8 @@ export async function updateAnimalCategory(
 ) {
   const supabase = await createServerSupabaseClient()
   
-  const { data: category, error } = await supabase
-    .from('animal_categories')
+  const { data: category, error } = await (supabase
+    .from('animal_categories') as any)
     .update({
       ...data,
       updated_at: new Date().toISOString()
@@ -401,8 +405,9 @@ export async function updateAnimalCategory(
 export async function deleteAnimalCategory(categoryId: string, farmId: string) {
   const supabase = await createServerSupabaseClient()
   
-  const { error } = await supabase
-    .from('animal_categories')
+  // FIXED: Cast to any for delete
+  const { error } = await (supabase
+    .from('animal_categories') as any)
     .delete()
     .eq('id', categoryId)
     .eq('farm_id', farmId)
@@ -551,7 +556,8 @@ export async function getMatchingAnimals(
   
   // Calculate age in days for each animal
   const today = new Date()
-  return (data || []).map(animal => ({
+  // FIXED: Cast data to any[]
+  return (data as any[] || []).map(animal => ({
     ...animal,
     status: animal.status || 'unknown',
     age_days: animal.birth_date 
@@ -577,7 +583,8 @@ export async function getWeightConversions(farmId: string): Promise<WeightConver
     return []
   }
   
-  return data || []
+  // FIXED: Cast to any[]
+  return (data as any[]) || []
 }
 
 export async function createWeightConversion(
@@ -586,8 +593,8 @@ export async function createWeightConversion(
 ) {
   const supabase = await createServerSupabaseClient()
   
-  const { data: conversion, error } = await supabase
-    .from('weight_conversions')
+  const { data: conversion, error } = await (supabase
+    .from('weight_conversions') as any)
     .insert({
       ...data,
       farm_id: farmId
@@ -610,8 +617,8 @@ export async function updateWeightConversion(
 ) {
   const supabase = await createServerSupabaseClient()
   
-  const { data: conversion, error } = await supabase
-    .from('weight_conversions')
+  const { data: conversion, error } = await (supabase
+    .from('weight_conversions') as any)
     .update({
       ...data,
       updated_at: new Date().toISOString()
@@ -632,8 +639,9 @@ export async function updateWeightConversion(
 export async function deleteWeightConversion(conversionId: string, farmId: string) {
   const supabase = await createServerSupabaseClient()
   
-  const { error } = await supabase
-    .from('weight_conversions')
+  // FIXED: Cast to any
+  const { error } = await (supabase
+    .from('weight_conversions') as any)
     .delete()
     .eq('id', conversionId)
     .eq('farm_id', farmId)
@@ -666,7 +674,8 @@ export async function getConsumptionBatches(farmId: string): Promise<Consumption
 
   // Get animal counts for each batch
   const batchesWithCounts = await Promise.all(
-    (data || []).map(async (batch) => {
+    // FIXED: Cast data to any[]
+    (data as any[] || []).map(async (batch) => {
       const animalCounts = await getBatchAnimalCounts(farmId, batch.id)
       return {
         ...batch,
@@ -688,8 +697,8 @@ export async function getBatchAnimalCounts(farmId: string, batchId: string) {
   
   try {
     // Get the batch details first
-    const { data: batch, error: batchError } = await supabase
-      .from('consumption_batches')
+    const { data: batch, error: batchError } = await (supabase
+      .from('consumption_batches') as any)
       .select('animal_category_ids, target_mode')
       .eq('id', batchId)
       .eq('farm_id', farmId)
@@ -708,14 +717,17 @@ export async function getBatchAnimalCounts(farmId: string, batchId: string) {
       // For each category, we need to count matching animals
       for (const categoryId of batch.animal_category_ids) {
         // Get the category details
-        const { data: category, error: categoryError } = await supabase
+        const { data: categoryData, error: categoryError } = await supabase
           .from('animal_categories')
           .select('*')
           .eq('id', categoryId)
           .eq('farm_id', farmId)
           .single()
 
-        if (categoryError || !category) continue
+        if (categoryError || !categoryData) continue
+        
+        // FIXED: Cast to any
+        const category = categoryData as any
 
         // Build query based on category criteria
         let animalQuery = supabase
@@ -801,8 +813,8 @@ export async function createConsumptionBatch(
 ) {
   const supabase = await createServerSupabaseClient()
   
-  const { data: batch, error } = await supabase
-    .from('consumption_batches')
+  const { data: batch, error } = await (supabase
+    .from('consumption_batches') as any)
     .insert({
       ...data,
       farm_id: farmId,
@@ -826,8 +838,8 @@ export async function updateConsumptionBatch(
 ) {
   const supabase = await createServerSupabaseClient()
   
-  const { data: batch, error } = await supabase
-    .from('consumption_batches')
+  const { data: batch, error } = await (supabase
+    .from('consumption_batches') as any)
     .update({
       ...data,
       updated_at: new Date().toISOString()
@@ -848,8 +860,9 @@ export async function updateConsumptionBatch(
 export async function deleteConsumptionBatch(batchId: string, farmId: string) {
   const supabase = await createServerSupabaseClient()
   
-  const { error } = await supabase
-    .from('consumption_batches')
+  // FIXED: Cast to any
+  const { error } = await (supabase
+    .from('consumption_batches') as any)
     .delete()
     .eq('id', batchId)
     .eq('farm_id', farmId)
@@ -869,8 +882,8 @@ export async function getBatchTargetedAnimals(farmId: string, batchId: string): 
   
   try {
     // Get the batch details first
-    const { data: batch, error: batchError } = await supabase
-      .from('consumption_batches')
+    const { data: batch, error: batchError } = await (supabase
+      .from('consumption_batches') as any)
       .select('animal_category_ids, target_mode')
       .eq('id', batchId)
       .eq('farm_id', farmId)
@@ -888,14 +901,17 @@ export async function getBatchTargetedAnimals(farmId: string, batchId: string): 
     if (batch?.animal_category_ids && batch.animal_category_ids.length > 0) {
       for (const categoryId of batch.animal_category_ids) {
         // Get the category details
-        const { data: category, error: categoryError } = await supabase
+        const { data: categoryData, error: categoryError } = await supabase
           .from('animal_categories')
           .select('*')
           .eq('id', categoryId)
           .eq('farm_id', farmId)
           .single()
 
-        if (categoryError || !category) continue
+        if (categoryError || !categoryData) continue
+        
+        // FIXED: Cast to any
+        const category = categoryData as any
 
         // Build query based on category criteria
         let animalQuery = supabase
@@ -954,7 +970,10 @@ export async function getBatchTargetedAnimals(farmId: string, batchId: string): 
           }
         }
 
-        const { data: categoryAnimals, error: animalsError } = await animalQuery
+        const { data: categoryAnimalsData, error: animalsError } = await animalQuery
+        
+        // FIXED: Cast to any[]
+        const categoryAnimals = (categoryAnimalsData as any[]) || []
 
         if (!animalsError && categoryAnimals) {
           categoryAnimals.forEach(animal => {
@@ -980,7 +999,7 @@ export async function getBatchTargetedAnimals(farmId: string, batchId: string): 
     }
 
     // Get specific animals assigned to batch
-    const { data: specificAnimals, error: specificError } = await supabase
+    const { data: specificAnimalsData, error: specificError } = await supabase
       .from('consumption_batch_animals')
       .select(`
         animal_id,
@@ -1000,6 +1019,9 @@ export async function getBatchTargetedAnimals(farmId: string, batchId: string): 
       .eq('consumption_batch_id', batchId)
       .eq('is_active', true)
       .eq('animals.status', 'active')
+    
+    // FIXED: Cast to any[]
+    const specificAnimals = (specificAnimalsData as any[]) || []
 
     if (!specificError && specificAnimals) {
       specificAnimals.forEach(item => {
@@ -1059,8 +1081,9 @@ export async function addAnimalToBatch(farmId: string, batchId: string, animalId
     }
     
     // Add animal to batch
-    const { data, error } = await supabase
-      .from('consumption_batch_animals')
+    // FIXED: Cast to any
+    const { data, error } = await (supabase
+      .from('consumption_batch_animals') as any)
       .insert({
         consumption_batch_id: batchId,
         animal_id: animalId,
@@ -1092,8 +1115,9 @@ export async function removeAnimalFromBatch(farmId: string, batchId: string, ani
   const supabase = await createServerSupabaseClient()
   
   try {
-    const { error } = await supabase
-      .from('consumption_batch_animals')
+    // FIXED: Cast to any
+    const { error } = await (supabase
+      .from('consumption_batch_animals') as any)
       .delete()
       .eq('consumption_batch_id', batchId)
       .eq('animal_id', animalId)
@@ -1118,8 +1142,8 @@ export async function updateBatchTargetMode(farmId: string, batchId: string) {
   
   try {
     // Get batch details
-    const { data: batch } = await supabase
-      .from('consumption_batches')
+    const { data: batch } = await (supabase
+      .from('consumption_batches') as any)
       .select('animal_category_ids')
       .eq('id', batchId)
       .eq('farm_id', farmId)
@@ -1145,8 +1169,9 @@ export async function updateBatchTargetMode(farmId: string, batchId: string) {
     }
     
     // Update batch target mode
-    await supabase
-      .from('consumption_batches')
+    // FIXED: Cast to any
+    await (supabase
+      .from('consumption_batches') as any)
       .update({ target_mode: targetMode })
       .eq('id', batchId)
       .eq('farm_id', farmId)
@@ -1180,15 +1205,18 @@ export async function getAvailableAnimalsForBatch(
       .eq('status', 'active')
       .order('tag_number', { ascending: true })
     
-    const { data: animals, error } = await query
+    const { data: animalsData, error } = await query
     
     if (error) {
       console.error('Error fetching available animals:', error)
       return []
     }
     
+    // FIXED: Cast to any[]
+    const animals = (animalsData as any[]) || []
+
     // Calculate age and filter out animals already in the batch
-    let availableAnimals = (animals || []).map(animal => ({
+    let availableAnimals = animals.map(animal => ({
       animal_id: animal.id,
       tag_number: animal.tag_number,
       name: animal.name,
@@ -1213,7 +1241,7 @@ export async function getAvailableAnimalsForBatch(
         .eq('consumption_batch_id', batchId)
         .eq('is_active', true)
       
-      const batchAnimalIds = new Set(batchAnimals?.map(ba => ba.animal_id) || [])
+      const batchAnimalIds = new Set(batchAnimals?.map((ba: any) => ba.animal_id) || [])
       availableAnimals = availableAnimals.filter(animal => !batchAnimalIds.has(animal.animal_id))
     }
     
@@ -1268,7 +1296,8 @@ export async function getAnimalBatchFactors(
     }
     
     // Transform the data to match the expected interface
-    const factors: AnimalBatchFactor[] = (data || []).map(item => ({
+    // FIXED: Cast to any[]
+    const factors: AnimalBatchFactor[] = (data as any[] || []).map(item => ({
       id: item.id,
       animal_id: item.animal_id,
       animal_tag: item.animals.tag_number,
@@ -1303,8 +1332,9 @@ export async function updateAnimalBatchFactors(
   try {
     const results = await Promise.all(
       factorUpdates.map(async (update) => {
-        const { data, error } = await supabase
-          .from('animal_batch_factors')
+        // FIXED: Cast to any
+        const { data, error } = await (supabase
+          .from('animal_batch_factors') as any)
           .upsert({
             farm_id: farmId,
             consumption_batch_id: batchId,
@@ -1350,8 +1380,9 @@ export async function deleteAnimalBatchFactor(
   const supabase = await createServerSupabaseClient()
   
   try {
-    const { error } = await supabase
-      .from('animal_batch_factors')
+    // FIXED: Cast to any
+    const { error } = await (supabase
+      .from('animal_batch_factors') as any)
       .delete()
       .eq('farm_id', farmId)
       .eq('consumption_batch_id', batchId)
@@ -1440,7 +1471,8 @@ export async function getConsumptionBatchFactors(farmId: string): Promise<Consum
     return []
   }
   
-  return data || []
+  // FIXED: Cast to any[]
+  return (data as any[]) || []
 }
 
 export async function createConsumptionBatchFactor(
@@ -1449,8 +1481,9 @@ export async function createConsumptionBatchFactor(
 ) {
   const supabase = await createServerSupabaseClient()
   
-  const { data: factor, error } = await supabase
-    .from('consumption_batch_factors')
+  // FIXED: Cast to any
+  const { data: factor, error } = await (supabase
+    .from('consumption_batch_factors') as any)
     .insert({
       ...data,
       farm_id: farmId
@@ -1475,7 +1508,7 @@ export async function initializeFarmFeedManagementSettings(farmId: string) {
     // Call the database function to insert defaults
     const { error } = await supabase.rpc('insert_default_feed_management_data', {
       p_farm_id: farmId
-    })
+    } as any)
     
     if (error) {
       console.error('Error initializing feed management settings:', error)

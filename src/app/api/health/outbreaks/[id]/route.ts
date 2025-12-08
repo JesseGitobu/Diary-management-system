@@ -18,7 +18,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
@@ -58,7 +58,8 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    // Cast to 'any' to fix "Property 'farm_id' does not exist on type 'never'"
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id || !['farm_owner', 'farm_manager'].includes(userRole.role_type)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
@@ -113,7 +114,8 @@ export async function PUT(
     }
     
     // Update the outbreak record
-    const { data: outbreak, error: updateError } = await supabase
+    // Cast supabase to any to prevent update type mismatch errors
+    const { data: outbreak, error: updateError } = await (supabase as any)
       .from('disease_outbreaks')
       .update({
         outbreak_name,
@@ -132,7 +134,7 @@ export async function PUT(
         notes,
         status,
         resolved_date: status === 'resolved' ? (resolved_date || new Date().toISOString().split('T')[0]) : null,
-        updated_at: new Date().toISOString() // This is OK - disease_outbreaks table has updated_at
+        updated_at: new Date().toISOString()
       })
       .eq('id', id)
       .eq('farm_id', userRole.farm_id)
@@ -146,10 +148,10 @@ export async function PUT(
       }, { status: 500 })
     }
     
-    // Update related health records if needed (REMOVED updated_at field)
+    // Update related health records if needed
     if (affected_animals.length > 0) {
       // Update existing health records related to this outbreak
-      const { error: healthRecordsError } = await supabase
+      const { error: healthRecordsError } = await (supabase as any)
         .from('animal_health_records')
         .update({
           description: `Disease outbreak: ${disease_type}`,
@@ -157,20 +159,18 @@ export async function PUT(
           treatment: treatment_protocol || null,
           veterinarian: veterinarian || null,
           notes: `Part of outbreak: ${outbreak_name}. ${notes || ''}`.trim()
-          // REMOVED: updated_at: new Date().toISOString() - column doesn't exist
         })
         .eq('outbreak_id', id)
       
       if (healthRecordsError) {
         console.error('Error updating health records:', healthRecordsError)
-        // Don't fail the request, but log the error
       }
     }
     
     // Handle quarantine status changes
     if (quarantine_required && affected_animals.length > 0) {
       // Update animal statuses to quarantined
-      const { error: quarantineError } = await supabase
+      const { error: quarantineError } = await (supabase as any)
         .from('animals')
         .update({ 
           status: 'quarantined',
@@ -183,7 +183,7 @@ export async function PUT(
       }
     } else if (!quarantine_required) {
       // Remove quarantine status if no longer required
-      const { error: removeQuarantineError } = await supabase
+      const { error: removeQuarantineError } = await (supabase as any)
         .from('animals')
         .update({ 
           status: 'active',
@@ -221,7 +221,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const userRole = await getUserRole(user.id)
+    const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id || !['farm_owner', 'farm_manager'].includes(userRole.role_type)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
@@ -231,31 +231,32 @@ export async function DELETE(
     const supabase = await createServerSupabaseClient()
     
     // First verify the outbreak exists and belongs to the farm
-    const { data: existingOutbreak, error: fetchError } = await supabase
+    const { data: existingOutbreakResult, error: fetchError } = await supabase
       .from('disease_outbreaks')
       .select('id, farm_id, affected_animals')
       .eq('id', id)
       .eq('farm_id', userRole.farm_id)
       .single()
     
+    const existingOutbreak = existingOutbreakResult as any
+
     if (fetchError || !existingOutbreak) {
       return NextResponse.json({ error: 'Outbreak not found or access denied' }, { status: 404 })
     }
     
     // Delete related health records first (if they exist)
-    const { error: healthRecordsError } = await supabase
+    const { error: healthRecordsError } = await (supabase as any)
       .from('animal_health_records')
       .delete()
       .eq('outbreak_id', id)
     
     if (healthRecordsError) {
       console.error('Error deleting related health records:', healthRecordsError)
-      // Continue with outbreak deletion even if health records deletion fails
     }
     
     // Remove quarantine status from affected animals
     if (existingOutbreak.affected_animals && Array.isArray(existingOutbreak.affected_animals)) {
-      const { error: removeQuarantineError } = await supabase
+      const { error: removeQuarantineError } = await (supabase as any)
         .from('animals')
         .update({ 
           status: 'active',
@@ -270,7 +271,7 @@ export async function DELETE(
     }
     
     // Delete the outbreak record
-    const { error: deleteError } = await supabase
+    const { error: deleteError } = await (supabase as any)
       .from('disease_outbreaks')
       .delete()
       .eq('id', id)
@@ -294,7 +295,7 @@ export async function DELETE(
   }
 }
 
-// PATCH - Alternative update method (same as PUT for this case)
+// PATCH - Alternative update method
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

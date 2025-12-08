@@ -258,7 +258,7 @@ async function getNextSequenceNumber(farmId: string): Promise<number> {
   try {
     // Get current next number and increment it atomically
     const { data, error } = await supabase
-      .rpc('increment_tag_number', { farm_id_input: farmId })
+      .rpc('increment_tag_number', { farm_id_input: farmId } as any)
 
     if (error) {
       console.error('Error incrementing tag number:', error)

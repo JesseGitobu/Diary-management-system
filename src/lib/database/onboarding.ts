@@ -6,8 +6,9 @@ export async function saveOnboardingStep(userId: string, stepData: any) {
 
   try {
     // Get current profile
-    const { data: profile, error: profileError } = await supabase
-      .from('farm_profiles')
+    // FIXED: Cast to any to avoid 'never' type inference
+    const { data: profile, error: profileError } = await (supabase
+      .from('farm_profiles') as any)
       .select('*')
       .eq('user_id', userId)
       .single()
@@ -35,8 +36,8 @@ export async function saveOnboardingStep(userId: string, stepData: any) {
           if (stepData.location) farmUpdate.location = stepData.location
           if (stepData.farm_type) farmUpdate.farm_type = stepData.farm_type
           
-          const { error: farmUpdateError } = await supabase
-            .from('farms')
+          const { error: farmUpdateError } = await (supabase
+            .from('farms') as any)
             .update(farmUpdate)
             .eq('id', profile.farm_id ?? '')
           
@@ -108,8 +109,8 @@ export async function saveOnboardingStep(userId: string, stepData: any) {
     }
     
     // Update farm profile with the prepared data
-    const { error: updateError } = await supabase
-      .from('farm_profiles')
+    const { error: updateError } = await (supabase
+      .from('farm_profiles') as any)
       .update(profileUpdate)
       .eq('user_id', userId)
     
@@ -163,8 +164,8 @@ export async function calculateProgress(userId: string) {
   
   // Update the percentage in database
   const supabase = await createServerSupabaseClient()
-  await supabase
-    .from('farm_profiles')
+  await (supabase
+    .from('farm_profiles') as any)
     .update({ completion_percentage: percentage })
     .eq('user_id', userId)
   
@@ -177,8 +178,9 @@ export async function getOnboardingData(userId: string) {
   
   try {
     // First, try to get existing farm profile
-    const { data, error } = await supabase
-      .from('farm_profiles')
+    // FIXED: Cast to any
+    const { data, error } = await (supabase
+      .from('farm_profiles') as any)
       .select(`
         *,
         farms (
@@ -205,12 +207,15 @@ export async function getOnboardingData(userId: string) {
     // 🎯 NEW: No farm profile exists yet, check user role
     console.log('🔍 No farm profile found, checking user role for:', userId)
     
-    const { data: userRole, error: roleError } = await supabase
-      .from('user_roles')
+    // FIXED: Cast to any
+    const { data: userRoleData, error: roleError } = await (supabase
+      .from('user_roles') as any)
       .select('role_type, status, farm_id')
       .eq('user_id', userId)
       .single()
     
+    const userRole = userRoleData
+
     if (roleError) {
       console.error('Error getting user role:', roleError)
       return null
@@ -249,8 +254,8 @@ export async function getOnboardingData(userId: string) {
 export async function updateCompletionStatus(userId: string, completed: boolean) {
   const supabase = await createServerSupabaseClient()
   
-  const { error } = await supabase
-    .from('farm_profiles')
+  const { error } = await (supabase
+    .from('farm_profiles') as any)
     .update({ 
       onboarding_completed: completed,
       completion_percentage: completed ? 100 : 0,

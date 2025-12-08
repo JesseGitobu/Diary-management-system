@@ -16,7 +16,7 @@ export default async function SubscriptionPage({ searchParams }: PageProps) {
   const user = await getCurrentUser()
   if (!user) redirect('/auth/login')
 
-  const userRole = await getUserRole(user.id)
+  const userRole = await getUserRole(user.id) as any
   if (!userRole || userRole.farm_id !== farmId) redirect('/dashboard')
 
   // Only farm owners can access subscription settings

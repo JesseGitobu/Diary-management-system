@@ -12,8 +12,8 @@ export async function createProductionRecord(
 ) {
   const supabase = await createServerSupabaseClient()
   
-  const { data: record, error } = await supabase
-    .from('production_records')
+  const { data: record, error } = await (supabase
+    .from('production_records') as any)
     .insert({
       ...data,
       farm_id: farmId,
@@ -73,7 +73,8 @@ export async function getProductionRecords(
     return []
   }
   
-  return data || []
+  // FIXED: Cast to any[]
+  return (data as any[]) || []
 }
 
 export async function updateProductionRecord(
@@ -82,8 +83,8 @@ export async function updateProductionRecord(
 ) {
   const supabase = await createServerSupabaseClient()
   
-  const { data: record, error } = await supabase
-    .from('production_records')
+  const { data: record, error } = await (supabase
+    .from('production_records') as any)
     .update(data)
     .eq('id', recordId)
     .select()
@@ -101,8 +102,8 @@ export async function deleteProductionRecord(recordId: string) {
   const supabase = await createServerSupabaseClient()
 
   // Get the record first to update daily summary
-  const { data: record } = await supabase
-    .from('production_records')
+  const { data: record } = await (supabase
+    .from('production_records') as any)
     .select('farm_id, record_date')
     .eq('id', recordId)
     .single()
@@ -130,13 +131,16 @@ export async function updateDailyProductionSummary(farmId: string, date: string)
   
   try {
     // Calculate daily totals
-    const { data: dailyRecords } = await supabase
+    const { data: dailyRecordsData } = await supabase
       .from('production_records')
       .select('milk_volume, fat_content, protein_content, animal_id')
       .eq('farm_id', farmId)
       .eq('record_date', date)
     
-    if (!dailyRecords || dailyRecords.length === 0) {
+    // FIXED: Cast to any[] to bypass 'never' type error
+    const dailyRecords = (dailyRecordsData as any[]) || []
+
+    if (dailyRecords.length === 0) {
       // Delete summary if no records
       await supabase
         .from('daily_production_summary')
@@ -162,8 +166,8 @@ export async function updateDailyProductionSummary(farmId: string, date: string)
     }
     
     // Upsert daily summary
-    await supabase
-      .from('daily_production_summary')
+    await (supabase
+      .from('daily_production_summary') as any)
       .upsert(summaryData, { onConflict: 'farm_id,record_date' })
     
   } catch (error) {
@@ -179,7 +183,7 @@ export async function getProductionStats(farmId: string, days: number = 30) {
   
   try {
     // Get daily summaries
-    const { data: summaries } = await supabase
+    const { data: summariesData } = await supabase
       .from('daily_production_summary')
       .select('*')
       .eq('farm_id', farmId)
@@ -187,6 +191,9 @@ export async function getProductionStats(farmId: string, days: number = 30) {
       .lte('record_date', endDate)
       .order('record_date', { ascending: false })
     
+    // FIXED: Cast to any[]
+    const summaries = (summariesData as any[]) || []
+
     // Get total records count
     const { count: totalRecords } = await supabase
       .from('production_records')
@@ -195,12 +202,12 @@ export async function getProductionStats(farmId: string, days: number = 30) {
       .gte('record_date', startDate)
     
     // Calculate averages
-    const totalVolume = summaries?.reduce((sum, s) => sum + (s.total_milk_volume || 0), 0) || 0
-    const avgDailyVolume = summaries?.length ? totalVolume / summaries.length : 0
-    const avgFatContent = summaries?.length 
+    const totalVolume = summaries.reduce((sum, s) => sum + (s.total_milk_volume || 0), 0) || 0
+    const avgDailyVolume = summaries.length ? totalVolume / summaries.length : 0
+    const avgFatContent = summaries.length 
       ? summaries.reduce((sum, s) => sum + (s.average_fat_content || 0), 0) / summaries.length 
       : 0
-    const avgProteinContent = summaries?.length 
+    const avgProteinContent = summaries.length 
       ? summaries.reduce((sum, s) => sum + (s.average_protein_content || 0), 0) / summaries.length 
       : 0
     
@@ -210,7 +217,7 @@ export async function getProductionStats(farmId: string, days: number = 30) {
       avgDailyVolume,
       avgFatContent,
       avgProteinContent,
-      dailySummaries: summaries || [],
+      dailySummaries: summaries,
       periodDays: days,
     }
   } catch (error) {
@@ -246,5 +253,6 @@ export async function getAnimalProductionHistory(animalId: string, days: number 
     return []
   }
   
-  return data || []
+  // FIXED: Cast to any[]
+  return (data as any[]) || []
 }

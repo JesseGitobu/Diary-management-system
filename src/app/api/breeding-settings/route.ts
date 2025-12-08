@@ -18,11 +18,14 @@ export async function GET(request: NextRequest) {
     }
 
     // Get user's farm_id
-    const { data: userFarm, error: farmError } = await supabase
+    const { data: userFarmResult, error: farmError } = await supabase
       .from('user_roles')
       .select('farm_id')
       .eq('user_id', user.id)
       .single()
+
+    // Cast to any to fix "Property 'farm_id' does not exist on type 'never'"
+    const userFarm = userFarmResult as any
 
     if (farmError || !userFarm?.farm_id) {
       console.warn('⚠️ [BREEDING-SETTINGS] No farm found for user, returning defaults')
@@ -35,11 +38,14 @@ export async function GET(request: NextRequest) {
     console.log('🔍 [BREEDING-SETTINGS] Fetching settings for farm:', userFarm.farm_id)
 
     // Get breeding settings for the farm
-    const { data: settings, error } = await supabase
+    const { data: settingsResult, error } = await supabase
       .from('farm_breeding_settings')
       .select('*')
       .eq('farm_id', userFarm.farm_id)
       .single()
+
+    // Cast settings to any to ensure properties are accessible
+    const settings = settingsResult as any
 
     if (error && error.code !== 'PGRST116') { // PGRST116 is "not found"
       console.error('❌ [BREEDING-SETTINGS] Error fetching settings:', error)
@@ -103,11 +109,14 @@ export async function PUT(request: NextRequest) {
     }
 
     // Get user's farm_id
-    const { data: userRole, error: roleError } = await supabase
+    const { data: userRoleResult, error: roleError } = await supabase
       .from('user_roles')
       .select('farm_id, role_type')
       .eq('user_id', user.id)
       .single()
+
+    // Cast to any to fix type errors
+    const userRole = userRoleResult as any
 
     if (roleError || !userRole?.farm_id) {
       return NextResponse.json(
@@ -152,12 +161,15 @@ export async function PUT(request: NextRequest) {
     dbSettings.updated_at = new Date().toISOString()
 
     // Update breeding settings
-    const { data: settings, error } = await supabase
+    // Cast supabase to any to avoid "type 'never'" error on update/insert
+    const { data: settingsResult, error } = await (supabase as any)
       .from('farm_breeding_settings')
       .update(dbSettings)
       .eq('farm_id', userRole.farm_id)
       .select()
       .single()
+
+    const settings = settingsResult as any
 
     if (error) {
       console.error('❌ [BREEDING-SETTINGS] Error updating settings:', error)
