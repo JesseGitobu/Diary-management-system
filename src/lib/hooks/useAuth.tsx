@@ -1,4 +1,4 @@
-// src/lib/hooks/useAuth.tsx
+// src/lib/hooks/useAuth.tsx - UPDATED with proper error handling
 'use client'
 
 import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react'
@@ -27,10 +27,10 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 // Session configuration constants
 const SESSION_CONFIG = {
-  IDLE_TIMEOUT: 30 * 60 * 1000, // 30 minutes
-  REFRESH_BUFFER: 5 * 60 * 1000, // Refresh 5 minutes before expiry
-  ACTIVITY_THROTTLE: 1000, // Throttle activity tracking to 1s
-  PERMISSION_CACHE_TTL: 5 * 60 * 1000, // Cache permissions for 5 minutes
+  IDLE_TIMEOUT: 30 * 60 * 1000,
+  REFRESH_BUFFER: 5 * 60 * 1000,
+  ACTIVITY_THROTTLE: 1000,
+  PERMISSION_CACHE_TTL: 5 * 60 * 1000,
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -42,13 +42,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const supabase = createClient()
 
-  // Refs for managing timers and state
   const idleTimerRef = useRef<NodeJS.Timeout | null>(null)
   const refreshTimerRef = useRef<NodeJS.Timeout | null>(null)
   const activityThrottleRef = useRef<NodeJS.Timeout | null>(null)
   const permissionCacheRef = useRef<{ role: string; timestamp: number } | null>(null)
 
-  // Clear all timers
   const clearAllTimers = useCallback(() => {
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current)
@@ -58,10 +56,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     activityThrottleRef.current = null
   }, [])
 
-  // Setup session refresh timer
   const setupRefreshTimer = useCallback(async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { session }, error } = await supabase.auth.getSession()
+      
+      // ✅ FIXED: Handle missing session gracefully
+      if (error) {
+        if (error.message.includes('AuthSessionMissingError')) {
+          // Expected for logged-out users, don't log as error
+          return
+        }
+        debugLogger.warning('AuthProvider', 'Error getting session for refresh timer', { error: error.message })
+        return
+      }
+
       if (!session?.expires_at) return
 
       const expiresAt = new Date(session.expires_at * 1000).getTime()
@@ -88,7 +96,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [supabase])
 
-  // Reset idle timer
   const resetIdleTimer = useCallback(() => {
     setLastActivity(Date.now())
 
@@ -102,7 +109,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user])
 
-  // Throttled activity handler
   const handleActivity = useCallback(() => {
     if (activityThrottleRef.current) return
 
@@ -112,7 +118,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, SESSION_CONFIG.ACTIVITY_THROTTLE)
   }, [resetIdleTimer])
 
-  // Setup activity listeners
   useEffect(() => {
     if (!user) return
 
@@ -135,11 +140,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSessionStatus('loading')
         debugLogger.info('AuthProvider', 'Initializing authentication')
 
-        const { data: { session }, error } = await supabase.auth.getSession()
-
-        if (error) {
-          debugLogger.error('AuthProvider', 'Error getting session', { error: error.message })
-          setSessionStatus('error')
+        // ✅ FIXED: Wrap getSession() with try-catch
+        let session = null
+        try {
+          const { data: { session: fetchedSession }, error } = await supabase.auth.getSession()
+          
+          if (error) {
+            // Check if it's the expected AuthSessionMissingError
+            if (error.message.includes('AuthSessionMissingError')) {
+              // This is expected for logged-out users - not an error
+              debugLogger.debug('AuthProvider', 'No session found (expected for logged-out users)')
+              setSessionStatus('unauthenticated')
+              setLoading(false)
+              return
+            }
+            
+            // Unexpected error
+            debugLogger.error('AuthProvider', 'Error getting session', { error: error.message })
+            setSessionStatus('error')
+            setLoading(false)
+            return
+          }
+          
+          session = fetchedSession
+        } catch (err) {
+          // Handle any runtime exceptions
+          debugLogger.error('AuthProvider', 'Exception getting session', { error: err })
+          setSessionStatus('unauthenticated')
           setLoading(false)
           return
         }
@@ -151,12 +178,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           await loadUserRole(session.user.id)
           await setupRefreshTimer()
         } else {
-          debugLogger.info('AuthProvider', 'No session found')
+          debugLogger.debug('AuthProvider', 'No session found')
           setSessionStatus('unauthenticated')
         }
       } catch (error) {
         debugLogger.error('AuthProvider', 'Exception during auth initialization', { error })
-        setSessionStatus('error')
+        setSessionStatus('unauthenticated')
       } finally {
         setLoading(false)
       }
@@ -350,11 +377,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Permission checking with caching
   const hasPermission = useCallback((requiredRole: string): boolean => {
     if (!userRole) return false
 
-    // Check cache
     if (permissionCacheRef.current) {
       const { role, timestamp } = permissionCacheRef.current
       if (Date.now() - timestamp < SESSION_CONFIG.PERMISSION_CACHE_TTL) {
@@ -362,7 +387,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // Update cache
     const hasAccess = userRole === requiredRole || userRole === 'super_admin'
     permissionCacheRef.current = { role: userRole, timestamp: Date.now() }
 

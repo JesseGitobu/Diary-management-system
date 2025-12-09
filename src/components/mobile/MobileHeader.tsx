@@ -102,20 +102,25 @@ export function MobileHeader() {
             </Button>
           </div>
 
-          {/* User Info */}
-          <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
-            <div className="flex items-center space-x-3 flex-1">
-              <div className="w-10 h-10 bg-dairy-primary rounded-full flex items-center justify-center">
+          {/* User Info - ✅ FIXED: Properly handles long names with wrapping and centered alignment */}
+          <div className="p-3 bg-gray-50 rounded-lg">
+            <div className="flex items-center gap-3">
+              {/* Avatar - Fixed size, no shrinking */}
+              <div className="w-10 h-10 bg-dairy-primary rounded-full flex items-center justify-center flex-shrink-0">
                 <User className="w-5 h-5 text-white" />
               </div>
-              <div className="flex-1">
-                <p className="font-medium text-gray-900 truncate">
+
+              {/* User Info - Wraps text, takes available space */}
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-gray-900 break-words">
                   {user?.user_metadata?.full_name || user?.email}
                 </p>
                 <p className="text-sm text-gray-600">Farm Owner</p>
               </div>
+
+              {/* Logout Button - Fixed size, never shrinks */}
               <button
-                className="p-2 text-gray-500 hover:bg-white hover:text-dairy-primary hover:shadow-sm rounded-lg transition-all disabled:opacity-50"
+                className="p-2 text-gray-500 hover:bg-white hover:text-dairy-primary hover:shadow-sm rounded-lg transition-all disabled:opacity-50 flex-shrink-0"
                 aria-label="Sign Out"
                 onClick={handleSignOut}
                 disabled={isSigningOut}

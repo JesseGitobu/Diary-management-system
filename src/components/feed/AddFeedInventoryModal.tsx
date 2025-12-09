@@ -1,3 +1,4 @@
+// src/components/feed/AddFeedInventoryModal.tsx
 'use client'
 
 import { useState } from 'react'

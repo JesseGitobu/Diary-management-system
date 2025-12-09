@@ -16,24 +16,25 @@ export async function middleware(request: NextRequest) {
     const { supabase, response } = createMiddlewareClient(request)
     const pathname = request.nextUrl.pathname
 
-    // ✅ UPDATED APPROACH: Use getSession() for performance
-    // This is SAFE because:
-    // 1. We're using RLS policies on all database tables
-    // 2. Supabase validates JWT on every database call anyway
-    // 3. We're only using this for routing decisions, not data access
-    // 4. The middleware refreshes tokens automatically via response cookies
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-    
-    if (sessionError) {
-      console.error('❌ Session error:', sessionError)
-      if (isProtectedRoute(pathname) || isAdminRoute(pathname)) {
-        const redirectPath = isAdminRoute(pathname) ? '/admin/auth' : '/auth'
-        return NextResponse.redirect(new URL(redirectPath, request.url))
-      }
-      return response
-    }
+    // ✅ FIXED: Wrap getSession() with proper error handling
+    let session = null
+    let user = null
 
-    const user = session?.user ?? null
+    try {
+      const { data: { session: fetchedSession } } = await supabase.auth.getSession()
+      session = fetchedSession
+      user = fetchedSession?.user ?? null
+    } catch (error) {
+      // Silently handle missing session for unauthenticated users
+      // This is expected behavior and not an error
+      if (error instanceof Error && error.message.includes('AuthSessionMissingError')) {
+        // Expected for logged-out users - don't log it
+        user = null
+      } else {
+        // Log unexpected errors only
+        console.error('Unexpected session error in middleware:', error)
+      }
+    }
 
     if (process.env.NODE_ENV === 'development') {
       console.log('🔍 Middleware:', {
@@ -62,7 +63,6 @@ export async function middleware(request: NextRequest) {
       }
 
       // Check admin status via database query
-      // RLS policies will validate the JWT, so this is secure
       const isAdmin = await checkIfUserIsAdmin(user.id, supabase)
       
       if (!isAdmin) {
@@ -70,7 +70,7 @@ export async function middleware(request: NextRequest) {
         return NextResponse.redirect(new URL('/dashboard', request.url))
       }
 
-      return response // Admin verified via RLS-protected query
+      return response
     }
 
     // Require authentication for protected routes
@@ -92,11 +92,9 @@ export async function middleware(request: NextRequest) {
       
       // If accessing onboarding page
       if (pathname.startsWith('/onboarding')) {
-        // Allow if no role OR if role is pending setup
         if (!userRole || userRole.status === 'pending_setup') {
           return response
         }
-        // If user has active role, redirect to dashboard
         if (userRole.status === 'active') {
           console.log('✅ User already setup, redirecting to dashboard')
           return NextResponse.redirect(new URL('/dashboard', request.url))
@@ -106,25 +104,19 @@ export async function middleware(request: NextRequest) {
       // If accessing dashboard
       if (pathname.startsWith('/dashboard')) {
         if (!userRole) {
-          // No role at all - must complete onboarding
           console.log('⚠️ User without role accessing dashboard, redirecting to onboarding')
           return NextResponse.redirect(new URL('/onboarding', request.url))
         }
         
-        // Has role with pending_setup - allow dashboard access
-        // Dashboard will show onboarding banner
         if (userRole.status === 'pending_setup') {
           console.log('ℹ️ User with pending setup accessing dashboard - showing banner')
           return response
         }
         
-        // Active user - normal access
         return response
       }
     }
 
-    // IMPORTANT: Return the response from createMiddlewareClient
-    // This ensures cookie updates (token refresh) are included
     return response
   } catch (error) {
     console.error('💥 Middleware exception:', error)
@@ -132,26 +124,19 @@ export async function middleware(request: NextRequest) {
   }
 }
 
-// Helper: Check if route is public
+// Helper functions remain the same
 function isPublicRoute(pathname: string): boolean {
   return ROUTE_CONFIG.public.some(route => pathname === route || pathname.startsWith(route))
 }
 
-// Helper: Check if route is protected
 function isProtectedRoute(pathname: string): boolean {
   return ROUTE_CONFIG.protected.some(route => pathname.startsWith(route))
 }
 
-// Helper: Check if route is admin
 function isAdminRoute(pathname: string): boolean {
   return ROUTE_CONFIG.admin.some(route => pathname.startsWith(route))
 }
 
-// Helper: Check if user is admin
-// SECURITY: This is safe because:
-// 1. RLS policies on admin_users table will validate the JWT
-// 2. An attacker with a spoofed JWT will get null/empty result from RLS
-// 3. We're using anon key (not service_role), so RLS is enforced
 async function checkIfUserIsAdmin(userId: string, supabase: any): Promise<boolean> {
   try {
     const { data, error } = await supabase
@@ -172,8 +157,6 @@ async function checkIfUserIsAdmin(userId: string, supabase: any): Promise<boolea
   }
 }
 
-// Helper: Get user role
-// SECURITY: Protected by RLS on user_roles table
 async function getUserRole(userId: string, supabase: any) {
   try {
     const { data, error } = await supabase
@@ -194,29 +177,24 @@ async function getUserRole(userId: string, supabase: any) {
   }
 }
 
-// Redirect authenticated users based on role
 async function handleAuthenticatedUserRedirect(
   user: any,
   supabase: any,
   request: NextRequest
 ): Promise<NextResponse> {
   try {
-    // Check if admin
     const isAdmin = await checkIfUserIsAdmin(user.id, supabase)
     
     if (isAdmin) {
       return NextResponse.redirect(new URL('/admin/dashboard', request.url))
     }
 
-    // Check user role
     const userRole = await getUserRole(user.id, supabase)
 
-    // No role or pending setup -> onboarding
     if (!userRole || userRole.status === 'pending_setup') {
       return NextResponse.redirect(new URL('/onboarding', request.url))
     }
 
-    // Has active role -> dashboard
     if (userRole.status === 'active' && userRole.farm_id) {
       return NextResponse.redirect(new URL('/dashboard', request.url))
     }
@@ -224,7 +202,6 @@ async function handleAuthenticatedUserRedirect(
     console.error('❌ Error in redirect logic:', error)
   }
 
-  // Default fallback
   return NextResponse.redirect(new URL('/dashboard', request.url))
 }
 

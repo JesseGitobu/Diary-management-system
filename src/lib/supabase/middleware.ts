@@ -59,18 +59,34 @@ export const createMiddlewareClient = (request: NextRequest) => {
   return { supabase, response }
 }
 
-// Helper function for middleware authentication
+// ✅ FIXED: Wrap getUser() with proper error handling
 export const authenticateUser = async (request: NextRequest) => {
   const { supabase, response } = createMiddlewareClient(request)
   
-  const { data: { user }, error } = await supabase.auth.getUser()
-  
-  if (error) {
-    console.error('Middleware auth error:', error)
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser()
+    
+    if (error) {
+      // Check if it's the expected AuthSessionMissingError
+      if (error.message?.includes('AuthSessionMissingError')) {
+        // Expected for unauthenticated users - don't log it
+        return { user: null, response }
+      }
+      // Log unexpected errors only
+      console.error('Middleware auth error:', error)
+      return { user: null, response }
+    }
+    
+    return { user, response }
+  } catch (err) {
+    // Handle any runtime exceptions
+    if (err instanceof Error && err.message.includes('AuthSessionMissingError')) {
+      // Expected for unauthenticated users
+      return { user: null, response }
+    }
+    console.error('Middleware auth exception:', err)
     return { user: null, response }
   }
-  
-  return { user, response }
 }
 
 // Helper function to check user permissions
@@ -89,15 +105,20 @@ export const checkUserPermissions = async (
   }
   
   // Check user role if required
-  const { supabase } = createMiddlewareClient(request)
-  const { data: userRole } = await (supabase
-    .from('user_roles') as any)
-    .select('role_type')
-    .eq('user_id', user.id)
-    .single()
-  
-  const hasPermission = userRole?.role_type === requiredRole || 
-                       userRole?.role_type === 'super_admin'
-  
-  return { user, hasPermission, response }
+  try {
+    const { supabase } = createMiddlewareClient(request)
+    const { data: userRole } = await (supabase
+      .from('user_roles') as any)
+      .select('role_type')
+      .eq('user_id', user.id)
+      .single()
+    
+    const hasPermission = userRole?.role_type === requiredRole || 
+                         userRole?.role_type === 'super_admin'
+    
+    return { user, hasPermission, response }
+  } catch (err) {
+    console.error('Error checking user permissions:', err)
+    return { user, hasPermission: false, response }
+  }
 }
