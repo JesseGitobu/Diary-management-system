@@ -1,3 +1,4 @@
+// src/app/onboarding/steps/summary/page.tsx
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getOnboardingData } from '@/lib/database/onboarding'
 import { redirect } from 'next/navigation'

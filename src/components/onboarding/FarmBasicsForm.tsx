@@ -1,3 +1,4 @@
+// src/components/onboarding/FarmBasicsForm.tsx
 'use client'
 
 import { useState } from 'react'

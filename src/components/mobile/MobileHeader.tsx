@@ -1,3 +1,4 @@
+// src/components/mobile/MobileHeader.tsx
 'use client'
 
 import { useState } from 'react'
@@ -26,54 +27,63 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils/cn'
 
-const mobileNavItems = [
+interface MobileHeaderProps {
+  trackingFeatures?: string[] | null
+  animalCount?: number
+  farmId?: string | null
+}
+
+const allNavItems = [
   { icon: Home, label: 'Dashboard', href: '/dashboard' },
   { icon: GiCow, label: 'Herd Management', href: '/dashboard/animals' },
-  { icon: CalendarFold, label: 'Breeding', href: '/dashboard/breeding' },
-  { icon: Heart, label: 'Health', href: '/dashboard/health' },
-  { icon: Droplets, label: 'Production', href: '/dashboard/production' },
-  { icon: Wheat, label: 'Feed', href: '/dashboard/feed' },
-  { icon: Coins, label: 'Finance', href: '/dashboard/financial' },
-  { icon: Warehouse, label: 'Inventory', href: '/dashboard/inventory' },
-  { icon: Tractor, label: 'Equipment', href: '/dashboard/equipment' },
-  { icon: BarChart3, label: 'Reports', href: '/dashboard/reports' },
+  { icon: CalendarFold, label: 'Breeding', href: '/dashboard/breeding', feature: 'breeding_records' },
+  { icon: Heart, label: 'Health', href: '/dashboard/health', feature: 'health_records' },
+  { icon: Droplets, label: 'Production', href: '/dashboard/production', feature: 'milk_tracking' },
+  { icon: Wheat, label: 'Feed', href: '/dashboard/feed', feature: 'feed_tracking' },
+  { icon: Coins, label: 'Finance', href: '/dashboard/financial', feature: 'finance_tracking' },
+  { icon: Warehouse, label: 'Inventory', href: '/dashboard/inventory', feature: 'inventory_equipment' },
+  { icon: Tractor, label: 'Equipment', href: '/dashboard/equipment', feature: 'inventory_equipment' },
+  { icon: BarChart3, label: 'Reports', href: '/dashboard/reports', feature: 'performance_analysis_reporting_tools' },
   { icon: Users, label: 'Team', href: '/dashboard/settings/team' },
   { icon: Settings, label: 'Settings', href: '/dashboard/settings' },
 ]
 
-export function MobileHeader() {
+export function MobileHeader({ trackingFeatures = [], animalCount = 0, farmId }: MobileHeaderProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
   const { user, signOut } = useAuth()
   const pathname = usePathname()
   const router = useRouter()
 
-  const handleSignOut = async () => {
-    try {
-      setIsSigningOut(true)
-      await signOut()
-      // Redirect after sign out completes
-      router.push('/auth')
-    } catch (error) {
-      console.error('Error signing out:', error)
-      setIsSigningOut(false)
+  const handleSignOut = async () => { /* ... existing code ... */ }
+
+  // Filter Items
+  const visibleItems = allNavItems.filter(item => {
+    if (!farmId) return item.href === '/dashboard';
+
+    if (item.href === '/dashboard') return true;
+    if (item.href === '/dashboard/settings') return true;
+
+    if (animalCount === 0) {
+      return item.label === 'Herd Management';
     }
-  }
+
+    if (!item.feature) return true; // Items without feature flags (Team, Herd) are visible
+    if (!trackingFeatures || trackingFeatures.length === 0) return true;
+
+    return trackingFeatures.includes(item.feature);
+  })
 
   return (
     <header className="lg:hidden bg-white border-b border-gray-200 px-4 py-3">
+      {/* ... existing JSX (Logo, Menu Button) ... */}
       <div className="flex items-center justify-between">
         <Link href="/dashboard" className="flex items-center">
           <div className={"logo"}>DairyTrack Pro</div>
         </Link>
 
         <div className="flex items-center space-x-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="p-2"
-            onClick={() => setIsOpen(!isOpen)}
-          >
+          <Button variant="ghost" size="sm" className="p-2" onClick={() => setIsOpen(!isOpen)}>
             {isOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
           </Button>
         </div>
@@ -132,9 +142,9 @@ export function MobileHeader() {
           </div>
         </div>
 
-        {/* Navigation - Scrollable */}
+        {/* Filtered Navigation */}
         <nav className="flex-1 overflow-y-auto px-4 py-6 space-y-2">
-          {mobileNavItems.map((item) => {
+          {visibleItems.map((item) => {
             const isActive = pathname === item.href
             return (
               <Link

@@ -1,3 +1,4 @@
+// src/components/onboarding/TrackingSetupForm.tsx
 'use client'
 
 import { useState, useEffect } from 'react'

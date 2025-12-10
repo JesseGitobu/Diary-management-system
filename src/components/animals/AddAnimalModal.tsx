@@ -1,3 +1,4 @@
+// src/components/animals/AddAnimalModal.tsx
 import React, { useState } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'

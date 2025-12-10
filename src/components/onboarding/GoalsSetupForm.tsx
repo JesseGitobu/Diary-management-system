@@ -13,11 +13,24 @@ import { Input } from '@/components/ui/Input'
 import { CheckCircle, Circle, TrendingUp, Target, Users, DollarSign } from 'lucide-react'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 
+// 1. Create a helper for optional number fields
+// This accepts a string (from input) or number, handles empty strings, 
+// and converts valid strings to numbers.
+const optionalNumber = z.preprocess(
+  (val) => {
+    if (val === '' || val === null || val === undefined) return undefined;
+    const parsed = Number(val);
+    return isNaN(parsed) ? undefined : parsed;
+  },
+  z.number().optional()
+);
+
 const goalsSchema = z.object({
   primary_goal: z.string().min(1, 'Please select a primary goal'),
-  milk_production_target: z.number().optional(),
-  herd_growth_target: z.number().optional(),
-  revenue_target: z.number().optional(),
+  // 2. Use the helper here
+  milk_production_target: optionalNumber,
+  herd_growth_target: optionalNumber,
+  revenue_target: optionalNumber,
   timeline: z.enum(['3_months', '6_months', '1_year', '2_years']),
   specific_challenges: z.array(z.string()).optional(),
   success_metrics: z.array(z.string()).optional(),
@@ -90,9 +103,10 @@ export function GoalsSetupForm({ userId, initialData }: GoalsSetupFormProps) {
   const router = useRouter()
 
   const form = useForm<GoalsFormData>({
-    resolver: zodResolver(goalsSchema),
+    resolver: zodResolver(goalsSchema) as any,
     defaultValues: {
       primary_goal: '',
+      // Default to undefined so inputs start empty
       milk_production_target: undefined,
       herd_growth_target: undefined,
       revenue_target: undefined,
@@ -146,7 +160,7 @@ export function GoalsSetupForm({ userId, initialData }: GoalsSetupFormProps) {
     setError(null)
 
     try {
-      console.log('Submitting goals data:', data) // Debug log
+      console.log('Submitting goals data:', data)
 
       const response = await fetch('/api/onboarding', {
         method: 'POST',
@@ -172,9 +186,6 @@ export function GoalsSetupForm({ userId, initialData }: GoalsSetupFormProps) {
         const errorData = await response.json()
         throw new Error(errorData.error || 'Failed to save goals')
       }
-
-      const result = await response.json()
-      console.log('Goals saved successfully:', result) // Debug log
 
       router.push('/onboarding/steps/summary')
     } catch (err) {
@@ -259,7 +270,9 @@ export function GoalsSetupForm({ userId, initialData }: GoalsSetupFormProps) {
                   <Input
                     id="milk_production_target"
                     type="number"
-                    {...form.register('milk_production_target', { valueAsNumber: true })}
+                    // 3. REMOVED { valueAsNumber: true }
+                    // This allows empty strings to pass to Zod for processing
+                    {...form.register('milk_production_target')} 
                     placeholder="e.g., 1000"
                     error={form.formState.errors.milk_production_target?.message}
                   />
@@ -270,7 +283,8 @@ export function GoalsSetupForm({ userId, initialData }: GoalsSetupFormProps) {
                   <Input
                     id="herd_growth_target"
                     type="number"
-                    {...form.register('herd_growth_target', { valueAsNumber: true })}
+                    // 3. REMOVED { valueAsNumber: true }
+                    {...form.register('herd_growth_target')}
                     placeholder="e.g., 100"
                     error={form.formState.errors.herd_growth_target?.message}
                   />
@@ -281,7 +295,8 @@ export function GoalsSetupForm({ userId, initialData }: GoalsSetupFormProps) {
                   <Input
                     id="revenue_target"
                     type="number"
-                    {...form.register('revenue_target', { valueAsNumber: true })}
+                    // 3. REMOVED { valueAsNumber: true }
+                    {...form.register('revenue_target')}
                     placeholder="e.g., 500000"
                     error={form.formState.errors.revenue_target?.message}
                   />

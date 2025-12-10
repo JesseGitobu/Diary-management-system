@@ -5,15 +5,28 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils/cn'
 import { GiCow } from 'react-icons/gi'
-import { Home, LogOut, Users, Settings, BarChart3, Warehouse, Tractor, Heart, Droplets, Wheat, Coins, CalendarFold } from 'lucide-react'
+import { Home, LogOut, Settings, BarChart3, Warehouse, Tractor, Heart, Droplets, Wheat, Coins, CalendarFold } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { useRouter } from 'next/navigation'
 
-// Main navigation items (will stay at the top)
-const mainNavigation = [
-  { name: 'Dashboard', href: '/dashboard', icon: Home },
-  { name: 'Herd Management', href: '/dashboard/animals', icon: GiCow },
+// Map database feature IDs to Navigation paths
+const featureToRouteMap: Record<string, string> = {
+  'breeding_records': '/dashboard/breeding',
+  'health_records': '/dashboard/health',
+  'milk_tracking': '/dashboard/production',
+  'feed_tracking': '/dashboard/feed',
+  'finance_tracking': '/dashboard/financial',
+  'inventory_equipment': '/dashboard/inventory', // Maps to both inventory and equipment
+  'performance_analysis_reporting_tools': '/dashboard/reports',
+}
+
+// Separate definition for equipment since it shares a feature flag
+const equipmentRoute = '/dashboard/equipment'
+
+const allNavigationItems = [
+  { name: 'Dashboard', href: '/dashboard', icon: Home, alwaysVisible: true },
+  { name: 'Herd Management', href: '/dashboard/animals', icon: GiCow, alwaysVisible: true }, // Always visible if farm exists
   { name: 'Breeding', href: '/dashboard/breeding', icon: CalendarFold },
   { name: 'Health', href: '/dashboard/health', icon: Heart },
   { name: 'Production', href: '/dashboard/production', icon: Droplets },
@@ -22,30 +35,71 @@ const mainNavigation = [
   { name: 'Inventory', href: '/dashboard/inventory', icon: Warehouse },
   { name: 'Equipment', href: '/dashboard/equipment', icon: Tractor },
   { name: 'Reports', href: '/dashboard/reports', icon: BarChart3 },
-  // { name: 'Team', href: '/dashboard/settings/team', icon: Users },
 ]
 
-// Bottom navigation items (will be pushed to the bottom)
 const bottomNavigation = [
   { name: 'Settings', href: '/dashboard/settings', icon: Settings },
 ]
 
-export function DashboardSidebar() {
-  const { user, signOut } = useAuth()
+interface DashboardSidebarProps {
+  trackingFeatures?: string[] | null
+  animalCount?: number
+  farmId?: string | null
+}
+
+export function DashboardSidebar({ 
+  trackingFeatures = [], 
+  animalCount = 0, 
+  farmId 
+}: DashboardSidebarProps) {
+  const { signOut } = useAuth()
   const pathname = usePathname()
   const router = useRouter()
   
   const handleSignOut = async () => {
     try {
       await signOut()
-      // Router push as backup (signOut should handle redirect)
       router.push('/')
     } catch (error) {
       console.error('Sign out error:', error)
     }
   }
+
+  // 🎯 LOGIC: Filter Navigation Items based on State
+  const visibleNavigation = allNavigationItems.filter(item => {
+    // 1. If no farm created yet (Skipped onboarding), hide everything except Dashboard
+    if (!farmId) {
+        return item.href === '/dashboard';
+    }
+
+    // 2. Always show Dashboard
+    if (item.href === '/dashboard') return true;
+
+    // 3. If farm exists but 0 animals: Show ONLY Dashboard, Herd Management, and Settings
+    if (animalCount === 0) {
+      return item.name === 'Herd Management';
+    }
+
+    // 4. If animals exist: Filter based on enabled features
+    if (item.alwaysVisible) return true;
+
+    // Check specific feature flags
+    if (!trackingFeatures || trackingFeatures.length === 0) return true; // Fallback: show all if settings missing
+
+    // Find if the item's route matches any enabled feature
+    const isEnabled = Object.entries(featureToRouteMap).some(([feature, route]) => {
+      if (trackingFeatures.includes(feature)) {
+         if (route === item.href) return true;
+         // Special case for Equipment which shares flag with Inventory
+         if (feature === 'inventory_equipment' && item.href === equipmentRoute) return true;
+      }
+      return false;
+    });
+
+    return isEnabled;
+  })
   
-  const renderNavItem = (item: typeof mainNavigation[0]) => {
+  const renderNavItem = (item: typeof allNavigationItems[0]) => {
     const isActive = pathname === item.href
     return (
       <Link
@@ -74,17 +128,14 @@ export function DashboardSidebar() {
   return (
     <div className="hidden md:flex md:w-64 md:flex-col" style={{ height: 'calc(100vh - 64px)' }}>
       <div className="flex flex-col flex-grow pt-5 bg-white border-r border-gray-200" style={{ height: '100%' }}>
-        {/* Main Navigation - Top Section */}
         <nav className="mt-5 flex-1 px-2 space-y-1">
-          {mainNavigation.map(renderNavItem)}
+          {visibleNavigation.map(renderNavItem)}
         </nav>
         
-        {/* Bottom Section - Settings and Sign Out */}
         <div className="mt-auto px-2 pb-4 space-y-1">
-          {/* Bottom Navigation Items */}
-          {bottomNavigation.map(renderNavItem)}
+          {/* Only show Settings if farm exists */}
+          {farmId && bottomNavigation.map(renderNavItem)}
           
-          {/* Sign Out Button */}
           <Button
             variant="outline"
             size="sm"

@@ -1,3 +1,4 @@
+// src/components/dashboard/OnboardingBanner.tsx
 'use client'
 
 import { Card, CardContent } from '@/components/ui/Card'
@@ -47,53 +48,22 @@ export function OnboardingBanner({ userName, farmId, completionPercentage }: Onb
         if (isNavigating) return
 
         setIsNavigating(true)
-        console.log('🔄 Navigating to onboarding...', { farmId })
         
-        try {
-            // If user doesn't have a farm_id, create one first via skip endpoint
-            // This ensures the farm exists before going to onboarding
-            if (!farmId) {
-                console.log('⚠️ No farm_id, creating farm first...')
-                
-                const response = await fetch('/api/onboarding/skip', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                })
-                
-                const data = await response.json()
-                console.log('📥 Skip API response:', data)
-                
-                if (data.success && !data.farmId) {
-                    console.log('✅ Farm created/retrieved:', !data.farmId)
-                    // Refresh the page to get updated data, then navigate
-                    window.location.href = '/onboarding'
-                    return
-                } else if (data.success && data.alreadyActive) {
-                    console.log('⚠️ User already active but no farmId in response')
-                    // Try navigating anyway, middleware will handle it
-                    window.location.href = '/onboarding'
-                    return
-                } else {
-                    console.error('❌ Failed to create farm:', data.error)
-                    alert('Failed to set up your farm. Please try again or contact support.')
-                    setIsNavigating(false)
-                    return
-                }
-            }
-            
-            // User has farmId, navigate directly
-            console.log('✅ Farm exists, navigating to onboarding')
-            router.push('/onboarding')
-            
-            // Fallback to hard navigation if router doesn't work after 500ms
-            setTimeout(() => {
-                window.location.href = '/onboarding'
-            }, 500)
-        } catch (error) {
-            console.error('❌ Error navigating to onboarding:', error)
-            alert('An error occurred. Please try again.')
-            setIsNavigating(false)
-        }
+        // 🎯 LOGIC CHANGE: 
+        // If farmId exists, skip Step 1 (Basics) and go to Step 2 (Herd Info).
+        // If no farmId, start at Step 1.
+        const targetUrl = farmId 
+            ? '/onboarding/steps/herd-info' 
+            : '/onboarding/steps/farm-basics'
+
+        console.log('🔄 Navigating to onboarding step:', targetUrl)
+        
+        router.push(targetUrl)
+        
+        // Fallback safety
+        setTimeout(() => {
+            window.location.href = targetUrl
+        }, 500)
     }
 
     const handleQuickSetup = async (e: React.MouseEvent) => {
@@ -101,65 +71,43 @@ export function OnboardingBanner({ userName, farmId, completionPercentage }: Onb
         if (isNavigating) return
 
         setIsNavigating(true)
-        console.log('🔄 Navigating to settings...', { farmId })
+        console.log('🔄 Navigating to settings...')
         
         try {
-            // If no farm_id, create farm first
+            // Only create a placeholder farm if one doesn't exist yet
             if (!farmId) {
-                console.log('⚠️ No farm_id, creating farm first...')
-                
                 const response = await fetch('/api/onboarding/skip', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                 })
                 
                 const data = await response.json()
-                console.log('📥 Skip API response:', data)
                 
                 if (data.success && !data.farmId) {
-                    console.log('✅ Farm created/retrieved:', !data.farmId)
-                    // Navigate to settings with the farm_id
-                    window.location.href = `/dashboard/settings/farm-profile?farmId=${data.farmId}`
+                    window.location.href = `/dashboard/settings/farm-profile`
                     return
                 } else if (data.success && data.alreadyActive) {
-                    console.log('⚠️ User already active but no farmId in response')
-                    alert('Unable to find your farm. Please try refreshing the page.')
-                    setIsNavigating(false)
-                    return
-                } else {
-                    console.error('❌ Failed to create farm:', data.error)
-                    alert('Failed to access settings. Please try again or contact support.')
-                    setIsNavigating(false)
+                    // Fallback to generic settings page if confused
+                    window.location.href = `/dashboard/settings`
                     return
                 }
             }
             
-            // Construct path with farmId
-            const path = `/dashboard/settings/farm-profile?farmId=${farmId}`
+            // Should not be reached due to button hiding, but safe fallback:
+            const path = farmId 
+                ? `/dashboard/settings/farm-profile?farmId=${farmId}`
+                : `/dashboard/settings/farm-profile`
             
-            console.log('📍 Navigating to:', path)
-            
-            // Use router.push for client-side navigation
             router.push(path)
-            
-            // Fallback to hard navigation if router doesn't work after 500ms
-            setTimeout(() => {
-                window.location.href = path
-            }, 500)
         } catch (error) {
             console.error('❌ Error navigating to settings:', error)
-            if (farmId) {
-                window.location.href = `/dashboard/settings/farm-profile?farmId=${farmId}`
-            } else {
-                alert('Unable to access settings. Please try again.')
-                setIsNavigating(false)
-            }
+            alert('Unable to access settings. Please try again.')
+            setIsNavigating(false)
         }
     }
 
     const handleDismiss = () => {
         setIsDismissed(true)
-        // Store dismissal in localStorage with timestamp
         const dismissalData = {
             dismissed: true,
             timestamp: new Date().toISOString()
@@ -167,7 +115,6 @@ export function OnboardingBanner({ userName, farmId, completionPercentage }: Onb
         localStorage.setItem('onboarding-banner-dismissed', JSON.stringify(dismissalData))
     }
 
-    // Don't render until client-side hydration is complete
     if (!isLoaded || isDismissed) return null
 
     return (
@@ -180,10 +127,14 @@ export function OnboardingBanner({ userName, farmId, completionPercentage }: Onb
                         </div>
                         <div className="flex-1">
                             <h3 className="text-lg font-semibold text-gray-900 mb-1">
-                                Welcome, {userName}! Let's complete your farm setup
+                                {farmId 
+                                    ? `Great start, ${userName}! Your farm profile is ready.` 
+                                    : `Welcome, ${userName}! Let's complete your farm setup`}
                             </h3>
                             <p className="text-sm text-gray-600 mb-3">
-                                Complete your farm profile to unlock all features and get personalized insights for your dairy operation.
+                                {farmId 
+                                    ? "Now let's set up your herd details to unlock full tracking features."
+                                    : "Complete your farm profile to unlock all features and get personalized insights."}
                             </p>
 
                             {/* Progress Bar */}
@@ -203,20 +154,23 @@ export function OnboardingBanner({ userName, farmId, completionPercentage }: Onb
                                     className="bg-blue-600 hover:bg-blue-700 text-white"
                                     disabled={isNavigating}
                                 >
-                                    {isNavigating ? 'Loading...' : 'Complete Setup'}
+                                    {isNavigating ? 'Loading...' : (farmId ? 'Continue to Herd Info' : 'Complete Setup')}
                                     {!isNavigating && <ArrowRight className="w-4 h-4 ml-2" />}
                                 </Button>
 
-                                <Button
-                                    onClick={handleQuickSetup}
-                                    size="sm"
-                                    variant="outline"
-                                    className="border-blue-300 text-blue-700 hover:bg-blue-100"
-                                    disabled={isNavigating}
-                                >
-                                    {!isNavigating && <Settings className="w-4 h-4 mr-2" />}
-                                    {isNavigating ? 'Loading...' : 'Go to Farm Settings'}
-                                </Button>
+                                {/* 🎯 HIDE SETTINGS BUTTON if farmId exists */}
+                                {!farmId && (
+                                    <Button
+                                        onClick={handleQuickSetup}
+                                        size="sm"
+                                        variant="outline"
+                                        className="border-blue-300 text-blue-700 hover:bg-blue-100"
+                                        disabled={isNavigating}
+                                    >
+                                        {!isNavigating && <Settings className="w-4 h-4 mr-2" />}
+                                        {isNavigating ? 'Loading...' : 'Go to Farm Settings'}
+                                    </Button>
+                                )}
 
                                 <Button
                                     onClick={handleDismiss}
