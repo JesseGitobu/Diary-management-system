@@ -1,3 +1,4 @@
+// src/components/settings/health-breeding/HealthBreedingSettings.tsx
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'

@@ -1,3 +1,4 @@
+// src/components/breeding/BreedingDashboardWrapper.tsx
 'use client'
 
 import { useState, useEffect } from 'react'

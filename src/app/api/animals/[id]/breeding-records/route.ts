@@ -1,5 +1,5 @@
 // src/app/api/animals/[id]/breeding-records/route.ts
-// Updated to use unified breeding service
+// Updated to support Breeding Window Logic
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/supabase/server'
@@ -27,10 +27,10 @@ export async function GET(
 
     console.log('📋 Fetching unified breeding history for:', animalId)
 
-    // Get unified data from both tables
+    // Get unified data
     const history = await getUnifiedBreedingHistory(animalId, true)
 
-    // Transform for frontend compatibility
+    // 1. Transform Breeding Records (existing logic)
     const transformedRecords = history.breedingRecords.map(record => {
       const pregnancy = history.pregnancyRecords.find(
         p => p.breeding_record_id === record.id
@@ -58,11 +58,43 @@ export async function GET(
       }
     })
 
+    // 2. Filter & Map Heat Events (NEW LOGIC)
+    // We specifically extract 'heat_detection' events for the timer banner
+    const heatEvents = history.events
+      .filter((e: any) => e.event_type === 'heat_detection')
+      .map((e: any) => ({
+        id: e.id,
+        animal_id: e.animal_id,
+        event_date: e.event_date,
+        // Handle heat_signs safely: check root or inside details/data JSON
+        heat_signs: Array.isArray(e.heat_signs) ? e.heat_signs : (e.details?.heat_signs || []),
+        heat_action_taken: e.heat_action_taken || e.details?.heat_action_taken,
+        created_at: e.created_at
+      }))
+
+    // 3. Filter Pregnancy Checks
+    // Assuming history.events also contains standalone pregnancy checks or they are in pregnancyRecords
+    // We format pregnancyRecords to match the 'PregnancyCheck' interface in frontend
+    const formattedPregnancyChecks = history.pregnancyRecords.map((p: any) => ({
+      id: p.id,
+      breeding_record_id: p.breeding_record_id,
+      check_date: p.confirmed_date || p.created_at,
+      check_method: p.check_method || 'Unknown',
+      result: p.pregnancy_status === 'confirmed' ? 'positive' : 
+              p.pregnancy_status === 'false' ? 'negative' : 'inconclusive',
+      checked_by: p.checked_by || 'System',
+      notes: p.notes
+    }))
+
     return NextResponse.json({
       success: true,
       breedingRecords: transformedRecords,
-      events: history.events,
-      pregnancyRecords: history.pregnancyRecords
+      // Change 'pregnancyRecords' to 'pregnancyChecks' to match frontend expectation
+      pregnancyChecks: formattedPregnancyChecks, 
+      // Add 'heatEvents' specifically for the breeding window logic
+      heatEvents: heatEvents,
+      // Keep raw events for debugging or other lists
+      allEvents: history.events 
     })
 
   } catch (error: any) {
@@ -144,7 +176,6 @@ export async function POST(
     }
 
     // Update animal status to 'served'
-    // Using (supabase as any) allows the update call even if types are restricted/missing
     await (supabase as any)
       .from('animals')
       .update({

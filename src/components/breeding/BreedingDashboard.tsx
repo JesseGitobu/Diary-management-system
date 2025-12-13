@@ -1,3 +1,4 @@
+// src/components/breeding/BreedingDashboard.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -23,6 +24,8 @@ import {
   Filter
 } from 'lucide-react'
 import Link from 'next/link'
+// ✅ IMPORT format from date-fns
+import { format } from 'date-fns' 
 import { BreedingCalendar } from '@/components/breeding/BreedingCalendar'
 import { PregnantAnimalsList } from '@/components/breeding/PregnantAnimalsList'
 import { BreedingStatsCards } from '@/components/breeding/BreedingStatsCards'
@@ -67,33 +70,38 @@ export function BreedingDashboard({
   const [showQuickActions, setShowQuickActions] = useState(false)
   const [upcomingEventsExpanded, setUpcomingEventsExpanded] = useState(false)
   const [selectedAnimal, setSelectedAnimal] = useState<{ id?: string, gender?: 'male' | 'female' } | null>(null)
+  
+  // ✅ FIX: Use a mounted state to prevent hydration errors for date rendering
+  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
-  const handleMobileNavAction = (event: Event) => {
-    const customEvent = event as CustomEvent
-    const { action } = customEvent.detail
+    setMounted(true) // Component is now mounted on client
+    
+    const handleMobileNavAction = (event: Event) => {
+      const customEvent = event as CustomEvent
+      const { action } = customEvent.detail
 
-    // Map breeding modal actions
-    const breedingModalMap: Record<string, BreedingEventType> = {
-      'showHeatDetectionModal': 'heat_detection',
-      'showInseminationModal': 'insemination',
-      'showPregnancyCheckModal': 'pregnancy_check',
-      'showCalvingEventModal': 'calving'
+      // Map breeding modal actions
+      const breedingModalMap: Record<string, BreedingEventType> = {
+        'showHeatDetectionModal': 'heat_detection',
+        'showInseminationModal': 'insemination',
+        'showPregnancyCheckModal': 'pregnancy_check',
+        'showCalvingEventModal': 'calving'
+      }
+
+      if (action in breedingModalMap) {
+        setActiveModal(breedingModalMap[action])
+      }
     }
 
-    if (action in breedingModalMap) {
-      setActiveModal(breedingModalMap[action])
+    // Listen for mobile nav modal actions
+    window.addEventListener('mobileNavModalAction', handleMobileNavAction)
+
+    // Cleanup listener on unmount
+    return () => {
+      window.removeEventListener('mobileNavModalAction', handleMobileNavAction)
     }
-  }
-
-  // Listen for mobile nav modal actions
-  window.addEventListener('mobileNavModalAction', handleMobileNavAction)
-
-  // Cleanup listener on unmount
-  return () => {
-    window.removeEventListener('mobileNavModalAction', handleMobileNavAction)
-  }
-}, [])
+  }, [])
 
   const { isMobile, isTouch } = useDeviceInfo()
   const canManageBreeding = ['farm_owner', 'farm_manager'].includes(userRole)
@@ -188,6 +196,10 @@ export function BreedingDashboard({
       description: 'Record birth'
     }
   ]
+
+  // Prevent hydration mismatch by returning null until mounted if critical, 
+  // OR just handle the date rendering safely below.
+  if (!mounted) return null; 
 
   return (
     <div className={cn("space-y-6", isMobile ? "pb-20" : "space-y-8")}>
@@ -391,7 +403,8 @@ export function BreedingDashboard({
                               "font-medium",
                               isMobile ? "text-sm" : "text-sm"
                             )}>
-                              {new Date(event.scheduled_date).toLocaleDateString()}
+                              {/* ✅ FIXED: Use format() for consistent rendering */}
+                              {format(new Date(event.scheduled_date), 'MMM dd, yyyy')}
                             </p>
                             <Badge
                               variant={event.status === 'scheduled' ? 'default' : 'destructive'}

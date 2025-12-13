@@ -1,3 +1,4 @@
+// src/components/breeding/CalvingEventForm.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -9,7 +10,12 @@ import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Badge } from '@/components/ui/Badge'
-import { getAnimalsForCalving, createBreedingEvent, createCalfFromEvent, type CalvingEvent } from '@/lib/database/breeding'
+// ✅ CHANGED IMPORT: Added processCalving
+import { 
+  getAnimalsForCalving, 
+  processCalving, 
+  type CalvingEvent 
+} from '@/lib/database/breeding'
 import { AlertCircle, CheckCircle, Baby, Heart, Clock } from 'lucide-react'
 
 const calvingEventSchema = z.object({
@@ -29,6 +35,7 @@ interface CalvingEventFormProps {
   farmId: string
   onEventCreated: () => void
   onCancel: () => void
+  preSelectedAnimalId?: string
 }
 
 const calvingOutcomes = [
@@ -71,17 +78,21 @@ const healthStatuses = [
   'Under treatment'
 ]
 
-export function CalvingEventForm({ farmId, onEventCreated, onCancel }: CalvingEventFormProps) {
+export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelectedAnimalId }: CalvingEventFormProps) {
   const [loading, setLoading] = useState(false)
   const [animals, setAnimals] = useState<any[]>([])
   const [error, setError] = useState<string | null>(null)
+  
+  // Note: createCalf is implicitly true now as processCalving requires it for the new tables
+  // We can keep the state if you want UI control, but for now we assume it's always created 
+  // to satisfy foreign key constraints in calf_records.
   const [createCalf, setCreateCalf] = useState(true)
   const [loadingAnimals, setLoadingAnimals] = useState(true)
   
   const form = useForm<CalvingEventFormData>({
     resolver: zodResolver(calvingEventSchema),
     defaultValues: {
-      animal_id: '',
+      animal_id: preSelectedAnimalId || '',
       event_date: new Date().toISOString().split('T')[0],
       calving_outcome: 'normal',
       calf_gender: 'female',
@@ -95,12 +106,35 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel }: CalvingEv
   useEffect(() => {
     loadEligibleAnimals()
   }, [farmId])
+
+  useEffect(() => {
+    if (preSelectedAnimalId) {
+      form.setValue('animal_id', preSelectedAnimalId)
+    }
+  }, [preSelectedAnimalId, form])
   
   const loadEligibleAnimals = async () => {
     setLoadingAnimals(true)
     try {
       const eligibleAnimals = await getAnimalsForCalving(farmId)
+      
+      if (preSelectedAnimalId) {
+        const found = eligibleAnimals.find((a: any) => a.id === preSelectedAnimalId)
+        if (!found) {
+          eligibleAnimals.unshift({
+            id: preSelectedAnimalId,
+            tag_number: 'Selected Animal',
+            name: '(Current)',
+            breeding_events: [] 
+          })
+        }
+      }
+
       setAnimals(eligibleAnimals)
+      
+      if (preSelectedAnimalId) {
+        form.setValue('animal_id', preSelectedAnimalId)
+      }
     } catch (error) {
       console.error('Error loading animals:', error)
       setError('Failed to load animals eligible for calving')
@@ -109,6 +143,7 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel }: CalvingEv
     }
   }
   
+  // ✅ UPDATED HANDLER: Using processCalving
   const handleSubmit = async (data: CalvingEventFormData) => {
     setLoading(true)
     setError(null)
@@ -118,23 +153,16 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel }: CalvingEv
         ...data,
         farm_id: farmId,
         event_type: 'calving',
-        created_by: 'system', // TODO: Replace with actual user ID if available
+        created_by: 'system', 
       }
       
-      const result = await createBreedingEvent(eventData)
+      // We use the new comprehensive processor
+      const result = await processCalving(eventData, farmId)
       
       if (result.success) {
-        // Create calf if requested
-        if (createCalf) {
-          const calfResult = await createCalfFromEvent(eventData, farmId)
-          if (!calfResult.success) {
-            setError(`Event recorded but failed to create calf: ${calfResult.error}`)
-            return
-          }
-        }
         onEventCreated()
       } else {
-        setError(result.error || 'Failed to create calving event')
+        setError(result.error || 'Failed to process calving event')
       }
     } catch (error) {
       setError('An unexpected error occurred')
@@ -147,7 +175,7 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel }: CalvingEv
   const selectedAnimal = form.watch('animal_id')
   const calvingDate = form.watch('event_date')
   
-  // Auto-generate calf tag number based on mother's tag and date
+  // Auto-generate calf tag number
   useEffect(() => {
     if (selectedAnimal && calvingDate && !form.getValues('calf_tag_number')) {
       const animal = animals.find(a => a.id === selectedAnimal)
@@ -178,14 +206,14 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel }: CalvingEv
         </div>
       )}
       
-      {animals.length === 0 && !loadingAnimals && (
+      {animals.length === 0 && !loadingAnimals && !preSelectedAnimalId && (
         <div className="p-4 bg-blue-50 border border-blue-200 rounded-md text-blue-700 text-sm">
           <div className="flex items-start space-x-2">
             <Baby className="w-4 h-4 mt-0.5 flex-shrink-0" />
             <div>
               <p className="font-medium">No animals eligible for calving</p>
               <p className="text-sm mt-1">
-                Animals become eligible when they are confirmed pregnant and approaching their due date (within 30 days).
+                Animals become eligible when they are confirmed pregnant and approaching their due date.
               </p>
             </div>
           </div>
@@ -199,8 +227,10 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel }: CalvingEv
           <select
             id="animal_id"
             {...form.register('animal_id')}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
-            disabled={animals.length === 0}
+            disabled={!!preSelectedAnimalId || animals.length === 0}
+            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent ${
+              preSelectedAnimalId ? 'bg-gray-100 cursor-not-allowed' : ''
+            }`}
           >
             <option value="">Choose an animal...</option>
             {animals.map((animal) => (
@@ -211,6 +241,9 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel }: CalvingEv
                 }
               </option>
             ))}
+            {preSelectedAnimalId && !animals.find(a => a.id === preSelectedAnimalId) && (
+               <option value={preSelectedAnimalId}>Current Animal</option>
+            )}
           </select>
           {form.formState.errors.animal_id && (
             <p className="text-sm text-red-600 mt-1">
@@ -284,99 +317,86 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel }: CalvingEv
                 Calf Details
               </h4>
               <p className="text-sm text-gray-600">
-                Information about the newborn calf
+                Information about the newborn calf. (System will create new Animal, Calving Record, and Calf Record)
               </p>
             </div>
-            <label className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={createCalf}
-                onChange={(e) => setCreateCalf(e.target.checked)}
-                className="rounded border-gray-300 text-farm-green focus:ring-farm-green"
-              />
-              <span className="text-sm text-gray-700">Create calf record in system</span>
-            </label>
+            {/* Removed the checkbox because processCalving implies calf creation */}
           </div>
           
-          {createCalf && (
-            <div className="space-y-4 pl-4 border-l-2 border-green-100">
-              {/* Calf Gender */}
-              <div>
-                <Label>Calf Gender *</Label>
-                <div className="flex space-x-4 mt-2">
-                  {['female', 'male'].map((gender) => (
-                    <button
-                      key={gender}
-                      type="button"
-                      onClick={() => form.setValue('calf_gender', gender as any)}
-                      className={`flex-1 p-3 border rounded-lg transition-colors ${
-                        form.watch('calf_gender') === gender
-                          ? 'border-farm-green bg-green-50 text-green-800'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <div className="flex items-center justify-center space-x-2">
-                        <span className="text-2xl">
-                          {gender === 'female' ? '♀' : '♂'}
-                        </span>
-                        <span className="font-medium capitalize">{gender}</span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-              
-              {/* Calf Tag Number */}
-              <div>
-                <Label htmlFor="calf_tag_number">Calf Tag Number *</Label>
-                <Input
-                  id="calf_tag_number"
-                  {...form.register('calf_tag_number')}
-                  error={form.formState.errors.calf_tag_number?.message}
-                  placeholder="e.g., 001-2024C"
-                />
-                <p className="text-sm text-gray-600 mt-1">
-                  Auto-generated based on mother's tag and birth date. You can modify if needed.
-                </p>
-              </div>
-              
-              {/* Calf Weight */}
-              <div>
-                <Label htmlFor="calf_weight">Birth Weight (kg)</Label>
-                <Input
-                  id="calf_weight"
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="100"
-                  {...form.register('calf_weight', { valueAsNumber: true })}
-                  placeholder="e.g., 35.5"
-                />
-                <p className="text-sm text-gray-600 mt-1">
-                  Typical birth weight: 30-45 kg for dairy calves
-                </p>
-              </div>
-              
-              {/* Calf Health Status */}
-              <div>
-                <Label htmlFor="calf_health_status">Health Status</Label>
-                <select
-                  id="calf_health_status"
-                  {...form.register('calf_health_status')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
-                >
-                  {healthStatuses.map((status) => (
-                    <option key={status} value={status}>
-                      {status}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-sm text-gray-600 mt-1">
-                  Initial health assessment of the newborn calf
-                </p>
+          <div className="space-y-4 pl-4 border-l-2 border-green-100">
+            {/* Calf Gender */}
+            <div>
+              <Label>Calf Gender *</Label>
+              <div className="flex space-x-4 mt-2">
+                {['female', 'male'].map((gender) => (
+                  <button
+                    key={gender}
+                    type="button"
+                    onClick={() => form.setValue('calf_gender', gender as any)}
+                    className={`flex-1 p-3 border rounded-lg transition-colors ${
+                      form.watch('calf_gender') === gender
+                        ? 'border-farm-green bg-green-50 text-green-800'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-center space-x-2">
+                      <span className="text-2xl">
+                        {gender === 'female' ? '♀' : '♂'}
+                      </span>
+                      <span className="font-medium capitalize">{gender}</span>
+                    </div>
+                  </button>
+                ))}
               </div>
             </div>
-          )}
+            
+            {/* Calf Tag Number */}
+            <div>
+              <Label htmlFor="calf_tag_number">Calf Tag Number *</Label>
+              <Input
+                id="calf_tag_number"
+                {...form.register('calf_tag_number')}
+                error={form.formState.errors.calf_tag_number?.message}
+                placeholder="e.g., 001-2024C"
+              />
+              <p className="text-sm text-gray-600 mt-1">
+                Auto-generated based on mother's tag and birth date.
+              </p>
+            </div>
+            
+            {/* Calf Weight */}
+            <div>
+              <Label htmlFor="calf_weight">Birth Weight (kg)</Label>
+              <Input
+                id="calf_weight"
+                type="number"
+                step="0.1"
+                min="0"
+                max="100"
+                {...form.register('calf_weight', { valueAsNumber: true })}
+                placeholder="e.g., 35.5"
+              />
+              <p className="text-sm text-gray-600 mt-1">
+                Typical birth weight: 30-45 kg for dairy calves
+              </p>
+            </div>
+            
+            {/* Calf Health Status */}
+            <div>
+              <Label htmlFor="calf_health_status">Health Status</Label>
+              <select
+                id="calf_health_status"
+                {...form.register('calf_health_status')}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+              >
+                {healthStatuses.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
         </div>
         
         {/* Additional Notes */}
@@ -387,11 +407,8 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel }: CalvingEv
             {...form.register('notes')}
             rows={4}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
-            placeholder="Any additional information about the calving event, complications, treatments, or observations..."
+            placeholder="Any additional information about the calving event..."
           />
-          <p className="text-sm text-gray-600 mt-1">
-            Include any relevant details about the birth, complications, or post-birth care
-          </p>
         </div>
         
         {/* Actions */}
@@ -401,13 +418,13 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel }: CalvingEv
           </Button>
           <Button 
             type="submit" 
-            disabled={loading || animals.length === 0}
+            disabled={loading || (animals.length === 0 && !preSelectedAnimalId)}
             className="min-w-[160px]"
           >
             {loading ? (
               <div className="flex items-center space-x-2">
                 <LoadingSpinner size="sm" />
-                <span>Recording...</span>
+                <span>Processing...</span>
               </div>
             ) : (
               <div className="flex items-center space-x-2">
@@ -418,18 +435,6 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel }: CalvingEv
           </Button>
         </div>
       </form>
-      
-      {/* Help Information */}
-      <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
-        <h5 className="font-medium text-blue-900 mb-2">Calving Event Information</h5>
-        <ul className="text-sm text-blue-800 space-y-1">
-          <li>• Record the actual birth date and outcome</li>
-          <li>• Creating a calf record will automatically add the new animal to your herd</li>
-          <li>• The calf tag number is auto-generated but can be customized</li>
-          <li>• Document any complications or special care requirements</li>
-          <li>• This information helps track breeding performance and calf mortality</li>
-        </ul>
-      </div>
     </div>
   )
 }

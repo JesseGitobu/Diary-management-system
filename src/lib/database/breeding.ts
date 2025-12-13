@@ -1,6 +1,7 @@
+// src/lib/database/breeding.ts
 import { createClient } from '@/lib/supabase/client'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
-import { addDays, subDays } from 'date-fns'
+import { addDays, subDays, differenceInMonths } from 'date-fns'
 import { Database } from '@/lib/supabase/types'
 
 export type BreedingEventType = 'heat_detection' | 'insemination' | 'pregnancy_check' | 'calving'
@@ -54,28 +55,13 @@ export type BreedingEvent = HeatDetectionEvent | InseminationEvent | PregnancyCh
 export async function getEligibleAnimals(farmId: string, eventType: BreedingEventType) {
   const supabase = createClient()
   
+  // Base query: Active females in the farm
   let query = supabase
     .from('animals')
-    .select('id, tag_number, name, gender, birth_date')
+    .select('id, tag_number, name, gender, birth_date, production_status')
     .eq('farm_id', farmId)
     .eq('status', 'active')
-  
-  // Filter based on event type
-  switch (eventType) {
-    case 'heat_detection':
-    case 'insemination':
-      // Only female animals of breeding age
-      query = query.eq('gender', 'female')
-      break
-    case 'pregnancy_check':
-      // Only female animals that have been inseminated
-      query = query.eq('gender', 'female')
-      break
-    case 'calving':
-      // Only pregnant females near due date
-      query = query.eq('gender', 'female')
-      break
-  }
+    .eq('gender', 'female') 
   
   const { data, error } = await query.order('tag_number')
   
@@ -83,20 +69,51 @@ export async function getEligibleAnimals(farmId: string, eventType: BreedingEven
     console.error('Error fetching eligible animals:', error)
     return []
   }
-  
-  // FIXED: Cast to any[]
-  return (data || []) as any[]
+
+  // Client-side filtering is safer for complex status logic
+  const allFemales = (data || []) as any[]
+
+  return allFemales.filter(animal => {
+    // 1. Basic Age Check (e.g., must be > 10 months to breed)
+    const ageInMonths = animal.birth_date ? differenceInMonths(new Date(), new Date(animal.birth_date)) : 12 // Default to eligible if unknown
+    if (eventType !== 'calving' && ageInMonths < 10) return false;
+
+    // 2. Specific Logic per Event
+    switch (eventType) {
+      case 'heat_detection':
+      case 'insemination':
+        // Eligible if: Open, Heifer, or Lactating (and not confirmed pregnant)
+        // We rely on the dropdown to show them, user decides.
+        // Exclude if explicitly marked 'pregnant' in production_status
+        return animal.production_status !== 'pregnant';
+
+      case 'pregnancy_check':
+        // Ideally should check for recent insemination, but to ensure they appear in list:
+        // Show any female that isn't already 'confirmed pregnant' or 'dry' (unless checking dry cow)
+        // Generally, we want animals that have been served.
+        return true; // We allow selecting any female, form validation handles the rest
+
+      case 'calving':
+        // Show animals marked as 'pregnant' or 'dry'
+        return ['pregnant', 'dry'].includes(animal.production_status?.toLowerCase());
+
+      default:
+        return true;
+    }
+  })
 }
 
-// Get animals eligible for pregnancy check (recently inseminated)
+// Get animals specifically eligible for pregnancy check (recently inseminated)
+// This is a stricter version used by the dedicated Preg Check form
 export async function getAnimalsForPregnancyCheck(farmId: string) {
   const supabase = createClient()
   
-  // Get animals inseminated in the last 90 days without recent pregnancy check
+  // Get animals that have an insemination event in the last 9 months
+  // AND generally don't have a newer 'calving' event
   const { data, error } = await supabase
     .from('animals')
     .select(`
-      id, tag_number, name,
+      id, tag_number, name, production_status,
       breeding_events!inner (
         event_type,
         event_date
@@ -106,22 +123,39 @@ export async function getAnimalsForPregnancyCheck(farmId: string) {
     .eq('status', 'active')
     .eq('gender', 'female')
     .eq('breeding_events.event_type', 'insemination')
-    .gte('breeding_events.event_date', new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString())
+    // Look back 285 days max (approx gestation)
+    .gte('breeding_events.event_date', new Date(Date.now() - 285 * 24 * 60 * 60 * 1000).toISOString())
   
   if (error) {
     console.error('Error fetching animals for pregnancy check:', error)
     return []
   }
   
-  // FIXED: Cast to any[]
-  return (data || []) as any[]
+  // Filter out unique animals (Supabase might return duplicates due to join)
+  const animalsData = (data || []) as any[]
+  const uniqueAnimals = Array.from(new Set(animalsData.map(a => a.id)))
+    .map(id => animalsData.find(a => a.id === id))
+    .filter(Boolean) as any[]
+
+  return uniqueAnimals
 }
 
 // Get pregnant animals near calving date
 export async function getAnimalsForCalving(farmId: string) {
   const supabase = createClient()
   
-  // Get pregnant animals within 30 days of due date
+  // Primary check: Animals explicitly marked as 'pregnant' or 'dry'
+  const { data: statusBasedData, error: statusError } = await supabase
+    .from('animals')
+    .select('id, tag_number, name, production_status')
+    .eq('farm_id', farmId)
+    .in('production_status', ['pregnant', 'dry'])
+    
+  if (!statusError && statusBasedData && statusBasedData.length > 0) {
+      return statusBasedData as any[]
+  }
+
+  // Fallback: Check breeding events for confirmed pregnancy
   const { data, error } = await supabase
     .from('animals')
     .select(`
@@ -137,15 +171,19 @@ export async function getAnimalsForCalving(farmId: string) {
     .eq('gender', 'female')
     .eq('breeding_events.event_type', 'pregnancy_check')
     .eq('breeding_events.pregnancy_result', 'pregnant')
-    .lte('breeding_events.estimated_due_date', new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString())
   
   if (error) {
     console.error('Error fetching animals for calving:', error)
     return []
   }
   
-  // FIXED: Cast to any[]
-  return (data || []) as any[]
+  // Unique filter
+  const animalsData = (data || []) as any[]
+  const uniqueAnimals = Array.from(new Set(animalsData.map(a => a.id)))
+    .map(id => animalsData.find(a => a.id === id))
+    .filter(Boolean) as any[]
+
+  return uniqueAnimals
 }
 
 // CLIENT-SIDE: This should call the API, not database directly
@@ -162,13 +200,178 @@ export async function createBreedingEvent(eventData: BreedingEvent) {
     const result = await response.json()
     
     if (!response.ok) {
+      // ✅ IMPROVEMENT: Log exact API error
+      console.error('API Error creating breeding event:', result)
       return { success: false, error: result.error || 'Failed to create breeding event' }
     }
     
     return { success: true, data: result.event }
   } catch (error) {
-    console.error('Error creating breeding event:', error)
+    console.error('Network Error creating breeding event:', error)
     return { success: false, error: 'Network error occurred' }
+  }
+}
+
+function mapHealthStatus(status?: string): string {
+  const s = status?.toLowerCase() || ''
+  if (s.includes('good') || s.includes('excellent')) return 'healthy'
+  if (s.includes('poor')) return 'weak'
+  if (s.includes('sick')) return 'sick'
+  if (s.includes('dead') || s.includes('deceased')) return 'deceased'
+  return 'healthy'
+}
+
+function mapDifficulty(outcome: string): string {
+  const o = outcome.toLowerCase()
+  if (o === 'caesarean') return 'cesarean' // Matches DB constraint
+  if (o === 'normal') return 'normal'
+  if (o === 'assisted') return 'assisted'
+  if (o === 'difficult') return 'difficult'
+  return 'normal' // Default
+}
+
+
+export async function processCalving(calvingEvent: CalvingEvent, farmId: string) {
+  const supabase = createClient()
+  
+  if (!calvingEvent.calf_tag_number) {
+    return { success: false, error: 'Calf tag number is required' }
+  }
+
+  try {
+    // 1. GET ACTIVE PREGNANCY RECORD
+    // FIX: Corrected select to only use columns present in pregnancy_records
+    const { data: pregRecord, error: pregError } = await (supabase
+      .from('pregnancy_records') as any)
+      .select('id, breeding_record_id') // Only select existing columns
+      .eq('animal_id', calvingEvent.animal_id)
+      .eq('pregnancy_status', 'confirmed')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    // Handle Missing Pregnancy Record
+    if (pregError || !pregRecord) {
+      console.error('No active pregnancy record found for mother:', calvingEvent.animal_id, 'Fetch Error:', pregError?.message);
+      // No need for fallback check to breeding_records here if pregnancy_records is strictly required for calving
+      return { 
+        success: false, 
+        error: 'Cannot record calving: No active confirmed pregnancy record found for this animal.' 
+      }
+    }
+
+    // 2. CREATE CALF IN 'ANIMALS' TABLE
+    const newCalfData = {
+      farm_id: farmId,
+      tag_number: calvingEvent.calf_tag_number,
+      name: `Calf ${calvingEvent.calf_tag_number}`,
+      gender: calvingEvent.calf_gender || 'female',
+      birth_date: calvingEvent.event_date,
+      weight: calvingEvent.calf_weight,
+      status: 'active',
+      animal_source: 'newborn_calf', 
+      mother_id: calvingEvent.animal_id,
+      production_status: 'calf',
+      health_status: mapHealthStatus(calvingEvent.calf_health_status),
+      notes: `Generated via Calving Process`
+    }
+
+    const { data: newCalf, error: calfError } = await (supabase.from('animals') as any)
+      .insert(newCalfData)
+      .select()
+      .single()
+
+    if (calfError) {
+      console.error('Supabase Error creating calf:', JSON.stringify(calfError, null, 2))
+      throw new Error(`Failed to create calf: ${calfError.message}`)
+    }
+
+    // 3. CREATE CALVING RECORD
+    let sireInfo = null;
+    // Look up sire info from the linked breeding_record
+    if (pregRecord.breeding_record_id) {
+       // FIX: Accessing sire_tag and sire_breed which should be on breeding_records table
+       const { data: br } = await (supabase.from('breeding_records') as any).select('sire_tag, sire_breed').eq('id', pregRecord.breeding_record_id).single()
+       if (br) sireInfo = `${br.sire_tag || ''} ${br.sire_breed || ''}`.trim()
+    }
+
+    const calvingRecordData = {
+      pregnancy_record_id: pregRecord.id,
+      mother_id: calvingEvent.animal_id,
+      farm_id: farmId,
+      calving_date: calvingEvent.event_date,
+      calving_difficulty: mapDifficulty(calvingEvent.calving_outcome),
+      assistance_required: ['assisted', 'difficult', 'caesarean'].includes(calvingEvent.calving_outcome),
+      birth_weight: calvingEvent.calf_weight,
+      calf_gender: calvingEvent.calf_gender,
+      calf_alive: calvingEvent.calf_health_status !== 'deceased',
+      calf_health_status: mapHealthStatus(calvingEvent.calf_health_status),
+      notes: calvingEvent.notes
+    }
+
+    const { data: calvingRecord, error: calvingError } = await (supabase.from('calving_records') as any)
+      .insert(calvingRecordData)
+      .select()
+      .single()
+
+    if (calvingError) {
+       console.error('Supabase Error creating calving record:', JSON.stringify(calvingError, null, 2))
+       throw new Error(`Failed to create calving record: ${calvingError.message}`)
+    }
+
+    // 4. CREATE CALF RECORD (Detail table)
+    const calfRecordData = {
+      calving_record_id: calvingRecord.id,
+      animal_id: newCalf.id,
+      farm_id: farmId,
+      dam_id: calvingEvent.animal_id,
+      birth_date: calvingEvent.event_date,
+      gender: calvingEvent.calf_gender,
+      birth_weight: calvingEvent.calf_weight,
+      health_status: mapHealthStatus(calvingEvent.calf_health_status),
+      sire_info: sireInfo, // Populated from breeding record lookup
+      notes: 'Auto-generated from calving event'
+    }
+
+    const { error: calfRecError } = await (supabase.from('calf_records') as any)
+      .insert(calfRecordData)
+
+    if (calfRecError) {
+      console.error('Supabase Error creating calf record:', JSON.stringify(calfRecError, null, 2))
+      throw new Error(`Failed to create calf detailed record: ${calfRecError.message}`)
+    }
+
+    // 5. UPDATE MOTHER & CLOSE PREGNANCY
+    await (supabase.from('animals') as any)
+      .update({
+        production_status: 'lactating',
+        expected_calving_date: null
+      })
+      .eq('id', calvingEvent.animal_id)
+
+    await (supabase.from('pregnancy_records') as any)
+      .update({
+        pregnancy_status: 'completed',
+        actual_calving_date: calvingEvent.event_date,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', pregRecord.id)
+
+    // Sync Breeding Record if linked
+    if (pregRecord.breeding_record_id) {
+       await (supabase.from('breeding_records') as any)
+      .update({
+        pregnancy_status: 'completed',
+        actual_calving_date: calvingEvent.event_date
+      })
+      .eq('id', pregRecord.breeding_record_id)
+    }
+
+    return { success: true, data: newCalf }
+
+  } catch (error: any) {
+    console.error('❌ Error processing calving:', error)
+    return { success: false, error: error.message || 'Unknown error during calving process' }
   }
 }
 
@@ -181,30 +384,45 @@ export async function createCalfFromEvent(calvingEvent: CalvingEvent, farmId: st
   
   const supabase = createClient()
   
-  const calfData = {
-    farm_id: farmId,
-    tag_number: calvingEvent.calf_tag_number,
-    name: `Calf ${calvingEvent.calf_tag_number}`,
-    gender: calvingEvent.calf_gender || 'female',
-    birth_date: calvingEvent.event_date,
-    weight: calvingEvent.calf_weight,
-    status: 'active',
-    notes: `Born from animal ID: ${calvingEvent.animal_id}. Health status: ${calvingEvent.calf_health_status || 'Good'}`,
-    animal_source: 'calving' // or another appropriate value if required by your schema
+  try {
+    const calfData = {
+      farm_id: farmId,
+      tag_number: calvingEvent.calf_tag_number,
+      name: `Calf ${calvingEvent.calf_tag_number}`,
+      gender: calvingEvent.calf_gender || 'female', // Matches constraint 'male'/'female'
+      birth_date: calvingEvent.event_date,
+      weight: calvingEvent.calf_weight, // Matches numeric column 'weight'
+      status: 'active', // Matches constraint 'active'
+      
+      // ✅ FIX 1: Match strict constraint ('newborn_calf' or 'purchased_animal')
+      animal_source: 'newborn_calf', 
+      
+      // ✅ FIX 2: Use the correct column name found in your schema (was 'dam_id')
+      mother_id: calvingEvent.animal_id,
+      
+      production_status: 'calf', // Matches constraint 'calf'
+      
+      // We removed the redundant text about the mother from notes since we are linking the ID now
+      notes: `Outcome: ${calvingEvent.calving_outcome}. Health: ${calvingEvent.calf_health_status || 'Good'}. ${calvingEvent.notes || ''}`
+    }
+    
+    // Explicit casting to 'any' allows us to insert fields even if TypeScript types are outdated
+    const { data, error } = await (supabase
+      .from('animals') as any) 
+      .insert(calfData)
+      .select()
+      .single()
+    
+    if (error) {
+      console.error('Supabase Error creating calf:', JSON.stringify(error, null, 2))
+      return { success: false, error: error.message || 'Database error occurred' }
+    }
+    
+    return { success: true, data }
+  } catch (err: any) {
+    console.error('Unexpected error in createCalfFromEvent:', err)
+    return { success: false, error: err.message || 'Unexpected error occurred' }
   }
-  
-  const { data, error } = await (supabase
-    .from('animals') as any)
-    .insert(calfData)
-    .select()
-    .single()
-  
-  if (error) {
-    console.error('Error creating calf:', error)
-    return { success: false, error: error.message }
-  }
-  
-  return { success: true, data }
 }
 
 // Get breeding events for an animal

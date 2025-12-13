@@ -8,7 +8,7 @@ import type { BreedingAlert } from '@/lib/database/breeding-stats'
 
 interface BreedingAlertsProps {
   alerts: BreedingAlert[]
-  onActionClick: (alertType: string) => void
+  onActionClick: (alertType: string, animalId: string) => void
 }
 
 export function BreedingAlerts({ alerts, onActionClick }: BreedingAlertsProps) {
@@ -113,7 +113,7 @@ export function BreedingAlerts({ alerts, onActionClick }: BreedingAlertsProps) {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => onActionClick(alert.type)}
+                  onClick={() => onActionClick(alert.type, alert.animal_id)}
                   className="ml-4"
                 >
                   {alert.type === 'calving_due' && 'View'}

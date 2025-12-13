@@ -1,3 +1,4 @@
+// src/components/animals/PurchasedAnimalForm.tsx
 'use client'
 
 import { useState, useEffect } from 'react'

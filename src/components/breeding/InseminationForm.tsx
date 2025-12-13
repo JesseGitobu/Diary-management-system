@@ -1,3 +1,4 @@
+// src/components/breeding/InseminationForm.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -9,7 +10,7 @@ import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Badge } from '@/components/ui/Badge'
-import { getEligibleAnimals, createBreedingEvent, type InseminationEvent } from '@/lib/database/breeding'
+import { getEligibleAnimals } from '@/lib/database/breeding'
 import { Syringe, Calendar, User, FileText } from 'lucide-react'
 
 const inseminationSchema = z.object({
@@ -27,6 +28,7 @@ interface InseminationFormProps {
   farmId: string
   onEventCreated: () => void
   onCancel: () => void
+  preSelectedAnimalId?: string
 }
 
 const inseminationMethods = [
@@ -54,7 +56,7 @@ const commonTechnicians = [
   'Sarah Davis', 'AI Tech 1', 'AI Tech 2'
 ]
 
-export function InseminationForm({ farmId, onEventCreated, onCancel }: InseminationFormProps) {
+export function InseminationForm({ farmId, onEventCreated, onCancel, preSelectedAnimalId }: InseminationFormProps) {
   const [loading, setLoading] = useState(false)
   const [animals, setAnimals] = useState<any[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -63,7 +65,7 @@ export function InseminationForm({ farmId, onEventCreated, onCancel }: Inseminat
   const form = useForm<InseminationFormData>({
     resolver: zodResolver(inseminationSchema),
     defaultValues: {
-      animal_id: '',
+      animal_id: preSelectedAnimalId || '',
       event_date: new Date().toISOString().split('T')[0],
       insemination_method: 'artificial_insemination',
       semen_bull_code: '',
@@ -75,11 +77,38 @@ export function InseminationForm({ farmId, onEventCreated, onCancel }: Inseminat
   useEffect(() => {
     loadEligibleAnimals()
   }, [farmId])
+
+  // Force update value if prop changes
+  useEffect(() => {
+    if (preSelectedAnimalId) {
+      form.setValue('animal_id', preSelectedAnimalId)
+    }
+  }, [preSelectedAnimalId, form])
   
   const loadEligibleAnimals = async () => {
     try {
       const eligibleAnimals = await getEligibleAnimals(farmId, 'insemination')
+      
+      // Inject animal if pre-selected but not in list (e.g. status issue)
+      if (preSelectedAnimalId) {
+        const found = eligibleAnimals.find((a: any) => a.id === preSelectedAnimalId)
+        if (!found) {
+          eligibleAnimals.unshift({
+            id: preSelectedAnimalId,
+            tag_number: 'Selected Animal',
+            name: '(Current)',
+            gender: 'female',
+            breed: 'Unknown'
+          })
+        }
+      }
+
       setAnimals(eligibleAnimals)
+
+      // Re-assert value after loading
+      if (preSelectedAnimalId) {
+        form.setValue('animal_id', preSelectedAnimalId)
+      }
     } catch (error) {
       console.error('Error loading animals:', error)
       setError('Failed to load animals')
@@ -91,7 +120,6 @@ export function InseminationForm({ farmId, onEventCreated, onCancel }: Inseminat
     setError(null)
     
     try {
-      // Call the API endpoint instead of direct database call
       const response = await fetch('/api/breeding-events', {
         method: 'POST',
         headers: {
@@ -158,7 +186,7 @@ export function InseminationForm({ farmId, onEventCreated, onCancel }: Inseminat
         </div>
       )}
       
-      {animals.length === 0 && (
+      {animals.length === 0 && !preSelectedAnimalId && (
         <div className="p-4 bg-blue-50 border border-blue-200 rounded-md text-blue-700 text-sm">
           <div className="flex items-center space-x-2">
             <Syringe className="w-4 h-4" />
@@ -174,8 +202,10 @@ export function InseminationForm({ farmId, onEventCreated, onCancel }: Inseminat
           <select
             id="animal_id"
             {...form.register('animal_id')}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
-            disabled={animals.length === 0}
+            disabled={!!preSelectedAnimalId || animals.length === 0}
+            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent ${
+              preSelectedAnimalId ? 'bg-gray-100 cursor-not-allowed' : ''
+            }`}
           >
             <option value="">Choose an animal...</option>
             {animals.map((animal) => (
@@ -183,6 +213,10 @@ export function InseminationForm({ farmId, onEventCreated, onCancel }: Inseminat
                 {animal.tag_number} - {animal.name || 'Unnamed'} (Female, {animal.breed || 'Unknown breed'})
               </option>
             ))}
+            {/* Fallback option */}
+            {preSelectedAnimalId && !animals.find(a => a.id === preSelectedAnimalId) && (
+               <option value={preSelectedAnimalId}>Current Animal</option>
+            )}
           </select>
           {form.formState.errors.animal_id && (
             <p className="text-sm text-red-600 mt-1">
@@ -394,7 +428,7 @@ export function InseminationForm({ farmId, onEventCreated, onCancel }: Inseminat
           </Button>
           <Button
             type="submit"
-            disabled={loading || animals.length === 0}
+            disabled={loading || (animals.length === 0 && !preSelectedAnimalId)}
             className="bg-blue-600 hover:bg-blue-700"
           >
             {loading ? (

@@ -1,3 +1,4 @@
+// src/components/animals/AnimalProfile.tsx
 'use client'
 
 import { useState } from 'react'
@@ -550,6 +551,7 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
                 animalId={animalData.id}
                 animal={animalData}
                 canAddRecords={canAddRecords}
+                farmId={farmId}
               />
             </TabsContent>
           )}

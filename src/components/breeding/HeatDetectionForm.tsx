@@ -1,3 +1,4 @@
+// src/components/breeding/HeatDetectionForm.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -25,6 +26,7 @@ interface HeatDetectionFormProps {
   farmId: string
   onEventCreated: () => void
   onCancel: () => void
+  preSelectedAnimalId?: string
 }
 
 const heatSigns = [
@@ -48,7 +50,7 @@ const actionOptions = [
   'Vet consultation needed'
 ]
 
-export function HeatDetectionForm({ farmId, onEventCreated, onCancel }: HeatDetectionFormProps) {
+export function HeatDetectionForm({ farmId, onEventCreated, onCancel, preSelectedAnimalId }: HeatDetectionFormProps) {
   const [loading, setLoading] = useState(false)
   const [animals, setAnimals] = useState<any[]>([])
   const [selectedSigns, setSelectedSigns] = useState<string[]>([])
@@ -57,7 +59,7 @@ export function HeatDetectionForm({ farmId, onEventCreated, onCancel }: HeatDete
   const form = useForm<HeatDetectionFormData>({
     resolver: zodResolver(heatDetectionSchema),
     defaultValues: {
-      animal_id: '',
+      animal_id: preSelectedAnimalId || '',
       event_date: new Date().toISOString().split('T')[0],
       heat_signs: [],
       heat_action_taken: '',
@@ -68,11 +70,37 @@ export function HeatDetectionForm({ farmId, onEventCreated, onCancel }: HeatDete
   useEffect(() => {
     loadEligibleAnimals()
   }, [farmId])
+
+  // Force update value if prop changes
+  useEffect(() => {
+    if (preSelectedAnimalId) {
+      form.setValue('animal_id', preSelectedAnimalId)
+    }
+  }, [preSelectedAnimalId, form])
   
   const loadEligibleAnimals = async () => {
     try {
       const eligibleAnimals = await getEligibleAnimals(farmId, 'heat_detection')
+      
+      // Inject animal if pre-selected but not in list (e.g. status issue)
+      if (preSelectedAnimalId) {
+        const found = eligibleAnimals.find((a: any) => a.id === preSelectedAnimalId)
+        if (!found) {
+          eligibleAnimals.unshift({
+            id: preSelectedAnimalId,
+            tag_number: 'Selected Animal',
+            name: '(Current)',
+            gender: 'female'
+          })
+        }
+      }
+      
       setAnimals(eligibleAnimals)
+      
+      // Re-assert value after loading
+      if (preSelectedAnimalId) {
+        form.setValue('animal_id', preSelectedAnimalId)
+      }
     } catch (error) {
       console.error('Error loading animals:', error)
       setError('Failed to load animals')
@@ -88,46 +116,40 @@ export function HeatDetectionForm({ farmId, onEventCreated, onCancel }: HeatDete
     form.setValue('heat_signs', newSigns)
   }
   
-// Update the handleSubmit function in HeatDetectionForm.tsx
-
-const handleSubmit = async (data: HeatDetectionFormData) => {
-  setLoading(true)
-  setError(null)
-  
-  try {
-    // Call the API instead of calling database function directly
-    const response = await fetch('/api/breeding-events', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        eventData: {
-          ...data,
-          farm_id: farmId,
-          event_type: 'heat_detection',
-          heat_signs: selectedSigns,
-        }
-      }),
-    })
+  const handleSubmit = async (data: HeatDetectionFormData) => {
+    setLoading(true)
+    setError(null)
     
-    const result = await response.json()
-    
-    if (response.ok && result.success) {
-      onEventCreated()
-    } else {
-      setError(result.error || 'Failed to create heat detection event')
+    try {
+      const response = await fetch('/api/breeding-events', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          eventData: {
+            ...data,
+            farm_id: farmId,
+            event_type: 'heat_detection',
+            heat_signs: selectedSigns,
+          }
+        }),
+      })
+      
+      const result = await response.json()
+      
+      if (response.ok && result.success) {
+        onEventCreated()
+      } else {
+        setError(result.error || 'Failed to create heat detection event')
+      }
+    } catch (error) {
+      console.error('Error submitting form:', error)
+      setError('An unexpected error occurred')
+    } finally {
+      setLoading(false)
     }
-  } catch (error) {
-    console.error('Error submitting form:', error)
-    setError('An unexpected error occurred')
-  } finally {
-    setLoading(false)
   }
-}
-
-// Remove the direct createBreedingEvent import and call from this file
-// The form should only call the API, not database functions directly
   
   return (
     <div className="space-y-6">
@@ -138,13 +160,15 @@ const handleSubmit = async (data: HeatDetectionFormData) => {
       )}
       
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-        {/* Animal Selection */}
         <div>
           <Label htmlFor="animal_id">Select Animal *</Label>
           <select
             id="animal_id"
             {...form.register('animal_id')}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+            disabled={!!preSelectedAnimalId}
+            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent ${
+              preSelectedAnimalId ? 'bg-gray-100 cursor-not-allowed' : ''
+            }`}
           >
             <option value="">Choose an animal...</option>
             {animals.map((animal) => (
@@ -152,6 +176,10 @@ const handleSubmit = async (data: HeatDetectionFormData) => {
                 {animal.tag_number} - {animal.name || 'Unnamed'} (Female)
               </option>
             ))}
+            {/* Fallback option */}
+            {preSelectedAnimalId && !animals.find(a => a.id === preSelectedAnimalId) && (
+               <option value={preSelectedAnimalId}>Current Animal</option>
+            )}
           </select>
           {form.formState.errors.animal_id && (
             <p className="text-sm text-red-600 mt-1">
@@ -160,88 +188,48 @@ const handleSubmit = async (data: HeatDetectionFormData) => {
           )}
         </div>
         
-        {/* Event Date - CORRECTED */}
+        {/* Rest of the form inputs... */}
         <div>
           <Label htmlFor="event_date">Date Observed *</Label>
-          <Input
-            id="event_date"
-            type="date"
-            {...form.register('event_date')}
-            error={form.formState.errors.event_date?.message}
-          />
+          <Input id="event_date" type="date" {...form.register('event_date')} error={form.formState.errors.event_date?.message} />
         </div>
         
-        {/* Heat Signs - MAIN FOCUS */}
         <div>
           <Label>Observed Heat Signs *</Label>
-          <p className="text-sm text-gray-600 mb-3">
-            Select all signs that were observed:
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
             {heatSigns.map((sign) => (
               <button
                 key={sign}
                 type="button"
                 onClick={() => toggleHeatSign(sign)}
                 className={`flex items-center space-x-2 p-3 border rounded-lg text-left transition-colors ${
-                  selectedSigns.includes(sign)
-                    ? 'border-farm-green bg-green-50 text-green-800'
-                    : 'border-gray-200 hover:border-gray-300'
+                  selectedSigns.includes(sign) ? 'border-farm-green bg-green-50 text-green-800' : 'border-gray-200 hover:border-gray-300'
                 }`}
               >
-                {selectedSigns.includes(sign) ? (
-                  <CheckCircle className="w-4 h-4 text-green-600" />
-                ) : (
-                  <Circle className="w-4 h-4 text-gray-400" />
-                )}
+                {selectedSigns.includes(sign) ? <CheckCircle className="w-4 h-4 text-green-600" /> : <Circle className="w-4 h-4 text-gray-400" />}
                 <span className="text-sm">{sign}</span>
               </button>
             ))}
           </div>
-          {form.formState.errors.heat_signs && (
-            <p className="text-sm text-red-600 mt-1">
-              {form.formState.errors.heat_signs.message}
-            </p>
-          )}
+          {form.formState.errors.heat_signs && <p className="text-sm text-red-600 mt-1">{form.formState.errors.heat_signs.message}</p>}
         </div>
         
-        {/* Action Taken */}
         <div>
           <Label htmlFor="heat_action_taken">Action Taken</Label>
-          <select
-            id="heat_action_taken"
-            {...form.register('heat_action_taken')}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
-          >
+          <select id="heat_action_taken" {...form.register('heat_action_taken')} className="w-full px-3 py-2 border border-gray-300 rounded-md">
             <option value="">Select action...</option>
-            {actionOptions.map((action) => (
-              <option key={action} value={action}>
-                {action}
-              </option>
-            ))}
+            {actionOptions.map(action => <option key={action} value={action}>{action}</option>)}
           </select>
         </div>
         
-        {/* Notes */}
         <div>
           <Label htmlFor="notes">Additional Notes</Label>
-          <textarea
-            id="notes"
-            {...form.register('notes')}
-            rows={3}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
-            placeholder="Any additional observations or comments..."
-          />
+          <textarea id="notes" {...form.register('notes')} rows={3} className="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="Observations..." />
         </div>
         
-        {/* Actions */}
         <div className="flex justify-end space-x-3 pt-4">
-          <Button type="button" variant="outline" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button type="submit" disabled={loading}>
-            {loading ? <LoadingSpinner size="sm" /> : 'Record Heat Detection'}
-          </Button>
+          <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
+          <Button type="submit" disabled={loading}>{loading ? <LoadingSpinner size="sm" /> : 'Record Heat Detection'}</Button>
         </div>
       </form>
     </div>

@@ -1,3 +1,4 @@
+// src/components/animals/EditAnimalModal.tsx
 'use client'
 
 import { useState, useEffect } from 'react'

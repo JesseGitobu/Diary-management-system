@@ -1,6 +1,4 @@
-// Complete Enhanced CompleteHealthRecordModal with all comprehensive field sets
 // src/components/health/CompleteHealthRecordModal.tsx
-
 import React, { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'

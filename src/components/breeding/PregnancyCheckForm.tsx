@@ -1,3 +1,4 @@
+// src/components/breeding/PregnancyCheckForm.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -28,6 +29,7 @@ interface PregnancyCheckFormProps {
   farmId: string
   onEventCreated: () => void
   onCancel: () => void
+  preSelectedAnimalId?: string
 }
 
 const examinationMethods = [
@@ -38,7 +40,7 @@ const examinationMethods = [
   'Visual observation'
 ]
 
-export function PregnancyCheckForm({ farmId, onEventCreated, onCancel }: PregnancyCheckFormProps) {
+export function PregnancyCheckForm({ farmId, onEventCreated, onCancel, preSelectedAnimalId }: PregnancyCheckFormProps) {
   const [loading, setLoading] = useState(false)
   const [animals, setAnimals] = useState<any[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -46,7 +48,7 @@ export function PregnancyCheckForm({ farmId, onEventCreated, onCancel }: Pregnan
   const form = useForm<PregnancyCheckFormData>({
     resolver: zodResolver(pregnancyCheckSchema),
     defaultValues: {
-      animal_id: '',
+      animal_id: preSelectedAnimalId || '',
       event_date: new Date().toISOString().split('T')[0],
       pregnancy_result: 'uncertain',
       examination_method: '',
@@ -59,11 +61,36 @@ export function PregnancyCheckForm({ farmId, onEventCreated, onCancel }: Pregnan
   useEffect(() => {
     loadEligibleAnimals()
   }, [farmId])
+
+  // Force update value if prop changes
+  useEffect(() => {
+    if (preSelectedAnimalId) {
+      form.setValue('animal_id', preSelectedAnimalId)
+    }
+  }, [preSelectedAnimalId, form])
   
   const loadEligibleAnimals = async () => {
     try {
       const eligibleAnimals = await getAnimalsForPregnancyCheck(farmId)
+      
+      // Inject animal if pre-selected but not in list
+      if (preSelectedAnimalId) {
+        const found = eligibleAnimals.find((a: any) => a.id === preSelectedAnimalId)
+        if (!found) {
+          eligibleAnimals.unshift({
+            id: preSelectedAnimalId,
+            tag_number: 'Selected Animal',
+            name: '(Current)',
+          })
+        }
+      }
+
       setAnimals(eligibleAnimals)
+
+      // Re-assert value after loading
+      if (preSelectedAnimalId) {
+        form.setValue('animal_id', preSelectedAnimalId)
+      }
     } catch (error) {
       console.error('Error loading animals:', error)
       setError('Failed to load animals')
@@ -135,7 +162,7 @@ export function PregnancyCheckForm({ farmId, onEventCreated, onCancel }: Pregnan
         </div>
       )}
       
-      {animals.length === 0 && (
+      {animals.length === 0 && !preSelectedAnimalId && (
         <div className="p-4 bg-blue-50 border border-blue-200 rounded-md text-blue-700 text-sm">
           No animals are currently eligible for pregnancy check. Animals become eligible after insemination.
         </div>
@@ -148,8 +175,10 @@ export function PregnancyCheckForm({ farmId, onEventCreated, onCancel }: Pregnan
           <select
             id="animal_id"
             {...form.register('animal_id')}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
-            disabled={animals.length === 0}
+            disabled={!!preSelectedAnimalId || animals.length === 0}
+            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent ${
+              preSelectedAnimalId ? 'bg-gray-100 cursor-not-allowed' : ''
+            }`}
           >
             <option value="">Choose an animal...</option>
             {animals.map((animal) => (
@@ -157,6 +186,10 @@ export function PregnancyCheckForm({ farmId, onEventCreated, onCancel }: Pregnan
                 {animal.tag_number} - {animal.name || 'Unnamed'}
               </option>
             ))}
+            {/* Fallback option */}
+            {preSelectedAnimalId && !animals.find(a => a.id === preSelectedAnimalId) && (
+               <option value={preSelectedAnimalId}>Current Animal</option>
+            )}
           </select>
           {form.formState.errors.animal_id && (
             <p className="text-sm text-red-600 mt-1">
@@ -262,7 +295,7 @@ export function PregnancyCheckForm({ farmId, onEventCreated, onCancel }: Pregnan
           <Button type="button" variant="outline" onClick={onCancel}>
             Cancel
           </Button>
-          <Button type="submit" disabled={loading || animals.length === 0}>
+          <Button type="submit" disabled={loading || (animals.length === 0 && !preSelectedAnimalId)}>
             {loading ? <LoadingSpinner size="sm" /> : 'Record Pregnancy Check'}
           </Button>
         </div>
