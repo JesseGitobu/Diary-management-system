@@ -146,7 +146,11 @@ function transformDbToProductionSettings(data: any): ProductionSettings {
     defaultCostPerLiter: data.default_cost_per_liter,
     includeLaborCosts: data.include_labor_costs,
     includeFeedCosts: data.include_feed_costs,
-    includeUtilities: data.include_utilities
+    includeUtilities: data.include_utilities,
+
+    // Add missing properties
+    enableSmartSessionBanner: data.enable_smart_session_banner,
+    sessionLateThresholdMinutes: data.session_late_threshold_minutes
   }
 }
 
