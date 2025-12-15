@@ -12,11 +12,16 @@ import { Toaster } from "react-hot-toast"
 
 const inter = Inter({ subsets: ["latin"] })
 
+// 1. UPDATED METADATA
 export const metadata: Metadata = {
   title: APP_CONFIG.name,
   description: APP_CONFIG.description,
   manifest: '/manifest.json',
-  //themeColor: '#16a34a',
+  // Next.js handles these tags automatically based on this object
+  // icons: {
+  //   icon: '/icons/icon.png',
+  //   apple: '/icons/icon.png', // This covers apple-touch-icon
+  // },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
@@ -25,10 +30,6 @@ export const metadata: Metadata = {
   formatDetection: {
     telephone: false,
   },
-  icons: {
-    icon: '/icons/icon-192x192.png',
-    apple: '/icons/icon-192x192.png',
-  },
 }
 
 export const viewport = {
@@ -36,7 +37,7 @@ export const viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: '#16a34a',
+  themeColor: '#3b82f6',
 }
 
 export default function RootLayout({
@@ -46,13 +47,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <head>
-        <link rel="manifest" href="/manifest.json" />
-        <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="mobile-web-app-capable" content="yes" />
-      </head>
+      {/* 2. REMOVED MANUAL <HEAD> TAGS - The metadata object above handles them now */}
       <body className={inter.className}>
         <AuthProvider>
           <PWARegister />
