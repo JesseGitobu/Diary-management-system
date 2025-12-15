@@ -10,13 +10,13 @@ import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Badge } from '@/components/ui/Badge'
-// ✅ CHANGED IMPORT: Added processCalving
 import { 
   getAnimalsForCalving, 
   processCalving, 
   type CalvingEvent 
 } from '@/lib/database/breeding'
 import { AlertCircle, CheckCircle, Baby, Heart, Clock } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client' // Import supabase client
 
 const calvingEventSchema = z.object({
   animal_id: z.string().min(1, 'Please select an animal'),
@@ -82,11 +82,7 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
   const [loading, setLoading] = useState(false)
   const [animals, setAnimals] = useState<any[]>([])
   const [error, setError] = useState<string | null>(null)
-  
-  // Note: createCalf is implicitly true now as processCalving requires it for the new tables
-  // We can keep the state if you want UI control, but for now we assume it's always created 
-  // to satisfy foreign key constraints in calf_records.
-  const [createCalf, setCreateCalf] = useState(true)
+  const [userId, setUserId] = useState<string | null>(null) // Store current user ID
   const [loadingAnimals, setLoadingAnimals] = useState(true)
   
   const form = useForm<CalvingEventFormData>({
@@ -103,6 +99,18 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
     },
   })
   
+  // Fetch current user ID on mount
+  useEffect(() => {
+    const fetchUser = async () => {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        setUserId(user.id)
+      }
+    }
+    fetchUser()
+  }, [])
+
   useEffect(() => {
     loadEligibleAnimals()
   }, [farmId])
@@ -143,8 +151,12 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
     }
   }
   
-  // ✅ UPDATED HANDLER: Using processCalving
   const handleSubmit = async (data: CalvingEventFormData) => {
+    if (!userId) {
+      setError('User not authenticated. Please reload.')
+      return
+    }
+
     setLoading(true)
     setError(null)
     
@@ -153,10 +165,10 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
         ...data,
         farm_id: farmId,
         event_type: 'calving',
-        created_by: 'system', 
+        // ✅ FIX: Use real user ID instead of 'system'
+        created_by: userId, 
       }
       
-      // We use the new comprehensive processor
       const result = await processCalving(eventData, farmId)
       
       if (result.success) {
@@ -175,7 +187,6 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
   const selectedAnimal = form.watch('animal_id')
   const calvingDate = form.watch('event_date')
   
-  // Auto-generate calf tag number
   useEffect(() => {
     if (selectedAnimal && calvingDate && !form.getValues('calf_tag_number')) {
       const animal = animals.find(a => a.id === selectedAnimal)
@@ -320,7 +331,6 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
                 Information about the newborn calf. (System will create new Animal, Calving Record, and Calf Record)
               </p>
             </div>
-            {/* Removed the checkbox because processCalving implies calf creation */}
           </div>
           
           <div className="space-y-4 pl-4 border-l-2 border-green-100">

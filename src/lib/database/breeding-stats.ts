@@ -1,3 +1,4 @@
+// src/lib/database/breeding-stats.ts
 import { createClient } from '@/lib/supabase/client'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { subDays, addDays } from 'date-fns'
@@ -44,8 +45,6 @@ export async function getBreedingStats(farmId: string): Promise<BreedingStats> {
     const now = new Date()
     const thirtyDaysAgo = subDays(now, 30)
     const sixtyDaysAgo = subDays(now, 60)
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0)
     
     // Get ALL breeding events for this farm
     const { data: allEventsData, error: eventsError } = await supabase
@@ -59,17 +58,12 @@ export async function getBreedingStats(farmId: string): Promise<BreedingStats> {
       return getDefaultBreedingStats()
     }
 
-    // FIXED: Cast to any[] to fix 'never' type error
     const allEvents = (allEventsData || []) as any[]
-    
-    console.log('Total breeding events found:', allEvents.length)
     
     // Get recent events (last 30 days)
     const recentEvents = allEvents.filter(event => 
       new Date(event.event_date) >= thirtyDaysAgo
     )
-    
-    console.log('Recent events (last 30 days):', recentEvents.length)
     
     // Get previous period events (30-60 days ago) for trends
     const previousEvents = allEvents.filter(event => {
@@ -82,13 +76,6 @@ export async function getBreedingStats(farmId: string): Promise<BreedingStats> {
     const inseminations = allEvents.filter(e => e.event_type === 'insemination')
     const pregnancyChecks = allEvents.filter(e => e.event_type === 'pregnancy_check')
     const calvings = allEvents.filter(e => e.event_type === 'calving')
-    
-    console.log('Event counts:', {
-      heat: heatDetections.length,
-      insemination: inseminations.length,
-      pregnancy: pregnancyChecks.length,
-      calving: calvings.length
-    })
     
     // Calculate recent heat detections (last 30 days)
     const recentHeatDetections = recentEvents.filter(e => e.event_type === 'heat_detection').length
@@ -117,7 +104,7 @@ export async function getBreedingStats(farmId: string): Promise<BreedingStats> {
     
     const stats: BreedingStats = {
       totalBreedings: inseminations.length,
-      heatDetected: recentHeatDetections, // Heat detections in last 30 days
+      heatDetected: recentHeatDetections, 
       currentPregnant: pregnantAnimals.length,
       expectedCalvingsThisMonth: expectedCalvings.length,
       conceptionRate,
@@ -132,7 +119,6 @@ export async function getBreedingStats(farmId: string): Promise<BreedingStats> {
       }
     }
     
-    console.log('Final breeding stats:', stats)
     return stats
     
   } catch (error) {
@@ -141,38 +127,42 @@ export async function getBreedingStats(farmId: string): Promise<BreedingStats> {
   }
 }
 
-// Get currently pregnant animals
+// ✅ UPDATED: Get currently pregnant animals (Excluding those who have calved since)
 async function getCurrentlyPregnantAnimals(farmId: string) {
   const supabase = await createServerSupabaseClient()
   
-  // Get the latest pregnancy check for each animal
-  const { data: latestChecksData } = await supabase
+  // 1. Get all relevant events for the farm (Pregnancy Checks AND Calvings)
+  const { data: eventsData } = await supabase
     .from('breeding_events')
-    .select('animal_id, pregnancy_result, event_date')
+    .select('animal_id, event_type, pregnancy_result, event_date')
     .eq('farm_id', farmId)
-    .eq('event_type', 'pregnancy_check')
-    .order('event_date', { ascending: false })
+    .in('event_type', ['pregnancy_check', 'calving']) // Fetch both types
+    .order('event_date', { ascending: false }) // Newest first
   
-  if (!latestChecksData) return []
+  if (!eventsData) return []
 
-  // FIXED: Cast to any[]
-  const latestChecks = latestChecksData as any[]
+  const events = eventsData as any[]
   
-  // Group by animal and get the most recent result
-  const animalLatestResults = new Map()
+  // 2. Group by animal to find their LATEST status
+  const animalStatus = new Map<string, any>()
   
-  latestChecks.forEach(check => {
-    if (!animalLatestResults.has(check.animal_id)) {
-      animalLatestResults.set(check.animal_id, check)
+  events.forEach(event => {
+    // Since we ordered by date desc, the first time we see an animal ID, that's its latest event
+    if (!animalStatus.has(event.animal_id)) {
+      animalStatus.set(event.animal_id, event)
     }
   })
   
-  // Filter for pregnant animals
-  return Array.from(animalLatestResults.values())
-    .filter(check => check.pregnancy_result === 'pregnant')
+  // 3. Filter: Only count animals whose LATEST event is a 'pregnant' confirmation
+  // If the latest event is 'calving', they are no longer pregnant.
+  return Array.from(animalStatus.values())
+    .filter(event => 
+      event.event_type === 'pregnancy_check' && 
+      event.pregnancy_result === 'pregnant'
+    )
 }
 
-// Get expected calvings this month
+// ✅ UPDATED: Get expected calvings this month (Excluding those who already calved)
 async function getExpectedCalvingsThisMonth(farmId: string) {
   const supabase = await createServerSupabaseClient()
 
@@ -180,9 +170,10 @@ async function getExpectedCalvingsThisMonth(farmId: string) {
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
   const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0)
   
-  const { data: dueDates } = await supabase
+  // 1. Get animals theoretically due this month
+  const { data: dueData } = await supabase
     .from('breeding_events')
-    .select('animal_id, estimated_due_date')
+    .select('animal_id, estimated_due_date, event_date')
     .eq('farm_id', farmId)
     .eq('event_type', 'pregnancy_check')
     .eq('pregnancy_result', 'pregnant')
@@ -190,7 +181,38 @@ async function getExpectedCalvingsThisMonth(farmId: string) {
     .lte('estimated_due_date', endOfMonth.toISOString().split('T')[0])
     .not('estimated_due_date', 'is', null)
   
-  return (dueDates || []) as any[]
+  const potentiallyDue = (dueData || []) as any[]
+  
+  if (potentiallyDue.length === 0) return []
+
+  // 2. Check if any of these animals have actually calved AFTER their pregnancy check date
+  const animalIds = potentiallyDue.map(a => a.animal_id)
+  
+  const { data: calvingData } = await supabase
+    .from('breeding_events')
+    .select('animal_id, event_date')
+    .eq('farm_id', farmId)
+    .eq('event_type', 'calving')
+    .in('animal_id', animalIds)
+  
+  const recentCalvings = (calvingData || []) as any[]
+
+  // 3. Filter out animals that have a calving record AFTER the pregnancy check record
+  return potentiallyDue.filter(dueAnimal => {
+    const pregCheckDate = new Date(dueAnimal.event_date).getTime()
+    
+    // Find if this animal has a calving record
+    const calvingRecord = recentCalvings.find(c => c.animal_id === dueAnimal.animal_id)
+    
+    if (calvingRecord) {
+      const calvingDate = new Date(calvingRecord.event_date).getTime()
+      // If they calved AFTER the pregnancy confirmation, remove them from "Expected" list
+      if (calvingDate > pregCheckDate) {
+        return false 
+      }
+    }
+    return true
+  })
 }
 
 // Get upcoming breeding events
@@ -232,43 +254,54 @@ export async function getBreedingAlerts(farmId: string): Promise<BreedingAlert[]
   
   try {
     // Alert 1: Animals due for calving soon
-    const { data: dueSoonData } = await supabase
-      .from('breeding_events')
-      .select(`
-        animal_id,
-        estimated_due_date,
-        animals (tag_number, name)
-      `)
-      .eq('farm_id', farmId)
-      .eq('event_type', 'pregnancy_check')
-      .eq('pregnancy_result', 'pregnant')
-      .not('estimated_due_date', 'is', null)
-      .lte('estimated_due_date', addDays(new Date(), 14).toISOString().split('T')[0])
-      .gte('estimated_due_date', new Date().toISOString().split('T')[0])
-    
-    // FIXED: Cast to any[]
-    const dueSoon = (dueSoonData || []) as any[]
+    // ✅ Updated to exclude already calved animals
+    const pregnantAnimals = await getCurrentlyPregnantAnimals(farmId)
+    const pregnantIds = pregnantAnimals.map(p => p.animal_id)
 
-    dueSoon.forEach(animal => {
-      if (animal.estimated_due_date) {
-        const daysRemaining = Math.ceil(
-          (new Date(animal.estimated_due_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
-        )
-        
-        alerts.push({
-          id: `calving-${animal.animal_id}`,
-          type: 'calving_due',
-          animal_id: animal.animal_id,
-          animal_tag: animal.animals.tag_number,
-          animal_name: animal.animals.name ?? undefined,
-          message: `Due for calving in ${daysRemaining} days`,
-          due_date: animal.estimated_due_date,
-          priority: daysRemaining <= 3 ? 'high' : daysRemaining <= 7 ? 'medium' : 'low',
-          severity: daysRemaining <= 3 ? 'critical' : daysRemaining <= 7 ? 'warning' : 'info',
-          days_remaining: daysRemaining
-        })
-      }
-    })
+    if (pregnantIds.length > 0) {
+      const { data: dueSoonData } = await supabase
+        .from('breeding_events')
+        .select(`
+          animal_id,
+          estimated_due_date,
+          animals (tag_number, name)
+        `)
+        .eq('farm_id', farmId)
+        .in('animal_id', pregnantIds) // Only check currently pregnant
+        .eq('event_type', 'pregnancy_check') 
+        .eq('pregnancy_result', 'pregnant')
+        .not('estimated_due_date', 'is', null)
+        .lte('estimated_due_date', addDays(new Date(), 14).toISOString().split('T')[0])
+        .gte('estimated_due_date', new Date().toISOString().split('T')[0])
+        // Sort by newest check to handle duplicates, logic below filters duplicates
+        .order('event_date', { ascending: false }) 
+      
+      const dueSoon = (dueSoonData || []) as any[]
+      const processedAnimals = new Set()
+
+      dueSoon.forEach(animal => {
+        if (!processedAnimals.has(animal.animal_id) && animal.estimated_due_date) {
+          processedAnimals.add(animal.animal_id)
+          
+          const daysRemaining = Math.ceil(
+            (new Date(animal.estimated_due_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
+          )
+          
+          alerts.push({
+            id: `calving-${animal.animal_id}`,
+            type: 'calving_due',
+            animal_id: animal.animal_id,
+            animal_tag: animal.animals.tag_number,
+            animal_name: animal.animals.name ?? undefined,
+            message: `Due for calving in ${daysRemaining} days`,
+            due_date: animal.estimated_due_date,
+            priority: daysRemaining <= 3 ? 'high' : daysRemaining <= 7 ? 'medium' : 'low',
+            severity: daysRemaining <= 3 ? 'critical' : daysRemaining <= 7 ? 'warning' : 'info',
+            days_remaining: daysRemaining
+          })
+        }
+      })
+    }
     
     // Alert 2: Animals needing pregnancy checks
     const { data: needingCheckData } = await supabase
@@ -283,7 +316,6 @@ export async function getBreedingAlerts(farmId: string): Promise<BreedingAlert[]
       .lte('event_date', subDays(new Date(), 30).toISOString().split('T')[0])
       .gte('event_date', subDays(new Date(), 60).toISOString().split('T')[0])
     
-    // FIXED: Cast to any[]
     const needingCheck = (needingCheckData || []) as any[]
 
     // Filter animals that haven't had pregnancy check

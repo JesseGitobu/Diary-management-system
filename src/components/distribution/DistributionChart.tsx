@@ -1,4 +1,4 @@
-// Mobile-Optimized DistributionChart.tsx
+// src/components/distribution/DistributionChart.tsx
 'use client'
 
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, ComposedChart } from 'recharts'

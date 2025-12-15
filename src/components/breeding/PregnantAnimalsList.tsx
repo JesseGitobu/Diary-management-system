@@ -1,6 +1,7 @@
+// src/components/breeding/PregnantAnimalsList.tsx
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -10,6 +11,8 @@ import Link from 'next/link'
 interface PregnantAnimalsListProps {
   farmId: string
   canManage: boolean
+  hiddenAnimalIds?: string[] // IDs to hide optimistically
+  onRecordCalving?: (animalId: string) => void // Handler to open modal
 }
 
 interface PregnantAnimal {
@@ -24,7 +27,12 @@ interface PregnantAnimal {
   pregnancy_status: string
 }
 
-export function PregnantAnimalsList({ farmId, canManage }: PregnantAnimalsListProps) {
+export function PregnantAnimalsList({ 
+  farmId, 
+  canManage, 
+  hiddenAnimalIds = [],
+  onRecordCalving
+}: PregnantAnimalsListProps) {
   const [pregnantAnimals, setPregnantAnimals] = useState<PregnantAnimal[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -52,6 +60,11 @@ export function PregnantAnimalsList({ farmId, canManage }: PregnantAnimalsListPr
       setLoading(false)
     }
   }
+
+  // Filter out animals that have just been marked as calved in the parent component
+  const visibleAnimals = useMemo(() => {
+    return pregnantAnimals.filter(animal => !hiddenAnimalIds.includes(animal.animal_id))
+  }, [pregnantAnimals, hiddenAnimalIds])
 
   const getDaysUntilDue = (dueDate: string) => {
     const today = new Date()
@@ -92,19 +105,20 @@ export function PregnantAnimalsList({ farmId, canManage }: PregnantAnimalsListPr
         <CardContent className="flex items-center justify-center py-8">
           <div className="text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-farm-green mx-auto"></div>
-            <p className="text-sm text-gray-500 mt-2">Loading pregnant animals...</p>
+            <p className="text-sm text-gray-500 mt-2">Loading in-calf animals...</p>
           </div>
         </CardContent>
       </Card>
     )
   }
 
-  const dueSoonCount = pregnantAnimals.filter(a => {
+  // Use visibleAnimals for stats calculation
+  const dueSoonCount = visibleAnimals.filter(a => {
     const daysUntil = getDaysUntilDue(a.estimated_due_date)
     return daysUntil <= 7 && daysUntil >= 0
   }).length
 
-  const overdueCount = pregnantAnimals.filter(a => 
+  const overdueCount = visibleAnimals.filter(a => 
     getDaysUntilDue(a.estimated_due_date) < 0
   ).length
 
@@ -114,18 +128,18 @@ export function PregnantAnimalsList({ farmId, canManage }: PregnantAnimalsListPr
         <CardHeader>
           <CardTitle className="flex items-center space-x-2">
             <Baby className="h-5 w-5" />
-            <span>Pregnant Animals</span>
+            <span>In-calf Animals</span>
           </CardTitle>
           <CardDescription>
-            Monitor pregnant animals and expected calving dates
+            Monitor in-calf animals and expected calving dates
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {pregnantAnimals.length === 0 ? (
+          {visibleAnimals.length === 0 ? (
             <div className="text-center py-8">
               <Baby className="mx-auto h-12 w-12 text-gray-400" />
               <h3 className="mt-2 text-sm font-medium text-gray-900">
-                No pregnant animals
+                No in-calf animals
               </h3>
               <p className="mt-1 text-sm text-gray-500">
                 Animals will appear here after confirmed pregnancies
@@ -133,13 +147,13 @@ export function PregnantAnimalsList({ farmId, canManage }: PregnantAnimalsListPr
             </div>
           ) : (
             <div className="space-y-4">
-              {pregnantAnimals.map((animal) => {
+              {visibleAnimals.map((animal) => {
                 const daysUntilDue = getDaysUntilDue(animal.estimated_due_date)
                 const isOverdue = daysUntilDue < 0
                 const isDueSoon = daysUntilDue <= 7 && daysUntilDue >= 0
                 
                 return (
-                  <div key={animal.id} className="border border-gray-200 rounded-lg p-4">
+                  <div key={animal.id} className="border border-gray-200 rounded-lg p-4 animate-in fade-in">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-4">
                         <div className="flex-shrink-0">
@@ -159,7 +173,7 @@ export function PregnantAnimalsList({ farmId, canManage }: PregnantAnimalsListPr
                             {animal.name || `Animal ${animal.tag_number}`}
                           </h4>
                           <p className="text-sm text-gray-600">
-                            Tag: {animal.tag_number} • {animal.days_pregnant} days pregnant
+                            Tag: {animal.tag_number} • {animal.days_pregnant} days in calf
                           </p>
                           <div className="flex items-center space-x-4 mt-1">
                             <div className="flex items-center space-x-1 text-sm text-gray-500">
@@ -185,7 +199,10 @@ export function PregnantAnimalsList({ farmId, canManage }: PregnantAnimalsListPr
                             </Link>
                           </Button>
                           {canManage && (isDueSoon || isOverdue) && (
-                            <Button size="sm">
+                            <Button 
+                              size="sm"
+                              onClick={() => onRecordCalving && onRecordCalving(animal.animal_id)}
+                            >
                               Record Calving
                             </Button>
                           )}
@@ -196,7 +213,7 @@ export function PregnantAnimalsList({ farmId, canManage }: PregnantAnimalsListPr
                     {/* Progress Bar */}
                     <div className="mt-4">
                       <div className="flex justify-between text-sm text-gray-600 mb-1">
-                        <span>Pregnancy Progress</span>
+                        <span>Gestation Progress</span>
                         <span>{Math.round((animal.days_pregnant / 280) * 100)}%</span>
                       </div>
                       <div className="w-full bg-gray-200 rounded-full h-2">
@@ -216,7 +233,7 @@ export function PregnantAnimalsList({ farmId, canManage }: PregnantAnimalsListPr
         </CardContent>
       </Card>
       
-      {/* Summary Statistics */}
+      {/* Summary Statistics - Updated to use dynamic visibleAnimals count */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardContent className="p-4">
@@ -225,8 +242,8 @@ export function PregnantAnimalsList({ farmId, canManage }: PregnantAnimalsListPr
                 <Baby className="w-4 h-4 text-green-600" />
               </div>
               <div>
-                <p className="text-sm font-medium text-gray-900">Total Pregnant</p>
-                <p className="text-lg font-bold text-green-600">{pregnantAnimals.length}</p>
+                <p className="text-sm font-medium text-gray-900">Total In-calf</p>
+                <p className="text-lg font-bold text-green-600">{visibleAnimals.length}</p>
               </div>
             </div>
           </CardContent>

@@ -1,3 +1,4 @@
+// src/components/breeding/BreedingAlerts.tsx
 'use client'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
@@ -58,7 +59,7 @@ export function BreedingAlerts({ alerts, onActionClick }: BreedingAlertsProps) {
   }
 
   return (
-    <Card>
+    <Card className="animate-in fade-in slide-in-from-top-4 duration-500">
       <CardHeader>
         <CardTitle className="flex items-center space-x-2">
           <AlertCircle className="h-5 w-5 text-orange-500" />
@@ -73,7 +74,7 @@ export function BreedingAlerts({ alerts, onActionClick }: BreedingAlertsProps) {
           {alerts.map((alert) => (
             <div
               key={alert.id}
-              className={`p-4 rounded-lg border ${getAlertColor(alert.severity)}`}
+              className={`p-4 rounded-lg border ${getAlertColor(alert.severity)} transition-all hover:shadow-sm`}
             >
               <div className="flex items-start justify-between">
                 <div className="flex items-start space-x-3">
@@ -85,16 +86,11 @@ export function BreedingAlerts({ alerts, onActionClick }: BreedingAlertsProps) {
                       <h4 className="font-medium">
                         {(() => {
                           switch (alert.type) {
-                            case 'calving_due':
-                              return 'Calving Due';
-                            case 'pregnancy_check_due':
-                              return 'Pregnancy Check Due';
-                            case 'low_conception_rate':
-                              return 'Low Conception Rate';
-                            case 'overdue_breeding':
-                              return 'Overdue Breeding';
-                            default:
-                              return 'Alert';
+                            case 'calving_due': return 'Calving Due';
+                            case 'pregnancy_check_due': return 'Pregnancy Check Due';
+                            case 'low_conception_rate': return 'Low Conception Rate';
+                            case 'overdue_breeding': return 'Overdue Breeding';
+                            default: return 'Alert';
                           }
                         })()}
                       </h4>
@@ -114,12 +110,12 @@ export function BreedingAlerts({ alerts, onActionClick }: BreedingAlertsProps) {
                   size="sm"
                   variant="outline"
                   onClick={() => onActionClick(alert.type, alert.animal_id)}
-                  className="ml-4"
+                  className="ml-4 bg-white hover:bg-white/80"
                 >
-                  {alert.type === 'calving_due' && 'View'}
-                  {alert.type === 'pregnancy_check_due' && 'Record'}
+                  {alert.type === 'calving_due' && 'Record'}
+                  {alert.type === 'pregnancy_check_due' && 'Check'}
                   {alert.type === 'low_conception_rate' && 'Review'}
-                  {alert.type === 'overdue_breeding' && 'Update'}
+                  {alert.type === 'overdue_breeding' && 'Inseminate'}
                 </Button>
               </div>
             </div>

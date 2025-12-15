@@ -240,20 +240,17 @@ export async function processCalving(calvingEvent: CalvingEvent, farmId: string)
 
   try {
     // 1. GET ACTIVE PREGNANCY RECORD
-    // FIX: Corrected select to only use columns present in pregnancy_records
     const { data: pregRecord, error: pregError } = await (supabase
       .from('pregnancy_records') as any)
-      .select('id, breeding_record_id') // Only select existing columns
+      .select('id, breeding_record_id') 
       .eq('animal_id', calvingEvent.animal_id)
       .eq('pregnancy_status', 'confirmed')
       .order('created_at', { ascending: false })
       .limit(1)
       .single()
 
-    // Handle Missing Pregnancy Record
     if (pregError || !pregRecord) {
       console.error('No active pregnancy record found for mother:', calvingEvent.animal_id, 'Fetch Error:', pregError?.message);
-      // No need for fallback check to breeding_records here if pregnancy_records is strictly required for calving
       return { 
         success: false, 
         error: 'Cannot record calving: No active confirmed pregnancy record found for this animal.' 
@@ -286,11 +283,9 @@ export async function processCalving(calvingEvent: CalvingEvent, farmId: string)
       throw new Error(`Failed to create calf: ${calfError.message}`)
     }
 
-    // 3. CREATE CALVING RECORD
+    // 3. CREATE CALVING RECORD (Legacy/Detailed table)
     let sireInfo = null;
-    // Look up sire info from the linked breeding_record
     if (pregRecord.breeding_record_id) {
-       // FIX: Accessing sire_tag and sire_breed which should be on breeding_records table
        const { data: br } = await (supabase.from('breeding_records') as any).select('sire_tag, sire_breed').eq('id', pregRecord.breeding_record_id).single()
        if (br) sireInfo = `${br.sire_tag || ''} ${br.sire_breed || ''}`.trim()
     }
@@ -329,7 +324,7 @@ export async function processCalving(calvingEvent: CalvingEvent, farmId: string)
       gender: calvingEvent.calf_gender,
       birth_weight: calvingEvent.calf_weight,
       health_status: mapHealthStatus(calvingEvent.calf_health_status),
-      sire_info: sireInfo, // Populated from breeding record lookup
+      sire_info: sireInfo, 
       notes: 'Auto-generated from calving event'
     }
 
@@ -357,7 +352,6 @@ export async function processCalving(calvingEvent: CalvingEvent, farmId: string)
       })
       .eq('id', pregRecord.id)
 
-    // Sync Breeding Record if linked
     if (pregRecord.breeding_record_id) {
        await (supabase.from('breeding_records') as any)
       .update({
@@ -365,6 +359,30 @@ export async function processCalving(calvingEvent: CalvingEvent, farmId: string)
         actual_calving_date: calvingEvent.event_date
       })
       .eq('id', pregRecord.breeding_record_id)
+    }
+
+    // 6. ✅ NEW: CREATE BREEDING EVENT (For Timeline History)
+    // This ensures the calving appears in the breeding_events table used by the timeline
+    const breedingEventData = {
+      farm_id: farmId,
+      animal_id: calvingEvent.animal_id,
+      event_type: 'calving',
+      event_date: calvingEvent.event_date,
+      calving_outcome: calvingEvent.calving_outcome,
+      calf_gender: calvingEvent.calf_gender,
+      calf_weight: calvingEvent.calf_weight,
+      calf_tag_number: calvingEvent.calf_tag_number,
+      calf_health_status: calvingEvent.calf_health_status,
+      notes: calvingEvent.notes || 'Recorded via Calving Process',
+      created_by: calvingEvent.created_by
+    }
+
+    const { error: breedingEventError } = await (supabase.from('breeding_events') as any)
+      .insert(breedingEventData)
+
+    if (breedingEventError) {
+      // Log error but don't fail the whole process since core records are created
+      console.error('Warning: Failed to create breeding_event history entry:', breedingEventError)
     }
 
     return { success: true, data: newCalf }

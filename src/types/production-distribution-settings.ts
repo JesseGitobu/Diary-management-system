@@ -23,6 +23,11 @@ export interface ProductionSettings {
   requireSessionTimeRecording: boolean
   sessionIntervalHours: number
   
+  // --- NEW FIELDS ---
+  enableSmartSessionBanner: boolean
+  sessionLateThresholdMinutes: number
+  // ------------------
+
   // 3. Quality Tracking Settings
   enableQualityTracking: boolean
   qualityTrackingLevel: 'basic' | 'standard' | 'advanced' | 'laboratory'
@@ -148,10 +153,7 @@ export interface ProductionSettings {
   includeUtilities: boolean
 }
 
-// ============================================
-// DISTRIBUTION SETTINGS TYPES
-// ============================================
-
+// ... DistributionSettings Interface (Keep as provided in prompt) ...
 export interface DistributionSettings {
   // 1. General Distribution Settings
   enableDistributionTracking: boolean
@@ -211,7 +213,7 @@ export interface DistributionSettings {
   
   // 6. Payment Management
   paymentMethodsEnabled: ('cash' | 'mpesa' | 'bank' | 'credit')[]
-  defaultPaymentMethod: 'cash' | 'mpesa' | 'bank' | 'credit'
+  defaultPaymentMethod: 'mpesa' | 'bank' | 'credit'
   enableCreditManagement: boolean
   defaultCreditPeriodDays: number
   maxCreditLimit?: number
@@ -341,6 +343,11 @@ export const getDefaultProductionSettings = (): ProductionSettings => ({
   requireSessionTimeRecording: false,
   sessionIntervalHours: 8,
   
+  // --- NEW FIELDS DEFAULTS ---
+  enableSmartSessionBanner: true,
+  sessionLateThresholdMinutes: 60,
+  // ---------------------------
+  
   // Quality Tracking
   enableQualityTracking: true,
   qualityTrackingLevel: 'standard',
@@ -464,64 +471,48 @@ export const getDefaultProductionSettings = (): ProductionSettings => ({
 })
 
 export const getDefaultDistributionSettings = (): DistributionSettings => ({
-  // General
+  // Keep original default values...
   enableDistributionTracking: true,
   distributionModel: 'multi_channel',
   defaultDistributionFrequency: 'daily',
-  
-  // Channel Management
   enableChannelManagement: true,
   allowMultipleChannels: true,
   maxActiveChannels: 10,
   requireChannelApproval: false,
   approvalRequiredBy: 'farm_manager',
-  
   channelTypesEnabled: ['cooperative', 'processor', 'direct', 'retail'],
   defaultChannelType: 'cooperative',
-  
-  // Inventory
   enableInventoryTracking: true,
   inventoryUpdateMethod: 'automatic',
   trackAvailableVolume: true,
   allowOverdistribution: false,
   overdistributionTolerancePercent: 0,
-  
   reserveVolumePercent: 0,
   alertLowInventory: true,
   lowInventoryThresholdLiters: 50.0,
-  
-  // Pricing
   pricingModel: 'per_channel',
   defaultPricePerLiter: 45.00,
   currency: 'KES',
   allowChannelCustomPricing: true,
-  
   enableQualityBasedPricing: false,
   qualityPremiumPercent: 10,
   qualityThresholdScc: 250000,
   qualityThresholdFat: 3.5,
   qualityThresholdProtein: 3.0,
-  
   enableVolumeDiscounts: false,
-  
-  // Delivery
   enableDeliveryTracking: true,
   requireDriverDetails: true,
   requireVehicleDetails: false,
   trackDeliveryTime: true,
   requireDeliveryConfirmation: false,
   confirmationMethod: 'signature',
-  
   enableRouteOptimization: false,
   maxDeliveryRadiusKm: 100,
   preferredDeliveryTime: 'morning',
-  
-  // Payment
   paymentMethodsEnabled: ['cash', 'mpesa', 'bank', 'credit'],
   defaultPaymentMethod: 'mpesa',
   enableCreditManagement: true,
   defaultCreditPeriodDays: 30,
-  
   paymentTerms: {
     immediate: 0,
     net_7: 7,
@@ -530,13 +521,10 @@ export const getDefaultDistributionSettings = (): DistributionSettings => ({
     net_60: 60
   },
   defaultPaymentTerms: 'net_30',
-  
   autoGenerateInvoices: false,
   invoiceFormat: 'pdf',
   includeTaxInPricing: false,
   taxRatePercent: 16.0,
-  
-  // Quality Control
   requireQualityCheckBeforeDistribution: false,
   minimumQualityStandards: {
     sccMax: 400000,
@@ -546,62 +534,43 @@ export const getDefaultDistributionSettings = (): DistributionSettings => ({
   },
   rejectSubstandardMilk: false,
   alertQualityIssues: true,
-  
-  // Record Keeping
   requireBatchNumbers: false,
   batchNumberFormat: 'FARM-YYYYMMDD-NNN',
   trackDistributionContainers: false,
   containerTypes: ['can', 'tank', 'bulk'],
-  
   requireDistributionNotes: false,
   requirePhotosForDelivery: false,
-  
-  // Status
   statusWorkflow: ['pending', 'in_transit', 'delivered', 'paid'],
   defaultInitialStatus: 'pending',
   autoUpdateStatus: false,
-  
   enableStatusNotifications: true,
   notifyOnStatusChange: true,
-  
-  // Channel Relationships
   trackChannelPerformance: true,
   performanceMetrics: ['volume', 'payment_timeliness', 'quality_complaints', 'frequency'],
   enableChannelRatings: false,
   minRatingForActiveChannel: 3,
-  
   trackChannelContracts: false,
   requireContractExpiryAlerts: false,
   contractAlertDaysBefore: 30,
-  
-  // Reporting
   enableDistributionReports: true,
   reportFrequency: 'weekly',
   includeRevenueAnalysis: true,
   includeChannelComparison: true,
-  
   dashboardDisplayPeriod: 30,
   showRevenueCharts: true,
   showVolumeCharts: true,
   showChannelBreakdown: true,
-  
-  // Compliance
   enableComplianceTracking: false,
   requireTransportLicenses: false,
   requireHealthCertificates: false,
   trackPermitRenewals: false,
-  
   complyWithCoolingRequirements: true,
   maxTransportTemperature: 4.0,
   maxTransportDurationHours: 4,
-  
-  // Integration
   syncWithProductionRecords: true,
   autoDeductFromInventory: true,
   syncWithFinancialRecords: true,
   createAccountingEntries: false,
-  
-  // Alerts
   distributionAlerts: {
     lowInventory: true,
     overduePayment: true,
@@ -610,13 +579,10 @@ export const getDefaultDistributionSettings = (): DistributionSettings => ({
   },
   alertDeliveryMethods: ['app', 'sms'],
   alertRecipients: ['farm_manager', 'farm_owner'],
-  
   criticalAlertThresholdAmount: 100000.00,
   enablePaymentReminders: true,
   paymentReminderDaysBeforeDue: 3,
   overduePaymentAlertFrequency: 'daily',
-  
-  // Backup
   enableDataExport: true,
   exportFormats: ['pdf', 'excel', 'csv'],
   dataRetentionYears: 7,

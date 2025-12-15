@@ -396,17 +396,17 @@ export default function LandingPage() {
           <div className={'contact-side'}>
             <div className={'contact-info-box'}>
               <h3 className={'contact-info-heading'}>Contact Information</h3>
-              <p className={'contact-info-text'}>123 Dairy Farm Road <br />Agricultural District <br />Farmington, ST 12345 </p>
+              <p className={'contact-info-text'}>Off-outering Road <br />Matigari House <br />Ruaraka, Nairobi </p>
               <div className="contact-info-phone">
                 <a
-                  href="tel:+15551234567"
+                  href="tel:+254702689812"
                   aria-label="Customer-care-contact"
                   className="contact-info-item"
                 >
                   <div>
                     <FiPhone className="contact-info-icon" />
                   </div>
-                  <p className="contact-info-text">+1 (555) 123-4567</p>
+                  <p className="contact-info-text">+254 702 689812</p>
                 </a>
               </div>
 

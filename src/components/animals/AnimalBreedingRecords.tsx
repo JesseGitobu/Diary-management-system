@@ -52,6 +52,7 @@ interface BreedingRecord {
   veterinarian?: string
   breeding_cost?: number
   auto_generated?: boolean
+  created_at?: string // Added to support sorting by entry time
 }
 
 interface PregnancyCheck {
@@ -62,9 +63,9 @@ interface PregnancyCheck {
   result: 'positive' | 'negative' | 'inconclusive'
   checked_by: string
   notes?: string
+  created_at?: string
 }
 
-// Added interface for Heat Events
 interface HeatEvent {
   id: string
   animal_id: string
@@ -106,7 +107,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
   const [activeTab, setActiveTab] = useState('overview')
   const [breedingRecords, setBreedingRecords] = useState<BreedingRecord[]>([])
   const [pregnancyChecks, setPregnancyChecks] = useState<PregnancyCheck[]>([])
-  const [heatEvents, setHeatEvents] = useState<HeatEvent[]>([]) // New state for heat events
+  const [heatEvents, setHeatEvents] = useState<HeatEvent[]>([])
   const [breedingSettings, setBreedingSettings] = useState<BreedingSettings | null>(null)
   const [breedingEligibility, setBreedingEligibility] = useState<BreedingEligibility | null>(null)
   
@@ -152,18 +153,24 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
       const response = await fetch(`/api/animals/${animalId}/breeding-records`)
       const data = await response.json()
       if (data.success) {
-        const sortedRecords = (data.breedingRecords || []).sort((a: BreedingRecord, b: BreedingRecord) => 
-          new Date(b.breeding_date).getTime() - new Date(a.breeding_date).getTime()
-        )
+        // --- UPDATED SORTING LOGIC ---
+        // Sorts by created_at first. If created_at is missing, falls back to the event date.
+        // This ensures the banners react to the most recently entered data.
+
+        const sortedRecords = (data.breedingRecords || []).sort((a: BreedingRecord, b: BreedingRecord) => {
+          const timeA = a.created_at ? new Date(a.created_at).getTime() : new Date(a.breeding_date).getTime();
+          const timeB = b.created_at ? new Date(b.created_at).getTime() : new Date(b.breeding_date).getTime();
+          return timeB - timeA; // Newest entry first
+        })
         setBreedingRecords(sortedRecords)
+        
         setPregnancyChecks(data.pregnancyChecks || [])
         
-        // Assuming the API returns heatEvents, or we sort them if they are in a different structure
-        // If your API doesn't return this yet, you'd need to update the endpoint or fetch specifically
-        // For now, we handle the data structure safely:
-        const sortedHeat = (data.heatEvents || []).sort((a: HeatEvent, b: HeatEvent) => 
-          new Date(b.event_date).getTime() - new Date(a.event_date).getTime()
-        )
+        const sortedHeat = (data.heatEvents || []).sort((a: HeatEvent, b: HeatEvent) => {
+          const timeA = a.created_at ? new Date(a.created_at).getTime() : new Date(a.event_date).getTime();
+          const timeB = b.created_at ? new Date(b.created_at).getTime() : new Date(b.event_date).getTime();
+          return timeB - timeA; // Newest entry first
+        })
         setHeatEvents(sortedHeat)
       }
     } catch (err) {
@@ -200,6 +207,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
       eligibility.reasons.push(`Status "${animal.production_status}" is not eligible.`)
     }
 
+    // Check for active pregnancy based on current records state
     const activePregnancy = breedingRecords.find(r => r.pregnancy_status === 'confirmed' && !r.actual_calving_date)
     if (activePregnancy) {
       eligibility.eligible = false
@@ -208,6 +216,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
 
     const lastCalving = breedingRecords
       .filter(record => record.actual_calving_date)
+      // For calving history, we still prioritize the actual calving date
       .sort((a, b) => new Date(b.actual_calving_date!).getTime() - new Date(a.actual_calving_date!).getTime())[0]
 
     if (lastCalving?.actual_calving_date) {
@@ -248,21 +257,60 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
 
   // --- Breeding Window Logic ---
   const getBreedingWindowStatus = () => {
-    // 1. Get most recent heat event
+    // 1. Check for Pending Insemination First (Priority over Heat)
+    // Relies on breedingRecords[0] being the most recent entry due to created_at sort
+    const latestRecord = breedingRecords[0]; 
+    const pendingBreeding = latestRecord?.pregnancy_status === 'pending' ? latestRecord : null;
+    
+    if (pendingBreeding) {
+      const daysSinceInsemination = differenceInDays(currentTime, new Date(pendingBreeding.breeding_date));
+      const minWaitDays = breedingSettings?.pregnancyCheckDays || 30; // Default 30 days if settings not loaded
+      
+      if (daysSinceInsemination >= minWaitDays) {
+        // Ready for Check
+        return {
+          status: 'ready_for_check',
+          color: 'blue',
+          message: 'Ready for Pregnancy Check',
+          subMessage: `${daysSinceInsemination} days since insemination. Check now recommended.`,
+          action: 'check',
+          daysElapsed: daysSinceInsemination
+        };
+      } else {
+        // Waiting Period
+        return {
+          status: 'waiting',
+          color: 'gray',
+          message: 'Inseminated - Waiting Period',
+          subMessage: `${minWaitDays - daysSinceInsemination} more days until pregnancy check is recommended.`,
+          action: 'none',
+          daysElapsed: daysSinceInsemination
+        };
+      }
+    }
+
+    // 2. Standard Heat Cycle Logic (If no pending breeding)
+    // Relies on heatEvents[0] being the most recent entry due to created_at sort
     const lastHeat = heatEvents[0]
     if (!lastHeat) return null
 
-    // 2. Check if a breeding record has happened AFTER this heat
-    const breedingAfterHeat = breedingRecords.find(record => 
-      new Date(record.breeding_date) >= new Date(lastHeat.event_date)
-    )
-    if (breedingAfterHeat) return null // Cycle completed
+    // Check if a breeding record has happened ON or AFTER this heat date
+    const breedingAfterHeat = breedingRecords.find(record => {
+      const breedingDate = new Date(record.breeding_date)
+      const heatDate = new Date(lastHeat.event_date)
+      breedingDate.setHours(0,0,0,0)
+      heatDate.setHours(0,0,0,0)
+      return breedingDate.getTime() >= heatDate.getTime()
+    })
 
-    // 3. Calculate hours elapsed
+    if (breedingAfterHeat) return null // Cycle completed / Insemination recorded
+
+    // Note: We calculate biological window based on event_date, 
+    // but the banner is triggered because this specific record is at index [0] 
+    // (most recently created).
     const heatDate = new Date(lastHeat.event_date)
     const hoursElapsed = differenceInHours(currentTime, heatDate)
     
-    // 4. Define Windows (Standard: 12-18hr optimal, 24hr max)
     if (hoursElapsed > 36) return null // Heat window strictly closed
 
     let status = 'unknown'
@@ -297,7 +345,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
       subMessage = 'Consult vet or wait for next heat cycle.'
     }
 
-    return { status, color, message, subMessage, hoursElapsed }
+    return { status, color, message, subMessage, action: 'breed', hoursElapsed }
   }
 
   const getPregnancyStatusBadge = (status: string, isAutoGenerated?: boolean) => {
@@ -338,16 +386,17 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
 
     if (breedingStats.currentStatus === 'Pregnant') {
       return (
-        <div className="flex gap-2">
-          <Button onClick={() => setActiveModal('calving')} className="bg-purple-600 hover:bg-purple-700 text-white">
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <Button onClick={() => setActiveModal('calving')} className="w-full sm:w-auto bg-purple-600 hover:bg-purple-700 text-white">
             <Baby className="w-4 h-4 mr-2"/> Record Calving
           </Button>
-          <div className="relative">
-            <Button variant="outline" onClick={() => setShowDropdown(!showDropdown)}>
+          <div className="relative w-full sm:w-auto">
+            <Button variant="outline" className="w-full sm:w-auto" onClick={() => setShowDropdown(!showDropdown)}>
               <MoreHorizontal className="w-4 h-4" />
+              <span className="sm:hidden ml-2">Options</span>
             </Button>
             {showDropdown && (
-              <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border z-20">
+              <div className="absolute right-0 mt-2 w-full sm:w-48 bg-white rounded-md shadow-lg border z-20">
                 <button 
                   className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-md"
                   onClick={() => {
@@ -366,16 +415,17 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
 
     if (breedingStats.currentStatus === 'Served') {
       return (
-        <div className="flex gap-2">
-          <Button onClick={() => setActiveModal('pregnancy_check')} className="bg-blue-600 hover:bg-blue-700 text-white">
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <Button onClick={() => setActiveModal('pregnancy_check')} className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white">
             <Stethoscope className="w-4 h-4 mr-2"/> Pregnancy Check
           </Button>
-          <div className="relative">
-            <Button variant="outline" onClick={() => setShowDropdown(!showDropdown)}>
+          <div className="relative w-full sm:w-auto">
+            <Button variant="outline" className="w-full sm:w-auto" onClick={() => setShowDropdown(!showDropdown)}>
               <MoreHorizontal className="w-4 h-4" />
+              <span className="sm:hidden ml-2">Options</span>
             </Button>
             {showDropdown && (
-              <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border z-20">
+              <div className="absolute right-0 mt-2 w-full sm:w-48 bg-white rounded-md shadow-lg border z-20">
                 <button 
                   className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                   onClick={() => {
@@ -402,18 +452,23 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
       )
     }
 
+    // Check for breeding eligibility before showing Open status buttons
+    if (!breedingEligibility?.eligible) {
+      return null
+    }
+
     return (
-      <div className="flex gap-2">
+      <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
         <Button 
           onClick={() => setActiveModal('heat_detection')} 
           variant="outline" 
-          className="text-pink-600 border-pink-200 hover:bg-pink-50"
+          className="w-full sm:w-auto text-pink-600 border-pink-200 hover:bg-pink-50"
         >
           <Heart className="w-4 h-4 mr-2"/> Record Heat
         </Button>
         <Button 
           onClick={() => setActiveModal('insemination')} 
-          className="bg-green-600 hover:bg-green-700 text-white"
+          className="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white"
         >
           <Syringe className="w-4 h-4 mr-2"/> Record Breeding
         </Button>
@@ -429,21 +484,26 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
   return (
     <div className="space-y-6">
       
-      {/* 1. HEAT CYCLE BANNER (Priority) */}
-      {breedingWindow && breedingEligibility?.eligible && (
+      {/* 1. STATUS BANNER (Heat or Pending Check) */}
+      {breedingWindow && (
         <div className="mb-6">
            <div className={cn(
              "p-4 border-l-4 rounded-r-lg shadow-sm animate-in fade-in slide-in-from-top-2 duration-300",
              breedingWindow.color === 'blue' && "bg-blue-50 border-blue-500",
              breedingWindow.color === 'yellow' && "bg-yellow-50 border-yellow-500",
-             breedingWindow.color === 'green' && "bg-green-50 border-green-500 ring-2 ring-green-200", // Highlight optimal
+             breedingWindow.color === 'green' && "bg-green-50 border-green-500 ring-2 ring-green-200", 
              breedingWindow.color === 'orange' && "bg-orange-50 border-orange-500",
              breedingWindow.color === 'red' && "bg-red-50 border-red-500",
+             breedingWindow.color === 'gray' && "bg-gray-50 border-gray-500",
            )}>
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="flex items-start space-x-3">
                 {breedingWindow.color === 'green' ? (
                   <Timer className="h-8 w-8 text-green-600 mt-1 animate-pulse" />
+                ) : breedingWindow.status === 'ready_for_check' ? (
+                  <Stethoscope className="h-6 w-6 mt-1 text-blue-600" />
+                ) : breedingWindow.status === 'waiting' ? (
+                  <Clock className="h-6 w-6 mt-1 text-gray-600" />
                 ) : (
                   <Clock className={cn(
                     "h-6 w-6 mt-1",
@@ -456,29 +516,30 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                 <div>
                   <h3 className={cn(
                     "text-lg font-bold flex items-center gap-2",
-                    breedingWindow.color === 'green' ? "text-green-900" : "text-gray-900"
+                    breedingWindow.color === 'green' ? "text-green-900" : 
+                    breedingWindow.color === 'gray' ? "text-gray-900" : "text-gray-900"
                   )}>
                     {breedingWindow.message}
                     {breedingWindow.color === 'green' && <Badge className="bg-green-600 text-white animate-pulse">Best Time</Badge>}
                   </h3>
                   <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-1">
                      <p className="text-sm font-medium">
-                       {breedingWindow.hoursElapsed} hours since heat detected
+                       {breedingWindow.action === 'breed' && `${breedingWindow.hoursElapsed} hours since heat detected`}
                      </p>
-                     <span className="hidden sm:inline text-gray-400">•</span>
+                     {breedingWindow.action === 'breed' && <span className="hidden sm:inline text-gray-400">•</span>}
                      <p className="text-sm text-gray-700">{breedingWindow.subMessage}</p>
                   </div>
                 </div>
               </div>
               
               {/* Action buttons specifically for the window */}
-              {breedingWindow.status !== 'expired' && (
-                <div className="flex gap-2">
+              {breedingWindow.action === 'breed' && breedingWindow.status !== 'expired' && (
+                <div className="flex gap-2 w-full md:w-auto">
                    <Button 
                     onClick={() => setActiveModal('insemination')} 
                     className={cn(
-                      "text-white shadow-md",
-                      breedingWindow.color === 'green' ? "bg-green-600 hover:bg-green-700 w-full md:w-auto" : 
+                      "text-white shadow-md w-full md:w-auto",
+                      breedingWindow.color === 'green' ? "bg-green-600 hover:bg-green-700" : 
                       breedingWindow.color === 'orange' ? "bg-orange-600 hover:bg-orange-700" :
                       "bg-blue-600 hover:bg-blue-700"
                     )}
@@ -488,12 +549,25 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                   </Button>
                 </div>
               )}
+
+              {/* Action button for Pregnancy Check */}
+              {breedingWindow.action === 'check' && (
+                <div className="flex gap-2 w-full md:w-auto">
+                   <Button 
+                    onClick={() => setActiveModal('pregnancy_check')} 
+                    className="bg-blue-600 hover:bg-blue-700 text-white shadow-md w-full md:w-auto"
+                  >
+                    <Stethoscope className="w-4 h-4 mr-2"/> 
+                    Confirm Pregnancy
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* 2. STANDARD NOTIFICATION (Only if no active heat window) */}
+      {/* 2. STANDARD NOTIFICATION (Only if no active banner) */}
       {!breedingWindow && breedingEligibility && breedingEligibility.eligible && (breedingEligibility.isReadyForFirstService || breedingEligibility.isReadyForReService) && (
         <div className="mb-6">
              <div className="p-4 bg-green-50 border-l-4 border-green-500 rounded-r-lg shadow-sm">
@@ -511,7 +585,9 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                     </p>
                   </div>
                 </div>
-                {renderActionButtons()}
+                <div className="w-full md:w-auto">
+                   {renderActionButtons()}
+                </div>
               </div>
             </div>
         </div>
@@ -639,14 +715,17 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <div className="flex items-center justify-between mb-4">
-          <TabsList>
+        {/* Mobile Optimized Tabs Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+          <TabsList className="w-full sm:w-auto grid grid-cols-3 sm:flex">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="records">Records</TabsTrigger>
             <TabsTrigger value="checks">Checks</TabsTrigger>
           </TabsList>
           
-          <div>{renderActionButtons()}</div>
+          <div className="w-full sm:w-auto">
+            {renderActionButtons()}
+          </div>
         </div>
 
         <TabsContent value="overview" className="space-y-4">
@@ -667,8 +746,12 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {/* Show latest Heat Event if it's the most recent activity */}
-                  {heatEvents.length > 0 && (!breedingRecords[0] || new Date(heatEvents[0].event_date) > new Date(breedingRecords[0].breeding_date)) && (
+                  {/* Show latest Heat Event if it's the most recent activity based on the sorted order */}
+                  {heatEvents.length > 0 && (!breedingRecords[0] || 
+                    (heatEvents[0].created_at && breedingRecords[0].created_at 
+                      ? new Date(heatEvents[0].created_at) > new Date(breedingRecords[0].created_at)
+                      : new Date(heatEvents[0].event_date) > new Date(breedingRecords[0].breeding_date))
+                  ) && (
                      <div key={`heat-${heatEvents[0].id}`} className="border rounded-lg p-4 bg-pink-50 border-pink-100">
                        <div className="flex items-start justify-between">
                          <div>
@@ -737,7 +820,6 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
              <CardHeader><CardTitle>Full History</CardTitle></CardHeader>
              <CardContent>
                <div className="space-y-4">
-                  {/* Interleave Heat Events if desired, currently showing breeding records */}
                   {breedingRecords.map((record) => (
                     <div key={record.id} className="flex justify-between border-b pb-2">
                        <div>

@@ -1,5 +1,4 @@
 // components/settings/production-distribution/ProductionSettingsTab.tsx
-
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
@@ -124,13 +123,12 @@ export default function ProductionSettingsTab({
     }
   }, [isQualityTabVisible, activeSection])
 
-  // Handle session toggle - ensure only one session when allowMultipleSessionsPerDay is false
+  // Handle session toggle
   const handleSessionToggle = (session: string, checked: boolean) => {
     let updated = checked
       ? [...settings.enabledSessions, session]
       : settings.enabledSessions.filter((s: string) => s !== session)
 
-    // If allowMultipleSessionsPerDay is false and user is enabling a session, disable others
     if (!settings.allowMultipleSessionsPerDay && checked) {
       updated = [session]
     }
@@ -138,17 +136,13 @@ export default function ProductionSettingsTab({
     updateSetting('enabledSessions', updated)
   }
 
-  // Handle multiple sessions per day toggle
   const handleMultipleSessionsToggle = (checked: boolean) => {
     updateSetting('allowMultipleSessionsPerDay', checked)
-    
-    // If disabling multiple sessions, keep only the first enabled session
     if (!checked && settings.enabledSessions.length > 1) {
       updateSetting('enabledSessions', [settings.enabledSessions[0]])
     }
   }
 
-  // Validate session times based on interval
   const validateSessionTime = (session: string, newTime: string) => {
     const sessionOrder = ['morning', 'afternoon', 'evening']
     const currentSessionIndex = sessionOrder.indexOf(session)
@@ -156,7 +150,6 @@ export default function ProductionSettingsTab({
     const currentMinute = parseInt(newTime.split(':')[1]) || 0
     const currentTotalMinutes = currentHour * 60 + currentMinute
 
-    // Check against previous session if exists
     if (currentSessionIndex > 0) {
       const prevSession = sessionOrder[currentSessionIndex - 1]
       if (settings.enabledSessions.includes(prevSession)) {
@@ -175,27 +168,6 @@ export default function ProductionSettingsTab({
         }
       }
     }
-
-    // Check against next session if exists
-    if (currentSessionIndex < sessionOrder.length - 1) {
-      const nextSession = sessionOrder[currentSessionIndex + 1]
-      if (settings.enabledSessions.includes(nextSession)) {
-        const nextTime = settings.sessionTimes[nextSession]
-        const nextHour = parseInt(nextTime.split(':')[0])
-        const nextMinute = parseInt(nextTime.split(':')[1]) || 0
-        const nextTotalMinutes = nextHour * 60 + nextMinute
-        const diffMinutes = nextTotalMinutes - currentTotalMinutes
-
-        if (diffMinutes < settings.sessionIntervalHours * 60) {
-          toast.error(
-            `Minimum ${settings.sessionIntervalHours} hour(s) required between sessions`,
-            { duration: 4000 }
-          )
-          return false
-        }
-      }
-    }
-
     return true
   }
 
@@ -210,7 +182,6 @@ export default function ProductionSettingsTab({
 
   return (
     <div className="space-y-6">
-      {/* Section Navigation */}
       <div className="flex gap-2 overflow-x-auto pb-2">
         {sections.map(section => {
           const Icon = section.icon
@@ -233,19 +204,17 @@ export default function ProductionSettingsTab({
         })}
       </div>
 
-      {/* Quality Tab Disabled Notice */}
       {!isQualityTabVisible && (
         <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
           <div className="flex items-center gap-2 text-sm text-gray-700">
             <Lock className="w-4 h-4 flex-shrink-0" />
             <div>
-              <strong>Quality Parameters Hidden:</strong> The Quality tab is only available when using "Advanced" or "Quality Focused" tracking modes. Switch your tracking mode above to access quality settings.
+              <strong>Quality Parameters Hidden:</strong> The Quality tab is only available when using "Advanced" or "Quality Focused" tracking modes.
             </div>
           </div>
         </div>
       )}
 
-      {/* Tracking Mode Section */}
       {activeSection === 'tracking' && (
         <div className="space-y-6">
           <Card>
@@ -285,12 +254,6 @@ export default function ProductionSettingsTab({
                   </label>
                 ))}
               </div>
-
-              <InfoBox>
-                <strong>Mode Impact:</strong> Basic shows only volume input and chart. Advanced shows optional 
-                quality fields. Quality Focused makes fat, protein, and SCC required fields. <strong>Note:</strong> Quality parameters 
-                are only available in Advanced and Quality Focused modes.
-              </InfoBox>
 
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
@@ -343,7 +306,6 @@ export default function ProductionSettingsTab({
         </div>
       )}
 
-      {/* Milking Sessions Section */}
       {activeSection === 'sessions' && (
         <div className="space-y-6">
           <Card>
@@ -372,29 +334,24 @@ export default function ProductionSettingsTab({
                 </div>
               </div>
 
-              {/* Session Times - Only visible if Require Session Time Recording is enabled */}
-              {settings.requireSessionTimeRecording && (
-                <div>
-                  <Label className="mb-2 block">Session Times</Label>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {['morning', 'afternoon', 'evening'].map(session => (
-                      settings.enabledSessions.includes(session) && (
-                        <div key={session}>
-                          <label className="block text-sm text-gray-600 mb-1 capitalize">{session}</label>
-                          <Input
-                            type="time"
-                            value={settings.sessionTimes[session]}
-                            onChange={(e) => handleSessionTimeChange(session, e.target.value)}
-                          />
-                        </div>
-                      )
-                    ))}
-                  </div>
-                  <p className="text-xs text-gray-500 mt-2">
-                    Minimum interval between sessions: {settings.sessionIntervalHours} hour(s)
-                  </p>
+              {/* Session Times */}
+              <div>
+                <Label className="mb-2 block">Session Times</Label>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {['morning', 'afternoon', 'evening'].map(session => (
+                    settings.enabledSessions.includes(session) && (
+                      <div key={session}>
+                        <label className="block text-sm text-gray-600 mb-1 capitalize">{session}</label>
+                        <Input
+                          type="time"
+                          value={settings.sessionTimes[session]}
+                          onChange={(e) => handleSessionTimeChange(session, e.target.value)}
+                        />
+                      </div>
+                    )
+                  ))}
                 </div>
-              )}
+              </div>
 
               <div className="space-y-3">
                 <label className="flex items-center justify-between p-3 border rounded-lg">
@@ -420,6 +377,51 @@ export default function ProductionSettingsTab({
                 </label>
               </div>
 
+              {/* Smart Session Banner Configuration - NEW SECTION */}
+              <div className="pt-4 border-t border-gray-100">
+                <h3 className="text-sm font-medium text-gray-900 mb-3 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-blue-600" />
+                  Smart Session Banner
+                </h3>
+                
+                <div className="space-y-4">
+                  <label className="flex items-center justify-between p-3 border rounded-lg bg-slate-50">
+                    <div>
+                      <div className="font-medium">Enable Live Session Banner</div>
+                      <div className="text-sm text-gray-500">
+                        Show a dynamic banner on the dashboard during milking times
+                      </div>
+                    </div>
+                    <Switch
+                      checked={settings.enableSmartSessionBanner}
+                      onCheckedChange={(checked) => updateSetting('enableSmartSessionBanner', checked)}
+                    />
+                  </label>
+
+                  {settings.enableSmartSessionBanner && (
+                    <div className="p-3 bg-slate-50 border rounded-lg">
+                      <Label>Late Entry Threshold (minutes)</Label>
+                      <div className="flex gap-4 items-center mt-2">
+                        <Input
+                          type="number"
+                          min="15"
+                          max="240"
+                          className="w-32"
+                          value={settings.sessionLateThresholdMinutes}
+                          onChange={(e) => updateSetting('sessionLateThresholdMinutes', parseInt(e.target.value))}
+                        />
+                        <span className="text-sm text-gray-500">
+                          minutes after session start
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-2">
+                        After this time, the session banner will indicate a late entry.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <div>
                 <Label>Session Interval (hours)</Label>
                 <Input
@@ -429,17 +431,15 @@ export default function ProductionSettingsTab({
                   value={settings.sessionIntervalHours}
                   onChange={(e) => updateSetting('sessionIntervalHours', parseInt(e.target.value))}
                 />
-                <p className="text-xs text-gray-500 mt-1">Minimum time required between sessions. Used for validation when recording session times.</p>
               </div>
             </CardContent>
           </Card>
         </div>
       )}
 
-      {/* Quality Parameters Section - Only visible for Advanced and Quality Focused modes */}
+      {/* Quality Section */}
       {activeSection === 'quality' && isQualityTabVisible && (
         <div className="space-y-6">
-          {/* Fat Content */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -455,7 +455,6 @@ export default function ProductionSettingsTab({
                   onCheckedChange={(checked) => updateSetting('trackFatContent', checked)}
                 />
               </div>
-
               {settings.trackFatContent && (
                 <>
                   <label className="flex items-center gap-2">
@@ -467,7 +466,6 @@ export default function ProductionSettingsTab({
                     />
                     <span className="text-sm font-medium">Make Required</span>
                   </label>
-
                   <div className="grid grid-cols-3 gap-3">
                     <div>
                       <Label className="text-sm">Min (%)</Label>
@@ -502,8 +500,7 @@ export default function ProductionSettingsTab({
             </CardContent>
           </Card>
 
-          {/* Protein Content */}
-          <Card>
+           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <TrendingUp className="w-5 h-5 text-blue-600" />
@@ -518,7 +515,6 @@ export default function ProductionSettingsTab({
                   onCheckedChange={(checked) => updateSetting('trackProteinContent', checked)}
                 />
               </div>
-
               {settings.trackProteinContent && (
                 <>
                   <label className="flex items-center gap-2">
@@ -530,8 +526,7 @@ export default function ProductionSettingsTab({
                     />
                     <span className="text-sm font-medium">Make Required</span>
                   </label>
-
-                  <div className="grid grid-cols-3 gap-3">
+                   <div className="grid grid-cols-3 gap-3">
                     <div>
                       <Label className="text-sm">Min (%)</Label>
                       <Input
@@ -565,7 +560,6 @@ export default function ProductionSettingsTab({
             </CardContent>
           </Card>
 
-          {/* Somatic Cell Count */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -581,10 +575,9 @@ export default function ProductionSettingsTab({
                   onCheckedChange={(checked) => updateSetting('trackSomaticCellCount', checked)}
                 />
               </div>
-
-              {settings.trackSomaticCellCount && (
+               {settings.trackSomaticCellCount && (
                 <>
-                  <label className="flex items-center gap-2">
+                   <label className="flex items-center gap-2">
                     <input
                       type="checkbox"
                       checked={settings.sccRequired}
@@ -593,7 +586,6 @@ export default function ProductionSettingsTab({
                     />
                     <span className="text-sm font-medium">Make Required</span>
                   </label>
-
                   <div className="grid grid-cols-3 gap-3">
                     <div>
                       <Label className="text-sm">Target</Label>
@@ -621,18 +613,13 @@ export default function ProductionSettingsTab({
                     </div>
                   </div>
                 </>
-              )}
+               )}
             </CardContent>
           </Card>
-
-          <InfoBox>
-            <strong>Quality Parameters & Tracking Mode:</strong> When tracking mode is set to "Quality Focused", 
-            all parameters marked as "required" will become mandatory fields in the production entry form.
-          </InfoBox>
         </div>
       )}
 
-      {/* Charts & Visualization Section */}
+      {/* Charts Section */}
       {activeSection === 'charts' && (
         <div className="space-y-6">
           <Card>
@@ -674,7 +661,6 @@ export default function ProductionSettingsTab({
               </div>
 
               <div className="space-y-2">
-                {/* Show Volume Chart - Hidden when quality_only is selected */}
                 {settings.chartDisplayMode !== 'quality_only' && (
                   <label className="flex items-center justify-between p-3 border rounded-lg">
                     <span>Show Volume Chart</span>
@@ -685,7 +671,6 @@ export default function ProductionSettingsTab({
                   </label>
                 )}
 
-                {/* Show Fat & Protein Chart - Hidden when volume_only is selected */}
                 {settings.chartDisplayMode !== 'volume_only' && (
                   <label className="flex items-center justify-between p-3 border rounded-lg">
                     <span>Show Fat & Protein Chart</span>
@@ -696,7 +681,6 @@ export default function ProductionSettingsTab({
                   </label>
                 )}
 
-                {/* Other toggles always visible */}
                 {[
                   { key: 'showTrendLines', label: 'Show Trend Lines' },
                   { key: 'showAverages', label: 'Show Average Lines' },
@@ -712,11 +696,6 @@ export default function ProductionSettingsTab({
                   </label>
                 ))}
               </div>
-
-              <InfoBox>
-                <strong>Chart Display Modes:</strong> "Volume Only" hides quality-related toggles, "Quality Only" hides volume chart toggle, 
-                "Combined" and "Separate" show all chart options.
-              </InfoBox>
             </CardContent>
           </Card>
         </div>

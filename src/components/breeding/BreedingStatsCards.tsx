@@ -51,7 +51,7 @@ export function BreedingStatsCards({ stats }: BreedingStatsCardsProps) {
     },
     {
       id: 'current-pregnant',
-      title: 'Currently Pregnant',
+      title: 'Currently In-calf Animals', // Changed from "Currently Pregnant"
       value: stats.currentPregnant,
       description: 'Confirmed pregnancies',
       icon: Baby,
