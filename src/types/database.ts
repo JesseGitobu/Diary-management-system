@@ -1930,23 +1930,44 @@ export interface FormErrors {
   submit?: string;
 }
 
-export type InputChangeEvent = React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>;
+import { ChangeEvent } from 'react';
 
 export type SubmitStatus = 'idle' | 'success' | 'error';
 
-export type FarmSizeOption = 'lessThan100' | 'between100and500' | 'moreThan500';
+export interface ContactFormData {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string; // ✅ Added
+  farmSize: string;
+  message: string;
+}
+
+export interface FormErrors {
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  phone?: string; // ✅ Added
+  farmSize?: string;
+  message?: string;
+  submit?: string;
+}
 
 export interface ContactFormApiData {
   name: string;
   email: string;
   company: string;
   message: string;
-  phone: string;
+  phone: string; // ✅ Changed from optional to required (string)
 }
 
-export interface FarmSizeMapping {
-  [key: string]: string;
-}
+export type FarmSizeOption = 'lessThan100' | 'between100and500' | 'moreThan500';
+
+export type FarmSizeMapping = {
+  [key in FarmSizeOption | string]: string;
+};
+
+export type InputChangeEvent = ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>;
 
 export interface ContactFormProps {
   onSubmissionSuccess?: (data: ContactFormData) => void;
