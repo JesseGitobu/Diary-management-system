@@ -1,6 +1,6 @@
 // src/app/api/admin/tickets/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUser, createAdminClient } from '@/lib/supabase/server'
+import { getCurrentAdmin, createAdminClient } from '@/lib/supabase/server'
 import { getTicketDetails, updateTicket } from '@/lib/database/admin'
 
 export async function GET(
@@ -8,7 +8,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await getCurrentUser()
+    const user = await getCurrentAdmin()
     
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -47,7 +47,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await getCurrentUser()
+    const user = await getCurrentAdmin()
     
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

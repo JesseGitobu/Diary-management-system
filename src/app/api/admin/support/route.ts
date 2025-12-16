@@ -1,11 +1,11 @@
 // src/app/api/admin/billing/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUser } from '@/lib/supabase/server'
+import { getCurrentAdmin } from '@/lib/supabase/server'
 import { getAllTickets } from '@/lib/database/admin'
 
 export async function GET(request: NextRequest) {
   try {
-    const user = await getCurrentUser()
+    const user = await getCurrentAdmin()
     
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
 
 // export async function POST(request: NextRequest) {
 //   try {
-//     const user = await getCurrentUser()
+//     const user = await getCurrentAdmin()
     
 //     if (!user) {
 //       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

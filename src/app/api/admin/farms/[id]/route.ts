@@ -1,13 +1,13 @@
 // src/app/api/admin/farms/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUser, createAdminClient } from '@/lib/supabase/server'
+import { getCurrentAdmin, createAdminClient } from '@/lib/supabase/server'
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await getCurrentUser()
+    const user = await getCurrentAdmin()
     
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -59,7 +59,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await getCurrentUser()
+    const user = await getCurrentAdmin()
     
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

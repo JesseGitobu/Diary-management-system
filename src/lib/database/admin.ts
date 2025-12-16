@@ -1,5 +1,5 @@
 // src/lib/database/admin.ts
-import { createServerSupabaseClient, createAdminClient } from '@/lib/supabase/server'
+import {createAdminClient } from '@/lib/supabase/server'
 
 // System Overview Statistics
 export async function getSystemOverview() {
@@ -170,11 +170,17 @@ export async function getAllUsers(limit = 50, offset = 0) {
   const adminSupabase = createAdminClient()
   
   try {
-    const { data, error, count } = await adminSupabase
-      .from('user_roles')
+    // Step 1: Get user_roles with farm relationships
+    const { data: userRoles, error: rolesError, count } = await (adminSupabase
+      .from('user_roles') as any)
       .select(`
-        *,
+        id,
+        user_id,
+        role_type,
+        status,
+        created_at,
         farms (
+          id,
           name,
           location
         )
@@ -182,15 +188,118 @@ export async function getAllUsers(limit = 50, offset = 0) {
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1)
 
-    if (error) {
-      console.error('Error getting all users:', error)
+    if (rolesError) {
+      console.error('Error getting user roles:', rolesError)
       return { users: [], count: 0 }
     }
 
-    return { users: data || [], count: count || 0 }
+    // Step 2: Get auth user data from the auth schema
+    const userIds = (userRoles || []).map((ur: any) => ur.user_id)
+    
+    if (userIds.length === 0) {
+      return { users: [], count: 0 }
+    }
+
+    // Step 3: Fetch auth users using admin API
+    let authUsersData: any[] = []
+    try {
+      const { data: { users: listUsers }, error: authError } = await (adminSupabase.auth.admin.listUsers() as any)
+      
+      if (!authError && listUsers) {
+        authUsersData = listUsers
+      }
+    } catch (error) {
+      console.error('Error fetching auth users:', error)
+      // Continue without auth data - will use fallback
+    }
+
+    // Step 4: Create a map of user_id -> auth user data
+    const authUserMap = new Map<string, any>()
+    authUsersData.forEach((au: any) => {
+      authUserMap.set(au.id, {
+        email: au.email || 'N/A',
+        full_name: au.user_metadata?.full_name || 'Unknown User'
+      })
+    })
+
+    // Step 5: Combine user_roles with auth users
+    const combinedUsers = (userRoles || []).map((ur: any) => {
+      const authData = authUserMap.get(ur.user_id) || { 
+        email: 'N/A', 
+        full_name: 'Unknown User' 
+      }
+
+      return {
+        id: ur.id,
+        user_id: ur.user_id,
+        role_type: ur.role_type,
+        status: ur.status || 'active',
+        created_at: ur.created_at,
+        farms: ur.farms,
+        profiles: {
+          email: authData.email,
+          user_metadata: {
+            full_name: authData.full_name
+          }
+        }
+      }
+    })
+
+    return { users: combinedUsers, count: count || 0 }
   } catch (error) {
     console.error('Error in getAllUsers:', error)
     return { users: [], count: 0 }
+  }
+}
+
+// ✅ NEW: Get user details with auth info (no type errors)
+export async function getUserDetailsWithAuth(userId: string) {
+  const adminSupabase = createAdminClient()
+  
+  try {
+    // Get user_roles data
+    const { data: userRole, error: roleError } = await (adminSupabase
+      .from('user_roles') as any)
+      .select(`
+        *,
+        farms (
+          name,
+          location
+        )
+      `)
+      .eq('user_id', userId)
+      .single()
+
+    if (roleError) {
+      console.error('Error getting user role:', roleError)
+      return null
+    }
+
+    // Get auth user data
+    let authUser: any = null
+    try {
+      const { data: { user }, error: authError } = await (adminSupabase.auth.admin.getUserById(userId) as any)
+      
+      if (!authError && user) {
+        authUser = user
+      }
+    } catch (error) {
+      console.error('Error getting auth user:', error)
+    }
+
+    // Combine the data
+    return {
+      ...userRole,
+      profiles: {
+        email: authUser?.email || 'N/A',
+        user_metadata: {
+          full_name: authUser?.user_metadata?.full_name || 'Unknown User'
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error in getUserDetailsWithAuth:', error)
+    return null
   }
 }
 

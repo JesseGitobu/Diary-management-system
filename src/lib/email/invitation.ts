@@ -154,16 +154,16 @@ function generateInvitationEmailHTML(data: InvitationEmailData): string {
     <body>
         <div class="container">
             <div class="header">
-                <h1>🐄 FarmTrack Pro</h1>
+                <h1>🐄 DairyTrack Pro</h1>
                 <h2>You're invited to join ${data.farmName}!</h2>
             </div>
             
             <div class="content">
                 <p>Hello <strong>${data.inviteeName}</strong>,</p>
                 
-                <p><strong>${data.inviterName}</strong> has invited you to join <strong>${data.farmName}</strong> as a <span class="highlight">${data.roleType.replace('_', ' ')}</span> on FarmTrack Pro.</p>
+                <p><strong>${data.inviterName}</strong> has invited you to join <strong>${data.farmName}</strong> as a <span class="highlight">${data.roleType.replace('_', ' ')}</span> on DairyTrack Pro.</p>
                 
-                <p>FarmTrack Pro is a comprehensive dairy farm management platform that helps you:</p>
+                <p>DairyTrack Pro is a comprehensive dairy farm management platform that helps you:</p>
                 <ul>
                     <li>📊 Track animal health and production records</li>
                     <li>🐮 Manage herd information and breeding cycles</li>
@@ -187,7 +187,7 @@ function generateInvitationEmailHTML(data: InvitationEmailData): string {
             <div class="footer">
                 <p>This invitation was sent by <strong>${data.inviterName}</strong> from <strong>${data.farmName}</strong></p>
                 <p>If you did not expect this invitation, you can safely ignore this email.</p>
-                <p class="logo">© 2024 FarmTrack Pro. All rights reserved.</p>
+                <p class="logo">© 2024 DairyTrack Pro. All rights reserved.</p>
             </div>
         </div>
     </body>

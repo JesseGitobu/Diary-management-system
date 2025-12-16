@@ -99,6 +99,35 @@ export const getCurrentUser = async () => {
   }
 }
 
+// ✅ NEW: Check if user is an admin (proper admin verification)
+export const getCurrentAdmin = async () => {
+  try {
+    const supabase = await createServerSupabaseClient()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError) {
+      // Check if it's the expected AuthSessionMissingError
+      if (userError.message?.includes('AuthSessionMissingError')) {
+        // Expected for unauthenticated users - don't log it
+        return null
+      }
+      // Log unexpected errors only
+      console.error('Error getting user:', userError)
+      return null
+    }
+    
+    return user
+  } catch (err) {
+    // Handle any runtime exceptions
+    if (err instanceof Error && err.message.includes('AuthSessionMissingError')) {
+      // Expected for unauthenticated users
+      return null
+    }
+    console.error('Exception getting user:', err)
+    return null
+  }
+}
+
 // Helper function to get user role server-side
 export const getUserRole = async (userId: string) => {
   try {

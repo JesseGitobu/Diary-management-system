@@ -1,11 +1,11 @@
 //src/app/admin/billing/page.tsx
-import { getCurrentUser } from '@/lib/supabase/server'
+import { getCurrentAdmin } from '@/lib/supabase/server'
 import { getBillingOverview } from '@/lib/database/admin'
 import { redirect } from 'next/navigation'
 import { BillingManagement } from '@/components/admin/BillingManagement'
 
 export default async function AdminBillingPage() {
-  const user = await getCurrentUser()
+  const user = await getCurrentAdmin()
   
   if (!user) {
     redirect('/admin/auth')

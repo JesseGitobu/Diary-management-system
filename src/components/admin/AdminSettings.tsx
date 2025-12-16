@@ -25,8 +25,8 @@ export function AdminSettings() {
   const [saveError, setSaveError] = useState('')
   const [settings, setSettings] = useState({
     // General Settings
-    siteName: 'FarmTrack Pro',
-    supportEmail: 'support@farmtrackpro.com',
+    siteName: 'DairyTrack Pro',
+    supportEmail: 'support@dairytrackpro.com',
     defaultTimezone: 'UTC',
     
     // Security Settings
@@ -36,7 +36,7 @@ export function AdminSettings() {
     
     // Email Settings
     emailProvider: 'sendgrid',
-    emailFrom: 'noreply@farmtrackpro.com',
+    emailFrom: 'noreply@dairytrackpro.com',
     emailNotifications: true,
     
     // Billing Settings
@@ -125,7 +125,7 @@ export function AdminSettings() {
             <Input
               value={settings.siteName}
               onChange={(e) => setSettings({...settings, siteName: e.target.value})}
-              placeholder="FarmTrack Pro"
+              placeholder="DairyTrack Pro"
             />
           </div>
           
@@ -135,7 +135,7 @@ export function AdminSettings() {
               type="email"
               value={settings.supportEmail}
               onChange={(e) => setSettings({...settings, supportEmail: e.target.value})}
-              placeholder="support@farmtrackpro.com"
+              placeholder="support@dairytrackpro.com"
             />
           </div>
           
@@ -406,8 +406,8 @@ export function AdminSettings() {
             onClick={() => {
               if (confirm('Are you sure you want to reset all settings to defaults?')) {
                 setSettings({
-                  siteName: 'FarmTrack Pro',
-                  supportEmail: 'support@farmtrackpro.com',
+                  siteName: 'DairyTrack Pro',
+                  supportEmail: 'support@dairytrackpro.com',
                   defaultTimezone: 'UTC',
                   sessionTimeout: '24',
                   requireTwoFactor: false,

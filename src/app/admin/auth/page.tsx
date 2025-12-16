@@ -194,7 +194,7 @@ export default function AdminAuthPage() {
             <p className="text-xs text-gray-500">
               For security purposes, admin access is restricted.
               <br />
-              Use your regular FarmTrack Pro account credentials.
+              Use your regular DairyTrack Pro account credentials.
             </p>
           </div>
         </form>

@@ -26,7 +26,7 @@ export function AdminHeader() {
             <div className="flex items-center space-x-2">
               <Shield className="w-8 h-8 text-red-600" />
               <h1 className="text-2xl font-bold text-gray-900">
-                FarmTrack Pro
+                DairyTrack Pro
               </h1>
             </div>
             <Badge variant="destructive" className="ml-2">

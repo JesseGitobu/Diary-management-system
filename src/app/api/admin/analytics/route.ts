@@ -1,11 +1,11 @@
 // src/app/api/admin/analytics/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUser, createAdminClient } from '@/lib/supabase/server'
+import { getCurrentAdmin, createAdminClient } from '@/lib/supabase/server'
 import { getAnalyticsData } from '@/lib/database/admin'
 
 export async function GET(request: NextRequest) {
   try {
-    const user = await getCurrentUser()
+    const user = await getCurrentAdmin()
     
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

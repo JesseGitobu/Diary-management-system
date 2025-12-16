@@ -13,7 +13,8 @@ import {
   BarChart3,
   Settings,
   FileText,
-  Activity
+  Activity,
+  MessageSquare // New Icon for Inquiries
 } from 'lucide-react'
 
 const navigation = [
@@ -22,6 +23,7 @@ const navigation = [
   { name: 'Users', href: '/admin/users', icon: Users },
   { name: 'Support', href: '/admin/support', icon: Headphones },
   { name: 'Billing', href: '/admin/billing', icon: CreditCard },
+  { name: 'Inquiries', href: '/admin/inquiries', icon: MessageSquare }, // ✅ Added here
   { name: 'Analytics', href: '/admin/analytics', icon: BarChart3 },
   { name: 'Monitoring', href: '/admin/monitoring', icon: Activity },
   { name: 'Audit Logs', href: '/admin/audit', icon: FileText },

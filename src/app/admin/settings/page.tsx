@@ -1,12 +1,12 @@
 // ==========================================
 // src/app/admin/settings/page.tsx
 // ==========================================
-import { getCurrentUser } from '@/lib/supabase/server'
+import { getCurrentAdmin } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { AdminSettings } from '@/components/admin/AdminSettings'
 
 export default async function AdminSettingsPage() {
-  const user = await getCurrentUser()
+  const user = await getCurrentAdmin()
   
   if (!user) {
     redirect('/admin/auth')

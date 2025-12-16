@@ -1,11 +1,11 @@
 // src/app/api/admin/users/suspend/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUser, createAdminClient } from '@/lib/supabase/server'
+import { getCurrentAdmin, createAdminClient } from '@/lib/supabase/server'
 import { suspendUser } from '@/lib/database/admin'
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await getCurrentUser()
+    const user = await getCurrentAdmin()
     
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

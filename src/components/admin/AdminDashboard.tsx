@@ -51,7 +51,7 @@ export function AdminDashboard({ user, systemOverview }: AdminDashboardProps) {
         <div>
           <h1 className="text-3xl font-bold text-gray-900">System Overview</h1>
           <p className="text-gray-600 mt-2">
-            Monitor and manage the entire FarmTrack Pro platform
+            Monitor and manage the entire DairyTrack Pro platform
           </p>
         </div>
         
