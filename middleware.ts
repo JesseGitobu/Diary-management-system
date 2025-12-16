@@ -16,8 +16,10 @@ export async function middleware(request: NextRequest) {
     const { supabase, response } = createMiddlewareClient(request)
 
     const pathname = request.nextUrl.pathname
-    const host = request.headers.get('host') ?? ''
+    const rawHost = request.headers.get('host') ?? ''
+    const host = rawHost.split(':')[0]
     const isAdminSubdomain = host.startsWith('adminv2.')
+
 
     /**
      * ---------------------------------------------
