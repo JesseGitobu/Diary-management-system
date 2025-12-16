@@ -9,6 +9,7 @@ import { Home, LogOut, Settings, BarChart3, Warehouse, Tractor, Heart, Droplets,
 import { Button } from '../ui/Button'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { useRouter } from 'next/navigation'
+import { SupportButton } from '../support/SupportButton'
 
 // Map database feature IDs to Navigation paths
 const featureToRouteMap: Record<string, string> = {
@@ -65,32 +66,24 @@ export function DashboardSidebar({
     }
   }
 
-  // 🎯 LOGIC: Filter Navigation Items based on State
   const visibleNavigation = allNavigationItems.filter(item => {
-    // 1. If no farm created yet (Skipped onboarding), hide everything except Dashboard
     if (!farmId) {
         return item.href === '/dashboard';
     }
 
-    // 2. Always show Dashboard
     if (item.href === '/dashboard') return true;
 
-    // 3. If farm exists but 0 animals: Show ONLY Dashboard, Herd Management, and Settings
     if (animalCount === 0) {
       return item.name === 'Herd Management';
     }
 
-    // 4. If animals exist: Filter based on enabled features
     if (item.alwaysVisible) return true;
 
-    // Check specific feature flags
-    if (!trackingFeatures || trackingFeatures.length === 0) return true; // Fallback: show all if settings missing
+    if (!trackingFeatures || trackingFeatures.length === 0) return true;
 
-    // Find if the item's route matches any enabled feature
     const isEnabled = Object.entries(featureToRouteMap).some(([feature, route]) => {
       if (trackingFeatures.includes(feature)) {
          if (route === item.href) return true;
-         // Special case for Equipment which shares flag with Inventory
          if (feature === 'inventory_equipment' && item.href === equipmentRoute) return true;
       }
       return false;
@@ -133,9 +126,13 @@ export function DashboardSidebar({
         </nav>
         
         <div className="mt-auto px-2 pb-4 space-y-1">
-          {/* Only show Settings if farm exists */}
+          {/* Support Button - ABOVE Settings */}
+          <SupportButton farmId={farmId} />
+          
+          {/* Settings */}
           {farmId && bottomNavigation.map(renderNavItem)}
           
+          {/* Sign Out Button */}
           <Button
             variant="outline"
             size="sm"

@@ -99,7 +99,7 @@ export const getCurrentUser = async () => {
   }
 }
 
-// ✅ NEW: Check if user is an admin (proper admin verification)
+//  Check if user is an admin 
 export const getCurrentAdmin = async () => {
   try {
     const supabase = await createServerSupabaseClient()

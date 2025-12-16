@@ -9,6 +9,7 @@ import { InstallPrompt } from "@/components/pwa/InstallPrompt"
 import { PWARegister } from "@/components/pwa/PWARegister"
 import { PerformanceDebugger } from "@/lib/performance/monitoring"
 import { Toaster } from "react-hot-toast"
+import { Analytics } from "@vercel/analytics/next"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -54,6 +55,7 @@ export default function RootLayout({
           <OnlineStatusIndicator />
           <main className="min-h-screen bg-background">
             {children}
+            <Analytics />
           </main>
           <InstallPrompt />
           <PerformanceDebugger />

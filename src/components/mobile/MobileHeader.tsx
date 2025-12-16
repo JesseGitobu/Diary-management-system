@@ -20,12 +20,14 @@ import {
   Settings,
   Menu,
   X,
-  LogOut
+  LogOut,
+  HelpCircle
 } from 'lucide-react'
 import { GiCow } from 'react-icons/gi'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils/cn'
+import { SupportModal } from '@/components/support/SupportModal'
 
 interface MobileHeaderProps {
   trackingFeatures?: string[] | null
@@ -50,14 +52,23 @@ const allNavItems = [
 
 export function MobileHeader({ trackingFeatures = [], animalCount = 0, farmId }: MobileHeaderProps) {
   const [isOpen, setIsOpen] = useState(false)
+  const [showSupport, setShowSupport] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
   const { user, signOut } = useAuth()
   const pathname = usePathname()
   const router = useRouter()
 
-  const handleSignOut = async () => { /* ... existing code ... */ }
+  const handleSignOut = async () => {
+    setIsSigningOut(true)
+    try {
+      await signOut()
+      router.push('/')
+    } catch (error) {
+      console.error('Sign out error:', error)
+      setIsSigningOut(false)
+    }
+  }
 
-  // Filter Items
   const visibleItems = allNavItems.filter(item => {
     if (!farmId) return item.href === '/dashboard';
 
@@ -68,7 +79,7 @@ export function MobileHeader({ trackingFeatures = [], animalCount = 0, farmId }:
       return item.label === 'Herd Management';
     }
 
-    if (!item.feature) return true; // Items without feature flags (Team, Herd) are visible
+    if (!item.feature) return true;
     if (!trackingFeatures || trackingFeatures.length === 0) return true;
 
     return trackingFeatures.includes(item.feature);
@@ -76,10 +87,9 @@ export function MobileHeader({ trackingFeatures = [], animalCount = 0, farmId }:
 
   return (
     <header className="lg:hidden bg-white border-b border-gray-200 px-4 py-3">
-      {/* ... existing JSX (Logo, Menu Button) ... */}
       <div className="flex items-center justify-between">
         <Link href="/dashboard" className="flex items-center">
-          <div className={"logo"}>DairyTrack Pro</div>
+          <div className="logo">DairyTrack Pro</div>
         </Link>
 
         <div className="flex items-center space-x-2">
@@ -89,38 +99,28 @@ export function MobileHeader({ trackingFeatures = [], animalCount = 0, farmId }:
         </div>
       </div>
 
-      {/* Mobile Menu Overlay */}
       {isOpen && (
         <div className="fixed inset-0 z-50 bg-black bg-opacity-50" onClick={() => setIsOpen(false)} />
       )}
 
-      {/* Mobile Menu */}
       <div className={cn(
         "fixed top-0 right-0 bottom-0 w-80 bg-white shadow-lg transform transition-transform duration-300 z-50 flex flex-col",
         isOpen ? "translate-x-0" : "translate-x-full"
       )}>
-        {/* Header Section - Fixed */}
         <div className="p-4 border-b border-gray-200 flex-shrink-0">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-lg font-semibold">Menu</h2>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setIsOpen(false)}
-            >
+            <Button variant="ghost" size="sm" onClick={() => setIsOpen(false)}>
               <X className="h-5 w-5" />
             </Button>
           </div>
 
-          {/* User Info - ✅ FIXED: Properly handles long names with wrapping and centered alignment */}
           <div className="p-3 bg-gray-50 rounded-lg">
             <div className="flex items-center gap-3">
-              {/* Avatar - Fixed size, no shrinking */}
               <div className="w-10 h-10 bg-dairy-primary rounded-full flex items-center justify-center flex-shrink-0">
                 <User className="w-5 h-5 text-white" />
               </div>
 
-              {/* User Info - Wraps text, takes available space */}
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-gray-900 break-words">
                   {user?.user_metadata?.full_name || user?.email}
@@ -128,7 +128,6 @@ export function MobileHeader({ trackingFeatures = [], animalCount = 0, farmId }:
                 <p className="text-sm text-gray-600">Farm Owner</p>
               </div>
 
-              {/* Logout Button - Fixed size, never shrinks */}
               <button
                 className="p-2 text-gray-500 hover:bg-white hover:text-dairy-primary hover:shadow-sm rounded-lg transition-all disabled:opacity-50 flex-shrink-0"
                 aria-label="Sign Out"
@@ -142,7 +141,6 @@ export function MobileHeader({ trackingFeatures = [], animalCount = 0, farmId }:
           </div>
         </div>
 
-        {/* Filtered Navigation */}
         <nav className="flex-1 overflow-y-auto px-4 py-6 space-y-2">
           {visibleItems.map((item) => {
             const isActive = pathname === item.href
@@ -163,8 +161,31 @@ export function MobileHeader({ trackingFeatures = [], animalCount = 0, farmId }:
               </Link>
             )
           })}
+
+          {/* Support Link */}
+          {farmId && (
+            <button
+              onClick={() => {
+                setShowSupport(true)
+                setIsOpen(false)
+              }}
+              className="w-full flex items-center space-x-3 px-3 py-3 rounded-lg transition-colors text-gray-700 hover:bg-gray-100"
+            >
+              <HelpCircle className="w-5 h-5" />
+              <span>Support & Help</span>
+            </button>
+          )}
         </nav>
       </div>
+
+      {/* Support Modal */}
+      {farmId && (
+        <SupportModal
+          isOpen={showSupport}
+          onClose={() => setShowSupport(false)}
+          farmId={farmId}
+        />
+      )}
     </header>
   )
 }
