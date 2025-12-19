@@ -1,4 +1,6 @@
 // src/components/support/ContactSupport.tsx
+// FIXED: Button validation now checks .trim() for whitespace-only input
+
 'use client'
 
 import { useState } from 'react'
@@ -27,8 +29,24 @@ export function ContactSupport({ farmId, onBack, onSuccess }: ContactSupportProp
     tags: [] as string[],
   })
 
+  // Helper function to check if form is valid
+  const isFormValid = () => {
+    return (
+      formData.subject.trim().length > 0 &&
+      formData.category.trim().length > 0 &&
+      formData.description.trim().length > 0
+    )
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    // Double-check form is valid
+    if (!isFormValid()) {
+      setError('Please fill out all required fields')
+      return
+    }
+
     setError(null)
     setIsLoading(true)
 
@@ -123,12 +141,21 @@ export function ContactSupport({ farmId, onBack, onSuccess }: ContactSupportProp
           id="subject"
           type="text"
           value={formData.subject}
-          onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
+          onChange={(e) => {
+            setFormData({ ...formData, subject: e.target.value })
+            // Clear error when user starts typing
+            if (error) setError(null)
+          }}
           placeholder="Brief description of your issue"
           maxLength={200}
           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-dairy-primary focus:border-transparent outline-none"
         />
-        <p className="text-xs text-gray-500 mt-1">{formData.subject.length}/200</p>
+        <div className="flex items-center justify-between mt-1">
+          <p className="text-xs text-gray-500">{formData.subject.length}/200</p>
+          {formData.subject.trim().length === 0 && (
+            <p className="text-xs text-red-500">Required</p>
+          )}
+        </div>
       </div>
 
       {/* Category */}
@@ -139,7 +166,10 @@ export function ContactSupport({ farmId, onBack, onSuccess }: ContactSupportProp
         <select
           id="category"
           value={formData.category}
-          onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+          onChange={(e) => {
+            setFormData({ ...formData, category: e.target.value })
+            if (error) setError(null)
+          }}
           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-dairy-primary focus:border-transparent outline-none"
         >
           <option value="">Select a category...</option>
@@ -149,6 +179,9 @@ export function ContactSupport({ farmId, onBack, onSuccess }: ContactSupportProp
             </option>
           ))}
         </select>
+        {!formData.category && (
+          <p className="text-xs text-red-500 mt-1">Required</p>
+        )}
       </div>
 
       {/* Priority */}
@@ -164,7 +197,10 @@ export function ContactSupport({ farmId, onBack, onSuccess }: ContactSupportProp
                 name="priority"
                 value={priority}
                 checked={formData.priority === priority}
-                onChange={(e) => setFormData({ ...formData, priority: e.target.value as any })}
+                onChange={(e) => {
+                  setFormData({ ...formData, priority: e.target.value as any })
+                  if (error) setError(null)
+                }}
                 className="w-4 h-4 text-dairy-primary cursor-pointer"
               />
               <span className="ml-2 text-sm text-gray-700 capitalize cursor-pointer">
@@ -186,13 +222,21 @@ export function ContactSupport({ farmId, onBack, onSuccess }: ContactSupportProp
         <textarea
           id="description"
           value={formData.description}
-          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+          onChange={(e) => {
+            setFormData({ ...formData, description: e.target.value })
+            if (error) setError(null)
+          }}
           placeholder="Please provide as much detail as possible about your issue. Include steps you've already taken to resolve it."
           rows={6}
           maxLength={2000}
           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-dairy-primary focus:border-transparent resize-none outline-none"
         />
-        <p className="text-xs text-gray-500 mt-1">{formData.description.length}/2000</p>
+        <div className="flex items-center justify-between mt-1">
+          <p className="text-xs text-gray-500">{formData.description.length}/2000</p>
+          {formData.description.trim().length === 0 && (
+            <p className="text-xs text-red-500">Required</p>
+          )}
+        </div>
       </div>
 
       {/* Additional Info */}
@@ -215,12 +259,33 @@ export function ContactSupport({ farmId, onBack, onSuccess }: ContactSupportProp
         </Button>
         <Button
           type="submit"
-          disabled={isLoading || !formData.subject || !formData.category || !formData.description}
-          className="flex-1 bg-dairy-primary hover:bg-dairy-primary/90 text-white disabled:opacity-50"
+          disabled={isLoading || !isFormValid()}
+          className={`flex-1 text-white font-medium transition-all ${
+            isFormValid()
+              ? 'bg-dairy-primary hover:bg-dairy-primary/90 cursor-pointer'
+              : 'bg-gray-300 cursor-not-allowed'
+          }`}
+          title={!isFormValid() ? 'Please fill out all required fields' : 'Submit your support request'}
         >
-          {isLoading ? 'Creating Ticket...' : 'Submit Support Request'}
+          {isLoading ? (
+            <>
+              <span className="inline-block animate-spin mr-2">⏳</span>
+              Creating Ticket...
+            </>
+          ) : (
+            'Submit Support Request'
+          )}
         </Button>
       </div>
+
+      {/* Form Status Indicator */}
+      {!isFormValid() && (
+        <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <p className="text-xs text-yellow-800">
+            ⚠️ Please complete all required fields (Subject, Category, Description) to submit.
+          </p>
+        </div>
+      )}
     </form>
   )
 }
