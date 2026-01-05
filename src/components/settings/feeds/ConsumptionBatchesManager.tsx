@@ -1,3 +1,4 @@
+// src/components/settings/feeds/ConsumptionBatchesManager.tsx
 'use client'
 
 import { useState, useCallback, useMemo, useEffect } from 'react'

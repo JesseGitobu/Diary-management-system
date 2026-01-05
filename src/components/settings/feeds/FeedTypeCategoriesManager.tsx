@@ -1,3 +1,5 @@
+// src/components/settings/feeds/FeedTypeCategoriesManager.tsx
+
 'use client'
 
 import { useState, useCallback, useMemo } from 'react'
@@ -115,12 +117,12 @@ export function FeedTypeCategoriesManager({
 
     setLoading(true)
     try {
-      const url = editingCategory 
+      const url = editingCategory
         ? `/api/farms/${farmId}/feed-management/feed-categories/${editingCategory.id}`
         : '/api/farms/${farmId}/feed-management/feed-categories'
-      
+
       const method = editingCategory ? 'PUT' : 'POST'
-      
+
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -136,9 +138,9 @@ export function FeedTypeCategoriesManager({
       }
 
       const result = await response.json()
-      
+
       if (editingCategory) {
-        onCategoriesUpdate(categories.map(cat => 
+        onCategoriesUpdate(categories.map(cat =>
           cat.id === editingCategory.id ? result.data : cat
         ))
       } else {
@@ -182,7 +184,7 @@ export function FeedTypeCategoriesManager({
     if (!category) return
 
     const newOrder = direction === 'up' ? category.sort_order - 1 : category.sort_order + 1
-    
+
     try {
       const response = await fetch(`/api/farms/${farmId}/feed-management/feed-categories/${categoryId}/reorder`, {
         method: 'PATCH',
@@ -192,7 +194,7 @@ export function FeedTypeCategoriesManager({
 
       if (response.ok) {
         const updated = await response.json()
-        onCategoriesUpdate(categories.map(cat => 
+        onCategoriesUpdate(categories.map(cat =>
           cat.id === categoryId ? { ...cat, sort_order: updated.data.sort_order } : cat
         ).sort((a, b) => a.sort_order - b.sort_order))
       }
@@ -201,7 +203,7 @@ export function FeedTypeCategoriesManager({
     }
   }
 
-  const sortedCategories = useMemo(() => 
+  const sortedCategories = useMemo(() =>
     [...categories].sort((a, b) => a.sort_order - b.sort_order),
     [categories]
   )
@@ -236,7 +238,7 @@ export function FeedTypeCategoriesManager({
               Edit
             </DropdownMenuItem>
             {!category.is_default && (
-              <DropdownMenuItem 
+              <DropdownMenuItem
                 onClick={() => setDeletingCategory(category)}
                 className="text-red-600"
               >
@@ -311,9 +313,8 @@ export function FeedTypeCategoriesManager({
         {sortedCategories.map((category) => (
           <div
             key={category.id}
-            className={`flex items-center justify-between p-4 border rounded-lg ${
-              isMobile ? 'flex-col space-y-3' : 'flex-row'
-            }`}
+            className={`flex items-center justify-between p-4 border rounded-lg ${isMobile ? 'flex-col space-y-3' : 'flex-row'
+              }`}
           >
             <div className={`flex items-center space-x-3 ${isMobile ? 'self-start' : ''}`}>
               <div
@@ -337,7 +338,7 @@ export function FeedTypeCategoriesManager({
                 )}
               </div>
             </div>
-            
+
             <div className={isMobile ? 'self-end' : ''}>
               <ActionButtons category={category} />
             </div>
@@ -360,8 +361,8 @@ export function FeedTypeCategoriesManager({
       </div>
 
       {/* Add/Edit Modal */}
-      <Modal 
-        isOpen={showAddModal} 
+      <Modal
+        isOpen={showAddModal}
         onClose={handleModalClose}
         className="max-w-md"
       >
@@ -405,9 +406,8 @@ export function FeedTypeCategoriesManager({
                     key={color}
                     type="button"
                     onClick={() => handleColorChange(color)}
-                    className={`w-8 h-8 rounded-full border-2 ${
-                      formData.color === color ? 'border-gray-400' : 'border-gray-200'
-                    }`}
+                    className={`w-8 h-8 rounded-full border-2 ${formData.color === color ? 'border-gray-400' : 'border-gray-200'
+                      }`}
                     style={{ backgroundColor: color }}
                   />
                 ))}
@@ -440,7 +440,7 @@ export function FeedTypeCategoriesManager({
               Are you sure you want to delete "{deletingCategory?.name}"? This action cannot be undone.
               {deletingCategory?.feed_count && deletingCategory.feed_count > 0 && (
                 <span className="block mt-2 text-amber-600 font-medium">
-                  Warning: This category has {deletingCategory.feed_count} feed types. 
+                  Warning: This category has {deletingCategory.feed_count} feed types.
                   They will be uncategorized after deletion.
                 </span>
               )}

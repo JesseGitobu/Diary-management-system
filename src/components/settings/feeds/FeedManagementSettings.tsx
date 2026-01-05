@@ -1,3 +1,4 @@
+// src/components/settings/feeds/FeedManagementSettings.tsx
 'use client'
 
 import { useState } from 'react'

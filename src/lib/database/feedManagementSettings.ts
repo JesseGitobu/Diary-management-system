@@ -1501,23 +1501,25 @@ export async function createConsumptionBatchFactor(
 
 // ============ INITIALIZATION ============
 
+// lib/database/feedManagementSettings.ts
+
 export async function initializeFarmFeedManagementSettings(farmId: string) {
   const supabase = await createServerSupabaseClient()
   
   try {
-    // Call the database function to insert defaults
-    const { error } = await supabase.rpc('insert_default_feed_management_data', {
-      p_farm_id: farmId
-    } as any)
-    
+    // If the RPC expects no arguments, call without params
+    const { error } = await supabase.rpc('setup_farm_feed_defaults')
     if (error) {
-      console.error('Error initializing feed management settings:', error)
+      console.error('Error initializing feed management settings:', {
+        message: error.message,
+        code: error.code,
+        details: error.details
+      })
       return { success: false, error: error.message }
     }
-    
     return { success: true }
   } catch (error) {
-    console.error('Error initializing feed management settings:', error)
+    console.error('Initialization Exception:', error)
     return { success: false, error: 'Failed to initialize settings' }
   }
 }

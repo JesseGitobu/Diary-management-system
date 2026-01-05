@@ -15,54 +15,58 @@ export function InstallPrompt() {
   const [isIOS, setIsIOS] = useState(false)
   const [isStandalone, setIsStandalone] = useState(false)
 
+  // Helper to check if the user recently dismissed the prompt
+  const isRecentlyDismissed = () => {
+    const dismissedTimestamp = localStorage.getItem('pwa-prompt-dismissed')
+    if (!dismissedTimestamp) return false
+
+    const dismissedDate = new Date(parseInt(dismissedTimestamp))
+    const daysSinceDismissed = (Date.now() - dismissedDate.getTime()) / (1000 * 60 * 60 * 24)
+    return daysSinceDismissed < 7 // Change number of days as needed
+  }
+
   useEffect(() => {
-    // Check if already installed
     const isInStandaloneMode = 
       window.matchMedia('(display-mode: standalone)').matches ||
       (window.navigator as any).standalone === true
 
     setIsStandalone(isInStandaloneMode)
 
-    // Check if iOS
     const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream
     setIsIOS(iOS)
 
-    // Don't show if already installed
-    if (isInStandaloneMode) {
+    if (isInStandaloneMode || isRecentlyDismissed()) {
       return
     }
 
-    // Check if previously dismissed (expires after 7 days)
-    const dismissedTimestamp = localStorage.getItem('pwa-prompt-dismissed')
-    if (dismissedTimestamp) {
-      const dismissedDate = new Date(parseInt(dismissedTimestamp))
-      const daysSinceDismissed = (Date.now() - dismissedDate.getTime()) / (1000 * 60 * 60 * 24)
-      if (daysSinceDismissed < 7) {
-        return
-      }
-    }
+    let timeoutId: NodeJS.Timeout
 
     const handler = (e: Event) => {
       e.preventDefault()
       setDeferredPrompt(e as BeforeInstallPromptEvent)
       
-      // Show prompt after 30 seconds
-      setTimeout(() => {
-        setShowPrompt(true)
+      // Check dismissal again right before showing to handle multi-tab scenarios
+      timeoutId = setTimeout(() => {
+        if (!isRecentlyDismissed()) {
+          setShowPrompt(true)
+        }
       }, 30000)
     }
 
     window.addEventListener('beforeinstallprompt', handler)
 
-    // For iOS, show instruction after delay if not installed
+    // For iOS logic
     if (iOS && !isInStandaloneMode) {
-      setTimeout(() => {
-        setShowPrompt(true)
+      timeoutId = setTimeout(() => {
+        if (!isRecentlyDismissed()) {
+          setShowPrompt(true)
+        }
       }, 30000)
     }
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handler)
+      if (timeoutId) clearTimeout(timeoutId)
     }
   }, [])
 
@@ -73,11 +77,11 @@ export function InstallPrompt() {
       await deferredPrompt.prompt()
       const { outcome } = await deferredPrompt.userChoice
       
-      console.log(`User response: ${outcome}`)
-      
       if (outcome === 'accepted') {
         setDeferredPrompt(null)
         setShowPrompt(false)
+        // Optionally mark as dismissed so it doesn't show even if they uninstall
+        localStorage.setItem('pwa-prompt-dismissed', Date.now().toString())
       }
     } catch (error) {
       console.error('Install prompt error:', error)

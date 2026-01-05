@@ -1,3 +1,5 @@
+// src/components/settings/feeds/WeightConversionsManager.tsx
+
 'use client'
 
 import { useState, useCallback, useMemo } from 'react'
