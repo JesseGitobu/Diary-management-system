@@ -1,4 +1,5 @@
 // src/app/dashboard/feed/page.tsx
+import { Metadata } from 'next'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { getFeedStats, getFeedTypes, getFeedInventory, getFeedConsumptionRecords } from '@/lib/database/feed'
@@ -6,6 +7,11 @@ import { getFarmAnimals } from '@/lib/database/animals'
 import { redirect } from 'next/navigation'
 import { FeedManagementDashboard } from '@/components/feed/FeedManagementDashboard'
 import { getWeightConversions, getFeedTypeCategories, getAnimalCategories, getConsumptionBatches } from '@/lib/database/feedManagementSettings'
+
+export const metadata: Metadata = {
+  title: 'Feed Management | DairyTrack Pro',
+  description: 'Manage feed inventory, track consumption patterns, monitor costs, and optimize nutrition for your dairy herd.',
+}
 
 export default async function FeedPage() {
   const user = await getCurrentUser()

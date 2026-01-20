@@ -1,8 +1,14 @@
 // src/app/dashboard/page.tsx
+import { Metadata } from 'next'
 import { getCurrentUser, createServerSupabaseClient } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { getDashboardStats } from '@/lib/database/dashboard'
 import { redirect } from 'next/navigation'
+
+export const metadata: Metadata = {
+  title: 'Dashboard | DairyTrack Pro',
+  description: 'Manage your dairy farm operations. Track animals, milk production, health records, breeding, and financial metrics in real-time.',
+}
 import { OnboardingBanner } from '@/components/dashboard/OnboardingBanner'
 // Import the BIG button for the Hero section
 import { AddAnimalButton } from '@/components/dashboard/AddAnimalButton'

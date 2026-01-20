@@ -84,7 +84,7 @@ export function ImportAnimalsModal({
   // Custom validation options - you can fetch these from your database
   const customValidationOptions = {
     breeds: [
-      'Holstein', 'Jersey', 'Guernsey', 'Ayrshire', 'Brown Swiss', 
+      'Holstein-Friesian', 'Jersey', 'Guernsey', 'Ayrshire', 'Brown Swiss', 
       'Friesian', 'Simmental', 'Angus', 'Hereford', 'Charolais',
       'Limousin', 'Brahman', 'Zebu', 'Sahiwal', 'Gir', 'Red Sindhi',
       'Crossbred', 'Other'

@@ -1,9 +1,15 @@
 import { redirect } from 'next/navigation'
+import { Metadata } from 'next'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { getSubscriptionSettings, getPaymentHistory } from '@/lib/database/subscription-settings'
 import { getFarmBasicInfoServer } from '@/lib/database/settings'
 import SubscriptionSettings from '@/components/settings/SubscriptionSettings'
+
+export const metadata: Metadata = {
+  title: 'Subscription & Billing | Farm Management',
+  description: 'Manage your subscription plan, billing information, and payment history',
+}
 
 interface PageProps {
   searchParams: Promise<{ farmId?: string }>

@@ -447,7 +447,7 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
                   <SelectValue placeholder="Select breed" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="holstein">Holstein</SelectItem>
+                  <SelectItem value="holstein">Holstein-Friesian</SelectItem>
                   <SelectItem value="jersey">Jersey</SelectItem>
                   <SelectItem value="guernsey">Guernsey</SelectItem>
                   <SelectItem value="ayrshire">Ayrshire</SelectItem>

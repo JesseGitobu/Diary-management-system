@@ -1,8 +1,14 @@
+import { Metadata } from 'next'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { getFinancialSummary, getMonthlyFinancialData, getCostPerAnimal } from '@/lib/database/financial'
 import { redirect } from 'next/navigation'
 import { FinancialDashboard } from '@/components/financial/FinancialDashboard'
+
+export const metadata: Metadata = {
+  title: 'Financial Management | DairyTrack Pro',
+  description: 'Track farm finances with revenue analytics, expense tracking, profitability reports, cost per animal, and financial forecasting.',
+}
 
 export default async function FinancialPage() {
   const user = await getCurrentUser()

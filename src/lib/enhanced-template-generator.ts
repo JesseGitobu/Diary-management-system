@@ -12,7 +12,7 @@ export interface ValidationOptions {
 
 const defaultValidationOptions: Required<ValidationOptions> = {
   breeds: [
-    'Holstein', 'Jersey', 'Guernsey', 'Ayrshire', 'Brown Swiss',
+    'Holstein-Friesian', 'Jersey', 'Guernsey', 'Ayrshire', 'Brown Swiss',
     'Friesian', 'Simmental', 'Angus', 'Hereford', 'Charolais',
     'Limousin', 'Brahman', 'Zebu', 'Sahiwal', 'Gir', 'Red Sindhi',
     'Crossbred', 'Other'
@@ -80,7 +80,7 @@ export async function createWorkingExcelTemplate(
   // Create sample data
   const sampleData = type === 'newborn'
     ? {
-        tag_number: 'CALF001', name: 'Bella', breed: 'Holstein', gender: 'female', 
+        tag_number: 'CALF001', name: 'Bella', breed: 'Holstein-Friesian', gender: 'female', 
         date_of_birth: '2024-01-15', production_status: 'calf', health_status: 'healthy', 
         notes: 'Born healthy', mother_tag: 'COW123', father_tag: 'BULL456', birth_weight_kg: 35
       }
@@ -271,7 +271,7 @@ export async function createSimpleValidationTemplate(
   sheet.addRow(headers)
 
   const sampleData = type === 'newborn'
-    ? ['CALF001', 'Bella', 'Holstein', 'female', '2024-01-15', 'calf', 'healthy', 'Born healthy', 'COW123', 'BULL456', 35]
+    ? ['CALF001', 'Bella', 'Holstein-Friesian', 'female', '2024-01-15', 'calf', 'healthy', 'Born healthy', 'COW123', 'BULL456', 35]
     : ['COW002', 'Max', 'Jersey', 'female', '2023-06-10', 'heifer', 'healthy', 'Purchased from Smith Farm', 'John Smith', '+254712345678', '2024-01-10', 50000]
 
   sheet.addRow(sampleData)
@@ -374,7 +374,7 @@ function downloadCSVTemplate(
     : ['tag_number', 'name', 'breed', 'gender', 'date_of_birth', 'production_status', 'health_status', 'notes', 'seller_name', 'seller_contact', 'purchase_date', 'purchase_price']
   
   const sampleData = type === 'newborn'
-    ? ['CALF001', 'Bella', 'Holstein', 'female', '2024-01-15', 'calf', 'healthy', 'Born healthy', 'COW123', 'BULL456', '35']
+    ? ['CALF001', 'Bella', 'Holstein-Friesian', 'female', '2024-01-15', 'calf', 'healthy', 'Born healthy', 'COW123', 'BULL456', '35']
     : ['COW002', 'Max', 'Jersey', 'female', '2023-06-10', 'heifer', 'healthy', 'Purchased from Smith Farm', 'John Smith', '+254712345678', '2024-01-10', '50000']
 
   const csvContent = [

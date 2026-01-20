@@ -123,7 +123,7 @@ export default function AnimalTaggingSettings({
 
     // Custom Attributes
     customAttributes: [
-      { name: 'Breed Group', values: ['Holstein', 'Jersey', 'Friesian', 'Cross'] },
+      { name: 'Breed Group', values: ['Holstein-Friesian', 'Jersey', 'Ayrshire','Guernsey', 'Cross'] },
       { name: 'Production Stage', values: ['Calf', 'Heifer', 'Lactating', 'Dry'] }
     ],
 
@@ -396,7 +396,7 @@ const appendToFormat = (placeholder: string) => {
         paddingZeros: initialSettings.paddingZeros ?? true,
 
         customAttributes: initialSettings.customAttributes || [
-          { name: 'Breed Group', values: ['Holstein', 'Jersey', 'Friesian', 'Cross'] },
+          { name: 'Breed Group', values: ['Holstein-Friesian', 'Jersey', 'Ayrshire','Guernsey', 'Cross'] },
           { name: 'Production Stage', values: ['Calf', 'Heifer', 'Lactating', 'Dry'] }
         ],
         colorCoding: initialSettings.colorCoding && initialSettings.colorCoding.length > 0
@@ -719,7 +719,7 @@ const appendToFormat = (placeholder: string) => {
       enablePhotoTags: true,
       enableColorCoding: true,
       customAttributes: [
-        { name: 'Breed Group', values: ['Holstein', 'Jersey', 'Friesian', 'Cross'] },
+        { name: 'Breed Group', values: ['Holstein-Friesian', 'Jersey', 'Ayrshire','Guernsey', 'Cross'] },
         { name: 'Production Stage', values: ['Calf', 'Heifer', 'Lactating', 'Dry'] }
       ],
       colorCoding: colorOptions,
@@ -1567,7 +1567,7 @@ const resetUnsavedChanges = () => {
               <div>
                 <Label className="text-sm font-medium">Attribute Values</Label>
                 <Input
-                  placeholder="Holstein, Jersey, Friesian, Cross (first value = default)"
+                  placeholder="Holstein-Friesian, Jersey, Ayrshire, Guernsey, Cross (first value = default)"
                   value={newAttribute.values}
                   onChange={(e) => setNewAttribute(prev => ({ ...prev, values: e.target.value }))}
                 />
@@ -1606,7 +1606,7 @@ const resetUnsavedChanges = () => {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-green-700">
                   <div>
-                    <strong>Breed Group:</strong> Holstein, Jersey, Friesian, Cross
+                    <strong>Breed Group:</strong> Holstein-Friesian, Jersey, Ayrshire, Guernsey, Cross
                   </div>
                   <div>
                     <strong>Production Stage:</strong> Calf, Heifer, Lactating, Dry

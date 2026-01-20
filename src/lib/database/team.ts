@@ -1,3 +1,4 @@
+// src/lib/database/team.ts
 import { createServerSupabaseClient, createAdminClient } from '@/lib/supabase/server'
 import { InvitationInsert, UserRoleInsert } from '@/lib/supabase/types'
 import { generateInvitationToken } from '@/lib/utils/tokens'

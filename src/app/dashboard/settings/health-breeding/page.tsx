@@ -1,11 +1,17 @@
 // app/dashboard/settings/health-breeding/page.tsx
 import { redirect } from 'next/navigation'
+import { Metadata } from 'next'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { getBreedingSettings } from '@/lib/database/breeding-settings'
 import { getHealthSettings } from '@/lib/database/health-settings' // ✅ ADD THIS
 import { getFarmBasicInfoServer } from '@/lib/database/settings'
 import HealthBreedingSettings from '@/components/settings/health-breeding/HealthBreedingSettings'
+
+export const metadata: Metadata = {
+  title: 'Health & Breeding Settings | Farm Management',
+  description: 'Configure health tracking, breeding programs, and veterinary protocols for your herd',
+}
 
 interface PageProps {
   searchParams: Promise<{

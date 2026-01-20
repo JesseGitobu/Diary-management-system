@@ -1,6 +1,7 @@
 // Health Records Main Page
 // src/app/dashboard/health/page.tsx
 
+import { Metadata } from 'next'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { getFarmAnimals } from '@/lib/database/animals'
@@ -8,6 +9,11 @@ import { getAnimalHealthRecords, getHealthStats, getUpcomingHealthTasks } from '
 import { redirect } from 'next/navigation'
 import { HealthDashboardWrapper } from '@/components/health/HealthDashboardWrapper'
 // import { HealthRecordsContent } from '@/components/health/HealthDashboard'
+
+export const metadata: Metadata = {
+  title: 'Health Management | DairyTrack Pro',
+  description: 'Monitor herd health with detailed health records, disease tracking, treatment history, vaccination schedules, and health alerts for your dairy farm.',
+}
 
 export default async function HealthRecordsPage() {
   const user = await getCurrentUser()

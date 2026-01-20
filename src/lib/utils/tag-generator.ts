@@ -528,7 +528,7 @@ function generateCustomFormatPreview(
 
 function getBreedAbbreviation(breed: string): string {
   const abbreviations: Record<string, string> = {
-    'holstein': 'HO',
+    'holstein-freshian': 'HF',
     'jersey': 'JE', 
     'guernsey': 'GU',
     'ayrshire': 'AY',
@@ -1083,7 +1083,7 @@ export function generateFormatPreview(
   
   for (let i = 0; i < count; i++) {
     const tagNumber = formatCustomTag(prefix, format, startNumber + i, {
-      breed: 'Holstein',
+      breed: 'Holstein-Friesian',
       location: 'A1'
     })
     previews.push(tagNumber)

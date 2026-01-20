@@ -1,12 +1,18 @@
 // app/dashboard/settings/production-distribution/page.tsx
 
 import { redirect } from 'next/navigation'
+import { Metadata } from 'next'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { getProductionSettings } from '@/lib/database/production-settings'
 import { getDistributionSettings } from '@/lib/database/distribution-settings'
 import { getFarmBasicInfoServer } from '@/lib/database/settings'
 import ProductionDistributionSettings from '@/components/settings/production-distribution/ProductionDistributionSettings'
+
+export const metadata: Metadata = {
+  title: 'Production & Distribution Settings | Farm Management',
+  description: 'Configure milk production metrics and distribution channels for your farm',
+}
 
 interface PageProps {
   searchParams: Promise<{

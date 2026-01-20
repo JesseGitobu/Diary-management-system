@@ -236,7 +236,7 @@ const handleSubmit = async (data: BreedingFormData) => {
                     <Input
                       id="sire_breed"
                       {...form.register('sire_breed')}
-                      placeholder="e.g., Holstein, Jersey"
+                      placeholder="e.g., Holstein-Friesian, Jersey"
                     />
                   </div>
                 </div>

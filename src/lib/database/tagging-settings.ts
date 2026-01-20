@@ -410,7 +410,7 @@ function getDefaultCustomAttributes(): CustomAttribute[] {
   return [
     {
       name: 'Breed Group',
-      values: ['Holstein', 'Jersey', 'Friesian', 'Cross'],
+      values: ['Holstein-Friesian', 'Jersey', 'Ayrshire', 'Guernsey', 'Cross'],
       required: false,
       sortOrder: 0
     },

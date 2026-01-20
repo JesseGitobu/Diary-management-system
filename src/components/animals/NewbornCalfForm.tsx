@@ -197,7 +197,7 @@ export function NewbornCalfForm({ farmId, onSuccess, onCancel }: NewbornCalfForm
         ...data,
         farm_id: farmId,
         animal_source: 'newborn_calf',
-        production_status: 'calf',
+        production_status: calculatedProductionStatus,
         // weight: data.birth_weight,
         status: 'active',
         autoGenerateTag: data.autoGenerateTag,
@@ -292,7 +292,7 @@ export function NewbornCalfForm({ farmId, onSuccess, onCancel }: NewbornCalfForm
                   <SelectValue placeholder="Select breed" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="holstein">Holstein</SelectItem>
+                  <SelectItem value="holstein">Holstein-Friesian</SelectItem>
                   <SelectItem value="jersey">Jersey</SelectItem>
                   <SelectItem value="guernsey">Guernsey</SelectItem>
                   <SelectItem value="ayrshire">Ayrshire</SelectItem>

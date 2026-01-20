@@ -1,5 +1,6 @@
 // app/dashboard/settings/animal-tagging/page.tsx
 import { redirect } from 'next/navigation'
+import { Metadata } from 'next'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { getTaggingSettings } from '@/lib/database/tagging-settings'
@@ -7,6 +8,11 @@ import { getFarmAnimals } from '@/lib/database/animals'
 // Import the function to get animal categories
 import { getAnimalCategories } from '@/lib/database/feedManagementSettings' 
 import AnimalTaggingSettings from '@/components/settings/animals/AnimalTaggingSettings'
+
+export const metadata: Metadata = {
+  title: 'Animal Tagging Settings | Farm Management',
+  description: 'Configure animal identification tags and tagging systems for your farm',
+}
 
 // FIXED: searchParams must be a Promise in Next.js 15
 interface PageProps {

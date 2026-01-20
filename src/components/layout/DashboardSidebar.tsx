@@ -9,6 +9,7 @@ import { Home, LogOut, Settings, BarChart3, Warehouse, Tractor, Heart, Droplets,
 import { Button } from '../ui/Button'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { useRouter } from 'next/navigation'
+import { useState } from 'react'
 import { SupportButton } from '../support/SupportButton'
 
 // Map database feature IDs to Navigation paths
@@ -56,13 +57,16 @@ export function DashboardSidebar({
   const { signOut } = useAuth()
   const pathname = usePathname()
   const router = useRouter()
+  const [isSigningOut, setIsSigningOut] = useState(false)
   
   const handleSignOut = async () => {
+    setIsSigningOut(true)
     try {
       await signOut()
       router.push('/')
     } catch (error) {
       console.error('Sign out error:', error)
+      setIsSigningOut(false)
     }
   }
 
@@ -137,10 +141,11 @@ export function DashboardSidebar({
             variant="outline"
             size="sm"
             onClick={handleSignOut}
+            disabled={isSigningOut}
             className="w-full flex items-center justify-center space-x-2 mt-4"
           >
             <LogOut className="w-4 h-4" />
-            <span>Sign Out</span>
+            <span>{isSigningOut ? 'Signing out...' : 'Sign Out'}</span>
           </Button>
         </div>
       </div>

@@ -1,4 +1,5 @@
 // src/app/dashboard/production/page.tsx
+import { Metadata } from 'next'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { getProductionStats, getProductionRecords } from '@/lib/database/production'
@@ -10,6 +11,11 @@ import { getProductionSettings } from '@/lib/database/production-settings'
 import { getDistributionSettings } from '@/lib/database/distribution-settings'
 import { redirect } from 'next/navigation'
 import { ProductionDistributionDashboard } from '@/components/production/ProductionDistributionDashboard'
+
+export const metadata: Metadata = {
+  title: 'Production & Distribution | DairyTrack Pro',
+  description: 'Track milk production records, monitor quality metrics, manage distribution channels, and optimize sales revenue for your dairy farm.',
+}
 
 export default async function ProductionPage() {
   const user = await getCurrentUser()

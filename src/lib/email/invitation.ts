@@ -20,7 +20,7 @@ export async function sendInvitationEmail(data: InvitationEmailData) {
     const emailHtml = generateInvitationEmailHTML(data)
     
     const { data: result, error } = await resend.emails.send({
-      from: 'DairyTrack Pro <onboarding@resend.dev>', // You'll need to verify this domain
+      from: 'DairyTrack Pro <no-reply@dairytrackpro.com>', // You'll need to verify this domain
       to: [data.inviteeEmail],
       subject: `Join ${data.farmName} on DairyTrack Pro`,
       html: emailHtml,

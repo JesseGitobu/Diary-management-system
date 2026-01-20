@@ -54,14 +54,24 @@ export function MobileHeader({ trackingFeatures = [], animalCount = 0, farmId }:
   const [isOpen, setIsOpen] = useState(false)
   const [showSupport, setShowSupport] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
-  const { user, signOut } = useAuth()
+  const { user, userRole, signOut } = useAuth()
   const pathname = usePathname()
   const router = useRouter()
+
+  // Format role_type for display (e.g., 'farm_owner' -> 'Farm Owner')
+  const formatRoleType = (role: string | null): string => {
+    if (!role) return 'User'
+    return role
+      .split('_')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ')
+  }
 
   const handleSignOut = async () => {
     setIsSigningOut(true)
     try {
       await signOut()
+      setIsOpen(false)
       router.push('/')
     } catch (error) {
       console.error('Sign out error:', error)
@@ -125,7 +135,7 @@ export function MobileHeader({ trackingFeatures = [], animalCount = 0, farmId }:
                 <p className="font-medium text-gray-900 break-words">
                   {user?.user_metadata?.full_name || user?.email}
                 </p>
-                <p className="text-sm text-gray-600">Farm Owner</p>
+                <p className="text-sm text-gray-600">{formatRoleType(userRole)}</p>
               </div>
 
               <button

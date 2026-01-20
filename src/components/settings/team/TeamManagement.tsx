@@ -210,7 +210,7 @@ export function TeamManagement({
                   <CardTitle className="text-sm font-medium text-gray-700">
                     {stat.title}
                   </CardTitle>
-                  <div className={`p-2 rounded-lg ${stat.bgColor}`}>
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${stat.bgColor}`}>
                     <stat.icon className={`h-4 w-4 ${stat.color}`} />
                   </div>
                 </CardHeader>
@@ -241,7 +241,7 @@ export function TeamManagement({
             <Card key={stat.id} className="hover:shadow-md transition-shadow">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
-                <div className={`p-2 rounded-lg ${stat.bgColor}`}>
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${stat.bgColor}`}>
                   <stat.icon className={`h-4 w-4 ${stat.color}`} />
                 </div>
               </CardHeader>
@@ -305,6 +305,7 @@ export function TeamManagement({
                       member={member}
                       currentUserId={currentUser.id}
                       canManage={canManageTeam}
+                      farmId={farmId}
                       onRemove={handleMemberRemoved}
                     />
                   ))}
@@ -318,6 +319,7 @@ export function TeamManagement({
                       member={member}
                       currentUserId={currentUser.id}
                       canManage={canManageTeam}
+                      farmId={farmId}
                       onRemove={handleMemberRemoved}
                     />
                   ))}
@@ -374,7 +376,7 @@ export function TeamManagement({
             <Card key={role}>
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center space-x-2 text-base">
-                  <span className={`p-2 rounded-lg ${config.color}`}>
+                  <span className={`w-8 h-8 rounded-lg flex items-center justify-center ${config.color}`}>
                     <config.icon className="w-4 h-4" />
                   </span>
                   <span>{config.label}</span>

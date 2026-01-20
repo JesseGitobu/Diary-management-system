@@ -1,9 +1,15 @@
 // src/app/dashboard/breeding/page.tsx
+import { Metadata } from 'next'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { getBreedingStats, getUpcomingBreedingEvents, getBreedingAlerts } from '@/lib/database/breeding-stats'
 import { redirect } from 'next/navigation'
 import { BreedingDashboardWrapper } from '@/components/breeding/BreedingDashboardWrapper'
+
+export const metadata: Metadata = {
+  title: 'Breeding Management | DairyTrack Pro',
+  description: 'Track breeding cycles, manage breeding events, monitor pregnancy status, and optimize your dairy herd genetics with detailed breeding analytics.',
+}
 
 export default async function BreedingPage() {
   const user = await getCurrentUser()

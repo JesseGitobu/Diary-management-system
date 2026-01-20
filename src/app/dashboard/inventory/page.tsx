@@ -1,4 +1,5 @@
 // src/app/inventory/page.tsx
+import { Metadata } from 'next'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { 
@@ -10,6 +11,11 @@ import {
 } from '@/lib/database/inventory'
 import { redirect } from 'next/navigation'
 import { UnifiedInventoryDashboard } from '@/components/inventory/InventoryDashboard'
+
+export const metadata: Metadata = {
+  title: 'Inventory & Equipment | DairyTrack Pro',
+  description: 'Manage farm equipment and supplies inventory. Track equipment status, maintenance schedules, supplier management, and low stock alerts.',
+}
 
 export default async function InventoryPage() {
   const user = await getCurrentUser()

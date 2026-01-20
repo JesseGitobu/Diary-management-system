@@ -618,7 +618,7 @@ function getDefaultTaggingSettings() {
     enablePhotoTags: true,
     enableColorCoding: true,
     customAttributes: [
-      { name: 'Breed Group', values: ['Holstein', 'Jersey', 'Friesian', 'Cross'] },
+      { name: 'Breed Group', values: ['Holstein-Friesian', 'Jersey', 'Ayrshire', 'Guernsey', 'Cross'] },
       { name: 'Production Stage', values: ['Calf', 'Heifer', 'Lactating', 'Dry'] }
     ],
     enableHierarchicalTags: false,

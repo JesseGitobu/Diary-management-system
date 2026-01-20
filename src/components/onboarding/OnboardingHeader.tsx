@@ -42,29 +42,41 @@ export function OnboardingHeader() {
   }
   
   return (
-    <header className="bg-white border-b border-gray-200">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between py-4">
-          <div className="flex items-center">
-            <h1 className="text-3xl logo">DairyTrack Pro</h1>
-            <span className="ml-4 text-sm text-gray-500">Setup</span>
+    <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
+      <div className="max-w-4xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8">
+        <div className="flex items-center justify-between gap-4 py-3 sm:py-4">
+          {/* Center Content */}
+          <div className="flex flex-col items-center justify-center flex-1 gap-2 sm:gap-3">
+            {/* Logo Section */}
+            <div className="flex items-center gap-2 sm:gap-3 justify-center">
+              <h1 className="text-xl sm:text-2xl md:text-3xl logo">
+                DairyTrack Pro
+              </h1>
+              <span className="hidden sm:inline text-xs sm:text-sm text-gray-500 whitespace-nowrap">
+                Setup
+              </span>
+            </div>
+            
+            {/* Welcome Section */}
+            <span className="text-xs sm:text-sm text-gray-600">
+              Welcome, {(user?.user_metadata?.full_name || user?.email)?.split('@')[0]}
+            </span>
           </div>
           
-          <div className="flex items-center space-x-4">
-            <span className="text-sm text-gray-600">
-              Welcome, {user?.user_metadata?.full_name || user?.email}
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleSkip}
-              disabled={isSkipping}
-              className="text-gray-500 hover:text-gray-700"
-            >
-              <X className="w-4 h-4 mr-1" />
+          {/* Skip Button on Right */}
+          <Button
+            onClick={handleSkip}
+            disabled={isSkipping}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 sm:px-6 py-2 sm:py-3 text-sm sm:text-base font-medium flex-shrink-0"
+          >
+            <X className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
+            <span className="hidden sm:inline">
               {isSkipping ? 'Skipping...' : 'Skip Setup'}
-            </Button>
-          </div>
+            </span>
+            <span className="sm:hidden">
+              {isSkipping ? '...' : 'Skip'}
+            </span>
+          </Button>
         </div>
       </div>
     </header>

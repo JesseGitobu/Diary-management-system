@@ -1,9 +1,15 @@
 // src/app/dashboard/animals/page.tsx (Server Component)
+import { Metadata } from 'next'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { getFarmAnimals, getEnhancedAnimalStats } from '@/lib/database/animals'
 import { redirect } from 'next/navigation'
 import { AnimalsClientPage } from '@/components/animals/AnimalsClientPage'
+
+export const metadata: Metadata = {
+  title: 'Herd Management | DairyTrack Pro',
+  description: 'Manage your dairy herd. View animal profiles, health status, breeding records, production history, and track individual cow performance.',
+}
 
 export default async function AnimalsPage() {
   const user = await getCurrentUser()
