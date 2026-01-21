@@ -11,7 +11,8 @@ import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
-import { AlertTriangle, Edit, Save, Scale, X } from 'lucide-react'
+import { AlertTriangle, Edit, Save, Scale, X, Calendar, Droplets, Info, Heart } from 'lucide-react'
+import { Card, CardContent } from '@/components/ui/Card'
 import { cn } from '@/lib/utils/cn'
 
 const editAnimalSchema = z.object({
@@ -27,10 +28,29 @@ const editAnimalSchema = z.object({
   
   // Conditional fields for purchased animals
   purchase_date: z.string().optional(),
+  
+  // Conditional fields for served status
   service_date: z.string().optional(),
   service_method: z.string().optional(),
+  expected_calving_date: z.string().optional(),
+  
+  // Conditional fields for lactating status
   current_daily_production: z.number().optional(),
-})
+  days_in_milk: z.number().optional(),
+  lactation_number: z.number().optional(),
+}).refine(
+  (data) => {
+    // ✅ If production status is 'served' or 'dry', expected_calving_date is required
+    if ((data.production_status === 'served' || data.production_status === 'dry') && !data.expected_calving_date) {
+      return false
+    }
+    return true
+  },
+  {
+    message: 'Expected calving date is required',
+    path: ['expected_calving_date'],
+  }
+)
 
 type EditAnimalFormData = z.infer<typeof editAnimalSchema>
 
@@ -57,6 +77,7 @@ export function EditAnimalModal({
   const [error, setError] = useState<string | null>(null)
   const [availableMothers, setAvailableMothers] = useState<any[]>([])
   const [weightHistory, setWeightHistory] = useState<any[]>([])
+  const [productionStatus, setProductionStatus] = useState(animal.production_status || '')
   
   const form = useForm<EditAnimalFormData>({
     resolver: zodResolver(editAnimalSchema),
@@ -73,9 +94,15 @@ export function EditAnimalModal({
       purchase_date: animal.purchase_date ? animal.purchase_date.split('T')[0] : '',
       service_date: animal.service_date ? animal.service_date.split('T')[0] : '',
       service_method: animal.service_method || '',
+      expected_calving_date: animal.expected_calving_date ? animal.expected_calving_date.split('T')[0] : '',
       current_daily_production: animal.current_daily_production || undefined,
+      days_in_milk: animal.days_in_milk || undefined,
+      lactation_number: animal.lactation_number || undefined,
     },
   })
+  
+  // ✅ Track production status changes
+  const productionStatusValue = form.watch('production_status')
   
   useEffect(() => {
     if (animal.animal_source === 'newborn_calf') {
@@ -88,6 +115,33 @@ export function EditAnimalModal({
       fetchWeightHistory()
     }
   }, [highlightWeight])
+  
+  // ✅ Handle production status changes and clear conditional fields
+  useEffect(() => {
+    if (productionStatusValue && productionStatusValue !== productionStatus) {
+      console.log('🔄 [EditModal] Production status changed:', {
+        old: productionStatus,
+        new: productionStatusValue
+      })
+      
+      setProductionStatus(productionStatusValue)
+      
+      // Clear conditional fields when production status changes
+      if (productionStatusValue !== 'served' && productionStatusValue !== 'dry') {
+        form.setValue('service_date', '')
+        form.setValue('service_method', '')
+        form.setValue('expected_calving_date', '')
+      }
+      
+      if (productionStatusValue !== 'lactating') {
+        form.setValue('current_daily_production', undefined)
+        form.setValue('days_in_milk', undefined)
+        form.setValue('lactation_number', undefined)
+      }
+      
+      console.log('✅ [EditModal] Cleared conditional fields for:', productionStatusValue)
+    }
+  }, [productionStatusValue, productionStatus, form])
   
   const fetchWeightHistory = async () => {
     try {
@@ -117,22 +171,52 @@ export function EditAnimalModal({
   setLoading(true)
   setError(null)
   
+  // ✅ Validate required conditional fields
+  if ((data.production_status === 'served' || data.production_status === 'dry') && !data.expected_calving_date) {
+    setError('Expected calving date is required for served/dry animals')
+    setLoading(false)
+    return
+  }
+  
   console.log('📝 [EditModal] Submitting update:', {
     animalId: animal.id,
     oldWeight: animal.weight,
-    newWeight: data.weight
+    newWeight: data.weight,
+    productionStatus: data.production_status
   })
   
   try {
+    // ✅ Prepare conditional data based on production status
+    const conditionalData: any = {}
+    
+    if (data.production_status === 'served') {
+      if (data.service_date) conditionalData.service_date = data.service_date
+      if (data.service_method) conditionalData.service_method = data.service_method
+      if (data.expected_calving_date) conditionalData.expected_calving_date = data.expected_calving_date
+    } else if (data.production_status === 'lactating') {
+      if (data.current_daily_production) conditionalData.current_daily_production = data.current_daily_production
+      if (data.days_in_milk) conditionalData.days_in_milk = data.days_in_milk
+      if (data.lactation_number) conditionalData.lactation_number = data.lactation_number
+    } else if (data.production_status === 'dry') {
+      if (data.expected_calving_date) conditionalData.expected_calving_date = data.expected_calving_date
+    }
+    
     const response = await fetch(`/api/animals/${animal.id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        ...data,
-        weight: data.weight, // ✅ Ensure weight is included
-        current_daily_production: data.current_daily_production || null,
+        tag_number: data.tag_number,
+        name: data.name,
+        breed: data.breed,
+        gender: data.gender,
+        birth_date: data.birth_date,
+        weight: data.weight,
+        health_status: data.health_status,
+        production_status: data.production_status,
+        notes: data.notes,
+        ...conditionalData, // ✅ Add conditional fields
       }),
     })
     
@@ -145,7 +229,8 @@ export function EditAnimalModal({
     
     console.log('✅ [EditModal] Update successful:', {
       animalId: result.animal.id,
-      newWeight: result.animal.weight
+      newWeight: result.animal.weight,
+      productionStatus: result.animal.production_status
     })
     
     onAnimalUpdated(result.animal)
@@ -391,6 +476,7 @@ export function EditAnimalModal({
                   <SelectItem value="served">Served</SelectItem>
                   <SelectItem value="lactating">Lactating</SelectItem>
                   <SelectItem value="dry">Dry</SelectItem>
+                  <SelectItem value="bull">Bull</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -415,51 +501,133 @@ export function EditAnimalModal({
           
           {/* Conditional Fields for Served Status */}
           {form.watch('production_status') === 'served' && (
-            <div className="border-l-4 border-green-500 pl-4 space-y-4">
-              <h4 className="font-medium text-green-900">Service Information</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <Label htmlFor="service_date">Service Date</Label>
-                  <Input
-                    id="service_date"
-                    type="date"
-                    {...form.register('service_date')}
-                  />
+            <Card className="border-l-4 border-purple-500">
+              <CardContent className="p-4">
+                <div className="flex items-center space-x-2 mb-4">
+                  <Calendar className="w-5 h-5 text-purple-600" />
+                  <h4 className="font-medium text-purple-900">Service Information *</h4>
                 </div>
-                <div>
-                  <Label htmlFor="service_method">Service Method</Label>
-                  <Select
-                    value={form.watch('service_method')}
-                    onValueChange={(value) => form.setValue('service_method', value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select method" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="artificial_insemination">Artificial Insemination</SelectItem>
-                      <SelectItem value="natural_breeding">Natural Breeding</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="service_date">Service Date *</Label>
+                    <Input
+                      id="service_date"
+                      type="date"
+                      {...form.register('service_date', {
+                        required: 'Service date is required for served animals'
+                      })}
+                      error={form.formState.errors.service_date?.message}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="service_method">Service Method *</Label>
+                    <Select
+                      value={form.watch('service_method')}
+                      onValueChange={(value) => form.setValue('service_method', value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select method" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="artificial_insemination">Artificial Insemination</SelectItem>
+                        <SelectItem value="natural_breeding">Natural Breeding</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {form.formState.errors.service_method && (
+                      <p className="text-sm text-red-600">{form.formState.errors.service_method.message}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="expected_calving_date">Expected Calving Date *</Label>
+                    <Input
+                      id="expected_calving_date"
+                      type="date"
+                      {...form.register('expected_calving_date', {
+                        required: 'Expected calving date is required for served animals'
+                      })}
+                      error={form.formState.errors.expected_calving_date?.message}
+                    />
+                  </div>
                 </div>
-              </div>
-            </div>
+              </CardContent>
+            </Card>
           )}
           
           {/* Conditional Fields for Lactating Status */}
           {form.watch('production_status') === 'lactating' && (
-            <div className="border-l-4 border-yellow-500 pl-4 space-y-4">
-              <h4 className="font-medium text-yellow-900">Production Information</h4>
-              <div>
-                <Label htmlFor="current_daily_production">Current Daily Production (L)</Label>
-                <Input
-                  id="current_daily_production"
-                  type="number"
-                  step="0.1"
-                  {...form.register('current_daily_production', { valueAsNumber: true })}
-                  placeholder="e.g., 28.5"
-                />
-              </div>
-            </div>
+            <Card className="border-l-4 border-green-500">
+              <CardContent className="p-4">
+                <div className="flex items-center space-x-2 mb-4">
+                  <Droplets className="w-5 h-5 text-green-600" />
+                  <h4 className="font-medium text-green-900">Current Production Information</h4>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="current_daily_production">Current Daily Production (L)</Label>
+                    <Input
+                      id="current_daily_production"
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      {...form.register('current_daily_production', { valueAsNumber: true })}
+                      placeholder="e.g., 28.5"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="days_in_milk">Days in Milk</Label>
+                    <Input
+                      id="days_in_milk"
+                      type="number"
+                      min="0"
+                      {...form.register('days_in_milk', { valueAsNumber: true })}
+                      placeholder="e.g., 150"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="lactation_number">Lactation Number</Label>
+                    <Input
+                      id="lactation_number"
+                      type="number"
+                      min="1"
+                      {...form.register('lactation_number', { valueAsNumber: true })}
+                      placeholder="e.g., 2"
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          
+          {/* Conditional Fields for Dry Status */}
+          {form.watch('production_status') === 'dry' && (
+            <Card className="border-l-4 border-gray-500">
+              <CardContent className="p-4">
+                <div className="flex items-center space-x-2 mb-4">
+                  <Calendar className="w-5 h-5 text-gray-600" />
+                  <h4 className="font-medium text-gray-900">Dry Period Information</h4>
+                  <Info className="w-4 h-4 text-gray-500" />
+                </div>
+                <p className="text-sm text-gray-700 mb-4">
+                  This animal is currently in the dry period (not producing milk).
+                  This is normal preparation for the next lactation.
+                </p>
+                <div className="space-y-2">
+                  <Label htmlFor="expected_calving_date">Expected Calving Date *</Label>
+                  <Input
+                    id="expected_calving_date"
+                    type="date"
+                    {...form.register('expected_calving_date', {
+                      required: 'Expected calving date is required for dry animals'
+                    })}
+                    error={form.formState.errors.expected_calving_date?.message}
+                    min={new Date().toISOString().split('T')[0]}
+                  />
+                  <p className="text-xs text-gray-600">
+                    Expected date when this animal will calve and return to lactation
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
           )}
           
           {/* Notes */}

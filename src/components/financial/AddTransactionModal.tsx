@@ -149,7 +149,7 @@ export function AddTransactionModal({ farmId, isOpen, onClose, onTransactionAdde
           {/* Basic Information */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="amount">Amount ($)</Label>
+              <Label htmlFor="amount">Amount (KES)</Label>
               <Input
                 id="amount"
                 type="number"

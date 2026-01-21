@@ -20,7 +20,7 @@ interface ImportAnimal {
   seller_contact?: string
   purchase_date?: string
   purchase_price?: number
-  production_status?: 'calf' | 'heifer' | 'served' | 'lactating' | 'dry'
+  production_status?: 'calf' | 'heifer' | 'bull' | 'served' | 'lactating' | 'dry'
   health_status?: 'healthy' | 'sick' | 'injured' | 'quarantine'
   notes?: string
 }

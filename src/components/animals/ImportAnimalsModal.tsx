@@ -7,21 +7,20 @@ import { Label } from '@/components/ui/Label'
 import { Alert, AlertDescription } from '@/components/ui/Alert'
 import { Progress } from '@/components/ui/Progress'
 import { importAnimalsActionWithAuth } from '@/app/actions/import-animals'
-import { downloadWorkingTemplate } from '@/lib/enhanced-template-generator'
+import { downloadUniversalTemplate } from '@/lib/enhanced-template-generator'
 import { 
   Upload, 
   Download, 
   FileSpreadsheet, 
-  FileText, 
   AlertTriangle,
   CheckCircle,
   X,
   Eye,
-  Info,
-  Sparkles
+  Zap,
+  ArrowRight
 } from 'lucide-react'
 import Papa from 'papaparse'
-import ExcelJS from 'exceljs' // Changed import
+import ExcelJS from 'exceljs'
 import { Animal } from '@/types/database'
 
 interface ImportAnimalsModalProps {
@@ -45,7 +44,6 @@ interface ValidationResult {
 }
 
 interface ParsedAnimal {
-  tag_number: string
   name?: string
   breed?: string
   gender: 'male' | 'female'
@@ -58,7 +56,7 @@ interface ParsedAnimal {
   seller_contact?: string
   purchase_date?: string
   purchase_price?: number
-  production_status?: 'calf' | 'heifer' | 'served' | 'lactating' | 'dry'
+  production_status?: 'calf' | 'heifer' | 'bull' | 'served' | 'lactating' | 'dry'
   health_status?: string
   notes?: string
   row_index?: number
@@ -81,7 +79,7 @@ export function ImportAnimalsModal({
   const [isImporting, setIsImporting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Custom validation options - you can fetch these from your database
+  // Custom validation options
   const customValidationOptions = {
     breeds: [
       'Holstein-Friesian', 'Jersey', 'Guernsey', 'Ayrshire', 'Brown Swiss', 
@@ -222,52 +220,54 @@ export function ImportAnimalsModal({
     animals.forEach((animal, index) => {
       const row = animal.row_index || index + 2
       
-      if (!animal.tag_number) {
-        errors.push({
-          row,
-          field: 'tag_number',
-          value: '',
-          message: 'Tag number is required'
-        })
-      }
-      
+      // Gender is required
       if (!animal.gender || !['male', 'female'].includes(animal.gender)) {
         errors.push({
           row,
           field: 'gender',
           value: animal.gender || '',
-          message: 'Gender must be either "male" or "female"'
+          message: 'Gender is required and must be "male" or "female"'
+        })
+      }
+
+      // Animal source is required
+      if (!animal.animal_source || !['newborn_calf', 'purchased_animal'].includes(animal.animal_source)) {
+        errors.push({
+          row,
+          field: 'animal_source',
+          value: animal.animal_source || '',
+          message: 'Animal source is required: "newborn_calf" or "purchased_animal"'
         })
       }
       
-      // Validate breed against our list
+      // Validate breed if provided
       if (animal.breed && !customValidationOptions.breeds.includes(animal.breed)) {
         warnings.push({
           row,
           field: 'breed',
           value: animal.breed,
-          message: `Breed "${animal.breed}" is not in the standard list. Consider using dropdown template.`
+          message: `Breed "${animal.breed}" is not in the standard list`
         })
       }
       
-      if (animal.production_status && !['calf', 'heifer', 'served', 'lactating', 'dry'].includes(animal.production_status)) {
+      if (animal.production_status && !['calf', 'heifer', 'bull', 'served', 'lactating', 'dry'].includes(animal.production_status)) {
         warnings.push({
           row,
           field: 'production_status',
           value: animal.production_status,
-          message: 'Invalid production status. Will default to "calf"'
+          message: 'Invalid production status. Will be set to default'
         })
       }
       
+      // Validate dates
       if (animal.date_of_birth) {
-        // Handle JS Date objects from ExcelJS or string dates
         const dateVal = new Date(animal.date_of_birth)
         if (isNaN(dateVal.getTime())) {
           warnings.push({
             row,
             field: 'date_of_birth',
             value: String(animal.date_of_birth),
-            message: 'Invalid date format. Please use YYYY-MM-DD format'
+            message: 'Invalid date format. Use YYYY-MM-DD'
           })
         }
       }
@@ -279,7 +279,7 @@ export function ImportAnimalsModal({
             row,
             field: 'purchase_date',
             value: String(animal.purchase_date),
-            message: 'Invalid date format. Please use YYYY-MM-DD format'
+            message: 'Invalid date format. Use YYYY-MM-DD'
           })
         }
       }
@@ -354,15 +354,23 @@ export function ImportAnimalsModal({
         setImportProgress(prev => Math.min(prev + 10, 90))
       }, 200)
 
-      const validatedAnimals = parsedData.map(animal => ({
-        ...animal,
-        health_status: (animal.health_status?.toLowerCase() as "healthy" | "sick" | "injured" | "quarantine" | undefined) || undefined,
-        // Ensure dates are strings for the server action if they came as objects from Excel
-        date_of_birth: animal.date_of_birth ? new Date(animal.date_of_birth).toISOString().split('T')[0] : undefined,
-        purchase_date: animal.purchase_date ? new Date(animal.purchase_date).toISOString().split('T')[0] : undefined
-      }))
+      // Generate tag numbers (format: FARM-SOURCE-INDEX)
+      // e.g., FARM001-NEW-1, FARM001-PUR-1
+      const validatedAnimals = parsedData.map((animal, index) => {
+        const source = animal.animal_source === 'newborn_calf' ? 'NB' : 'PUR'
+        const tagNumber = `${source}-${Date.now()}-${index + 1}` // Unique tag
+        
+        return {
+          tag_number: tagNumber,
+          ...animal,
+          health_status: (animal.health_status?.toLowerCase() as "healthy" | "sick" | "injured" | "quarantine" | undefined) || undefined,
+          // Ensure dates are strings for the server action
+          date_of_birth: animal.date_of_birth ? new Date(animal.date_of_birth).toISOString().split('T')[0] : undefined,
+          purchase_date: animal.purchase_date ? new Date(animal.purchase_date).toISOString().split('T')[0] : undefined
+        }
+      })
 
-      const result = await importAnimalsActionWithAuth(farmId, validatedAnimals)
+      const result = await importAnimalsActionWithAuth(farmId, validatedAnimals as any)
       
       clearInterval(progressInterval)
       setImportProgress(100)
@@ -412,101 +420,64 @@ export function ImportAnimalsModal({
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} className="max-w-4xl max-h-[90vh] overflow-y-auto">
-      <div className="p-6">
+    <Modal isOpen={isOpen} onClose={handleClose} className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <div className="p-4 md:p-6">
         {step === 'upload' && (
           <div className="space-y-6">
-            <div className="text-center">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">Import Animals</h2>
-              <p className="text-gray-600">
-                Upload a CSV or Excel file to import multiple animals at once
+            {/* Header */}
+            <div>
+              <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">
+                Import Animals
+              </h2>
+              <p className="text-gray-600 text-sm md:text-base">
+                Bulk import animals using our Excel template
               </p>
-              <div className="mt-2 p-2 bg-green-50 rounded-lg">
-                <p className="text-sm text-green-700">
-                  ✨ Enhanced templates with data validation dropdowns available!
-                </p>
-              </div>
             </div>
 
-            {/* Enhanced Template Downloads */}
-            <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-4 rounded-lg border">
-              <div className="flex items-start space-x-3">
-                <Sparkles className="w-5 h-5 text-purple-600 mt-0.5" />
-                <div className="flex-1">
-                  <h3 className="font-medium text-purple-900 mb-2">Enhanced Templates with Data Validation</h3>
-                  <p className="text-sm text-purple-800 mb-3">
-                    Download templates with dropdown lists for breed, gender, health status, and production status to ensure data consistency
-                  </p>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-3">
-                      <h4 className="text-sm font-medium text-purple-900">Newborn Calves</h4>
-                      <div className="flex space-x-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => downloadWorkingTemplate('newborn', 'csv', customValidationOptions)}
-                          className="flex items-center space-x-1"
-                        >
-                          <FileText className="w-3 h-3" />
-                          <span>Enhanced CSV</span>
-                        </Button>
-                        <Button
-                          size="sm"
-                          className="flex items-center space-x-1 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600"
-                          onClick={() => downloadWorkingTemplate('newborn', 'xlsx', customValidationOptions)}
-                        >
-                          <FileSpreadsheet className="w-3 h-3" />
-                          <span>Enhanced Excel</span>
-                          <Sparkles className="w-3 h-3" />
-                        </Button>
-                      </div>
-                    </div>
-                    
-                    <div className="space-y-3">
-                      <h4 className="text-sm font-medium text-purple-900">Purchased Animals</h4>
-                      <div className="flex space-x-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => downloadWorkingTemplate('purchased', 'csv', customValidationOptions)}
-                          className="flex items-center space-x-1"
-                        >
-                          <FileText className="w-3 h-3" />
-                          <span>Enhanced CSV</span>
-                        </Button>
-                        <Button
-                          size="sm"
-                          className="flex items-center space-x-1 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600"
-                          onClick={() => downloadWorkingTemplate('purchased', 'xlsx', customValidationOptions)}
-                        >
-                          <FileSpreadsheet className="w-3 h-3" />
-                          <span>Enhanced Excel</span>
-                          <Sparkles className="w-3 h-3" />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="mt-4 p-3 bg-white bg-opacity-70 rounded-lg">
-                    <h5 className="text-sm font-medium text-purple-900 mb-2">Excel Template Features:</h5>
-                    <ul className="text-xs text-purple-800 space-y-1">
-                      <li>• <strong>Breed dropdown:</strong> Choose from {customValidationOptions.breeds.length} standard breeds</li>
-                      <li>• <strong>Gender validation:</strong> Enforced male/female selection</li>
-                      <li>• <strong>Health status options:</strong> {customValidationOptions.healthStatuses.length} predefined health statuses</li>
-                      <li>• <strong>Production status:</strong> Dropdown with valid production stages</li>
-                      <li>• <strong>Built-in instructions:</strong> Separate worksheet with detailed guidance</li>
-                      <li>• <strong>Data validation:</strong> Prevents invalid entries and shows helpful error messages</li>
-                    </ul>
-                  </div>
+            {/* Quick Start Guide */}
+            <div className="bg-gradient-to-br from-dairy-primary/10 to-dairy-primary/5 border border-dairy-primary/20 rounded-lg p-4 md:p-5 space-y-4">
+              <div className="flex items-start gap-3">
+                <Zap className="w-5 h-5 text-dairy-primary mt-0.5 flex-shrink-0" />
+                <div>
+                  <h3 className="font-semibold text-gray-900 mb-2">Get Started in 3 Steps</h3>
+                  <ol className="space-y-2 text-sm text-gray-700">
+                    <li className="flex items-start gap-2">
+                      <span className="font-bold text-dairy-primary min-w-6">1.</span>
+                      <span>Download the universal Excel template below</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="font-bold text-dairy-primary min-w-6">2.</span>
+                      <span>Fill in your animal data using the dropdown menus</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="font-bold text-dairy-primary min-w-6">3.</span>
+                      <span>Upload your file to import all animals at once</span>
+                    </li>
+                  </ol>
                 </div>
               </div>
             </div>
 
+            {/* Template Download Section */}
+            <div className="space-y-3">
+              <Label className="text-base font-semibold">Download Template</Label>
+              <button
+                onClick={() => downloadUniversalTemplate(customValidationOptions)}
+                className="w-full bg-gradient-to-r from-dairy-primary to-dairy-primary/90 hover:from-dairy-primary hover:to-dairy-primary text-white font-semibold py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-all hover:shadow-lg active:scale-95"
+              >
+                <Download className="w-5 h-5" />
+                <span>Download Excel Template</span>
+                <FileSpreadsheet className="w-5 h-5" />
+              </button>
+              <p className="text-xs text-gray-600 text-center">
+                One template for newborn calves and purchased animals • Includes data validation dropdowns
+              </p>
+            </div>
+
             {/* File Upload */}
-            <div className="space-y-4">
-              <Label htmlFor="file-upload">Upload File</Label>
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-gray-400 transition-colors">
+            <div className="space-y-3">
+              <Label htmlFor="file-upload" className="text-base font-semibold">Upload Your File</Label>
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 md:p-8 text-center hover:border-dairy-primary hover:bg-dairy-primary/5 transition-all">
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -515,24 +486,25 @@ export function ImportAnimalsModal({
                   onChange={handleFileSelect}
                   className="hidden"
                 />
-                <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-lg font-medium text-gray-900 mb-2">
-                  Choose file to upload
+                <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
+                <p className="text-sm font-medium text-gray-900 mb-1">
+                  Choose your file to upload
                 </p>
-                <p className="text-gray-600 mb-4">
-                  CSV or Excel files only. Maximum size 10MB.
+                <p className="text-xs text-gray-600 mb-4">
+                  CSV or Excel files (Max 10MB)
                 </p>
                 <Button
                   onClick={() => fileInputRef.current?.click()}
-                  className="inline-flex items-center space-x-2"
+                  className="inline-flex items-center gap-2 bg-dairy-primary hover:bg-dairy-primary/90"
                 >
                   <Upload className="w-4 h-4" />
-                  <span>Browse Files</span>
+                  <span>Select File</span>
                 </Button>
               </div>
             </div>
 
-            <div className="flex justify-end">
+            {/* Footer */}
+            <div className="flex justify-end gap-3 pt-4 border-t">
               <Button variant="outline" onClick={handleClose}>
                 Cancel
               </Button>
@@ -542,17 +514,18 @@ export function ImportAnimalsModal({
 
         {step === 'preview' && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            {/* Header */}
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
-                <h2 className="text-2xl font-bold text-gray-900">Preview Import</h2>
-                <p className="text-gray-600">
-                  Review your data before importing {parsedData.length} animals
+                <h2 className="text-2xl font-bold text-gray-900">Review Data</h2>
+                <p className="text-gray-600 text-sm">
+                  {parsedData.length} animals ready to import
                 </p>
               </div>
               <Button
-                variant="ghost"
+                variant="outline"
                 onClick={() => setStep('upload')}
-                className="flex items-center space-x-2"
+                className="flex items-center gap-2 md:w-auto w-full justify-center"
               >
                 <X className="w-4 h-4" />
                 <span>Change File</span>
@@ -563,18 +536,18 @@ export function ImportAnimalsModal({
             {!validationResult.valid && (
               <Alert className="border-red-200 bg-red-50">
                 <AlertTriangle className="h-4 w-4 text-red-600" />
-                <AlertDescription className="text-red-800">
-                  <div className="font-medium mb-2">
-                    {validationResult.errors.length} error(s) found. Please fix these issues:
+                <AlertDescription className="text-red-800 text-sm">
+                  <div className="font-semibold mb-2">
+                    {validationResult.errors.length} error(s) found:
                   </div>
-                  <ul className="list-disc list-inside space-y-1 text-sm">
-                    {validationResult.errors.slice(0, 5).map((error, index) => (
+                  <ul className="list-disc list-inside space-y-1 text-xs">
+                    {validationResult.errors.slice(0, 3).map((error, index) => (
                       <li key={index}>
                         Row {error.row}, {error.field}: {error.message}
                       </li>
                     ))}
-                    {validationResult.errors.length > 5 && (
-                      <li>... and {validationResult.errors.length - 5} more errors</li>
+                    {validationResult.errors.length > 3 && (
+                      <li>... and {validationResult.errors.length - 3} more errors</li>
                     )}
                   </ul>
                 </AlertDescription>
@@ -584,93 +557,84 @@ export function ImportAnimalsModal({
             {validationResult.warnings.length > 0 && (
               <Alert className="border-yellow-200 bg-yellow-50">
                 <AlertTriangle className="h-4 w-4 text-yellow-600" />
-                <AlertDescription className="text-yellow-800">
-                  <div className="font-medium mb-2">
-                    {validationResult.warnings.length} warning(s) found:
+                <AlertDescription className="text-yellow-800 text-sm">
+                  <div className="font-semibold mb-2">
+                    {validationResult.warnings.length} warning(s):
                   </div>
-                  <ul className="list-disc list-inside space-y-1 text-sm">
-                    {validationResult.warnings.slice(0, 3).map((warning, index) => (
+                  <ul className="list-disc list-inside space-y-1 text-xs">
+                    {validationResult.warnings.slice(0, 2).map((warning, index) => (
                       <li key={index}>
                         Row {warning.row}, {warning.field}: {warning.message}
                       </li>
                     ))}
-                    {validationResult.warnings.length > 3 && (
-                      <li>... and {validationResult.warnings.length - 3} more warnings</li>
+                    {validationResult.warnings.length > 2 && (
+                      <li>... and {validationResult.warnings.length - 2} more warnings</li>
                     )}
                   </ul>
                 </AlertDescription>
               </Alert>
             )}
 
-            {/* Data Preview */}
-            <div className="bg-gray-50 rounded-lg p-4">
-              <h3 className="font-medium text-gray-900 mb-3 flex items-center space-x-2">
+            {/* Data Preview - Responsive Table */}
+            <div className="bg-gray-50 rounded-lg p-3 md:p-4 overflow-x-auto">
+              <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2 text-sm md:text-base">
                 <Eye className="w-4 h-4" />
-                <span>Data Preview (first 5 rows)</span>
+                <span>Preview (first 5 rows)</span>
               </h3>
               <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
+                <table className="min-w-full text-xs md:text-sm">
                   <thead>
                     <tr className="border-b border-gray-200">
-                      <th className="text-left py-2 px-3 font-medium">Tag Number</th>
-                      <th className="text-left py-2 px-3 font-medium">Name</th>
-                      <th className="text-left py-2 px-3 font-medium">Breed</th>
-                      <th className="text-left py-2 px-3 font-medium">Gender</th>
-                      <th className="text-left py-2 px-3 font-medium">Health Status</th>
-                      <th className="text-left py-2 px-3 font-medium">Production Status</th>
+                      <th className="text-left py-2 px-2 font-semibold text-gray-700">Name</th>
+                      <th className="text-left py-2 px-2 font-semibold text-gray-700">Gender</th>
+                      <th className="text-left py-2 px-2 font-semibold text-gray-700">Breed</th>
+                      <th className="text-left py-2 px-2 font-semibold text-gray-700">Type</th>
                     </tr>
                   </thead>
                   <tbody>
                     {parsedData.slice(0, 5).map((animal, index) => (
-                      <tr key={index} className="border-b border-gray-100">
-                        <td className="py-2 px-3">{animal.tag_number}</td>
-                        <td className="py-2 px-3">{animal.name || '-'}</td>
-                        <td className="py-2 px-3">
-                          <span className={`${
-                            animal.breed && customValidationOptions.breeds.includes(animal.breed)
-                              ? 'text-green-600'
-                              : 'text-amber-600'
-                          }`}>
-                            {animal.breed || '-'}
-                          </span>
-                        </td>
-                        <td className="py-2 px-3">
+                      <tr key={index} className="border-b border-gray-100 hover:bg-white">
+                        <td className="py-2 px-2">{animal.name || '-'}</td>
+                        <td className="py-2 px-2">
                           <span className={`${
                             ['male', 'female'].includes(animal.gender)
-                              ? 'text-green-600'
+                              ? 'text-green-600 font-medium'
                               : 'text-red-600'
                           }`}>
                             {animal.gender}
                           </span>
                         </td>
-                        <td className="py-2 px-3">{animal.health_status || '-'}</td>
-                        <td className="py-2 px-3">{animal.production_status || '-'}</td>
+                        <td className="py-2 px-2">{animal.breed || '-'}</td>
+                        <td className="py-2 px-2">
+                          <span className="text-xs bg-dairy-primary/10 text-dairy-primary px-2 py-1 rounded">
+                            {animal.animal_source === 'newborn_calf' ? '👶 Newborn' : '🛒 Purchased'}
+                          </span>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
                 {parsedData.length > 5 && (
-                  <p className="text-gray-500 text-center py-2">
+                  <p className="text-gray-500 text-center py-3 text-xs">
                     ... and {parsedData.length - 5} more rows
                   </p>
                 )}
               </div>
-              
-              <div className="mt-3 text-xs text-gray-600">
-                <span className="text-green-600">●</span> Valid data  
-                <span className="text-amber-600 ml-3">●</span> Non-standard but acceptable  
-                <span className="text-red-600 ml-3">●</span> Invalid data
-              </div>
             </div>
 
-            <div className="flex justify-between">
-              <Button variant="outline" onClick={() => setStep('upload')}>
+            {/* Action Buttons */}
+            <div className="flex flex-col md:flex-row gap-3 pt-4 border-t">
+              <Button 
+                variant="outline" 
+                onClick={() => setStep('upload')}
+                className="flex-1 md:flex-0"
+              >
                 Back
               </Button>
               <Button
                 onClick={handleImport}
                 disabled={!validationResult.valid || isImporting}
-                className="flex items-center space-x-2"
+                className="flex-1 flex items-center justify-center gap-2 bg-dairy-primary hover:bg-dairy-primary/90"
               >
                 <Upload className="w-4 h-4" />
                 <span>Import {parsedData.length} Animals</span>
@@ -680,16 +644,16 @@ export function ImportAnimalsModal({
         )}
 
         {step === 'importing' && (
-          <div className="text-center py-8">
-            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Upload className="w-8 h-8 text-blue-600" />
+          <div className="text-center py-12">
+            <div className="w-16 h-16 bg-dairy-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Upload className="w-8 h-8 text-dairy-primary animate-pulse" />
             </div>
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Importing Animals</h2>
-            <p className="text-gray-600 mb-6">Processing validated data with enhanced templates...</p>
+            <p className="text-gray-600 text-sm mb-8">Processing your data...</p>
             
-            <div className="max-w-md mx-auto">
+            <div className="max-w-xs mx-auto">
               <Progress value={importProgress} className="mb-4" />
-              <p className="text-sm text-gray-600">
+              <p className="text-sm font-medium text-gray-600">
                 {importProgress}% complete
               </p>
             </div>
@@ -697,30 +661,30 @@ export function ImportAnimalsModal({
         )}
 
         {step === 'complete' && (
-          <div className="text-center py-8">
+          <div className="text-center py-12">
             <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <CheckCircle className="w-8 h-8 text-green-600" />
             </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">Import Complete!</h2>
-            <p className="text-gray-600 mb-6">
-              Successfully imported {importedCount} animals
-              {skippedCount > 0 && ` (${skippedCount} skipped due to errors)`}
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Import Successful!</h2>
+            <p className="text-gray-600 text-sm mb-6">
+              {importedCount} animal{importedCount !== 1 ? 's' : ''} imported successfully
+              {skippedCount > 0 && ` (${skippedCount} skipped)`}
             </p>
             
             {/* Show import errors if any */}
             {importErrors.length > 0 && (
-              <div className="mb-6 text-left max-w-2xl mx-auto">
+              <div className="mb-6 text-left">
                 <Alert className="border-yellow-200 bg-yellow-50">
                   <AlertTriangle className="h-4 w-4 text-yellow-600" />
-                  <AlertDescription className="text-yellow-800">
-                    <div className="font-medium mb-2">Some issues occurred during import:</div>
+                  <AlertDescription className="text-yellow-800 text-sm">
+                    <div className="font-semibold mb-2">Issues during import:</div>
                     <div className="max-h-32 overflow-y-auto">
-                      <ul className="list-disc list-inside space-y-1 text-sm">
-                        {importErrors.slice(0, 10).map((error, index) => (
+                      <ul className="list-disc list-inside space-y-1 text-xs">
+                        {importErrors.slice(0, 5).map((error, index) => (
                           <li key={index}>{error}</li>
                         ))}
-                        {importErrors.length > 10 && (
-                          <li>... and {importErrors.length - 10} more issues</li>
+                        {importErrors.length > 5 && (
+                          <li>... and {importErrors.length - 5} more issues</li>
                         )}
                       </ul>
                     </div>
@@ -729,15 +693,11 @@ export function ImportAnimalsModal({
               </div>
             )}
             
-            <div className="mb-6">
-              <div className="bg-blue-50 p-4 rounded-lg">
-                <p className="text-sm text-blue-800">
-                  💡 <strong>Tip:</strong> Use the enhanced Excel templates with dropdowns to reduce data entry errors in future imports!
-                </p>
-              </div>
-            </div>
-            
-            <Button onClick={handleClose} disabled={isImporting}>
+            <Button 
+              onClick={handleClose} 
+              disabled={isImporting}
+              className="bg-dairy-primary hover:bg-dairy-primary/90"
+            >
               Done
             </Button>
           </div>

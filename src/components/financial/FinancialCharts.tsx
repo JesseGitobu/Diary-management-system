@@ -78,7 +78,7 @@ function MonthlyChart({ data }: { data: any[] }) {
             </div>
             
             <div className="w-20 text-xs text-gray-600 text-right">
-              ${month.profit >= 0 ? '+' : ''}
+              KES {month.profit >= 0 ? '+' : ''}
               {(month.profit / 1000).toFixed(1)}k
             </div>
           </div>
@@ -122,7 +122,7 @@ function CategoryChart({ data, type }: { data: Record<string, number>, type: 'ex
                 {category.replace('_', ' ')}
               </span>
               <span className="font-medium">
-                ${(amount / 1000).toFixed(1)}k
+                KES {(amount / 1000).toFixed(1)}k
               </span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2 mt-1">

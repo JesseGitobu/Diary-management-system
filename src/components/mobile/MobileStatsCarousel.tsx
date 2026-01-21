@@ -4,6 +4,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Card, CardContent } from '@/components/ui/Card'
 import { cn } from '@/lib/utils/cn'
+import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 
 interface StatsCard {
   title: string
@@ -19,110 +20,246 @@ interface MobileStatsCarouselProps {
 }
 
 export function MobileStatsCarousel({ cards, className }: MobileStatsCarouselProps) {
-  const [currentIndex, setCurrentIndex] = useState(0)
+  const { isMobile, isTouch } = useDeviceInfo()
   const containerRef = useRef<HTMLDivElement>(null)
-  const [isAutoScrolling, setIsAutoScrolling] = useState(true)
+  const [scrollPosition, setScrollPosition] = useState(0)
+  const [canScrollLeft, setCanScrollLeft] = useState(false)
+  const [canScrollRight, setCanScrollRight] = useState(true)
 
-  // Auto-scroll functionality
-  useEffect(() => {
-    if (!isAutoScrolling) return
-
-    const interval = setInterval(() => {
-      setCurrentIndex((prevIndex) => (prevIndex + 1) % cards.length)
-    }, 4000) // Change card every 4 seconds
-
-    return () => clearInterval(interval)
-  }, [cards.length, isAutoScrolling])
-
-  // Handle manual scroll
-  const handleScroll = (direction: 'left' | 'right') => {
-    setIsAutoScrolling(false)
-    if (direction === 'left') {
-      setCurrentIndex((prevIndex) => 
-        prevIndex === 0 ? cards.length - 1 : prevIndex - 1
-      )
-    } else {
-      setCurrentIndex((prevIndex) => (prevIndex + 1) % cards.length)
+  // Check scroll position
+  const checkScroll = () => {
+    if (containerRef.current) {
+      const { scrollLeft, scrollWidth, clientWidth } = containerRef.current
+      setScrollPosition(scrollLeft)
+      setCanScrollLeft(scrollLeft > 0)
+      setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 10)
     }
-    
-    // Re-enable auto-scroll after 10 seconds
-    setTimeout(() => setIsAutoScrolling(true), 10000)
   }
 
-  const handleDotClick = (index: number) => {
-    setIsAutoScrolling(false)
-    setCurrentIndex(index)
-    setTimeout(() => setIsAutoScrolling(true), 10000)
+  useEffect(() => {
+    checkScroll()
+    window.addEventListener('resize', checkScroll)
+    return () => window.removeEventListener('resize', checkScroll)
+  }, [cards.length])
+
+  // Smooth scroll function
+  const scroll = (direction: 'left' | 'right') => {
+    if (!containerRef.current) return
+
+    const scrollAmount = 280 // Width of card + gap
+    const newScrollLeft =
+      direction === 'left'
+        ? containerRef.current.scrollLeft - scrollAmount
+        : containerRef.current.scrollLeft + scrollAmount
+
+    containerRef.current.scrollTo({
+      left: newScrollLeft,
+      behavior: 'smooth'
+    })
+
+    // Update scroll state after animation
+    setTimeout(checkScroll, 300)
   }
 
-  return (
-    <div className={cn("w-full", className)}>
-      {/* Main Card Display */}
-      <Card className="mb-3 shadow-sm border-l-4" 
-            style={{ borderLeftColor: cards[currentIndex]?.color?.replace('bg-', '#') || '#3b82f6' }}>
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex-1">
-              <div className="flex items-center space-x-2 mb-2">
-                <div className={cn(
-                  "p-2 rounded-lg text-white",
-                  cards[currentIndex]?.color || "bg-blue-500"
-                )}>
-                  {cards[currentIndex]?.icon}
-                </div>
-                <h3 className="font-medium text-gray-900 text-sm">
-                  {cards[currentIndex]?.title}
-                </h3>
-              </div>
-              
-              <div className="text-2xl font-bold text-gray-900 mb-1">
-                {cards[currentIndex]?.value}
-              </div>
-              
-              <p className="text-xs text-gray-600">
-                {cards[currentIndex]?.subtitle}
-              </p>
-            </div>
+  // Handle scroll event for dot indicators
+  const handleScroll = () => {
+    checkScroll()
+  }
+
+  // Get color value from Tailwind class
+  const getColorValue = (colorClass: string): string => {
+    const colorMap: { [key: string]: string } = {
+      'bg-blue-500': '#3b82f6',
+      'bg-green-500': '#10b981',
+      'bg-red-500': '#ef4444',
+      'bg-yellow-500': '#eab308',
+      'bg-purple-500': '#a855f7',
+      'bg-indigo-500': '#6366f1',
+      'bg-pink-500': '#ec4899',
+      'bg-orange-500': '#f97316',
+    }
+    return colorMap[colorClass] || '#3b82f6'
+  }
+
+  if (isMobile) {
+    return (
+      <div className={cn("w-full space-y-4", className)}>
+        {/* Header with Navigation Arrows */}
+        <div className="flex items-center justify-between px-4 sm:px-0">
+          <h3 className="font-semibold text-gray-900 text-base">Quick Stats</h3>
+          
+          {/* Navigation Arrows */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => scroll('left')}
+              disabled={!canScrollLeft}
+              className={cn(
+                "p-2 rounded-lg transition-all",
+                canScrollLeft
+                  ? "text-dairy-primary hover:bg-dairy-primary/10 active:scale-95"
+                  : "text-gray-300 cursor-not-allowed"
+              )}
+              aria-label="Scroll left"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
             
-            {/* Navigation Arrows */}
-            <div className="flex flex-col space-y-2 ml-4">
-              <button
-                onClick={() => handleScroll('left')}
-                className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
-                aria-label="Previous stat"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-              </button>
-              <button
-                onClick={() => handleScroll('right')}
-                className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
-                aria-label="Next stat"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
-            </div>
+            <button
+              onClick={() => scroll('right')}
+              disabled={!canScrollRight}
+              className={cn(
+                "p-2 rounded-lg transition-all",
+                canScrollRight
+                  ? "text-dairy-primary hover:bg-dairy-primary/10 active:scale-95"
+                  : "text-gray-300 cursor-not-allowed"
+              )}
+              aria-label="Scroll right"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
           </div>
-        </CardContent>
-      </Card>
+        </div>
 
-      {/* Dot Indicators */}
-      <div className="flex justify-center space-x-2">
-        {cards.map((_, index) => (
-          <button
+        {/* Horizontal Scrollable Container */}
+        <div
+          ref={containerRef}
+          onScroll={handleScroll}
+          className="overflow-x-auto scrollbar-hide px-4 sm:px-0"
+        >
+          <div className="flex gap-3 pb-2">
+            {cards.map((card, index) => (
+              <Card
+                key={index}
+                className={cn(
+                  "flex-shrink-0 w-64 shadow-sm border-l-4 transition-all duration-200",
+                  isTouch && "active:scale-95"
+                )}
+                style={{ borderLeftColor: getColorValue(card.color) }}
+              >
+                <CardContent className="p-4">
+                  <div className="space-y-3">
+                    {/* Header */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 flex-1">
+                        <div className={cn(
+                          "p-2 rounded-lg text-white flex-shrink-0",
+                          card.color
+                        )}>
+                          {card.icon}
+                        </div>
+                        <h4 className="font-medium text-gray-900 text-sm line-clamp-2">
+                          {card.title}
+                        </h4>
+                      </div>
+                    </div>
+
+                    {/* Value */}
+                    <div>
+                      <div className="text-3xl font-bold text-gray-900">
+                        {card.value}
+                      </div>
+                    </div>
+
+                    {/* Subtitle */}
+                    <p className="text-xs text-gray-600 line-clamp-2">
+                      {card.subtitle}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+
+        {/* Dot Indicators */}
+        {cards.length > 0 && (
+          <div className="flex justify-center gap-1.5">
+            {cards.map((_, index) => {
+              // Calculate if this dot should be active based on scroll position
+              const cardWidth = 280 // w-64 + gap
+              const isActive = Math.round(scrollPosition / cardWidth) === index
+              
+              return (
+                <button
+                  key={index}
+                  onClick={() => {
+                    if (containerRef.current) {
+                      containerRef.current.scrollTo({
+                        left: index * cardWidth,
+                        behavior: 'smooth'
+                      })
+                      setTimeout(checkScroll, 300)
+                    }
+                  }}
+                  className={cn(
+                    "rounded-full transition-all duration-200",
+                    isActive
+                      ? "bg-dairy-primary scale-125 w-2.5 h-2.5"
+                      : "bg-gray-300 hover:bg-gray-400 w-2 h-2"
+                  )}
+                  aria-label={`Go to card ${index + 1}`}
+                />
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // Desktop View - Grid Layout
+  return (
+    <div className={cn("w-full space-y-4", className)}>
+      {/* Header */}
+      <h3 className="font-semibold text-gray-900 text-lg px-4 sm:px-0">
+        Quick Stats
+      </h3>
+
+      {/* Grid Layout */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 px-4 sm:px-0">
+        {cards.map((card, index) => (
+          <Card
             key={index}
-            onClick={() => handleDotClick(index)}
             className={cn(
-              "w-2 h-2 rounded-full transition-all duration-200",
-              index === currentIndex
-                ? "bg-dairy-primary scale-125"
-                : "bg-gray-300 hover:bg-gray-400"
+              "shadow-sm border-l-4 transition-all duration-200 hover:shadow-md hover:scale-105"
             )}
-            aria-label={`Go to stat ${index + 1}`}
-          />
+            style={{ borderLeftColor: getColorValue(card.color) }}
+          >
+            <CardContent className="p-4">
+              <div className="space-y-3">
+                {/* Header */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 flex-1">
+                    <div className={cn(
+                      "p-2.5 rounded-lg text-white flex-shrink-0",
+                      card.color
+                    )}>
+                      {card.icon}
+                    </div>
+                    <h4 className="font-medium text-gray-900 text-sm">
+                      {card.title}
+                    </h4>
+                  </div>
+                </div>
+
+                {/* Value */}
+                <div>
+                  <div className="text-3xl font-bold text-gray-900">
+                    {card.value}
+                  </div>
+                </div>
+
+                {/* Subtitle */}
+                <p className="text-xs text-gray-600">
+                  {card.subtitle}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
         ))}
       </div>
     </div>

@@ -26,6 +26,8 @@ import { AddInventoryModal } from '@/components/inventory/AddInventoryModal'
 import { InventoryFilters } from '@/components/inventory/InventoryFilters'
 import { AddSupplierModal } from '@/components/inventory/AddSupplierModal'
 import { SupplierCard } from '@/components/inventory/SupplierCard'
+import { InventoryStatsCards } from '@/components/inventory/InventoryStatsCards'
+import { SupplierStatsCards } from '@/components/inventory/SupplierStatsCards'
 
 interface UnifiedInventoryDashboardProps {
   farmId: string
@@ -249,32 +251,12 @@ export function UnifiedInventoryDashboard({
           {/* INVENTORY TAB */}
           <TabsContent value="inventory" className="mt-4 lg:mt-6 space-y-4 lg:space-y-6">
             {/* Inventory Stats */}
-            <div className="flex space-x-4 overflow-x-auto pb-4 lg:grid lg:grid-cols-4 lg:gap-6 lg:overflow-visible lg:pb-0">
-              {overviewStats.map((stat, index) => (
-                <Card 
-                  key={index} 
-                  className={`min-w-[280px] lg:min-w-0 flex-shrink-0 ${stat.bgColor} border-0 lg:border lg:bg-white`}
-                >
-                  <CardContent className="p-4 lg:p-6">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-gray-600 mb-1">
-                          {stat.title}
-                        </p>
-                        <div className={`text-2xl lg:text-3xl font-bold ${stat.color} mb-1`}>
-                          {stat.value}
-                        </div>
-                        <p className="text-xs text-gray-500">
-                          {stat.description}
-                        </p>
-                      </div>
-                      <div className={`w-12 h-12 rounded-full ${stat.bgColor} flex items-center justify-center lg:bg-gray-50`}>
-                        <stat.icon className={`h-6 w-6 ${stat.color} lg:text-gray-600`} />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+            <div className={`${isMobile ? 'px-0' : ''}`}>
+              <InventoryStatsCards
+                stats={overviewStats}
+                lowStockCount={lowStockItems.length}
+                expiringCount={expiringItems.length}
+              />
             </div>
             
             {/* Alerts Banner */}
@@ -425,32 +407,12 @@ export function UnifiedInventoryDashboard({
           {/* SUPPLIERS TAB */}
           <TabsContent value="suppliers" className="mt-4 lg:mt-6 space-y-4 lg:space-y-6">
             {/* Supplier Stats */}
-            <div className="flex space-x-4 overflow-x-auto pb-4 lg:grid lg:grid-cols-4 lg:gap-6 lg:overflow-visible lg:pb-0">
-              {supplierStatsCards.map((stat, index) => (
-                <Card 
-                  key={index} 
-                  className={`min-w-[280px] lg:min-w-0 flex-shrink-0 ${stat.bgColor} border-0 lg:border lg:bg-white`}
-                >
-                  <CardContent className="p-4 lg:p-6">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-gray-600 mb-1">
-                          {stat.title}
-                        </p>
-                        <div className={`text-2xl lg:text-3xl font-bold ${stat.color} mb-1`}>
-                          {stat.value}
-                        </div>
-                        <p className="text-xs text-gray-500">
-                          {stat.description}
-                        </p>
-                      </div>
-                      <div className={`w-12 h-12 rounded-full ${stat.bgColor} flex items-center justify-center lg:bg-gray-50`}>
-                        <stat.icon className={`h-6 w-6 ${stat.color} lg:text-gray-600`} />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+            <div className={`${isMobile ? 'px-0' : ''}`}>
+              <SupplierStatsCards
+                stats={supplierStatsCards}
+                totalSuppliers={supplierStats.totalSuppliers}
+                supplierTypes={supplierStats.supplierTypes}
+              />
             </div>
 
             {/* Suppliers List */}

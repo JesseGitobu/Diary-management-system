@@ -1,37 +1,41 @@
-// src/components/health/HealthStatsCards.tsx
+// src/components/feed/FeedStatsCards.tsx
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { cn } from '@/lib/utils/cn'
 import { 
-  Stethoscope, 
-  Baby, 
-  TrendingUp, 
-  Activity, 
-  Calendar,
-  Target,
-  AlertCircle,
-  CheckCircle2,
-  BookOpen,
+  TrendingUp,
+  DollarSign,
+  Package,
   Clock,
-  Syringe,
-  AlertTriangle
+  Users,
+  AlertTriangle,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react'
 
-interface HealthStatsCardsProps {
-  stats: {
-    totalHealthRecords: number
-    veterinariansRegistered: number
-    protocolsRecorded: number
-    outbreaksReported: number
-    vaccinationsAdministered: number
-    upcomingTasks: number
+interface FeedStatsCardsProps {
+  stats: Array<{
+    title: string
+    value: string | number
+    icon: React.ComponentType<any>
+    color: string
+    bgColor: string
+    description: string
+    trend?: string
+    isGood?: boolean
+  }>
+  averageDaysRemaining: number
+  alertCounts: {
+    critical: number
+    low: number
+    total: number
   }
 }
 
-export function HealthStatsCards({ stats }: HealthStatsCardsProps) {
+export function FeedStatsCards({ stats, averageDaysRemaining, alertCounts }: FeedStatsCardsProps) {
   const { isMobile, isTouch } = useDeviceInfo()
   const containerRef = useRef<HTMLDivElement>(null)
   const [scrollPosition, setScrollPosition] = useState(0)
@@ -78,79 +82,16 @@ export function HealthStatsCards({ stats }: HealthStatsCardsProps) {
     checkScroll()
   }
 
-  const statsData = [
-    {
-      id: 'total-health',
-      title: 'Health Records',
-      value: stats.totalHealthRecords,
-      description: 'Health events',
-      icon: Activity,
-      color: 'bg-blue-500',
-      bgColor: 'bg-blue-100 text-blue-600',
-      trend: stats.totalHealthRecords > 0 ? '+' : '',
-      isGood: stats.totalHealthRecords > 0
-    },
-    {
-      id: 'veterinarians-registered',
-      title: 'Veterinarians',
-      value: stats.veterinariansRegistered,
-      description: 'Registered',
-      icon: Stethoscope,
-      color: 'bg-indigo-500',
-      bgColor: 'bg-indigo-100 text-indigo-600',
-      isGood: stats.veterinariansRegistered > 0
-    },
-    {
-      id: 'protocols-recorded',
-      title: 'Protocols',
-      value: stats.protocolsRecorded,
-      description: 'Active',
-      icon: BookOpen,
-      color: 'bg-purple-500',
-      bgColor: 'bg-purple-100 text-purple-600',
-      isGood: stats.protocolsRecorded > 0
-    },
-    {
-      id: 'outbreaks-reported',
-      title: 'Outbreaks',
-      value: stats.outbreaksReported,
-      description: 'Active',
-      icon: AlertTriangle,
-      color: 'bg-red-500',
-      bgColor: 'bg-red-100 text-red-600',
-      alert: stats.outbreaksReported > 0,
-      isGood: stats.outbreaksReported === 0
-    },
-    {
-      id: 'vaccinations-administered',
-      title: 'Vaccinations',
-      value: stats.vaccinationsAdministered,
-      description: 'Active',
-      icon: Syringe,
-      color: 'bg-green-500',
-      bgColor: 'bg-green-100 text-green-600',
-      trend: stats.vaccinationsAdministered > 0 ? '+' : '',
-      isGood: stats.vaccinationsAdministered > 0
-    },
-    {
-      id: 'upcoming-tasks',
-      title: 'Upcoming Tasks',
-      value: stats.upcomingTasks,
-      description: 'Pending tasks',
-      icon: Clock,
-      color: 'bg-orange-500',
-      bgColor: 'bg-orange-100 text-orange-600',
-      trend: stats.upcomingTasks > 0 ? 'Pending' : '',
-      isGood: stats.upcomingTasks === 0
-    }
-  ]
+  // Determine overall feed status
+  const overallStatus = alertCounts.total === 0 ? (averageDaysRemaining > 14 ? 'Good' : (averageDaysRemaining > 7 ? 'Monitor' : 'Critical')) : 'Alert'
+  const isStatusGood = alertCounts.critical === 0 && averageDaysRemaining > 14
 
   if (isMobile) {
     return (
       <div className="w-full space-y-4">
         {/* Header with Navigation Arrows */}
         <div className="flex items-center justify-between px-4 sm:px-0">
-          <h2 className="font-semibold text-gray-900 text-base">Health Records Overview</h2>
+          <h2 className="font-semibold text-gray-900 text-base">Feed Overview</h2>
           
           {/* Navigation Arrows */}
           <div className="flex gap-2">
@@ -195,12 +136,12 @@ export function HealthStatsCards({ stats }: HealthStatsCardsProps) {
           className="overflow-x-auto scrollbar-hide px-4 sm:px-0"
         >
           <div className="flex gap-3 pb-2">
-            {statsData.map((stat) => {
+            {stats.map((stat) => {
               const IconComponent = stat.icon
               
               return (
                 <Card
-                  key={stat.id}
+                  key={stat.title}
                   className={cn(
                     "flex-shrink-0 w-48 shadow-sm transition-all duration-200",
                     isTouch && "active:scale-95"
@@ -248,16 +189,6 @@ export function HealthStatsCards({ stats }: HealthStatsCardsProps) {
                         {stat.description}
                       </p>
                     </div>
-
-                    {/* Alert Indicators */}
-                    {stat.alert && (
-                      <div className="flex items-center gap-1.5 pt-1">
-                        <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                        <span className="text-xs text-red-600 font-medium">
-                          Active
-                        </span>
-                      </div>
-                    )}
                   </CardContent>
                 </Card>
               )
@@ -266,9 +197,9 @@ export function HealthStatsCards({ stats }: HealthStatsCardsProps) {
         </div>
 
         {/* Dot Indicators */}
-        {statsData.length > 0 && (
+        {stats.length > 0 && (
           <div className="flex justify-center gap-1.5">
-            {statsData.map((_, index) => {
+            {stats.map((_, index) => {
               const cardWidth = 208 // w-48 + gap
               const isActive = Math.round(scrollPosition / cardWidth) === index
               
@@ -308,12 +239,12 @@ export function HealthStatsCards({ stats }: HealthStatsCardsProps) {
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
-                {stats.outbreaksReported === 0 ? (
+                {isStatusGood ? (
                   <>
                     <CheckCircle2 className="w-4 h-4 text-green-500" />
-                    <span className="text-green-600 font-medium text-sm">Healthy</span>
+                    <span className="text-green-600 font-medium text-sm">Good</span>
                   </>
-                ) : stats.outbreaksReported < 3 ? (
+                ) : averageDaysRemaining > 7 ? (
                   <>
                     <AlertCircle className="w-4 h-4 text-yellow-500" />
                     <span className="text-yellow-600 font-medium text-sm">Monitor</span>
@@ -321,7 +252,7 @@ export function HealthStatsCards({ stats }: HealthStatsCardsProps) {
                 ) : (
                   <>
                     <AlertCircle className="w-4 h-4 text-red-500" />
-                    <span className="text-red-600 font-medium text-sm">Alert</span>
+                    <span className="text-red-600 font-medium text-sm">Critical</span>
                   </>
                 )}
               </div>
@@ -337,17 +268,17 @@ export function HealthStatsCards({ stats }: HealthStatsCardsProps) {
     <div className="w-full space-y-4">
       {/* Header */}
       <h2 className="font-semibold text-gray-900 text-lg px-4 sm:px-0">
-        Health Records Overview
+        Feed Overview
       </h2>
 
       {/* Grid Layout */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 px-4 sm:px-0">
-        {statsData.map((stat) => {
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 px-4 sm:px-0">
+        {stats.map((stat) => {
           const IconComponent = stat.icon
           
           return (
             <Card
-              key={stat.id}
+              key={stat.title}
               className="shadow-sm transition-all duration-200 hover:shadow-md hover:scale-105"
             >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
@@ -392,16 +323,6 @@ export function HealthStatsCards({ stats }: HealthStatsCardsProps) {
                     {stat.description}
                   </p>
                 </div>
-
-                {/* Alert Indicators */}
-                {stat.alert && (
-                  <div className="flex items-center gap-1.5 pt-1">
-                    <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                    <span className="text-xs text-red-600 font-medium">
-                      Active
-                    </span>
-                  </div>
-                )}
               </CardContent>
             </Card>
           )
@@ -415,16 +336,16 @@ export function HealthStatsCards({ stats }: HealthStatsCardsProps) {
             <div className="flex items-center gap-2">
               <TrendingUp className="w-5 h-5 text-dairy-primary" />
               <span className="font-medium text-gray-900">
-                Overall Health Status:
+                Overall Feed Status:
               </span>
             </div>
             <div className="flex items-center gap-2">
-              {stats.outbreaksReported === 0 ? (
+              {isStatusGood ? (
                 <>
                   <CheckCircle2 className="w-5 h-5 text-green-500" />
-                  <span className="text-green-600 font-semibold">Healthy</span>
+                  <span className="text-green-600 font-semibold">Good</span>
                 </>
-              ) : stats.outbreaksReported < 3 ? (
+              ) : averageDaysRemaining > 7 ? (
                 <>
                   <AlertCircle className="w-5 h-5 text-yellow-500" />
                   <span className="text-yellow-600 font-semibold">Monitor</span>
@@ -432,7 +353,7 @@ export function HealthStatsCards({ stats }: HealthStatsCardsProps) {
               ) : (
                 <>
                   <AlertCircle className="w-5 h-5 text-red-500" />
-                  <span className="text-red-600 font-semibold">Alert</span>
+                  <span className="text-red-600 font-semibold">Critical</span>
                 </>
               )}
             </div>

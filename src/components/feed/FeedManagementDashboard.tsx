@@ -13,6 +13,7 @@ import { FeedOverviewTab } from '@/components/feed/FeedOverviewTab'
 import { FeedInventoryTab } from '@/components/feed/FeedInventoryTab'
 import { FeedConsumptionTab } from '@/components/feed/FeedConsumptionTab'
 import { FeedTypesTab } from '@/components/feed/FeedTypesTab'
+import { FeedStatsCards } from '@/components/feed/FeedStatsCards'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import {
   Plus,
@@ -266,6 +267,60 @@ export function FeedManagementDashboard({
     </Card>
   )
 
+  // Stats configuration
+  const feedStatsConfig = useMemo(() => [
+    {
+      title: 'Daily Feed Cost',
+      value: `KSh${feedStats.avgDailyCost?.toFixed(0) || '0'}`,
+      icon: DollarSign,
+      color: 'bg-green-500',
+      bgColor: 'bg-green-100',
+      description: `KSh${enhancedStats.costPerAnimalPerDay.toFixed(0)}/animal/day`,
+      trend: feedStats.avgDailyCost > 0 ? 'Active' : '',
+      isGood: feedStats.avgDailyCost > 0
+    },
+    {
+      title: 'Current Stock Value',
+      value: `KSh${(enhancedStats.currentInventoryValue / 1000).toFixed(0)}k`,
+      icon: Package,
+      color: 'bg-blue-500',
+      bgColor: 'bg-blue-100',
+      description: `${inventory.length} inventory items`,
+      trend: inventory.length > 0 ? 'Stocked' : '',
+      isGood: inventory.length > 0
+    },
+    {
+      title: 'Feed Days Left',
+      value: enhancedStats.averageDaysRemaining > 0 ? `${enhancedStats.averageDaysRemaining}d` : 'N/A',
+      icon: Clock,
+      color: enhancedStats.averageDaysRemaining > 14 ? 'bg-green-500' : (enhancedStats.averageDaysRemaining > 7 ? 'bg-orange-500' : 'bg-red-500'),
+      bgColor: enhancedStats.averageDaysRemaining > 14 ? 'bg-green-100' : (enhancedStats.averageDaysRemaining > 7 ? 'bg-orange-100' : 'bg-red-100'),
+      description: enhancedStats.averageDaysRemaining > 0 ? 'Average across feeds' : 'Start feeding to calculate',
+      trend: enhancedStats.averageDaysRemaining > 0 ? (enhancedStats.averageDaysRemaining > 14 ? 'Good' : 'Warning') : '',
+      isGood: enhancedStats.averageDaysRemaining > 14
+    },
+    {
+      title: 'Animals Fed',
+      value: enhancedStats.activeAnimalsFed || animals.length,
+      icon: Users,
+      color: 'bg-purple-500',
+      bgColor: 'bg-purple-100',
+      description: `${feedStats.totalSessions || consumptionRecords.length} sessions this month`,
+      trend: enhancedStats.activeAnimalsFed > 0 ? 'Active' : '',
+      isGood: enhancedStats.activeAnimalsFed > 0
+    },
+    {
+      title: 'Stock Alerts',
+      value: enhancedStats.alertCounts.total,
+      icon: AlertTriangle,
+      color: enhancedStats.alertCounts.total > 0 ? 'bg-red-500' : 'bg-gray-500',
+      bgColor: enhancedStats.alertCounts.total > 0 ? 'bg-red-100' : 'bg-gray-100',
+      description: `${enhancedStats.alertCounts.critical} critical, ${enhancedStats.alertCounts.low} low`,
+      trend: enhancedStats.alertCounts.total > 0 ? 'Alert' : 'Good',
+      isGood: enhancedStats.alertCounts.total === 0
+    }
+  ], [feedStats, inventory, enhancedStats, animals, consumptionRecords])
+
   // Mobile Action Menu
   const MobileActionMenu = () => (
     <DropdownMenu>
@@ -340,118 +395,13 @@ export function FeedManagementDashboard({
         </div>
       </div>
 
-      {/* Horizontal Scrollable Stats Cards */}
-      <div className="px-4 lg:px-0">
-        {isMobile || isTablet ? (
-          <div className="overflow-x-auto scrollbar-hide">
-            <div className="flex space-x-4 pb-4">
-              <MobileStatsCard
-                title="Daily Feed Cost"
-                value={`KSh${feedStats.avgDailyCost?.toFixed(0) || '0'}`}
-                subtitle={`KSh${enhancedStats.costPerAnimalPerDay.toFixed(0)}/animal/day`}
-                icon={DollarSign}
-              />
-              <MobileStatsCard
-                title="Current Stock Value"
-                value={`KSh${(enhancedStats.currentInventoryValue / 1000).toFixed(0)}k`}
-                subtitle={`${inventory.length} inventory items`}
-                icon={Package}
-              />
-              <MobileStatsCard
-                title="Feed Days Left"
-                value={enhancedStats.averageDaysRemaining > 0 ? `${enhancedStats.averageDaysRemaining}d` : 'N/A'}
-                subtitle={enhancedStats.averageDaysRemaining > 0 ? 'Average across feeds' : 'Start feeding to calculate'}
-                icon={Clock}
-                className={enhancedStats.averageDaysRemaining < 14 && enhancedStats.averageDaysRemaining > 0 ? "border-orange-200 bg-orange-50" : ""}
-              />
-              <MobileStatsCard
-                title="Animals Fed"
-                value={enhancedStats.activeAnimalsFed || animals.length}
-                subtitle={`${feedStats.totalSessions || consumptionRecords.length} sessions this month`}
-                icon={Users}
-              />
-              <MobileStatsCard
-                title="Stock Alerts"
-                value={enhancedStats.alertCounts.total}
-                subtitle={`${enhancedStats.alertCounts.critical} critical, ${enhancedStats.alertCounts.low} low`}
-                icon={AlertTriangle}
-                className={enhancedStats.alertCounts.total > 0 ? "border-red-200 bg-red-50" : ""}
-              />
-            </div>
-          </div>
-        ) : (
-          // Desktop Grid Layout
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Daily Feed Cost</CardTitle>
-                <DollarSign className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">KSh{feedStats.avgDailyCost?.toFixed(0) || '0'}</div>
-                <p className="text-xs text-muted-foreground">
-                  KSh{enhancedStats.costPerAnimalPerDay.toFixed(0)} per animal daily
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Current Stock Value</CardTitle>
-                <Package className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">KSh{(enhancedStats.currentInventoryValue / 1000).toFixed(0)}k</div>
-                <p className="text-xs text-muted-foreground">
-                  {inventory.length} inventory items
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className={enhancedStats.averageDaysRemaining < 14 && enhancedStats.averageDaysRemaining > 0 ? "border-orange-200 bg-orange-50" : ""}>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Feed Days Left</CardTitle>
-                <Clock className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className={`text-2xl font-bold ${enhancedStats.averageDaysRemaining < 7 && enhancedStats.averageDaysRemaining > 0 ? 'text-red-600' : enhancedStats.averageDaysRemaining < 14 && enhancedStats.averageDaysRemaining > 0 ? 'text-orange-600' : ''}`}>
-                  {enhancedStats.averageDaysRemaining > 0 ? `${enhancedStats.averageDaysRemaining}d` : 'N/A'}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {enhancedStats.averageDaysRemaining > 0 ? 'Average across feeds' : 'Start feeding to calculate'}
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Animals Fed</CardTitle>
-                <Users className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{enhancedStats.activeAnimalsFed || animals.length}</div>
-                <p className="text-xs text-muted-foreground">
-                  {feedStats.totalSessions || consumptionRecords.length} sessions this month
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className={enhancedStats.alertCounts.total > 0 ? "border-red-200 bg-red-50" : ""}>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Stock Alerts</CardTitle>
-                <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className={`text-2xl font-bold ${enhancedStats.alertCounts.total > 0 ? 'text-red-600' : ''}`}>
-                  {enhancedStats.alertCounts.total}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {enhancedStats.alertCounts.critical} critical, {enhancedStats.alertCounts.low} low stock
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-        )}
+      {/* Feed Stats Cards */}
+      <div className={`${isMobile ? 'px-0' : ''}`}>
+        <FeedStatsCards
+          stats={feedStatsConfig}
+          averageDaysRemaining={enhancedStats.averageDaysRemaining}
+          alertCounts={enhancedStats.alertCounts}
+        />
       </div>
 
       {/* Enhanced Low Stock Alerts */}

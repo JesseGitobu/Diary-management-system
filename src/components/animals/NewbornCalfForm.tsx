@@ -125,29 +125,46 @@ export function NewbornCalfForm({ farmId, onSuccess, onCancel }: NewbornCalfForm
 
       if (!birthDate || !gender) {
         setCalculatedProductionStatus('calf')
+        setMatchingCategory(null)
         return
       }
 
       setCalculatingStatus(true)
       try {
-        const response = await fetch('/api/animals/calculate-production-status', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            birth_date: birthDate,
-            gender: gender,
-            farm_id: farmId
-          })
-        })
+        // ✅ Calculate age in months from birth date
+        const birth = new Date(birthDate)
+        const now = new Date()
+        const ageInDays = Math.floor((now.getTime() - birth.getTime()) / (1000 * 60 * 60 * 24))
+        const ageInMonths = Math.floor(ageInDays / 30)
 
-        if (response.ok) {
-          const data = await response.json()
-          setCalculatedProductionStatus(data.production_status)
-          setMatchingCategory(data.matching_category)
+        console.log(`Age calculation: ${ageInDays} days = ${ageInMonths} months`)
 
-          console.log(`Production status calculated: ${data.production_status}`,
-            data.matching_category ? `(Category: ${data.matching_category.name})` : '(Default rules)')
+        // ✅ NEW: Apply age-based production status rules
+        let productionStatus = 'calf'
+
+        if (gender === 'female') {
+          // Female animals
+          if (ageInMonths < 6) {
+            productionStatus = 'calf'
+          } else if (ageInMonths >= 6 && ageInMonths <= 22) {
+            productionStatus = 'heifer'
+          } else if (ageInMonths > 22) {
+            productionStatus = 'lactating'
+          }
+        } else {
+          // Male animals
+          if (ageInMonths < 6) {
+            productionStatus = 'calf'
+          } else {
+            productionStatus = 'bull'
+          }
         }
+
+        console.log(`Production status assigned: ${productionStatus} (age: ${ageInMonths} months, gender: ${gender})`)
+
+        setCalculatedProductionStatus(productionStatus)
+        setMatchingCategory(null) // No category for custom age-based rules
+
       } catch (error) {
         console.error('Error calculating production status:', error)
         // Fallback to 'calf' if calculation fails
@@ -159,7 +176,7 @@ export function NewbornCalfForm({ farmId, onSuccess, onCancel }: NewbornCalfForm
     }
 
     calculateProductionStatus()
-  }, [form.watch('birth_date'), form.watch('gender'), farmId])
+  }, [form.watch('birth_date'), form.watch('gender')])
 
   // Handle tag changes from TagGenerationSection
   const handleTagChange = (tagNumber: string, autoGenerate: boolean) => {
@@ -340,19 +357,35 @@ export function NewbornCalfForm({ farmId, onSuccess, onCancel }: NewbornCalfForm
               <div className="flex-1">
                 <p className="text-sm font-medium text-green-800 flex items-center">
                   <Activity className="w-4 h-4 mr-2" />
-                  Auto-assigned Production Status
+                  Auto-assigned Production Status (Age-Based)
                 </p>
                 <p className="text-xs text-green-700 mt-1">
-                  {matchingCategory
-                    ? `Based on "${matchingCategory.name}" category → "${getProductionStatusDisplay(calculatedProductionStatus, formData.gender)}"`
-                    : `Based on age and ${formData.gender} default rules → "${getProductionStatusDisplay(calculatedProductionStatus, formData.gender)}"`
-                  }
+                  {(() => {
+                    const birth = new Date(formData.birth_date)
+                    const now = new Date()
+                    const ageInDays = Math.floor((now.getTime() - birth.getTime()) / (1000 * 60 * 60 * 24))
+                    const ageInMonths = Math.floor(ageInDays / 30)
+                    
+                    let ageRange = ''
+                    if (formData.gender === 'female') {
+                      if (ageInMonths < 6) {
+                        ageRange = '< 6 months: Calf'
+                      } else if (ageInMonths >= 6 && ageInMonths <= 22) {
+                        ageRange = `6-22 months: Heifer (${ageInMonths} months)`
+                      } else if (ageInMonths > 22) {
+                        ageRange = `> 22 months: Lactating (${ageInMonths} months)`
+                      }
+                    } else {
+                      if (ageInMonths < 6) {
+                        ageRange = '< 6 months: Calf'
+                      } else {
+                        ageRange = `≥ 6 months: Bull (${ageInMonths} months)`
+                      }
+                    }
+                    
+                    return ageRange
+                  })()}
                 </p>
-                {formData.gender === 'male' && (
-                  <p className="text-xs text-green-600 mt-1 italic">
-                    ℹ️ Male animals are categorized as either Calves or Bulls
-                  </p>
-                )}
               </div>
               <Badge className={`${getProductionStatusBadgeColor(calculatedProductionStatus)} px-3 py-1`}>
                 {getProductionStatusDisplay(calculatedProductionStatus, formData.gender)}

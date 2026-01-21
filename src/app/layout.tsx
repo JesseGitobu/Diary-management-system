@@ -53,7 +53,7 @@ export default function RootLayout({
         <AuthProvider>
           <PWARegister />
           <OnlineStatusIndicator />
-          <main className="min-h-screen bg-background">
+          <main className="flex flex-col h-screen overflow-hidden bg-background">
             {children}
             <Analytics />
           </main>

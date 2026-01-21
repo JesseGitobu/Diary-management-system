@@ -210,21 +210,21 @@
 
   .landing-nav-container-closed {
     @apply fixed top-[50px] left-0 right-0 bg-white backdrop-blur-md;
-    @apply transform -translate-x-full pt-20 overflow-y-auto z-[1000];
-    @apply md:static md:bg-transparent md:backdrop-blur-none md:transform-none md:pt-0;
+    @apply transform -translate-x-full pt-20 z-[1000] max-h-[calc(100vh-50px)];
+    @apply md:static md:bg-transparent md:backdrop-blur-none md:transform-none md:pt-0 md:max-h-none;
   }
 
   .landing-nav-container-open {
     @apply fixed top-[50px] left-0 right-0 bg-white backdrop-blur-md;
-    @apply transform translate-x-0 pt-20 overflow-y-auto z-[1000];
-    @apply md:static md:bg-transparent md:backdrop-blur-none md:transform-none md:pt-0;
+    @apply transform translate-x-0 pt-20 z-[1000] max-h-[calc(100vh-50px)];
+    @apply md:static md:bg-transparent md:backdrop-blur-none md:transform-none md:pt-0 md:max-h-none;
   }
 
   /* ----- Navigation List ----- */
   .landing-nav-list {
     @apply flex flex-col md:flex-row w-full md:w-auto items-start md:items-center;
     @apply pl-0 m-0 gap-2 md:gap-0 list-none p-8 md:p-0;
-    @apply max-w-sm md:max-w-none mx-auto md:mx-0;
+    @apply max-w-sm md:max-w-none mx-auto md:mx-0 overflow-y-auto md:overflow-y-visible max-h-[calc(100vh-150px)];
   }
 
   .landing-nav-item {

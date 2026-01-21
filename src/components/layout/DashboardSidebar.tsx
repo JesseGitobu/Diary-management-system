@@ -63,7 +63,7 @@ export function DashboardSidebar({
     setIsSigningOut(true)
     try {
       await signOut()
-      router.push('/')
+      router.push('/auth')
     } catch (error) {
       console.error('Sign out error:', error)
       setIsSigningOut(false)

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button'
 import { Plus, Building2, Phone, Mail } from 'lucide-react'
 import { AddSupplierModal } from '@/components/inventory/AddSupplierModal'
 import { SupplierCard } from '@/components/inventory/SupplierCard'
+import { SupplierStatsCards } from '@/components/inventory/SupplierStatsCards'
 
 interface SuppliersManagementProps {
   farmId: string
@@ -46,59 +47,44 @@ export function SuppliersManagement({
       </div>
       
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Suppliers</CardTitle>
-            <Building2 className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{supplierStats.totalSuppliers}</div>
-            <p className="text-xs text-muted-foreground">
-              Active vendor relationships
-            </p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Feed Suppliers</CardTitle>
-            <Building2 className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{supplierStats.supplierTypes.feed || 0}</div>
-            <p className="text-xs text-muted-foreground">
-              Feed vendors
-            </p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Medical Suppliers</CardTitle>
-            <Building2 className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{supplierStats.supplierTypes.medical || 0}</div>
-            <p className="text-xs text-muted-foreground">
-              Medical vendors
-            </p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Equipment Suppliers</CardTitle>
-            <Building2 className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{supplierStats.supplierTypes.equipment || 0}</div>
-            <p className="text-xs text-muted-foreground">
-              Equipment vendors
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      <SupplierStatsCards
+        stats={[
+          {
+            title: "Total Suppliers",
+            value: supplierStats.totalSuppliers,
+            description: "Active vendor relationships",
+            icon: Building2,
+            color: "bg-purple-500",
+            bgColor: "bg-purple-100",
+          },
+          {
+            title: "Feed Suppliers",
+            value: supplierStats.supplierTypes.feed || 0,
+            description: "Feed vendors",
+            icon: Building2,
+            color: "bg-green-500",
+            bgColor: "bg-green-100",
+          },
+          {
+            title: "Medical Suppliers",
+            value: supplierStats.supplierTypes.medical || 0,
+            description: "Medical vendors",
+            icon: Building2,
+            color: "bg-red-500",
+            bgColor: "bg-red-100",
+          },
+          {
+            title: "Equipment Suppliers",
+            value: supplierStats.supplierTypes.equipment || 0,
+            description: "Equipment vendors",
+            icon: Building2,
+            color: "bg-blue-500",
+            bgColor: "bg-blue-100",
+          }
+        ]}
+        totalSuppliers={supplierStats.totalSuppliers}
+        supplierTypes={supplierStats.supplierTypes}
+      />
       
       {/* Suppliers List */}
       <Card>

@@ -8,8 +8,9 @@ import { Badge } from '@/components/ui/Badge'
 import { TeamMemberCard } from '@/components/settings/team/TeamMemberCard'
 import { InvitationCard } from '@/components/settings/team/InvitationCard'
 import { AddTeamMemberModal } from '@/components/settings/team/AddTeamMemberModal'
+import { TeamStatsCards } from '@/components/settings/team/TeamStatsCards'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
-import { Users, UserPlus, Clock, Crown, Settings, Briefcase, ChevronLeft, ChevronRight, ArrowLeft, Stethoscope, Wrench, CheckCircle } from 'lucide-react'
+import { Users, UserPlus, Clock, Crown, Settings, Briefcase, ArrowLeft, Stethoscope, Wrench, CheckCircle } from 'lucide-react'
 
 interface TeamManagementProps {
   currentUser: any
@@ -156,7 +157,6 @@ export function TeamManagement({
       bgColor: 'bg-green-50'
     }
   ]
-  
   return (
     <div className="space-y-4 lg:space-y-8 px-4 lg:px-0">
       {/* Mobile-Optimized Header */}
@@ -199,62 +199,8 @@ export function TeamManagement({
         </div>
       </div>
       
-      {/* Horizontally Scrollable Team Stats */}
-      <div className="relative">
-        {/* Mobile: Horizontal scroll */}
-        <div className="lg:hidden">
-          <div className="flex space-x-4 overflow-x-auto scrollbar-hide pb-2 snap-x snap-mandatory">
-            {statsData.map((stat) => (
-              <Card key={stat.id} className="flex-shrink-0 w-[280px] snap-start">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium text-gray-700">
-                    {stat.title}
-                  </CardTitle>
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${stat.bgColor}`}>
-                    <stat.icon className={`h-4 w-4 ${stat.color}`} />
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-gray-900">{stat.value}</div>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {stat.description}
-                  </p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-          
-          {/* Scroll indicator dots */}
-          <div className="flex justify-center space-x-1 mt-3">
-            {statsData.map((_, index) => (
-              <div 
-                key={index} 
-                className="w-1.5 h-1.5 bg-gray-300 rounded-full"
-              />
-            ))}
-          </div>
-        </div>
-        
-        {/* Desktop: Grid layout */}
-        <div className="hidden lg:grid lg:grid-cols-4 gap-6">
-          {statsData.map((stat) => (
-            <Card key={stat.id} className="hover:shadow-md transition-shadow">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${stat.bgColor}`}>
-                  <stat.icon className={`h-4 w-4 ${stat.color}`} />
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stat.value}</div>
-                <p className="text-xs text-muted-foreground">
-                  {stat.description}
-                </p>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
+      {/* Team Stats Cards Component */}
+      <TeamStatsCards stats={statsData} />
       
       {/* Current Team Members - Mobile Optimized */}
       <Card>

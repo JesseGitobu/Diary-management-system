@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/Badge'
 import { AddTransactionModal } from '@/components/financial/AddTransactionModal'
 import { TransactionsList } from '@/components/financial/TransactionsList'
 import { FinancialCharts } from '@/components/financial/FinancialCharts'
+import { FinancialStatsCards } from '@/components/financial/FinancialStatsCards'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { 
   DollarSign, 
@@ -55,7 +56,7 @@ export function FinancialDashboard({
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
-      currency: 'USD'
+      currency: 'KES'
     }).format(amount)
   }
   
@@ -70,8 +71,8 @@ export function FinancialDashboard({
       value: formatCurrency(financialSummary.totalIncome),
       subtitle: `${currentYear} total revenue`,
       icon: TrendingUp,
-      color: "text-green-600",
-      bgColor: "bg-green-50",
+      color: "bg-green-500",
+      bgColor: "bg-green-100",
       iconColor: "text-green-600"
     },
     {
@@ -79,8 +80,8 @@ export function FinancialDashboard({
       value: formatCurrency(financialSummary.totalExpenses),
       subtitle: `${currentYear} total costs`,
       icon: TrendingDown,
-      color: "text-red-600",
-      bgColor: "bg-red-50",
+      color: "bg-red-500",
+      bgColor: "bg-red-100",
       iconColor: "text-red-600"
     },
     {
@@ -88,8 +89,8 @@ export function FinancialDashboard({
       value: formatCurrency(financialSummary.netProfit),
       subtitle: `Profit margin: ${formatPercentage(financialSummary.profitMargin)}`,
       icon: DollarSign,
-      color: financialSummary.netProfit >= 0 ? 'text-green-600' : 'text-red-600',
-      bgColor: financialSummary.netProfit >= 0 ? 'bg-green-50' : 'bg-red-50',
+      color: financialSummary.netProfit >= 0 ? 'bg-blue-500' : 'bg-red-500',
+      bgColor: financialSummary.netProfit >= 0 ? 'bg-blue-100' : 'bg-red-100',
       iconColor: "text-blue-600"
     },
     {
@@ -97,8 +98,8 @@ export function FinancialDashboard({
       value: formatCurrency(costPerAnimal.costPerAnimal),
       subtitle: `${formatCurrency(costPerAnimal.costPerAnimalPerMonth)}/month per animal`,
       icon: Dog,
-      color: "text-purple-600",
-      bgColor: "bg-purple-50",
+      color: "bg-purple-500",
+      bgColor: "bg-purple-100",
       iconColor: "text-purple-600"
     }
   ]
@@ -129,53 +130,13 @@ export function FinancialDashboard({
         </div>
       </div>
       
-      {/* Horizontally Scrollable Financial Summary Cards */}
-      <div className="px-4 sm:px-0">
-        {isMobile || isTablet ? (
-          // Mobile: Horizontal scroll
-          <div className="flex space-x-4 overflow-x-auto pb-4 scrollbar-hide">
-            {statsData.map((stat, index) => (
-              <Card key={index} className="flex-shrink-0 w-72">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium truncate pr-2">
-                    {stat.title}
-                  </CardTitle>
-                  <div className={`p-2 rounded-full ${stat.bgColor}`}>
-                    <stat.icon className={`h-4 w-4 ${stat.iconColor}`} />
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className={`text-xl font-bold ${stat.color} mb-1`}>
-                    {stat.value}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {stat.subtitle}
-                  </p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        ) : (
-          // Desktop: Grid layout
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            {statsData.map((stat, index) => (
-              <Card key={index}>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
-                  <stat.icon className={`h-4 w-4 ${stat.iconColor}`} />
-                </CardHeader>
-                <CardContent>
-                  <div className={`text-2xl font-bold ${stat.color}`}>
-                    {stat.value}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {stat.subtitle}
-                  </p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
+      {/* Financial Stats Cards */}
+      <div className={`${isMobile ? 'px-0' : ''}`}>
+        <FinancialStatsCards
+          stats={statsData}
+          netProfit={financialSummary.netProfit}
+          profitMargin={financialSummary.profitMargin}
+        />
       </div>
       
       {/* Charts and Analytics - Mobile Optimized */}

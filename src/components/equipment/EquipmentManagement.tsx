@@ -21,6 +21,7 @@ import {
 import { EquipmentCard } from '@/components/equipment/EquipmentCard'
 import { AddEquipmentModal } from '@/components/equipment/AddEquipmentModal'
 import { MaintenanceScheduleModal } from '@/components/equipment/MaintenanceScheduleModal'
+import { EquipmentStatsCards } from '@/components/equipment/EquipmentStatsCards'
 import { Input } from '@/components/ui/Input'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 
@@ -203,55 +204,8 @@ export function EquipmentManagement({
         )}
       </div>
       
-      {/* Mobile Horizontal Scrollable Stats */}
-      {isMobile ? (
-        <div className="relative">
-          <div className="flex space-x-4 overflow-x-auto pb-4 scrollbar-hide snap-x snap-mandatory">
-            {statsCards.map((stat, index) => (
-              <Card key={index} className="min-w-[280px] flex-shrink-0 snap-start">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-gray-600">{stat.title}</p>
-                      <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
-                      <p className="text-xs text-gray-500 mt-1">{stat.subtitle}</p>
-                    </div>
-                    <stat.icon className={`h-8 w-8 ${stat.color.replace('text-', 'text-').replace('-600', '-500')}`} />
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-          
-          {/* Scroll indicator dots */}
-          <div className="flex justify-center space-x-2 mt-2">
-            {statsCards.map((_, index) => (
-              <div 
-                key={index} 
-                className="w-2 h-2 rounded-full bg-gray-300"
-              />
-            ))}
-          </div>
-        </div>
-      ) : (
-        /* Desktop Stats Grid */
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
-          {statsCards.map((stat, index) => (
-            <Card key={index}>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
-                <stat.icon className={`h-4 w-4 ${stat.color.replace('text-', 'text-').replace('-600', '-500')}`} />
-              </CardHeader>
-              <CardContent>
-                <div className={`text-2xl font-bold ${stat.color}`}>{stat.value}</div>
-                <p className="text-xs text-muted-foreground">
-                  {stat.subtitle}
-                </p>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+      {/* Equipment Stats Cards */}
+      <EquipmentStatsCards stats={equipmentStats} />
       
       {/* Urgent Maintenance Alerts - Mobile Optimized */}
       {urgentMaintenance.length > 0 && (

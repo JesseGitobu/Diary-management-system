@@ -1,12 +1,12 @@
 'use client'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
-import { Progress } from '@/components/ui/Progress'
 import { Badge } from '@/components/ui/Badge'
-import { TrendingUp, TrendingDown, Minus, Target, Award, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react'
+import { TrendingUp, TrendingDown, Minus, Target, Award, AlertTriangle } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
-import { useRef, useState, useEffect } from 'react'
+import { useState } from 'react'
+import { KPIStatsCards } from '@/components/reports/KPIStatsCards'
 import { cn } from '@/lib/utils/cn'
 
 interface KPIDashboardProps {
@@ -15,41 +15,10 @@ interface KPIDashboardProps {
 
 export function KPIDashboard({ kpis }: KPIDashboardProps) {
   const { isMobile, isTablet } = useDeviceInfo()
-  const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const [canScrollLeft, setCanScrollLeft] = useState(false)
-  const [canScrollRight, setCanScrollRight] = useState(false)
   
   const currentMonth = kpis?.currentMonth
   const previousMonth = kpis?.previousMonth
   const changes = kpis?.changes
-  
-  // Check scroll position
-  const checkScrollPosition = () => {
-    if (scrollContainerRef.current) {
-      const { scrollLeft, scrollWidth, clientWidth } = scrollContainerRef.current
-      setCanScrollLeft(scrollLeft > 0)
-      setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 1)
-    }
-  }
-  
-  useEffect(() => {
-    checkScrollPosition()
-    const container = scrollContainerRef.current
-    if (container) {
-      container.addEventListener('scroll', checkScrollPosition)
-      return () => container.removeEventListener('scroll', checkScrollPosition)
-    }
-  }, [])
-  
-  const scroll = (direction: 'left' | 'right') => {
-    if (scrollContainerRef.current) {
-      const scrollAmount = isMobile ? 280 : 320 // Width of one card plus gap
-      scrollContainerRef.current.scrollBy({
-        left: direction === 'left' ? -scrollAmount : scrollAmount,
-        behavior: 'smooth'
-      })
-    }
-  }
   
   const getTrendIcon = (change: number) => {
     if (change > 5) return <TrendingUp className="h-4 w-4 text-green-600" />
@@ -125,36 +94,6 @@ export function KPIDashboard({ kpis }: KPIDashboardProps) {
     }
   ]
   
-  // Mobile KPI Card Component
-  const MobileKPICard = ({ card, index }: { card: any, index: number }) => (
-    <Card className={cn(
-      "flex-shrink-0",
-      isMobile ? "w-64" : "w-72", // Consistent width for horizontal scroll
-      "snap-start" // Snap scrolling for better UX
-    )}>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium flex items-center justify-between">
-          <span className="truncate">{card.title}</span>
-          {card.icon}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="text-2xl font-bold">{card.value}</div>
-        <p className="text-xs text-muted-foreground">{card.subtitle}</p>
-        
-        <div className="space-y-1">
-          <Progress value={card.progress} className="h-2" />
-          <p className={cn(
-            "text-xs",
-            card.change !== 0 ? getTrendColor(card.change) : "text-muted-foreground"
-          )}>
-            {card.changeText}
-          </p>
-        </div>
-      </CardContent>
-    </Card>
-  )
-  
   // Performance alerts with better mobile layout
   const getPerformanceAlerts = () => {
     const alerts = []
@@ -196,104 +135,8 @@ export function KPIDashboard({ kpis }: KPIDashboardProps) {
   
   return (
     <div className="space-y-4 sm:space-y-6">
-      {/* Mobile-Optimized Performance Metrics with Horizontal Scroll */}
-      <div className="relative">
-        {/* Section Title */}
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Key Performance Indicators</h2>
-          
-          {/* Desktop: Show card count, Mobile: Show scroll indicators */}
-          {isMobile || isTablet ? (
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={() => scroll('left')}
-                disabled={!canScrollLeft}
-                className={cn(
-                  "p-1 rounded-full border",
-                  canScrollLeft 
-                    ? "bg-white shadow-sm hover:bg-gray-50" 
-                    : "bg-gray-50 text-gray-300 cursor-not-allowed"
-                )}
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => scroll('right')}
-                disabled={!canScrollRight}
-                className={cn(
-                  "p-1 rounded-full border",
-                  canScrollRight 
-                    ? "bg-white shadow-sm hover:bg-gray-50" 
-                    : "bg-gray-50 text-gray-300 cursor-not-allowed"
-                )}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-          ) : (
-            <Badge variant="outline" className="text-xs">
-              {kpiCards.length} metrics
-            </Badge>
-          )}
-        </div>
-        
-        {/* Scrollable KPI Cards Container */}
-        <div 
-          ref={scrollContainerRef}
-          className={cn(
-            "flex gap-4 overflow-x-auto scrollbar-hide",
-            isMobile || isTablet ? "pb-2 -mx-4 px-4" : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4"
-          )}
-          style={{
-            scrollSnapType: isMobile || isTablet ? 'x mandatory' : 'none',
-            WebkitOverflowScrolling: 'touch'
-          }}
-        >
-          {isMobile || isTablet ? (
-            // Mobile: Horizontal scrolling cards
-            kpiCards.map((card, index) => (
-              <MobileKPICard key={index} card={card} index={index} />
-            ))
-          ) : (
-            // Desktop: Grid layout
-            kpiCards.map((card, index) => (
-              <Card key={index}>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium flex items-center">
-                    {card.title}
-                    {card.icon}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{card.value}</div>
-                  <p className="text-xs text-muted-foreground">{card.subtitle}</p>
-                  <div className="mt-2">
-                    <Progress value={card.progress} className="h-2" />
-                  </div>
-                  <p className={cn(
-                    "text-xs mt-1",
-                    card.change !== 0 ? getTrendColor(card.change) : "text-muted-foreground"
-                  )}>
-                    {card.changeText}
-                  </p>
-                </CardContent>
-              </Card>
-            ))
-          )}
-        </div>
-        
-        {/* Mobile scroll indicator dots */}
-        {(isMobile || isTablet) && (
-          <div className="flex justify-center mt-3 space-x-1">
-            {kpiCards.map((_, index) => (
-              <div
-                key={index}
-                className="w-1.5 h-1.5 rounded-full bg-gray-300"
-              />
-            ))}
-          </div>
-        )}
-      </div>
+      {/* KPI Stats Cards with Scroll Management */}
+      <KPIStatsCards cards={kpiCards} />
       
       {/* Performance Alerts - Mobile Optimized */}
       <Card>

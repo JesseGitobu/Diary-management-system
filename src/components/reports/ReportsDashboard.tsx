@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
 import { ReportGenerator } from '@/components/reports/ReportGenerator'
 import { KPIDashboard } from '@/components/reports/KPIDashboard'
 import { TrendAnalysis } from '@/components/reports/TrendAnalysis'
+import { ReportsStatsCards } from '@/components/reports/ReportsStatsCards'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { 
   BarChart3, 
@@ -64,7 +65,7 @@ export function ReportsDashboard({ farmId, initialKPIs, userRole }: ReportsDashb
     },
     {
       title: "Feed Costs",
-      value: `$${currentMonth?.feed?.summary?.totalFeedCost?.toFixed(0) || 0}`,
+      value: `KES ${currentMonth?.feed?.summary?.totalFeedCost?.toFixed(0) || 0}`,
       change: changes?.costs || 0,
       icon: Wheat,
       color: "text-orange-600",
@@ -81,12 +82,12 @@ export function ReportsDashboard({ farmId, initialKPIs, userRole }: ReportsDashb
     },
     {
       title: "Cost per Liter",
-      value: `$${currentMonth?.financial?.summary?.costPerLiter?.toFixed(3) || 0}`,
+      value: `KES ${currentMonth?.financial?.summary?.costPerLiter?.toFixed(3) || 0}`,
       change: 0, // No change data for this metric
       icon: Target,
       color: "text-purple-600",
       bgColor: "bg-purple-50",
-      subtitle: "Industry avg: $0.25-$0.35"
+      subtitle: "Industry avg: KES 25-35"
     }
   ]
   
@@ -128,69 +129,8 @@ export function ReportsDashboard({ farmId, initialKPIs, userRole }: ReportsDashb
         </Button>
       </div>
       
-      {/* Horizontal Scrolling KPI Cards */}
-      <div className="relative">
-        <div className="flex overflow-x-auto pb-2 gap-4 lg:grid lg:grid-cols-4 lg:gap-6 lg:overflow-visible">
-          {kpiCards.map((kpi, index) => {
-            const Icon = kpi.icon
-            const isPositiveChange = kpi.inverted ? kpi.change <= 0 : kpi.change >= 0
-            const changeColor = isPositiveChange ? 'text-green-600' : 'text-red-600'
-            
-            return (
-              <Card 
-                key={index} 
-                className={cn(
-                  "transition-all duration-200 hover:shadow-md",
-                  isMobile ? "min-w-[280px] flex-shrink-0" : "w-full"
-                )}
-              >
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className={cn(
-                    "font-medium",
-                    isMobile ? "text-sm" : "text-sm"
-                  )}>
-                    {kpi.title}
-                  </CardTitle>
-                  <div className={cn("rounded-full p-2", kpi.bgColor)}>
-                    <Icon className={cn("h-4 w-4", kpi.color)} />
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className={cn(
-                    "font-bold",
-                    isMobile ? "text-xl" : "text-2xl"
-                  )}>
-                    {kpi.value}
-                  </div>
-                  {kpi.change !== 0 ? (
-                    <p className={cn("text-xs mt-1", changeColor)}>
-                      {kpi.change >= 0 ? '+' : ''}{kpi.change?.toFixed(1)}% from last month
-                    </p>
-                  ) : kpi.subtitle ? (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {kpi.subtitle}
-                    </p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Current month
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
-        
-        {/* Scroll indicator for mobile */}
-        {isMobile && (
-          <div className="flex justify-center mt-2">
-            <div className="flex items-center text-xs text-gray-500">
-              <span>Swipe for more</span>
-              <ChevronRight className="h-3 w-3 ml-1" />
-            </div>
-          </div>
-        )}
-      </div>
+      {/* KPI Stats Cards */}
+      <ReportsStatsCards kpis={kpiCards} />
       
       {/* Mobile-optimized Tabs */}
       <Tabs defaultValue="overview" className="space-y-4 lg:space-y-6">

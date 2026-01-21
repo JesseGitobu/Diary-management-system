@@ -29,9 +29,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // 1. SCENARIO A: No Farm ID (Skipped Onboarding)
   if (!userRole?.farm_id) {
     return (
-      <div className="h-screen bg-gray-50">
+      <div className="flex flex-col h-screen overflow-hidden bg-gray-50">
         <MobileHeader farmId={null} />
-        <main className="flex-1 overflow-auto pb-16 md:pb-0">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden pb-16 md:pb-0">
           <div className="py-4 md:py-6">{children}</div>
         </main>
         {/* Hide bottom nav if no farm */}
@@ -110,7 +110,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           />
         </div>
         
-        <main className="flex-1 overflow-auto pb-16 md:pb-0">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden pb-16 md:pb-0">
           <div className="py-4 md:py-6">
             {children}
           </div>

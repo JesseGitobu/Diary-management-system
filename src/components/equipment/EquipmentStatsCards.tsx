@@ -1,37 +1,31 @@
-// src/components/health/HealthStatsCards.tsx
+// src/components/equipment/EquipmentStatsCards.tsx
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { cn } from '@/lib/utils/cn'
 import { 
-  Stethoscope, 
-  Baby, 
-  TrendingUp, 
-  Activity, 
-  Calendar,
-  Target,
-  AlertCircle,
-  CheckCircle2,
-  BookOpen,
+  Settings,
+  CheckCircle,
   Clock,
-  Syringe,
-  AlertTriangle
+  Wrench,
+  XCircle,
+  AlertCircle,
+  CheckCircle2
 } from 'lucide-react'
 
-interface HealthStatsCardsProps {
+interface EquipmentStatsCardsProps {
   stats: {
-    totalHealthRecords: number
-    veterinariansRegistered: number
-    protocolsRecorded: number
-    outbreaksReported: number
-    vaccinationsAdministered: number
-    upcomingTasks: number
+    totalEquipment: number
+    operational: number
+    maintenanceDue: number
+    inMaintenance: number
+    broken: number
   }
 }
 
-export function HealthStatsCards({ stats }: HealthStatsCardsProps) {
+export function EquipmentStatsCards({ stats }: EquipmentStatsCardsProps) {
   const { isMobile, isTouch } = useDeviceInfo()
   const containerRef = useRef<HTMLDivElement>(null)
   const [scrollPosition, setScrollPosition] = useState(0)
@@ -58,7 +52,7 @@ export function HealthStatsCards({ stats }: HealthStatsCardsProps) {
   const scroll = (direction: 'left' | 'right') => {
     if (!containerRef.current) return
 
-    const scrollAmount = 208 // Width of card + gap (w-48 + gap)
+    const scrollAmount = 280 // Width of card + gap (w-72 + gap)
     const newScrollLeft =
       direction === 'left'
         ? containerRef.current.scrollLeft - scrollAmount
@@ -78,70 +72,66 @@ export function HealthStatsCards({ stats }: HealthStatsCardsProps) {
     checkScroll()
   }
 
+  // Determine overall equipment health
+  const healthPercentage = stats.totalEquipment > 0 
+    ? (stats.operational / stats.totalEquipment) * 100 
+    : 0
+  const isStatusGood = healthPercentage >= 80 && stats.broken === 0
+  const isStatusWarning = stats.maintenanceDue > 0 || stats.inMaintenance > 0
+  const isStatusAlert = stats.broken > 0 || stats.maintenanceDue > 2
+
   const statsData = [
     {
-      id: 'total-health',
-      title: 'Health Records',
-      value: stats.totalHealthRecords,
-      description: 'Health events',
-      icon: Activity,
-      color: 'bg-blue-500',
-      bgColor: 'bg-blue-100 text-blue-600',
-      trend: stats.totalHealthRecords > 0 ? '+' : '',
-      isGood: stats.totalHealthRecords > 0
+      id: 'total-equipment',
+      title: 'Total Equipment',
+      value: stats.totalEquipment,
+      description: 'All equipment items',
+      icon: Settings,
+      color: 'bg-gray-500',
+      trend: stats.totalEquipment > 0 ? 'Active' : '',
+      isGood: stats.totalEquipment > 0
     },
     {
-      id: 'veterinarians-registered',
-      title: 'Veterinarians',
-      value: stats.veterinariansRegistered,
-      description: 'Registered',
-      icon: Stethoscope,
-      color: 'bg-indigo-500',
-      bgColor: 'bg-indigo-100 text-indigo-600',
-      isGood: stats.veterinariansRegistered > 0
-    },
-    {
-      id: 'protocols-recorded',
-      title: 'Protocols',
-      value: stats.protocolsRecorded,
-      description: 'Active',
-      icon: BookOpen,
-      color: 'bg-purple-500',
-      bgColor: 'bg-purple-100 text-purple-600',
-      isGood: stats.protocolsRecorded > 0
-    },
-    {
-      id: 'outbreaks-reported',
-      title: 'Outbreaks',
-      value: stats.outbreaksReported,
-      description: 'Active',
-      icon: AlertTriangle,
-      color: 'bg-red-500',
-      bgColor: 'bg-red-100 text-red-600',
-      alert: stats.outbreaksReported > 0,
-      isGood: stats.outbreaksReported === 0
-    },
-    {
-      id: 'vaccinations-administered',
-      title: 'Vaccinations',
-      value: stats.vaccinationsAdministered,
-      description: 'Active',
-      icon: Syringe,
+      id: 'operational',
+      title: 'Operational',
+      value: stats.operational,
+      description: 'Working properly',
+      icon: CheckCircle,
       color: 'bg-green-500',
-      bgColor: 'bg-green-100 text-green-600',
-      trend: stats.vaccinationsAdministered > 0 ? '+' : '',
-      isGood: stats.vaccinationsAdministered > 0
+      trend: stats.operational > 0 ? 'Good' : '',
+      isGood: stats.operational > 0
     },
     {
-      id: 'upcoming-tasks',
-      title: 'Upcoming Tasks',
-      value: stats.upcomingTasks,
-      description: 'Pending tasks',
+      id: 'maintenance-due',
+      title: 'Maintenance Due',
+      value: stats.maintenanceDue,
+      description: 'Needs maintenance',
       icon: Clock,
-      color: 'bg-orange-500',
-      bgColor: 'bg-orange-100 text-orange-600',
-      trend: stats.upcomingTasks > 0 ? 'Pending' : '',
-      isGood: stats.upcomingTasks === 0
+      color: 'bg-yellow-500',
+      trend: stats.maintenanceDue > 0 ? 'Action' : 'None',
+      isGood: stats.maintenanceDue === 0,
+      alert: stats.maintenanceDue > 0
+    },
+    {
+      id: 'in-maintenance',
+      title: 'In Maintenance',
+      value: stats.inMaintenance,
+      description: 'Currently servicing',
+      icon: Wrench,
+      color: 'bg-blue-500',
+      trend: stats.inMaintenance > 0 ? 'Working' : '',
+      isGood: stats.inMaintenance === 0
+    },
+    {
+      id: 'broken',
+      title: 'Broken',
+      value: stats.broken,
+      description: 'Needs repair',
+      icon: XCircle,
+      color: 'bg-red-500',
+      trend: stats.broken > 0 ? 'Critical' : '',
+      isGood: stats.broken === 0,
+      alert: stats.broken > 0
     }
   ]
 
@@ -150,7 +140,7 @@ export function HealthStatsCards({ stats }: HealthStatsCardsProps) {
       <div className="w-full space-y-4">
         {/* Header with Navigation Arrows */}
         <div className="flex items-center justify-between px-4 sm:px-0">
-          <h2 className="font-semibold text-gray-900 text-base">Health Records Overview</h2>
+          <h2 className="font-semibold text-gray-900 text-base">Equipment Status</h2>
           
           {/* Navigation Arrows */}
           <div className="flex gap-2">
@@ -202,7 +192,7 @@ export function HealthStatsCards({ stats }: HealthStatsCardsProps) {
                 <Card
                   key={stat.id}
                   className={cn(
-                    "flex-shrink-0 w-48 shadow-sm transition-all duration-200",
+                    "flex-shrink-0 w-72 shadow-sm transition-all duration-200",
                     isTouch && "active:scale-95"
                   )}
                 >
@@ -218,11 +208,11 @@ export function HealthStatsCards({ stats }: HealthStatsCardsProps) {
                     </div>
                   </CardHeader>
 
-                  <CardContent className="space-y-2">
+                  <CardContent className="space-y-3">
                     {/* Value with Status */}
                     <div className="space-y-1">
                       <div className="flex items-baseline justify-between">
-                        <div className="text-2xl font-bold text-gray-900">
+                        <div className="text-3xl font-bold text-gray-900">
                           {stat.value}
                         </div>
                         
@@ -254,7 +244,7 @@ export function HealthStatsCards({ stats }: HealthStatsCardsProps) {
                       <div className="flex items-center gap-1.5 pt-1">
                         <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
                         <span className="text-xs text-red-600 font-medium">
-                          Active
+                          Needs attention
                         </span>
                       </div>
                     )}
@@ -269,7 +259,7 @@ export function HealthStatsCards({ stats }: HealthStatsCardsProps) {
         {statsData.length > 0 && (
           <div className="flex justify-center gap-1.5">
             {statsData.map((_, index) => {
-              const cardWidth = 208 // w-48 + gap
+              const cardWidth = 280 // w-72 + gap
               const isActive = Math.round(scrollPosition / cardWidth) === index
               
               return (
@@ -302,26 +292,26 @@ export function HealthStatsCards({ stats }: HealthStatsCardsProps) {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-dairy-primary" />
+                <Settings className="w-4 h-4 text-dairy-primary" />
                 <span className="font-medium text-gray-900 text-sm">
                   Overall Status:
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
-                {stats.outbreaksReported === 0 ? (
+                {isStatusGood ? (
                   <>
                     <CheckCircle2 className="w-4 h-4 text-green-500" />
                     <span className="text-green-600 font-medium text-sm">Healthy</span>
                   </>
-                ) : stats.outbreaksReported < 3 ? (
+                ) : isStatusAlert ? (
                   <>
-                    <AlertCircle className="w-4 h-4 text-yellow-500" />
-                    <span className="text-yellow-600 font-medium text-sm">Monitor</span>
+                    <AlertCircle className="w-4 h-4 text-red-500" />
+                    <span className="text-red-600 font-medium text-sm">Critical</span>
                   </>
                 ) : (
                   <>
-                    <AlertCircle className="w-4 h-4 text-red-500" />
-                    <span className="text-red-600 font-medium text-sm">Alert</span>
+                    <AlertCircle className="w-4 h-4 text-yellow-500" />
+                    <span className="text-yellow-600 font-medium text-sm">Monitor</span>
                   </>
                 )}
               </div>
@@ -337,11 +327,11 @@ export function HealthStatsCards({ stats }: HealthStatsCardsProps) {
     <div className="w-full space-y-4">
       {/* Header */}
       <h2 className="font-semibold text-gray-900 text-lg px-4 sm:px-0">
-        Health Records Overview
+        Equipment Status
       </h2>
 
       {/* Grid Layout */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 px-4 sm:px-0">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 px-4 sm:px-0">
         {statsData.map((stat) => {
           const IconComponent = stat.icon
           
@@ -362,11 +352,11 @@ export function HealthStatsCards({ stats }: HealthStatsCardsProps) {
                 </div>
               </CardHeader>
 
-              <CardContent className="space-y-2">
+              <CardContent className="space-y-3">
                 {/* Value with Status */}
                 <div className="space-y-1">
                   <div className="flex items-baseline justify-between">
-                    <div className="text-2xl font-bold text-gray-900">
+                    <div className="text-3xl font-bold text-gray-900">
                       {stat.value}
                     </div>
                     
@@ -398,7 +388,7 @@ export function HealthStatsCards({ stats }: HealthStatsCardsProps) {
                   <div className="flex items-center gap-1.5 pt-1">
                     <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
                     <span className="text-xs text-red-600 font-medium">
-                      Active
+                      Needs attention
                     </span>
                   </div>
                 )}
@@ -413,26 +403,26 @@ export function HealthStatsCards({ stats }: HealthStatsCardsProps) {
         <CardContent className="p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-dairy-primary" />
+              <Settings className="w-5 h-5 text-dairy-primary" />
               <span className="font-medium text-gray-900">
-                Overall Health Status:
+                Overall Equipment Health:
               </span>
             </div>
             <div className="flex items-center gap-2">
-              {stats.outbreaksReported === 0 ? (
+              {isStatusGood ? (
                 <>
                   <CheckCircle2 className="w-5 h-5 text-green-500" />
                   <span className="text-green-600 font-semibold">Healthy</span>
                 </>
-              ) : stats.outbreaksReported < 3 ? (
+              ) : isStatusAlert ? (
                 <>
-                  <AlertCircle className="w-5 h-5 text-yellow-500" />
-                  <span className="text-yellow-600 font-semibold">Monitor</span>
+                  <AlertCircle className="w-5 h-5 text-red-500" />
+                  <span className="text-red-600 font-semibold">Critical</span>
                 </>
               ) : (
                 <>
-                  <AlertCircle className="w-5 h-5 text-red-500" />
-                  <span className="text-red-600 font-semibold">Alert</span>
+                  <AlertCircle className="w-5 h-5 text-yellow-500" />
+                  <span className="text-yellow-600 font-semibold">Monitor</span>
                 </>
               )}
             </div>

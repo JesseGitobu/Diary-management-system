@@ -21,13 +21,15 @@ import {
   Menu,
   X,
   LogOut,
-  HelpCircle
+  HelpCircle,
+  AlertCircle,
 } from 'lucide-react'
 import { GiCow } from 'react-icons/gi'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils/cn'
 import { SupportModal } from '@/components/support/SupportModal'
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 
 interface MobileHeaderProps {
   trackingFeatures?: string[] | null
@@ -54,6 +56,7 @@ export function MobileHeader({ trackingFeatures = [], animalCount = 0, farmId }:
   const [isOpen, setIsOpen] = useState(false)
   const [showSupport, setShowSupport] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
+  const [signOutError, setSignOutError] = useState<string | null>(null)
   const { user, userRole, signOut } = useAuth()
   const pathname = usePathname()
   const router = useRouter()
@@ -69,13 +72,26 @@ export function MobileHeader({ trackingFeatures = [], animalCount = 0, farmId }:
 
   const handleSignOut = async () => {
     setIsSigningOut(true)
+    setSignOutError(null)
+    
     try {
+      console.log('🔄 [MobileHeader] Starting sign out process...')
       await signOut()
+      console.log('✅ [MobileHeader] Sign out successful - redirecting to auth')
       setIsOpen(false)
-      router.push('/')
-    } catch (error) {
-      console.error('Sign out error:', error)
+      
+      // Small delay to ensure state updates are processed before navigation
+      await new Promise(resolve => setTimeout(resolve, 300))
+      
+      // Redirect to auth page instead of home page
+      router.push('/auth')
+    } catch (error: any) {
+      console.error('❌ [MobileHeader] Sign out error:', error)
+      setSignOutError(error?.message || 'Failed to sign out. Please try again.')
       setIsSigningOut(false)
+      
+      // Auto-clear error after 5 seconds
+      setTimeout(() => setSignOutError(null), 5000)
     }
   }
 
@@ -139,16 +155,36 @@ export function MobileHeader({ trackingFeatures = [], animalCount = 0, farmId }:
               </div>
 
               <button
-                className="p-2 text-gray-500 hover:bg-white hover:text-dairy-primary hover:shadow-sm rounded-lg transition-all disabled:opacity-50 flex-shrink-0"
+                className={cn(
+                  "p-2 rounded-lg transition-all flex-shrink-0",
+                  isSigningOut
+                    ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                    : "text-gray-500 hover:bg-white hover:text-dairy-primary hover:shadow-sm"
+                )}
                 aria-label="Sign Out"
                 onClick={handleSignOut}
                 disabled={isSigningOut}
-                title="Sign out"
+                title={isSigningOut ? "Signing out..." : "Sign out"}
               >
-                <LogOut className="w-5 h-5" />
+                {isSigningOut ? (
+                  <LoadingSpinner size="sm" />
+                ) : (
+                  <LogOut className="w-5 h-5" />
+                )}
               </button>
             </div>
           </div>
+
+          {/* Sign Out Error Message */}
+          {signOutError && (
+            <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-xs font-medium text-red-800">Sign out failed</p>
+                <p className="text-xs text-red-700 mt-1">{signOutError}</p>
+              </div>
+            </div>
+          )}
         </div>
 
         <nav className="flex-1 overflow-y-auto px-4 py-6 space-y-2">

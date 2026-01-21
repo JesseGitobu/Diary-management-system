@@ -14,12 +14,14 @@ import { ProductionChart } from '@/components/production/ProductionChart'
 import { ProductionRecordsList } from '@/components/production/ProductionRecordsList'
 import { ProductionEntryForm } from '@/components/production/ProductionEntryForm'
 import { ProductionSessionBanner } from '@/components/production/ProductionSessionBanner' // Import the new banner
+import { ProductionStatsCards } from '@/components/production/ProductionStatsCards'
 
 // Distribution components
 import { DistributionChart } from '@/components/distribution/DistributionChart'
 import { DistributionRecordsList } from '@/components/distribution/DistributionRecordsList'
 import { DistributionEntryForm } from '@/components/distribution/DistributionEntryForm'
 import { ChannelManager } from '@/components/distribution/ChannelManager'
+import { DistributionStatsCards } from '@/components/distribution/DistributionStatsCards'
 
 import { Modal } from '@/components/ui/Modal'
 
@@ -217,16 +219,16 @@ export function ProductionDistributionDashboard({
         title: 'Records',
         value: productionStats.totalRecords,
         icon: Calendar,
-        color: 'text-blue-600',
-        bgColor: 'bg-blue-50',
+        color: 'bg-blue-500',
+        bgColor: 'bg-blue-100',
         description: `Last ${productionStats.periodDays} days`
       },
       {
         title: 'Total Volume',
         value: `${productionStats.totalVolume.toFixed(1)}${productionSettings?.productionUnit === 'kg' ? 'kg' : 'L'}`,
         icon: Droplets,
-        color: 'text-cyan-600',
-        bgColor: 'bg-cyan-50',
+        color: 'bg-cyan-500',
+        bgColor: 'bg-cyan-100',
         description: `${productionStats.avgDailyVolume.toFixed(1)}${productionSettings?.productionUnit === 'kg' ? 'kg' : 'L'} daily avg`
       }
     ]
@@ -238,16 +240,16 @@ export function ProductionDistributionDashboard({
           title: 'Avg Fat',
           value: `${productionStats.avgFatContent.toFixed(2)}%`,
           icon: Target,
-          color: 'text-orange-600',
-          bgColor: 'bg-orange-50',
+          color: 'bg-orange-500',
+          bgColor: 'bg-orange-100',
           description: 'Quality indicator'
         },
         {
           title: 'Avg Protein',
           value: `${productionStats.avgProteinContent.toFixed(2)}%`,
           icon: TrendingUp,
-          color: 'text-green-600',
-          bgColor: 'bg-green-50',
+          color: 'bg-green-500',
+          bgColor: 'bg-green-100',
           description: 'Nutritional value'
         }
       ]
@@ -258,16 +260,16 @@ export function ProductionDistributionDashboard({
           title: 'Animals Milked',
           value: animalsMilkedToday,
           icon: Activity,
-          color: 'text-purple-600',
-          bgColor: 'bg-purple-50',
+          color: 'bg-purple-500',
+          bgColor: 'bg-purple-100',
           description: 'Recorded in last session'
         },
         {
           title: 'Avg Yield',
           value: `${avgYieldPerAnimal.toFixed(1)} ${productionSettings?.productionUnit === 'kg' ? 'kg' : 'L'}`,
           icon: BarChart3,
-          color: 'text-emerald-600',
-          bgColor: 'bg-emerald-50',
+          color: 'bg-emerald-500',
+          bgColor: 'bg-emerald-100',
           description: 'Per animal daily'
         }
       ]
@@ -279,32 +281,32 @@ export function ProductionDistributionDashboard({
       title: 'Distributed',
       value: `${distributionStats.totalDistributed.toFixed(1)}L`,
       icon: Truck,
-      color: 'text-blue-600',
-      bgColor: 'bg-blue-50',
+      color: 'bg-blue-500',
+      bgColor: 'bg-blue-100',
       description: `Last ${distributionStats.periodDays} days`
     },
     {
       title: 'Revenue',
       value: `KSh ${distributionStats.totalRevenue.toLocaleString()}`,
       icon: DollarSign,
-      color: 'text-green-600',
-      bgColor: 'bg-green-50',
+      color: 'bg-green-500',
+      bgColor: 'bg-green-100',
       description: `KSh ${distributionStats.avgPricePerLiter.toFixed(2)}/L avg`
     },
     {
       title: 'Channels',
       value: distributionStats.totalChannels,
       icon: Users,
-      color: 'text-purple-600',
-      bgColor: 'bg-purple-50',
+      color: 'bg-purple-500',
+      bgColor: 'bg-purple-100',
       description: 'Active buyers'
     },
     {
       title: 'Available',
       value: `${availableVolume.toFixed(1)}L`,
       icon: Clock,
-      color: availableVolume > 0 ? 'text-orange-600' : 'text-gray-600',
-      bgColor: availableVolume > 0 ? 'bg-orange-50' : 'bg-gray-50',
+      color: availableVolume > 0 ? 'bg-orange-500' : 'bg-gray-500',
+      bgColor: availableVolume > 0 ? 'bg-orange-100' : 'bg-gray-100',
       description: 'Ready to distribute'
     }
   ]
@@ -392,28 +394,14 @@ export function ProductionDistributionDashboard({
               />
             )}
 
-            <div>
-              {isMobile ? (
-                <MobileStatsScroller stats={productionStatsConfig} />
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                  {productionStatsConfig.map((stat, index) => {
-                     const Icon = stat.icon
-                     return (
-                      <Card key={index}>
-                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                          <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
-                          <Icon className={`h-4 w-4 ${stat.color}`} />
-                        </CardHeader>
-                        <CardContent>
-                          <div className="text-2xl font-bold">{stat.value}</div>
-                          <p className="text-xs text-muted-foreground">{stat.description}</p>
-                        </CardContent>
-                      </Card>
-                     )
-                  })}
-                </div>
-              )}
+            {/* Production Stats Cards */}
+            <div className={`${isMobile ? 'px-0' : ''}`}>
+              <ProductionStatsCards 
+                stats={productionStatsConfig} 
+                avgDailyVolume={productionStats.avgDailyVolume}
+                totalRecords={productionStats.totalRecords}
+                isQualityTracked={isQualityTracked}
+              />
             </div>
 
             <Card className={`${isMobile ? 'mx-4' : ''}`}>
@@ -454,29 +442,13 @@ export function ProductionDistributionDashboard({
           </TabsContent>
 
           <TabsContent value="distribution" className="space-y-6 mt-6">
-            {/* Distribution content unchanged but needed for context... */}
-             <div>
-              {isMobile ? (
-                <MobileStatsScroller stats={distributionStatsConfig} />
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                  {distributionStatsConfig.map((stat, index) => {
-                     const Icon = stat.icon
-                     return (
-                      <Card key={index}>
-                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                          <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
-                          <Icon className={`h-4 w-4 ${stat.color}`} />
-                        </CardHeader>
-                        <CardContent>
-                          <div className="text-2xl font-bold">{stat.value}</div>
-                          <p className="text-xs text-muted-foreground">{stat.description}</p>
-                        </CardContent>
-                      </Card>
-                     )
-                  })}
-                </div>
-              )}
+            {/* Distribution Stats Cards */}
+            <div className={`${isMobile ? 'px-0' : ''}`}>
+              <DistributionStatsCards 
+                stats={distributionStatsConfig} 
+                availableVolume={availableVolume}
+                totalChannels={distributionStats.totalChannels}
+              />
             </div>
              <Card className={`${isMobile ? 'mx-4' : ''}`}>
                {/* Distribution Chart Content */}

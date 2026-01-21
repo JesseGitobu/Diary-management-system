@@ -20,11 +20,12 @@ import {
   Eye,
   Edit,
   Baby,
-  AlertTriangle,
+  TriangleAlert,
   Shield,
   Activity,
   Scale,
 } from 'lucide-react'
+import { GiHazardSign } from "react-icons/gi";
 
 interface AnimalCardProps {
   animal: Animal
@@ -49,6 +50,8 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealth
     age_days: number
   } | null>(null)
 
+  const [lactateMissingInfo, setLactateMissingInfo] = useState(false)
+
   const { isMobile: isMobileDevice, isTouch } = useDeviceInfo()
   const canEdit = ['farm_owner', 'farm_manager'].includes(userRole)
 
@@ -71,6 +74,18 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealth
 useEffect(() => {
   const checkProductionStatus = async () => {
     if (!animalData.birth_date || !animalData.id) return
+
+    // ✅ Check if newborn calf is lactating but missing production info
+    if (animalData.animal_source === 'newborn_calf' && animalData.production_status === 'lactating') {
+      const hasMissingProductionInfo = !animalData.current_daily_production
+      setLactateMissingInfo(hasMissingProductionInfo)
+      
+      if (hasMissingProductionInfo) {
+        console.log('ℹ️ [AnimalCard] Newborn calf is lactating but missing production info:', animalData.tag_number)
+      }
+    } else {
+      setLactateMissingInfo(false)
+    }
 
     // ✅ SKIP status check for breeding-related statuses
     const breedingStatuses = ['served', 'lactating', 'dry']
@@ -139,7 +154,7 @@ useEffect(() => {
   }
 
   checkProductionStatus()
-}, [animalData.id, animalData.birth_date, animalData.production_status, farmId])
+}, [animalData.id, animalData.birth_date, animalData.production_status, animalData.animal_source, animalData.current_daily_production, farmId])
   // 🆕 Extract weight requirement check into a callback function
   const checkWeightRequirement = useCallback(async () => {
     if (!animalData.id || !farmId) {
@@ -266,16 +281,54 @@ useEffect(() => {
     bull: 'Bull'
   }
   
+  // Check if there are any issues that need attention
+  const hasIssues = lactateMissingInfo || statusMismatch
+
+  // Generate tooltip message based on issue type
+  let tooltipMessage = ''
+  if (lactateMissingInfo) {
+    tooltipMessage = `Update production status and current production details for ${animalData.name || animalData.tag_number}`
+  } else if (statusMismatch) {
+    tooltipMessage = `Should be: ${statusMismatch.calculated} (${Math.floor(statusMismatch.age_days / 30)} months old)`
+  }
+  
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      <Badge className={cn(
-        statusColors[animalData.production_status] || 'bg-gray-100 text-gray-800',
-        isMobile ? "text-xs px-2 py-1" : "text-xs"
-      )}>
-        {statusLabels[animalData.production_status] || animalData.production_status.replace('_', ' ').toUpperCase()}
-      </Badge>
+      {/* Main Production Status Badge with Hazard Icon & Red Blinking Border */}
+      <div className="relative">
+        <Badge 
+          className={cn(
+            statusColors[animalData.production_status] || 'bg-gray-100 text-gray-800',
+            isMobile ? "text-xs px-2 py-1" : "text-xs",
+            hasIssues && "cursor-pointer border-2 border-red-500 animate-pulse",
+            !hasIssues && "transition-all"
+          )}
+          onClick={(e) => {
+            if (hasIssues && canEdit) {
+              e.preventDefault()
+              e.stopPropagation()
+              setShowEditModal(true)
+            }
+          }}
+          title={tooltipMessage || ''}
+        >
+          {statusLabels[animalData.production_status] || animalData.production_status.replace('_', ' ').toUpperCase()}
+        </Badge>
+        
+        {/* ✅ Hazard icon on production status badge when there are issues */}
+        {hasIssues && (
+          <div className="absolute -top-2 -right-2">
+            <div className="relative">
+              {/* Pulsing red background */}
+              <div className="absolute inset-0 bg-red-600 rounded-full animate-pulse"></div>
+              {/* Hazard icon */}
+              <GiHazardSign className="w-4 h-4 text-white relative z-10" fill="currentColor" />
+            </div>
+          </div>
+        )}
+      </div>
       
-      {/* Production status update indicator */}
+      {/* Production status update indicator - for age-based transitions only */}
       {statusMismatch && (
         <Badge 
           variant="outline" 
@@ -328,7 +381,7 @@ useEffect(() => {
       },
       sick: {
         color: 'bg-red-100 text-red-800 border-red-200',
-        icon: AlertTriangle,
+        icon: TriangleAlert,
         label: 'Sick',
         pulse: true // Add visual indication for urgent status
       },
@@ -340,7 +393,7 @@ useEffect(() => {
       },
       quarantined: {
         color: 'bg-orange-100 text-orange-800 border-orange-200',
-        icon: AlertTriangle,
+        icon: TriangleAlert,
         label: 'Quarantined',
         pulse: true
       }
