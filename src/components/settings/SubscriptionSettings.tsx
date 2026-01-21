@@ -850,7 +850,7 @@ export default function SubscriptionSettings({
                           )}
                         </div>
                         <Button
-                          className="w-full"
+                          className="w-full bg-blue-600 hover:bg-blue-700 text-white"
                           onClick={() => handleUpgrade(key)}
                           disabled={isLoading}
                         >

@@ -1,6 +1,5 @@
 // src/lib/database/settings.ts
 import { createServerSupabaseClient } from '@/lib/supabase/server'
-import { useAuth } from '@/lib/hooks/useAuth'
 import { createClient } from '@/lib/supabase/client'
 
 export interface FarmData {
@@ -224,11 +223,31 @@ export async function getFarmProfileDataServer(farmId: string): Promise<FarmProf
 
     console.log('✅ Found farm data, creating default profile')
 
-    // Get user info from user_roles to populate owner fields
-    const { user, signOut } = useAuth()
+    // Get farm owner user_id from user_roles, then fetch auth user details
+    let ownerEmail = 'owner@farm.com'
+    let ownerName = 'Farm Owner'
 
-    const ownerEmail = user?.email || 'owner@farm.com'
-    const ownerName = user?.user_metadata?.full_name || 'Farm Owner'
+    try {
+      const { data: ownerRole } = await supabase
+        .from('user_roles')
+        .select('user_id')
+        .eq('farm_id', farmId)
+        .eq('role_type', 'farm_owner')
+        .eq('status', 'active')
+        .maybeSingle()
+
+      const ownerUserId = (ownerRole as any)?.user_id
+      if (ownerUserId) {
+        const { data: authUser, error: authError } = await supabase.auth.admin.getUserById(ownerUserId)
+        if (!authError && authUser && authUser.user) {
+          ownerEmail = authUser.user.email || ownerEmail
+          const meta = authUser.user.user_metadata || {}
+          ownerName = meta.full_name || meta.name || authUser.user.email?.split('@')[0] || ownerName
+        }
+      }
+    } catch (err) {
+      console.warn('Could not determine owner from user_roles:', err)
+    }
 
     // Get total cows count
     const { count: totalCows } = await supabase

@@ -563,18 +563,19 @@ export function FinancialSettings({ farmId, userRole, initialSettings }: Financi
 
         {/* Save Button */}
         {canEdit && (
-          <div className="flex justify-end space-x-3">
+          <div className={`${isMobile ? 'flex flex-col space-y-2' : 'flex justify-end space-x-3'}`}>
             <Button
               variant="outline"
               onClick={handleBack}
               disabled={loading}
+              className={isMobile ? 'w-full' : ''}
             >
               Cancel
             </Button>
             <Button
               onClick={handleSave}
               disabled={loading}
-              className="flex items-center space-x-2"
+              className={`bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center space-x-2 ${isMobile ? 'w-full' : ''}`}
             >
               <Save className="w-4 h-4" />
               <span>{loading ? 'Saving...' : 'Save Settings'}</span>

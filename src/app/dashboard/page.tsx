@@ -84,11 +84,11 @@ export default async function DashboardPage() {
 
   return (
     <div className="min-h-screen">
-      <div className="dashboard-container py-4 md:py-6 relative">
+      <div className="dashboard-container py-6 md:py-8 relative">
 
         {/* 1. Onboarding Banner (Always visible if incomplete) */}
         {isOnboardingIncomplete && !checkBannerDismissed() && (
-          <div className="relative z-50 mb-6">
+          <div className="relative z-50 mb-8">
             <OnboardingBanner
               userName={user.user_metadata?.full_name || user.email || 'there'}
               farmId={userRole.farm_id ?? undefined}
@@ -99,7 +99,7 @@ export default async function DashboardPage() {
 
         {/* 2. Welcome Header */}
         {/* Blurred if Skipped or Empty */}
-        <div className={cn("mb-6 transition-all duration-300", (isSkipped || isSetupButEmpty) && inactiveStyle)}>
+        <div className={cn("mb-8 transition-all duration-300", (isSkipped || isSetupButEmpty) && inactiveStyle)}>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4">
             <div>
               <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
@@ -120,7 +120,7 @@ export default async function DashboardPage() {
 
         {/* 3. Key Metrics Grid */}
         {/* Blurred if Skipped or Empty */}
-        <div className={cn("grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mb-6", (isSkipped || isSetupButEmpty) && inactiveStyle)}>
+        <div className={cn("grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mb-8", (isSkipped || isSetupButEmpty) && inactiveStyle)}>
           {/* Total Animals */}
           <Card className="hover:shadow-lg transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -203,7 +203,7 @@ export default async function DashboardPage() {
             - If SetupButEmpty: Card is active, but individual buttons (except Add) are blurred.
             - If Active: All active.
         */}
-        <Card className={cn("mb-6", isSkipped && inactiveStyle)}>
+        <Card className={cn("mb-8", isSkipped && inactiveStyle)}>
           <CardHeader>
             <CardTitle className="flex items-center">
               <Zap className="w-5 h-5 mr-2 text-yellow-500" />
@@ -254,7 +254,7 @@ export default async function DashboardPage() {
 
           {/* Critical Alerts */}
           {(dashboardStats?.alerts?.length ?? 0) > 0 && (
-            <Card className="mb-6 border-orange-200 bg-orange-50">
+            <Card className="mb-8 border-orange-200 bg-orange-50">
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center text-orange-800">
                   <AlertCircle className="w-5 h-5 mr-2" />
@@ -281,7 +281,7 @@ export default async function DashboardPage() {
           )}
 
           {/* Management Grid & Activity */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
@@ -447,7 +447,7 @@ export default async function DashboardPage() {
             </Card>
 
             {/* Team & Weather */}
-            <div className="space-y-6">
+            <div className="space-y-8">
               {canManageTeam && (
                 <Card>
                   <CardHeader>
@@ -504,7 +504,7 @@ export default async function DashboardPage() {
           </div>
 
           {/* Mobile-Specific Bottom Navigation Preview */}
-          <div className="md:hidden mt-8 p-4 bg-white rounded-lg border">
+          <div className="md:hidden mt-8 mb-12 p-4 bg-white rounded-lg border">
             <p className="text-xs text-gray-500 text-center mb-3">Quick Navigation</p>
             <div className="grid grid-cols-5 gap-2">
               <Link href="/dashboard/animals" className="text-center p-2">

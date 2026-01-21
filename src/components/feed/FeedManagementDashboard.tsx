@@ -353,7 +353,7 @@ export function FeedManagementDashboard({
   )
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20 lg:pb-0">
       {/* Mobile Header */}
       <div className="px-4 lg:px-0">
         <div className="flex items-start justify-between mb-4">

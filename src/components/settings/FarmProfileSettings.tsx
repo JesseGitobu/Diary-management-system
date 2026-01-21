@@ -1,7 +1,7 @@
 // src/components/settings/FarmProfileSettings.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -184,6 +184,42 @@ export function FarmProfileSettings({
   }
 
   const canEdit = ['farm_owner', 'farm_manager'].includes(userRole)
+
+  // Load synced values from `farm_profiles` if available for this farm
+  useEffect(() => {
+    if (!farmId) return
+
+    let cancelled = false
+
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/farms/${farmId}/farm-profile`)
+        if (!res.ok) return
+        const json = await res.json()
+        const profile = json.data || json
+        if (cancelled || !profile) return
+
+        // Map farm_profiles fields to this form's shape
+        const mapped: Partial<typeof formData> = {}
+        if (profile.farm_name) mapped.name = profile.farm_name
+        if (profile.herd_size !== undefined && profile.herd_size !== null) mapped.total_cows = profile.herd_size
+        // if (profile.location) {
+        //   const parts = profile.location.split(',').map((s: string) => s.trim())
+        //   if (parts[0]) mapped.county = parts[0]
+        //   if (parts[1]) mapped.sub_county = parts[1]
+        //   if (parts[2]) mapped.village = parts[2]
+        // }
+
+        if (Object.keys(mapped).length > 0) {
+          setFormData(prev => ({ ...prev, ...mapped }))
+        }
+      } catch (err) {
+        console.warn('Failed to load farm_profiles for farm:', farmId, err)
+      }
+    })()
+
+    return () => { cancelled = true }
+  }, [farmId])
 
   return (
     <div className={`
@@ -545,18 +581,19 @@ export function FarmProfileSettings({
 
         {/* Save Button */}
         {(canEdit || isNewFarm) && (
-          <div className="flex justify-end space-x-3">
+          <div className={`${isMobile ? 'flex flex-col space-y-2' : 'flex justify-end space-x-3'}`}>
             <Button
               variant="outline"
               onClick={handleBack}
               disabled={loading}
+              className={isMobile ? 'w-full' : ''}
             >
               Cancel
             </Button>
             <Button
               onClick={handleSave}
               disabled={loading}
-              className="flex items-center space-x-2"
+              className={`bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center space-x-2 ${isMobile ? 'w-full' : ''}`}
             >
               <Save className="w-4 h-4" />
               <span>

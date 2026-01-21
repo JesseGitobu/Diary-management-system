@@ -271,6 +271,7 @@ export function FeedTypeCategoriesManager({
           variant="outline"
           size="sm"
           onClick={() => handleEdit(category)}
+          className="hover:bg-blue-50"
         >
           <Edit className="h-4 w-4 mr-1" />
           Edit
@@ -293,7 +294,7 @@ export function FeedTypeCategoriesManager({
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className={`flex items-center justify-between ${isMobile ? 'flex-col items-start' : ''}`}>
         <div>
           <h3 className="text-lg font-medium">Feed Type Categories</h3>
           <p className="text-sm text-gray-600">
@@ -301,7 +302,7 @@ export function FeedTypeCategoriesManager({
           </p>
         </div>
         {canEdit && (
-          <Button onClick={handleAdd}>
+          <Button onClick={handleAdd} className={`bg-blue-600 hover:bg-blue-700 text-white ${isMobile ? 'w-full mt-3 justify-center' : ''}`}>
             <Plus className="w-4 h-4 mr-2" />
             Add Category
           </Button>
@@ -351,7 +352,7 @@ export function FeedTypeCategoriesManager({
             <h3 className="font-medium text-gray-900 mb-1">No categories yet</h3>
             <p className="text-sm">Create your first feed type category to get started.</p>
             {canEdit && (
-              <Button className="mt-4" onClick={handleAdd}>
+              <Button className={`mt-4 ${isMobile ? 'w-full bg-blue-600 hover:bg-blue-700 text-white' : ''}`} onClick={handleAdd}>
                 <Plus className="w-4 h-4 mr-2" />
                 Add Category
               </Button>
@@ -414,16 +415,17 @@ export function FeedTypeCategoriesManager({
               </div>
             </div>
 
-            <div className="flex justify-end space-x-3 pt-4">
+            <div className={`flex ${isMobile ? 'flex-col space-y-2' : 'justify-end space-x-3'} pt-4`}>
               <Button
                 type="button"
                 variant="outline"
                 onClick={handleModalClose}
                 disabled={loading}
+                className={isMobile ? 'w-full' : ''}
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={loading}>
+              <Button type="submit" disabled={loading} className={`bg-blue-600 hover:bg-blue-700 text-white ${isMobile ? 'w-full' : ''}`}>
                 {loading ? <LoadingSpinner size="sm" /> : (editingCategory ? 'Update' : 'Create')}
               </Button>
             </div>
@@ -433,7 +435,7 @@ export function FeedTypeCategoriesManager({
 
       {/* Delete Confirmation */}
       <AlertDialog open={!!deletingCategory} onOpenChange={() => setDeletingCategory(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className={isMobile ? 'mx-4' : ''}>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Category</AlertDialogTitle>
             <AlertDialogDescription>
@@ -446,12 +448,12 @@ export function FeedTypeCategoriesManager({
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={loading}>Cancel</AlertDialogCancel>
+          <AlertDialogFooter className={isMobile ? 'flex-col space-y-2' : ''}>
+            <AlertDialogCancel disabled={loading} className={isMobile ? 'w-full' : ''}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
               disabled={loading}
-              className="bg-red-600 hover:bg-red-700"
+              className={`bg-red-600 hover:bg-red-700 ${isMobile ? 'w-full' : ''}`}
             >
               {loading ? <LoadingSpinner size="sm" /> : 'Delete'}
             </AlertDialogAction>

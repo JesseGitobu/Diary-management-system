@@ -84,14 +84,14 @@ export function FeedManagementSettings({
     <div className={`${isMobile ? 'px-4 py-4' : 'dashboard-container'} pb-20 lg:pb-6`}>
       {/* Header */}
       <div className="mb-6">
-        <div className="flex items-center space-x-4 mb-4">
+        <div className={`${isMobile ? 'mb-4' : 'flex items-center space-x-4 mb-4'}`}>
           <Button
             variant="ghost"
             onClick={handleBack}
-            className="flex items-center space-x-2"
+            className={`flex items-center space-x-2 ${isMobile ? 'w-full justify-start' : ''}`}
           >
             <ArrowLeft className="w-4 h-4" />
-            {!isMobile && <span>Back to Settings</span>}
+            <span className={`${isMobile ? 'ml-2' : ''}`}>Back to Settings</span>
           </Button>
         </div>
 

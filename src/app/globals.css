@@ -84,6 +84,11 @@
     padding-top: env(safe-area-inset-top);
   }
 
+  /* Mobile bottom navigation padding (accounts for fixed bottom nav on mobile) */
+  .pb-mobile-nav {
+    @apply pb-20 lg:pb-0;
+  }
+
   @keyframes slide-in-from-top {
     from {
       transform: translateY(-100%);

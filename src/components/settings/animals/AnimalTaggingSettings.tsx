@@ -1825,41 +1825,41 @@ const resetUnsavedChanges = () => {
       )}
 
       {/* Action Buttons */}
-      <div className="flex items-center justify-between pt-6 border-t">
-  <div className="flex items-center space-x-2">
-    <Info className="h-4 w-4 text-blue-500" />
-    <span className="text-sm text-gray-600">
-      Changes will apply to new animals. Existing animals can be updated individually.
-    </span>
-    {hasUnsavedChanges && (
-      <div className="flex items-center space-x-1 ml-4 px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs">
-        <AlertTriangle className="h-3 w-3" />
-        <span>Unsaved changes</span>
+      <div className={`${isMobile ? 'flex flex-col space-y-4' : 'flex items-center justify-between'} pt-6 border-t mb-8`}>
+        <div className={`${isMobile ? 'w-full' : ''} flex items-center space-x-2`}>
+          <Info className="h-4 w-4 text-blue-500 flex-shrink-0" />
+          <span className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-600`}>
+            Changes will apply to new animals. Existing animals can be updated individually.
+          </span>
+          {hasUnsavedChanges && (
+            <div className="flex items-center space-x-1 ml-2 px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs flex-shrink-0">
+              <AlertTriangle className="h-3 w-3" />
+              <span>Unsaved</span>
+            </div>
+          )}
+        </div>
+        <div className={`${isMobile ? 'w-full flex flex-col space-y-2' : 'flex space-x-3'}`}>
+          <Button
+            variant="outline"
+            onClick={resetToDefaults}
+            className={`${isMobile ? 'w-full' : ''} hover:bg-red-50 hover:border-red-200 hover:text-red-700`}
+          >
+            <RotateCcw className="h-4 w-4 mr-2" />
+            Reset to Defaults
+          </Button>
+          <Button
+            onClick={handleSaveSettings}
+            disabled={isLoading}
+            className={`${isMobile ? 'w-full' : ''} ${hasUnsavedChanges ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'text-white'}`}
+          >
+            <Save className="h-4 w-4 mr-2" />
+            {isLoading ? 'Saving...' : 'Save Settings'}
+            {hasUnsavedChanges && (
+              <span className="ml-1 w-2 h-2 bg-white rounded-full animate-pulse"></span>
+            )}
+          </Button>
+        </div>
       </div>
-    )}
-  </div>
-  <div className="flex space-x-3">
-    <Button
-      variant="outline"
-      onClick={resetToDefaults}
-      className="hover:bg-red-50 hover:border-red-200 hover:text-red-700"
-    >
-      <RotateCcw className="h-4 w-4 mr-2" />
-      Reset to Defaults
-    </Button>
-    <Button
-      onClick={handleSaveSettings}
-      disabled={isLoading}
-      className={hasUnsavedChanges ? 'bg-blue-600 hover:bg-blue-700' : ''}
-    >
-      <Save className="h-4 w-4 mr-2" />
-      {isLoading ? 'Saving...' : 'Save Settings'}
-      {hasUnsavedChanges && (
-        <span className="ml-1 w-2 h-2 bg-white rounded-full animate-pulse"></span>
-      )}
-    </Button>
-  </div>
-</div>
     </div>
   )
 }

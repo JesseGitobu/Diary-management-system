@@ -9,8 +9,16 @@ export async function GET(
 ) {
   try {
     const user = await getCurrentUser()
+    
+    // ✅ If no user found, log and return graceful response instead of 401
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      console.warn('⚠️ [Weight Check] No authenticated user found - returning default response')
+      return NextResponse.json({
+        requires_update: false,
+        due_date: null,
+        reason: 'Unable to verify authentication',
+        priority: 'normal'
+      }, { status: 200 })
     }
 
     // ✅ Await params before accessing properties

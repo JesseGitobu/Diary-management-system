@@ -166,7 +166,14 @@ useEffect(() => {
     
     try {
       const response = await fetch(
-        `/api/animals/${animalData.id}/weight-requirement?farmId=${farmId}`
+        `/api/animals/${animalData.id}/weight-requirement?farmId=${farmId}`,
+        {
+          method: 'GET',
+          credentials: 'include', // ✅ Ensure cookies are sent with the request
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
       )
       
       if (response.ok) {

@@ -571,6 +571,7 @@ export function ConsumptionBatchesManager({
           variant="outline"
           size="sm"
           onClick={() => handleViewAnimals(batch)}
+          className="hover:bg-blue-50"
         >
           <Eye className="h-4 w-4 mr-1" />
           {batch.targeted_animals_count || 0} Animals
@@ -579,6 +580,7 @@ export function ConsumptionBatchesManager({
           variant="outline"
           size="sm"
           onClick={() => handleViewFactors(batch)}
+          className="hover:bg-blue-50"
         >
           <Settings className="h-4 w-4 mr-1" />
           Factors
@@ -587,6 +589,7 @@ export function ConsumptionBatchesManager({
           variant="outline"
           size="sm"
           onClick={() => handleViewInsights(batch)}
+          className="hover:bg-blue-50"
         >
           <BarChart3 className="h-4 w-4 mr-1" />
           Insights
@@ -597,6 +600,7 @@ export function ConsumptionBatchesManager({
               variant="outline"
               size="sm"
               onClick={() => handleEditBatch(batch)}
+              className="hover:bg-blue-50"
             >
               <Edit className="h-4 w-4 mr-1" />
               Edit
@@ -622,7 +626,7 @@ export function ConsumptionBatchesManager({
     <div className="space-y-6">
       {/* Main Batches View */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className={`${isMobile ? 'flex flex-col space-y-3' : 'flex items-center justify-between'}`}>
           <div>
             <h3 className="text-lg font-medium">Consumption Batches</h3>
             <p className="text-sm text-gray-600">
@@ -630,7 +634,7 @@ export function ConsumptionBatchesManager({
             </p>
           </div>
           {canEdit && (
-            <Button onClick={handleAddBatch}>
+            <Button onClick={handleAddBatch} className={`bg-blue-600 hover:bg-blue-700 text-white ${isMobile ? 'w-full justify-center' : ''}`}>
               <Plus className="w-4 h-4 mr-2" />
               Add Batch
             </Button>
@@ -881,8 +885,11 @@ export function ConsumptionBatchesManager({
             </div>
           )}
 
-          <div className="flex justify-end pt-4">
-            <Button onClick={() => setShowAnimalModal(false)}>
+          <div className={`flex ${isMobile ? 'flex-col space-y-2' : 'justify-end space-x-3'} pt-4`}>
+            <Button 
+              onClick={() => setShowAnimalModal(false)}
+              className={`bg-blue-600 hover:bg-blue-700 text-white ${isMobile ? 'w-full' : ''}`}
+            >
               Close
             </Button>
           </div>
@@ -1076,7 +1083,7 @@ export function ConsumptionBatchesManager({
                       <Button
                         variant="outline"
                         size="sm"
-                        className="mt-1 w-full text-red-600 border-red-200 hover:bg-red-50"
+                        className={`mt-1 w-full text-red-600 border-red-200 hover:bg-red-50 ${isMobile ? 'w-full' : ''}`}
                         onClick={() => {
                           if (confirm('Are you sure you want to clear all factors for all animals?')) {
                             setAnimalFactors([])
@@ -1092,14 +1099,15 @@ export function ConsumptionBatchesManager({
             </div>
           )}
 
-          <div className="flex justify-between pt-6 border-t">
+          <div className={`flex ${isMobile ? 'flex-col space-y-2' : 'justify-between'} pt-6 border-t`}>
             <Button
               variant="outline"
               onClick={() => setShowFactorsModal(false)}
+              className={isMobile ? 'w-full' : ''}
             >
               Cancel
             </Button>
-            <div className="space-x-3">
+            <div className={`${isMobile ? 'flex flex-col space-y-2 w-full' : 'space-x-3 flex'}`}>
               <Button
                 variant="outline"
                 onClick={async () => {
@@ -1109,6 +1117,7 @@ export function ConsumptionBatchesManager({
                   setLoading(false)
                 }}
                 disabled={loading}
+                className={isMobile ? 'w-full' : ''}
               >
                 Reset Changes
               </Button>
@@ -1149,6 +1158,7 @@ export function ConsumptionBatchesManager({
                   }
                 }}
                 disabled={loading}
+                className={`bg-blue-600 hover:bg-blue-700 text-white ${isMobile ? 'w-full' : ''}`}
               >
                 {loading ? <LoadingSpinner size="sm" /> : 'Save Factors'}
               </Button>
@@ -1229,8 +1239,11 @@ export function ConsumptionBatchesManager({
             <p className="text-gray-500">No insights available.</p>
           )}
 
-          <div className="flex justify-end pt-4">
-            <Button onClick={() => setShowInsightsModal(false)}>
+          <div className={`flex ${isMobile ? 'flex-col space-y-2' : 'justify-end space-x-3'} pt-4`}>
+            <Button 
+              onClick={() => setShowInsightsModal(false)}
+              className={`bg-blue-600 hover:bg-blue-700 text-white ${isMobile ? 'w-full' : ''}`}
+            >
               Close
             </Button>
           </div>
@@ -1484,16 +1497,21 @@ export function ConsumptionBatchesManager({
               </div>
             </div>
 
-            <div className="flex justify-end space-x-3 pt-4 border-t">
+            <div className={`flex ${isMobile ? 'flex-col space-y-2' : 'justify-end space-x-3'} pt-4 border-t`}>
               <Button
                 type="button"
                 variant="outline"
                 onClick={handleModalClose}
                 disabled={loading}
+                className={isMobile ? 'w-full' : ''}
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={loading}>
+              <Button 
+                type="submit" 
+                disabled={loading}
+                className={`bg-blue-600 hover:bg-blue-700 text-white ${isMobile ? 'w-full' : ''}`}
+              >
                 {loading ? <LoadingSpinner size="sm" /> : (editingBatch ? 'Update Batch' : 'Create Batch')}
               </Button>
             </div>
@@ -1503,15 +1521,15 @@ export function ConsumptionBatchesManager({
 
       {/* Delete Batch Confirmation */}
       <AlertDialog open={!!deletingBatch} onOpenChange={() => setDeletingBatch(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className={isMobile ? 'mx-4' : ''}>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Consumption Batch</AlertDialogTitle>
             <AlertDialogDescription>
               Are you sure you want to delete "{deletingBatch?.batch_name}"? This will also remove all animal targeting and factors. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={loading}>Cancel</AlertDialogCancel>
+          <AlertDialogFooter className={isMobile ? 'flex-col space-y-2' : ''}>
+            <AlertDialogCancel disabled={loading} className={isMobile ? 'w-full' : ''}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={async () => {
                 if (!deletingBatch) return
@@ -1534,7 +1552,7 @@ export function ConsumptionBatchesManager({
                 }
               }}
               disabled={loading}
-              className="bg-red-600 hover:bg-red-700"
+              className={`bg-red-600 hover:bg-red-700 ${isMobile ? 'w-full' : ''}`}
             >
               {loading ? <LoadingSpinner size="sm" /> : 'Delete'}
             </AlertDialogAction>

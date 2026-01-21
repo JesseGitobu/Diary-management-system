@@ -158,7 +158,7 @@ export function TeamManagement({
     }
   ]
   return (
-    <div className="space-y-4 lg:space-y-8 px-4 lg:px-0">
+    <div className="space-y-4 lg:space-y-8 px-4 lg:px-0 pb-20 lg:pb-0">
       {/* Mobile-Optimized Header */}
       <div className="space-y-4">
       <div className="flex items-center space-x-4 mb-4">

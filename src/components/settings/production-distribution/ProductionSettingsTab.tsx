@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import { toast } from 'react-hot-toast'
+import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -40,6 +41,7 @@ export default function ProductionSettingsTab({
   farmName,
   onUnsavedChanges
 }: ProductionSettingsTabProps) {
+  const { isMobile } = useDeviceInfo()
   const [settings, setSettings] = useState(initialSettings || getDefaultProductionSettings())
   const [isLoading, setIsLoading] = useState(false)
   const [activeSection, setActiveSection] = useState('tracking')
@@ -702,17 +704,17 @@ export default function ProductionSettingsTab({
       )}
 
       {/* Action Buttons */}
-      <div className="flex items-center justify-between pt-6 border-t">
-        <div className="flex items-center space-x-2 text-sm text-gray-600">
+      <div className={`${isMobile ? 'flex flex-col space-y-2' : 'flex items-center justify-between'} pt-6 border-t`}>
+        <div className={`flex items-center space-x-2 text-sm text-gray-600 ${isMobile ? 'w-full order-2' : ''}`}>
           <Info className="h-4 w-4" />
           <span>Changes will apply to future production entries</span>
         </div>
         
-        <div className="flex space-x-3">
+        <div className={`flex ${isMobile ? 'flex-col space-y-2 w-full order-1' : 'space-x-3'}`}>
           <Button
             variant="outline"
             onClick={resetToDefaults}
-            className="hover:bg-red-50 hover:border-red-200 hover:text-red-700"
+            className={`hover:bg-red-50 hover:border-red-200 hover:text-red-700 ${isMobile ? 'w-full' : ''}`}
           >
             <RotateCcw className="h-4 w-4 mr-2" />
             Reset to Defaults
@@ -720,7 +722,7 @@ export default function ProductionSettingsTab({
           <Button
             onClick={handleSave}
             disabled={isLoading}
-            className="bg-blue-600 hover:bg-blue-700"
+            className={`bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center ${isMobile ? 'w-full' : ''}`}
           >
             <Save className="h-4 w-4 mr-2" />
             {isLoading ? 'Saving...' : 'Save Settings'}

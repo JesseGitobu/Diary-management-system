@@ -133,7 +133,7 @@ export function ReportsDashboard({ farmId, initialKPIs, userRole }: ReportsDashb
       <ReportsStatsCards kpis={kpiCards} />
       
       {/* Mobile-optimized Tabs */}
-      <Tabs defaultValue="overview" className="space-y-4 lg:space-y-6">
+      <Tabs defaultValue="overview" className="space-y-4 lg:space-y-6 pb-20 lg:pb-0">
         <div className="relative">
           <TabsList className={cn(
             isMobile 

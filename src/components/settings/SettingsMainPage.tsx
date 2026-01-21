@@ -239,42 +239,40 @@ export function SettingsMainPage({ farmId, userRole, farmData }: SettingsMainPag
       </div>
 
       {/* Quick Actions */}
-      {!isMobile && (
-        <div className="mt-8 pt-6 border-t border-gray-200">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Quick Actions</h3>
-          <div className="flex flex-wrap gap-3">
-            <Link href={`/dashboard/settings/data-backup?farmId=${farmId}`}>
+      <div className={`mt-8 pt-6 border-t border-gray-200`}>
+        <h3 className="text-lg font-medium text-gray-900 mb-4">Quick Actions</h3>
+        <div className={`flex flex-wrap gap-3 ${isMobile ? 'flex-col' : ''}`}>
+          <Link href={`/dashboard/settings/data-backup?farmId=${farmId}`} className={isMobile ? 'w-full' : ''}>
+            <Button
+              variant="outline"
+              className={`flex items-center space-x-2 ${isMobile ? 'w-full justify-center' : ''}`}
+            >
+              <Database className="w-4 h-4" />
+              <span>Export Data</span>
+            </Button>
+          </Link>
+          <Link href={`/dashboard/settings/notifications?farmId=${farmId}`} className={isMobile ? 'w-full' : ''}>
+            <Button
+              variant="outline"
+              className={`flex items-center space-x-2 ${isMobile ? 'w-full justify-center' : ''}`}
+            >
+              <Bell className="w-4 h-4" />
+              <span>Manage Alerts</span>
+            </Button>
+          </Link>
+          {userRole === 'farm_owner' && (
+            <Link href={`/dashboard/settings/team?farmId=${farmId}`} className={isMobile ? 'w-full' : ''}>
               <Button
                 variant="outline"
-                className="flex items-center space-x-2"
+                className={`flex items-center space-x-2 ${isMobile ? 'w-full justify-center' : ''}`}
               >
-                <Database className="w-4 h-4" />
-                <span>Export Data</span>
+                <Users className="w-4 h-4" />
+                <span>Add Team Member</span>
               </Button>
             </Link>
-            <Link href={`/dashboard/settings/notifications?farmId=${farmId}`}>
-              <Button
-                variant="outline"
-                className="flex items-center space-x-2"
-              >
-                <Bell className="w-4 h-4" />
-                <span>Manage Alerts</span>
-              </Button>
-            </Link>
-            {userRole === 'farm_owner' && (
-              <Link href={`/dashboard/settings/team?farmId=${farmId}`}>
-                <Button
-                  variant="outline"
-                  className="flex items-center space-x-2"
-                >
-                  <Users className="w-4 h-4" />
-                  <span>Add Team Member</span>
-                </Button>
-              </Link>
-            )}
-          </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   )
 }

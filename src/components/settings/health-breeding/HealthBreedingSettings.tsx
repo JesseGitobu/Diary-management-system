@@ -862,11 +862,11 @@ export default function HealthBreedingSettings({
                                 </div>
                             )}
                         </div>
-                        <div className="flex space-x-3">
+                        <div className={`${isMobile ? 'flex flex-col space-y-2' : 'flex space-x-3'}`}>
                             <Button
                                 variant="outline"
                                 onClick={resetToDefaults}
-                                className="hover:bg-red-50 hover:border-red-200 hover:text-red-700"
+                                className={`hover:bg-red-50 hover:border-red-200 hover:text-red-700 ${isMobile ? 'w-full' : ''}`}
                             >
                                 <RotateCcw className="h-4 w-4 mr-2" />
                                 Reset to Defaults
@@ -874,7 +874,7 @@ export default function HealthBreedingSettings({
                             <Button
                                 onClick={handleSaveSettings}
                                 disabled={isLoading}
-                                className={hasUnsavedChanges ? 'bg-pink-600 hover:bg-pink-700' : ''}
+                                className={`bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center ${isMobile ? 'w-full' : ''} ${hasUnsavedChanges ? '' : ''}`}
                             >
                                 <Save className="h-4 w-4 mr-2" />
                                 {isLoading ? 'Saving...' : 'Save Settings'}

@@ -1269,7 +1269,7 @@ export function HealthRecordsContent({
   }
 
   return (
-    <div className="space-y-4 pb-safe">
+    <div className="space-y-4 pb-20 lg:pb-0">
       {/* Mobile-Optimized Header */}
       <div className={`${isMobile ? 'px-4' : ''}`}>
         <div className="flex items-center justify-between">
@@ -1899,12 +1899,14 @@ export function HealthRecordsContent({
 
       {/* Mobile Action Sheet */}
       {isMobile && (
-        <MobileActionSheet
-          isOpen={showActionSheet}
-          onClose={() => setShowActionSheet(false)}
-          title="Health Actions"
-          items={actionSheetItems}
-        />
+        <div className="pb-20">
+          <MobileActionSheet
+            isOpen={showActionSheet}
+            onClose={() => setShowActionSheet(false)}
+            title="Health Actions"
+            items={actionSheetItems}
+          />
+        </div>
       )}
 
       {/* All Modals */}

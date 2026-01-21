@@ -331,7 +331,7 @@ export function ProductionDistributionDashboard({
   }
 
   return (
-    <div className="space-y-6 pb-safe">
+    <div className="space-y-6 pb-20 lg:pb-0">
       {/* Header code ... */}
       <div className={`${isMobile ? 'px-4' : ''}`}>
         <div className="flex items-center justify-between">

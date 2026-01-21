@@ -690,11 +690,11 @@ export default function DataBackupSettings({
               </div>
             )}
           </div>
-          <div className="flex space-x-3">
+          <div className={`${isMobile ? 'flex flex-col space-y-2' : 'flex space-x-3'}`}>
             <Button
               variant="outline"
               onClick={resetToDefaults}
-              className="hover:bg-red-50 hover:border-red-200 hover:text-red-700"
+              className={`hover:bg-red-50 hover:border-red-200 hover:text-red-700 ${isMobile ? 'w-full' : ''}`}
             >
               <RotateCcw className="h-4 w-4 mr-2" />
               Reset
@@ -702,7 +702,7 @@ export default function DataBackupSettings({
             <Button
               onClick={handleSaveSettings}
               disabled={isLoading}
-              className={hasUnsavedChanges ? 'bg-blue-600 hover:bg-blue-700' : ''}
+              className={`bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center ${isMobile ? 'w-full' : ''}`}
             >
               <Save className="h-4 w-4 mr-2" />
               {isLoading ? 'Saving...' : 'Save Settings'}
