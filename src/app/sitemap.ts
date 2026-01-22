@@ -2,7 +2,7 @@ import { MetadataRoute } from 'next'
 
 export default function sitemap(): MetadataRoute.Sitemap {
   // Get the base URL from environment or use default
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://dairyfarmmgt.com'
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.dairytrackpro.com'
 
   // Public pages that don't require authentication
   const publicPages: MetadataRoute.Sitemap = [

@@ -12,4 +12,4 @@ Disallow: /auth/callback
 Disallow: /invite/
 
 # Sitemap location
-Sitemap: https://dairyfarmmgt.com/sitemap.xml
+Sitemap: https://www.dairytrackpro.com/sitemap.xml
