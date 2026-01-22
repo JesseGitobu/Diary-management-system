@@ -1,0 +1,15 @@
+# Allow search engines to crawl the site
+User-agent: *
+Allow: /
+Allow: /auth
+Allow: /onboarding
+Allow: /dashboard
+
+# Disallow sensitive paths
+Disallow: /api/
+Disallow: /admin/
+Disallow: /auth/callback
+Disallow: /invite/
+
+# Sitemap location
+Sitemap: https://dairyfarmmgt.com/sitemap.xml
