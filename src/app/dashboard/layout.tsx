@@ -31,7 +31,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     return (
       <div className="flex flex-col h-screen overflow-hidden bg-gray-50">
         <MobileHeader farmId={null} />
-        <main className="flex-1 overflow-y-auto overflow-x-hidden pb-20 md:pb-0">
+        <main className="flex-1 hide-scrollbar overflow-y-auto overflow-x-hidden pb-20 md:pb-0">
           <div className="py-4 md:py-6">{children}</div>
         </main>
         {/* Hide bottom nav if no farm */}
@@ -110,7 +110,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           />
         </div>
         
-        <main className="flex-1 overflow-y-auto overflow-x-hidden pb-20 md:pb-0">
+        <main className="flex-1 hide-scrollbar overflow-y-auto overflow-x-hidden pb-20 md:pb-0">
           <div className="py-4 md:py-6">
             {children}
           </div>
