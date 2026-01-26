@@ -9,7 +9,9 @@ interface PricingCardProps {
   description: string;
   price: string;
   period: string;
+  priceRange?: string;
   features: string[];
+  limitations?: string[];
   isPopular?: boolean;
   paymentUrl: string;
   buttonText: string;
@@ -23,7 +25,9 @@ const PricingCard: React.FC<PricingCardProps> = ({
   description,
   price,
   period,
+  priceRange,
   features,
+  limitations,
   isPopular = false,
   paymentUrl,
   buttonText,
@@ -42,10 +46,10 @@ const PricingCard: React.FC<PricingCardProps> = ({
   return (
     <div className={`
       bg-white rounded-2xl shadow-sm overflow-hidden transition-all duration-300 ease-in-out
-      relative border-2 border-transparent flex flex-col h-full
+      relative border-2 border-transparent flex flex-col h-full w-full
       hover:-translate-y-2 hover:shadow-xl
       ${isPopular 
-        ? 'border-blue-500 lg:scale-105 shadow-blue-100 shadow-lg hover:lg:scale-105 hover:-translate-y-2 hover:shadow-blue-200 hover:shadow-2xl' 
+        ? 'border-blue-500 md:scale-105 shadow-blue-100 shadow-lg hover:md:scale-105 hover:-translate-y-2 hover:shadow-blue-200 hover:shadow-2xl' 
         : ''
       }
       motion-reduce:transition-none motion-reduce:hover:transform-none
@@ -65,13 +69,13 @@ const PricingCard: React.FC<PricingCardProps> = ({
       )}
       
       <div className={`
-        px-6 pt-8 pb-4 text-center border-b border-gray-200
+        px-6 pb-4 text-center border-b border-gray-200
         ${isPopular 
-          ? 'bg-gradient-to-br from-blue-50 to-indigo-50' 
-          : 'bg-gradient-to-br from-gray-50 to-slate-50'
+          ? 'bg-gradient-to-br from-blue-50 to-indigo-50 pt-14' 
+          : 'bg-gradient-to-br from-gray-50 to-slate-50 pt-8'
         }
-        sm:px-4 sm:pt-6 sm:pb-4
-        xs:px-3 xs:pt-5 xs:pb-3
+        sm:px-4 sm:pb-4 ${isPopular ? 'sm:pt-12' : 'sm:pt-6'}
+        xs:px-3 xs:pb-3 ${isPopular ? 'xs:pt-10' : 'xs:pt-5'}
       `}>
         <h3 className="
           text-2xl font-bold text-gray-900 mt-2 mb-2 leading-tight
@@ -102,6 +106,12 @@ const PricingCard: React.FC<PricingCardProps> = ({
             {period}
           </span>
         </div>
+        
+        {priceRange && (
+          <p className="text-xs text-slate-500 mt-2 font-medium">
+            {priceRange}/month
+          </p>
+        )}
       </div>
 
       <div className="
@@ -109,12 +119,12 @@ const PricingCard: React.FC<PricingCardProps> = ({
         sm:px-4 sm:py-4
         xs:px-3 xs:py-3
       ">
-        <ul className="list-none p-0 m-0 flex flex-col gap-3 flex-1">
+        <ul className="list-none p-0 m-0 flex flex-col gap-2 flex-1 max-h-96 overflow-y-auto pr-2">
           {features.map((feature, index) => (
             <li key={index} className="
-              flex items-start gap-3 text-sm text-gray-600 leading-relaxed
+              flex items-start gap-2 text-sm text-gray-700 leading-relaxed
               transition-colors duration-200 hover:text-gray-900
-              xs:text-sm
+              xs:text-xs
             ">
               <FiCheck className="
                 text-green-500 text-base mt-0.5 flex-shrink-0
@@ -126,6 +136,23 @@ const PricingCard: React.FC<PricingCardProps> = ({
             </li>
           ))}
         </ul>
+        
+        {limitations && limitations.length > 0 && (
+          <div className="mt-6 pt-4 border-t border-gray-200">
+            <p className="text-xs font-semibold text-gray-600 mb-2">Not included:</p>
+            <ul className="list-none p-0 m-0 flex flex-col gap-2">
+              {limitations.map((limitation, index) => (
+                <li key={index} className="
+                  flex items-start gap-2 text-xs text-gray-500 leading-relaxed
+                  xs:text-xs
+                ">
+                  <span className="text-gray-400 mt-0.5 flex-shrink-0">✕</span>
+                  <span>{limitation}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
 
       <div className="

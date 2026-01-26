@@ -122,70 +122,163 @@ export default function LandingPage() {
     }
   ];
 
-  // Pricing tiers data
+  // Pricing tiers data - Updated with new structure
   const pricingTiers = [
     {
-      id: 'basic',
-      title: 'Basic Plan',
-      description: 'Perfect for small dairy farms starting their digital journey',
+      id: 'starter',
+      title: 'Starter Farmer',
+      description: 'Perfect for smallholder farmers with 1–10 cows',
+      price: 'KES 300',
+      period: '/month',
+      priceRange: '300–500',
+      features: [
+        // Animal & Production
+        'Register up to 10 cows',
+        'Basic animal profiles (ID, breed, age)',
+        'Daily milk production recording',
+        'Simple production history per cow',
+        // Health
+        'Basic health status tracking',
+        'Vaccination & treatment log',
+        'Manual reminders (in-app)',
+        // Reports
+        'Simple monthly production summary',
+        'Individual cow history view',
+        // Access & Use
+        'Mobile & web access',
+        'Offline data capture & sync',
+        'Single user account (farm owner)',
+        // Support
+        'Self-help guides & FAQs',
+        'In-app tips'
+      ],
+      paymentUrl: 'https://checkout.stripe.com/starter-farmer-demo',
+      buttonText: 'Get Started Free',
+      isPopular: false,
+      limitations: [
+        'In-app only alerts (no SMS)',
+        'No financial tracking',
+        'No feed & breeding modules',
+        'No report exports'
+      ]
+    },
+    {
+      id: 'growing',
+      title: 'Growing Farm',
+      description: 'For serious small–medium farms with 11–50 cows',
       price: 'KES 2,500',
       period: '/month',
       features: [
-        'Up to 50 cows tracking',
-        'Basic health monitoring',
-        'Milk production records',
-        'Monthly reports',
-        'Email support',
-        'Mobile app access'
+        // Animal & Production
+        'Up to 50 cows',
+        'Lactation cycle tracking',
+        'Production drop alerts (in-app + optional SMS)',
+        // Health & Breeding
+        'Full health records & history',
+        'Vaccination schedules',
+        'Breeding & AI records',
+        'Pregnancy & calving tracking',
+        // Feed & Nutrition
+        'Feed inventory tracking',
+        'Feed usage per animal',
+        'Basic feed cost analysis',
+        // Financials
+        'Income tracking (milk sales)',
+        'Expense tracking (feed, vet, labor)',
+        'Monthly profit/loss summary',
+        // Reports
+        'Monthly & quarterly reports',
+        'PDF / Excel export',
+        // Users & Team
+        'Up to 3 user accounts',
+        'Role-based access (owner, worker)',
+        // Support
+        'Email & WhatsApp support',
+        'One-time remote onboarding'
       ],
-      paymentUrl: 'https://checkout.stripe.com/basic-plan-demo',
+      paymentUrl: 'https://mpesa.payment.com/growing-farm-demo',
       buttonText: 'Subscribe Now',
-      isPopular: false
+      isPopular: true,
+      limitations: [
+        'SMS alerts capped (50–100/month)',
+        'No equipment management',
+        'No multi-farm support'
+      ]
     },
     {
-      id: 'standard',
-      title: 'Standard Pro Plan',
-      description: 'Most popular choice for growing dairy operations',
+      id: 'commercial',
+      title: 'Commercial Pro',
+      description: 'For large commercial farms with 51–200 cows',
       price: 'KES 5,000',
       period: '/month',
       features: [
-        'Up to 200 cows tracking',
-        'Advanced health analytics',
-        'Breeding cycle management',
-        'Feed optimization',
-        'Real-time alerts',
-        'Weekly reports',
-        'Priority phone support',
-        'Integration with equipment',
-        'Team collaboration tools'
+        // Scale & Operations
+        'Up to 200 cows',
+        'Multi-user access (up to 10 users)',
+        'Audit logs (who did what, when)',
+        // Advanced Health & Breeding
+        'Disease trend analysis',
+        'Breeding success metrics',
+        'Advanced calving & fertility reports',
+        // Inventory & Equipment
+        'Equipment management',
+        'Maintenance schedules',
+        'Inventory reorder alerts',
+        // Analytics & Alerts
+        'Advanced dashboards',
+        'Customizable alerts',
+        'Higher SMS allowance (300–500/month)',
+        // Reports
+        'Advanced performance analytics',
+        'Comparative reports (month vs month)',
+        // Support & Training
+        'Priority support',
+        'Remote training sessions',
+        'Discounted on-site visits'
       ],
-      isPopular: true,
-      paymentUrl: 'https://mpesa.payment.com/standard-pro-demo',
-      buttonText: 'Subscribe Now'
+      paymentUrl: 'https://checkout.stripe.com/commercial-pro-demo',
+      buttonText: 'Subscribe Now',
+      isPopular: false,
+      limitations: [
+        'No unlimited farms',
+        'No custom integrations',
+        'API access limited'
+      ]
     },
     {
       id: 'enterprise',
-      title: 'Enterprise Plan',
-      description: 'Comprehensive solution for large-scale dairy operations',
-      price: 'KES 12,000',
-      period: '/month',
+      title: 'Enterprise / Cooperative',
+      description: 'For cooperatives, processors, NGOs, and institutions',
+      price: 'Custom',
+      period: 'pricing',
       features: [
-        'Unlimited cows tracking',
-        'AI-powered insights',
-        'Custom analytics dashboard',
-        'Multi-farm management',
-        'Advanced breeding optimization',
-        'Quality control systems',
-        'Daily reports & insights',
-        '24/7 dedicated support',
-        'Custom integrations',
-        'On-site training',
-        'Data export & API access'
+        // Multi-Farm & Aggregation
+        'Unlimited farms & animals',
+        'Cooperative-level dashboards',
+        'Farmer performance comparison',
+        'Aggregated production & quality data',
+        // Advanced Analytics & Integrations
+        'Custom reports',
+        'API access',
+        'System integrations (labs, processors, banks)',
+        // Governance & Compliance
+        'Advanced permission controls',
+        'Data audit & compliance tools',
+        'Export for lenders & insurers',
+        // Support & Deployment
+        'Dedicated account manager',
+        'On-site training & onboarding',
+        'SLA-backed support',
+        'Custom workflows',
+        // Billing & Sponsorship
+        'Central billing',
+        'Sponsored farmer accounts',
+        'Bulk onboarding & training'
       ],
-      paymentUrl: 'https://checkout.stripe.com/enterprise-plan-demo',
+      paymentUrl: 'https://checkout.stripe.com/enterprise-demo',
       buttonText: 'Contact Sales',
       isPopular: false,
-      contactNote: 'Custom pricing available for 500+ cows'
+      contactNote: 'Annual contracts • Custom pricing • Contact our team for details'
     }
   ];
 
@@ -251,8 +344,8 @@ export default function LandingPage() {
 
 
       {/* Hero Section */}
-      <div className="hero">
-        <div className="hero-section-responsive">
+      <div className="hero relative overflow-hidden">
+        <div className="hero-section-responsive relative z-10">
           <h1 className="hero-heading-responsive">
             Modern Dairy Management <br />
             <span className="hero-heading-gradient">Made Simple</span>
@@ -266,6 +359,12 @@ export default function LandingPage() {
             </Link>
           </div>
         </div>
+        {/* Decorative background image positioned below content */}
+        <img
+          src="/images/background.png"
+          alt="Decorative farm background"
+          className="absolute left-1/2 transform -translate-x-1/2 top-1/4 z-0 w-full max-w-6xl opacity-90 pointer-events-none hero-image-gradient"
+        />
       </div>
 
       {/* Features Section */}
@@ -321,10 +420,10 @@ export default function LandingPage() {
         <div className="pricing-container">
           <div className="pricing-section-header">
             <h2 className="pricing-section-title">
-              Choose the Perfect Plan for Your Dairy Farm
+              Simple, Transparent Pricing
             </h2>
             <p className="pricing-section-subtitle">
-              Flexible pricing designed to grow with your operation. All plans include a 14-day free trial.
+              Choose the plan that fits your farm's size and needs. Start free, scale with confidence.
             </p>
           </div>
 
@@ -337,7 +436,9 @@ export default function LandingPage() {
                 description={tier.description}
                 price={tier.price}
                 period={tier.period}
+                priceRange={(tier as any).priceRange}
                 features={tier.features}
+                limitations={(tier as any).limitations}
                 isPopular={tier.isPopular}
                 paymentUrl={tier.paymentUrl}
                 buttonText={tier.buttonText}
@@ -431,10 +532,10 @@ export default function LandingPage() {
             <div className={'connect-with-us-box'}>
               <h3 className={'connect-with-us-heading'}>Connect With Us</h3>
               <div className={'social-icons'}>
-                <a href="#" aria-label="Facebook"><FiFacebook /></a>
-                <a href="#" aria-label="Twitter"><RiTwitterXFill /></a>
-                <a href="#" aria-label="Instagram"><FaInstagram /></a>
-                <a href="#" aria-label="LinkedIn"><FiLinkedin /></a>
+                <a href="#" aria-label="Facebook" className="social-icon"><FiFacebook /></a>
+                <a href="#" aria-label="Twitter" className="social-icon"><RiTwitterXFill /></a>
+                <a href="#" aria-label="Instagram" className="social-icon"><FaInstagram /></a>
+                <a href="#" aria-label="LinkedIn" className="social-icon"><FiLinkedin /></a>
               </div>
             </div>
           </div>

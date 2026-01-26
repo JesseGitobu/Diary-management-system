@@ -128,6 +128,26 @@
     animation-duration: 300ms;
   }
 
+  /* Hero image with gradient mask effect */
+  .hero-image-gradient {
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0) 0%,
+      rgba(0, 0, 0, 0.2) 20%,
+      rgba(0, 0, 0, 0.6) 40%,
+      rgba(0, 0, 0, 1) 60%,
+      rgba(0, 0, 0, 1) 100%
+    );
+    mask-image: linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0) 0%,
+      rgba(0, 0, 0, 0.2) 20%,
+      rgba(0, 0, 0, 0.6) 40%,
+      rgba(0, 0, 0, 1) 60%,
+      rgba(0, 0, 0, 1) 100%
+    );
+  }
+
   
   /* Mobile-specific breeding dashboard utilities */
   .breeding-card-mobile {
@@ -332,7 +352,7 @@
   /* Responsive Hero Section */
   .hero-section-responsive {
     @apply text-center max-w-4xl mx-auto px-5;
-    @apply pt-36 pb-20 md:pt-44 md:pb-28;
+    @apply pt-12 pb-20 md:pt-16 md:pb-28;
   }
 
   /* Hero Heading */
@@ -359,7 +379,7 @@
 
   /* Responsive Hero Paragraph */
   .hero-paragraph-responsive {
-    @apply text-lg md:text-2xl text-gray-600 mb-8 leading-relaxed;
+    @apply text-lg md:text-2xl text-gray-600 mb-4 leading-relaxed;
   }
 
   /* Hero Button Container */
@@ -550,7 +570,7 @@
 
   /* Pricing Grid */
   .pricing-grid {
-    @apply flex justify-center gap-5 px-2 mb-12 relative z-10;
+    @apply grid grid-cols-1 lg:grid-cols-4 md:grid-cols-2 gap-6 px-2 mb-12 relative z-10 max-w-7xl mx-auto;
   }
 
   /* Payment Methods Section */
@@ -708,51 +728,48 @@
   /* Contact Info Side Container */
   .contact-side {
     @apply p-5 rounded-lg;
-    @apply lg:w-2/5 w-full;
+    @apply lg:w-2/5 w-full flex flex-col items-center lg:items-start;
   }
 
   /* Individual Contact Info Boxes */
   .contact-info-box {
-    @apply bg-gray-50 p-5 rounded-lg w-full mb-5;
+    @apply bg-gray-50 p-5 rounded-lg w-full mb-5 max-w-md;
   }
 
   .contact-info-heading {
-    @apply text-xl font-bold mb-2 mt-0 text-gray-800;
+    @apply text-xl font-bold mb-2 mt-0 text-gray-800 text-center lg:text-left;
     font-size: 1.4em;
     margin-bottom: 10px;
   }
 
   .contact-info-text {
-    @apply mb-2 mt-0 text-gray-600 text-left;
-    @apply lg:text-left text-center;
+    @apply mb-2 mt-0 text-gray-600 text-center lg:text-left;
   }
 
   /* Business Hours */
   .business-hours-box {
-    @apply bg-gray-50 p-5 rounded-lg w-full mb-5;
+    @apply bg-gray-50 p-5 rounded-lg w-full mb-5 max-w-md;
   }
 
   .business-hours-heading {
-    @apply text-xl font-bold mb-2 mt-0 text-gray-800;
+    @apply text-xl font-bold mb-2 mt-0 text-gray-800 text-center lg:text-left;
   }
 
   .business-hours-text {
-    @apply mb-2 mt-0 text-gray-600 text-left;
-    @apply lg:text-left text-center;
+    @apply mb-2 mt-0 text-gray-600 text-center lg:text-left;
   }
 
   /* Connect With Us */
   .connect-with-us-box {
-    @apply bg-gray-50 p-5 rounded-lg w-full;
-    @apply lg:max-w-none max-w-2xl lg:text-left text-center;
+    @apply bg-gray-50 p-5 rounded-lg w-full max-w-md text-center lg:text-left lg:max-w-none;
   }
 
   .connect-with-us-heading {
-    @apply text-xl font-bold mb-2 mt-0 text-gray-800;
+    @apply text-xl font-bold mb-2 mt-0 text-gray-800 text-center lg:text-left;
   }
 
   .contact-info-item {
-    @apply flex items-center gap-3 text-blue-500 hover:text-blue-700 transition-colors p-2 rounded-md hover:bg-blue-50;
+    @apply flex items-center gap-3 text-blue-500 hover:text-blue-700 transition-colors p-2 rounded-md hover:bg-blue-50 justify-center lg:justify-start;
   }
 
   .contact-info-icon {
