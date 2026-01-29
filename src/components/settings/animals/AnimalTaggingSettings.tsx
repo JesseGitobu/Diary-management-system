@@ -785,32 +785,33 @@ const resetUnsavedChanges = () => {
       pb-20 lg:pb-6
     `}>
       {/* Header */}
-      <div className="mb-6">
-        <div className="flex items-center space-x-4 mb-4">
+      <div className={`mb-6 ${isMobile ? 'space-y-3' : 'space-y-4'}`}>
+        <div className="flex items-center space-x-2 mb-3">
           <Button
             variant="ghost"
+            size={isMobile ? "sm" : "default"}
             onClick={handleBack}
-            className="flex items-center space-x-2"
+            className="flex items-center space-x-1"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Back to Settings</span>
+            <span className={isMobile ? "text-sm" : ""}>Back</span>
           </Button>
         </div>
 
-        <div className="flex items-center space-x-3 mb-2">
-          <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+        <div className={`flex flex-col ${isMobile ? 'space-y-2' : 'items-center space-x-3'}`}>
+          <div className={`w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0`}>
             <Tag className="w-5 h-5 text-blue-600" />
           </div>
-          <div>
-            <h1 className={`font-bold text-gray-900 ${isMobile ? 'text-2xl' : 'text-3xl'}`}>
-              Animal Classification and Tagging Configuration
+          <div className="flex-1">
+            <h1 className={`font-bold text-gray-900 ${isMobile ? 'text-lg' : 'text-3xl'} leading-tight`}>
+              Animal Tagging Configuration
             </h1>
-            <p className={`text-gray-600 ${isMobile ? 'text-sm' : 'text-base'}`}>
-              Configure tagging methods and identification systems for your herd of {currentHerdSize} animals
+            <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-base'} mt-1`}>
+              Configure tagging methods for {currentHerdSize} animals
             </p>
           </div>
-          <Badge variant="outline" className="px-3 py-1">
-            Current Method: {taggingMethods[selectedMethod].title}
+          <Badge variant="outline" className={`px-2 py-1 flex-shrink-0 ${isMobile ? 'text-xs' : ''}`}>
+            <span className={isMobile ? "hidden sm:inline" : ""}>Method: </span>{taggingMethods[selectedMethod].title}
           </Badge>
         </div>
       </div>
@@ -851,34 +852,34 @@ const resetUnsavedChanges = () => {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-3'}`}>
             {Object.entries(taggingMethods).map(([key, method]) => (
-              <div
+              <button
                 key={key}
-                className={`border-2 rounded-lg p-4 cursor-pointer transition-all ${selectedMethod === key
+                className={`border-2 rounded-lg p-3 text-left cursor-pointer transition-all ${selectedMethod === key
                   ? 'border-blue-500 bg-blue-50'
-                  : 'border-gray-200 hover:border-gray-300'
+                  : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                   }`}
                 onClick={() => handleMethodChange(key as TaggingMethodKey)}
               >
-                <div className="flex items-center space-x-3 mb-3">
-                  <div className={`w-10 h-10 ${method.color} rounded-lg flex items-center justify-center text-white`}>
+                <div className={`flex ${isMobile ? 'flex-col items-start space-y-2' : 'items-center space-x-3'} mb-3`}>
+                  <div className={`w-10 h-10 ${method.color} rounded-lg flex items-center justify-center text-white flex-shrink-0`}>
                     {method.icon}
                   </div>
-                  <div>
-                    <h3 className="font-semibold text-gray-900">{method.title}</h3>
-                    <p className="text-sm text-gray-600">{method.description}</p>
+                  <div className="min-w-0">
+                    <h3 className={`font-semibold text-gray-900 ${isMobile ? 'text-sm' : ''}`}>{method.title}</h3>
+                    <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>{method.description}</p>
                   </div>
                 </div>
-                <div className="space-y-1">
+                <div className={`space-y-1 ${isMobile ? 'ml-0' : ''}`}>
                   {method.features.map((feature, index) => (
-                    <div key={index} className="flex items-center text-sm text-gray-600">
-                      <div className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-2"></div>
-                      {feature}
+                    <div key={index} className={`flex items-center text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>
+                      <div className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-2 flex-shrink-0"></div>
+                      <span className="truncate">{feature}</span>
                     </div>
                   ))}
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </CardContent>
@@ -890,30 +891,31 @@ const resetUnsavedChanges = () => {
           <CardTitle>Basic Identification Settings</CardTitle>
           <CardDescription>Configure fundamental animal identification parameters</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <CardContent className={`space-y-4 ${isMobile ? 'space-y-3' : 'space-y-6'}`}>
+          <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2 gap-4'}`}>
             <div>
-              <Label htmlFor="tagPrefix">Tag Prefix</Label>
+              <Label htmlFor="tagPrefix" className={isMobile ? 'text-sm' : ''}>Tag Prefix</Label>
               <Input
                 id="tagPrefix"
                 value={settings.tagPrefix}
                 onChange={(e) => setSettings(prev => ({ ...prev, tagPrefix: e.target.value }))}
                 placeholder="COW"
+                className={isMobile ? 'text-sm' : ''}
               />
-              <p className="text-sm text-gray-500 mt-1">Prefix for auto-generated tag numbers</p>
+              <p className={`text-gray-500 mt-1 ${isMobile ? 'text-xs' : 'text-sm'}`}>Prefix for auto-generated tags</p>
             </div>
 
             <div>
-              <Label htmlFor="tagNumbering">Numbering System</Label>
+              <Label htmlFor="tagNumbering" className={isMobile ? 'text-sm' : ''}>Numbering System</Label>
               <Select
                 value={settings.tagNumbering}
                 onValueChange={(value) => setSettings(prev => ({ ...prev, tagNumbering: value }))}
               >
-                <SelectTrigger>
+                <SelectTrigger className={isMobile ? 'text-sm' : ''}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="sequential">Sequential (COW-001, COW-002...)</SelectItem>
+                  <SelectItem value="sequential">Sequential (COW-001...)</SelectItem>
                   <SelectItem value="custom">Custom Format</SelectItem>
                   <SelectItem value="barcode">Barcode Compatible</SelectItem>
                 </SelectContent>
@@ -921,7 +923,7 @@ const resetUnsavedChanges = () => {
 
               {/* Custom Format Configuration */}
               {settings.tagNumbering === 'custom' && (
-                <div className="mt-4 p-4 bg-gray-50 rounded-lg space-y-4">
+                <div className={`mt-3 p-3 bg-gray-50 rounded-lg space-y-3 ${isMobile ? 'text-sm' : ''}`}>
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <Label className="text-sm font-medium">Custom Format Pattern</Label>
@@ -978,11 +980,12 @@ const resetUnsavedChanges = () => {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    <div className={`grid gap-2 ${isMobile ? 'grid-cols-2' : 'grid-cols-2 md:grid-cols-4'}`}>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => appendToFormat('{PREFIX}')}
+                        className={isMobile ? 'text-xs' : ''}
                       >
                         + Prefix
                       </Button>
@@ -990,6 +993,7 @@ const resetUnsavedChanges = () => {
                         variant="outline"
                         size="sm"
                         onClick={() => appendToFormat('{YEAR}')}
+                        className={isMobile ? 'text-xs' : ''}
                       >
                         + Year
                       </Button>
@@ -997,6 +1001,7 @@ const resetUnsavedChanges = () => {
                         variant="outline"
                         size="sm"
                         onClick={() => appendToFormat('{MONTH:2}')}
+                        className={isMobile ? 'text-xs' : ''}
                       >
                         + Month
                       </Button>
@@ -1004,6 +1009,7 @@ const resetUnsavedChanges = () => {
                         variant="outline"
                         size="sm"
                         onClick={() => appendToFormat('{NUMBER:3}')}
+                        className={isMobile ? 'text-xs' : ''}
                       >
                         + Number
                       </Button>
@@ -1825,39 +1831,43 @@ const resetUnsavedChanges = () => {
       )}
 
       {/* Action Buttons */}
-      <div className={`${isMobile ? 'flex flex-col space-y-4' : 'flex items-center justify-between'} pt-6 border-t mb-8`}>
-        <div className={`${isMobile ? 'w-full' : ''} flex items-center space-x-2`}>
-          <Info className="h-4 w-4 text-blue-500 flex-shrink-0" />
-          <span className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-600`}>
-            Changes will apply to new animals. Existing animals can be updated individually.
-          </span>
-          {hasUnsavedChanges && (
-            <div className="flex items-center space-x-1 ml-2 px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs flex-shrink-0">
-              <AlertTriangle className="h-3 w-3" />
-              <span>Unsaved</span>
-            </div>
-          )}
-        </div>
-        <div className={`${isMobile ? 'w-full flex flex-col space-y-2' : 'flex space-x-3'}`}>
-          <Button
-            variant="outline"
-            onClick={resetToDefaults}
-            className={`${isMobile ? 'w-full' : ''} hover:bg-red-50 hover:border-red-200 hover:text-red-700`}
-          >
-            <RotateCcw className="h-4 w-4 mr-2" />
-            Reset to Defaults
-          </Button>
-          <Button
-            onClick={handleSaveSettings}
-            disabled={isLoading}
-            className={`${isMobile ? 'w-full' : ''} ${hasUnsavedChanges ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'text-white'}`}
-          >
-            <Save className="h-4 w-4 mr-2" />
-            {isLoading ? 'Saving...' : 'Save Settings'}
+      <div className={`pt-6 border-t mb-8 ${isMobile ? 'space-y-3' : 'space-y-4'}`}>
+        <div className={`flex ${isMobile ? 'flex-col space-y-2' : 'items-center justify-between'}`}>
+          <div className={`flex items-center space-x-2 ${isMobile ? 'text-xs flex-wrap gap-2' : ''}`}>
+            <Info className="h-4 w-4 text-blue-500 flex-shrink-0" />
+            <span className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>
+              Changes apply to new animals only
+            </span>
             {hasUnsavedChanges && (
-              <span className="ml-1 w-2 h-2 bg-white rounded-full animate-pulse"></span>
+              <div className="flex items-center space-x-1 px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs flex-shrink-0">
+                <AlertTriangle className="h-3 w-3" />
+                <span>Unsaved</span>
+              </div>
             )}
-          </Button>
+          </div>
+          <div className={`flex ${isMobile ? 'w-full flex-col-reverse space-y-reverse space-y-2' : 'space-x-3'}`}>
+            <Button
+              variant="outline"
+              onClick={resetToDefaults}
+              size={isMobile ? "sm" : "default"}
+              className={`${isMobile ? 'w-full' : ''} hover:bg-red-50 hover:border-red-200 hover:text-red-700`}
+            >
+              <RotateCcw className={`${isMobile ? 'h-3 w-3' : 'h-4 w-4'} ${isMobile ? '' : 'mr-2'}`} />
+              <span className={isMobile ? "hidden" : ""}>Reset</span>
+            </Button>
+            <Button
+              onClick={handleSaveSettings}
+              disabled={isLoading}
+              size={isMobile ? "sm" : "default"}
+              className={`${isMobile ? 'w-full' : ''} ${hasUnsavedChanges ? 'bg-blue-600 hover:bg-blue-700 text-white' : ''}`}
+            >
+              <Save className={`${isMobile ? 'h-3 w-3' : 'h-4 w-4'} ${isMobile ? '' : 'mr-2'}`} />
+              <span>{isLoading ? (isMobile ? 'Saving...' : 'Saving...') : isMobile ? 'Save' : 'Save Settings'}</span>
+              {hasUnsavedChanges && (
+                <span className="ml-1 w-2 h-2 bg-white rounded-full animate-pulse"></span>
+              )}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

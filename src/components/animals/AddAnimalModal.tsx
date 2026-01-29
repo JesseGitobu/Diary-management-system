@@ -18,6 +18,7 @@ interface AddAnimalModalProps {
   onClose: () => void
   onAnimalAdded: (animal: Animal) => void
   onHealthRecordCreated?: (record: any) => void
+  onRefreshWeightsList?: () => void  // ✅ NEW: Callback to refresh weight updates list
 }
 
 export default function AddAnimalModal({
@@ -25,7 +26,8 @@ export default function AddAnimalModal({
   isOpen,
   onClose,
   onAnimalAdded,
-  onHealthRecordCreated
+  onHealthRecordCreated,
+  onRefreshWeightsList  // ✅ NEW: Destructure callback
 }: AddAnimalModalProps) {
   const [animalSource, setAnimalSource] = useState<'newborn_calf' | 'purchased_animal' | null>(null)
   const [showSourceSelection, setShowSourceSelection] = useState(true)
@@ -330,6 +332,7 @@ export default function AddAnimalModal({
     animal={createdAnimal}
     reason={pendingWeightUpdate.reason}
     onWeightUpdated={handleWeightUpdated}
+    onRefreshData={onRefreshWeightsList}  // ✅ NEW: Pass refresh callback
   />
 )}
     </>

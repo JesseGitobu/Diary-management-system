@@ -43,11 +43,157 @@ export interface PregnancyCheckEvent extends BreedingEventBase {
 export interface CalvingEvent extends BreedingEventBase {
   event_type: 'calving'
   calving_outcome: CalvingOutcome
+  calf_name?: string
+  calf_breed?: string
   calf_gender?: string
   calf_weight?: number
   calf_tag_number?: string
   calf_health_status?: string
+  calf_father_info?: string
 }
+
+// ============================================
+// CALF TAG GENERATION
+// ============================================
+
+export interface AnimalTaggingSettings {
+  id: string
+  farm_id: string
+  numbering_system: 'sequential' | 'custom'
+  custom_format: string
+  tag_prefix: string
+  include_year_in_tag: boolean
+  padding_zeros: boolean
+  custom_start_number: number
+  next_number: number
+}
+
+/**
+ * Generates a calf tag based on farm's tagging settings
+ * Supports formats like: {PREFIX}-{YEAR}-{NUMBER:3}
+ * Where:
+ *   {PREFIX} = tag_prefix (e.g., "COW")
+ *   {YEAR} = current year (e.g., "2026")
+ *   {NUMBER:3} = number padded to 3 digits (e.g., "001")
+ */
+export async function generateCalfTag(
+  farmId: string,
+  calvingDate: string,
+  parentAnimalTag?: string
+): Promise<string> {
+  const supabase = createClient()
+  
+  try {
+    console.log('🐄 generateCalfTag: Fetching tagging settings for farmId:', farmId)
+    
+    // Fetch tagging settings
+    const { data: settings, error } = await supabase
+      .from('animal_tagging_settings')
+      .select('*')
+      .eq('farm_id', farmId)
+      .single()
+    
+    if (error || !settings) {
+      console.warn('⚠️ generateCalfTag: No tagging settings found, using fallback format')
+      // Fallback to basic format
+      const year = new Date(calvingDate).getFullYear().toString().slice(-2)
+      const month = String(new Date(calvingDate).getMonth() + 1).padStart(2, '0')
+      return `${parentAnimalTag || 'CALF'}-${year}${month}C`
+    }
+
+    const tagSettings = settings as AnimalTaggingSettings
+    console.log('🐄 generateCalfTag: Settings loaded:', { numbering_system: tagSettings.numbering_system, custom_format: tagSettings.custom_format })
+
+    const calvingYear = new Date(calvingDate).getFullYear()
+    let nextNumber = tagSettings.next_number || 1
+
+    // Generate tag based on numbering system
+    let calfTag = ''
+    
+    if (tagSettings.numbering_system === 'custom' && tagSettings.custom_format) {
+      // Use custom format: e.g., "{PREFIX}-{YEAR}-{NUMBER:3}"
+      calfTag = tagSettings.custom_format
+        .replace('{PREFIX}', tagSettings.tag_prefix || 'COW')
+        .replace('{YEAR}', tagSettings.include_year_in_tag ? calvingYear.toString() : '')
+        .replace(/\{NUMBER:(\d+)\}/, (match, digits) => {
+          const padLength = parseInt(digits, 10)
+          return tagSettings.padding_zeros
+            ? nextNumber.toString().padStart(padLength, '0')
+            : nextNumber.toString()
+        })
+        .replace(/--/g, '-') // Clean up double dashes if YEAR is omitted
+        .replace(/-$/, '') // Remove trailing dash
+        .trim()
+    } else {
+      // Default sequential format: PREFIX-YEAR(optional)-NUMBER(padded)
+      const parts = [tagSettings.tag_prefix || 'COW']
+      
+      if (tagSettings.include_year_in_tag) {
+        parts.push(calvingYear.toString())
+      }
+      
+      const numberStr = tagSettings.padding_zeros
+        ? nextNumber.toString().padStart(3, '0')
+        : nextNumber.toString()
+      
+      parts.push(numberStr)
+      calfTag = parts.join('-')
+    }
+
+    console.log('🐄 generateCalfTag: Generated tag:', calfTag, 'next_number will be:', nextNumber + 1)
+    
+    return calfTag
+  } catch (error) {
+    console.error('❌ generateCalfTag: Error generating tag:', error)
+    // Fallback to simple format
+    const year = new Date(calvingDate).getFullYear().toString().slice(-2)
+    const month = String(new Date(calvingDate).getMonth() + 1).padStart(2, '0')
+    return `${parentAnimalTag || 'CALF'}-${year}${month}C`
+  }
+}
+
+/**
+ * Increments the next_number in animal_tagging_settings after a calf tag is used
+ */
+export async function incrementCalfTagNumber(farmId: string): Promise<void> {
+  const supabase = createClient()
+  
+  try {
+    console.log('🐄 incrementCalfTagNumber: Incrementing counter for farm:', farmId)
+    
+    // First, get current next_number
+    const { data: settings, error: fetchError } = await supabase
+      .from('animal_tagging_settings')
+      .select('next_number')
+      .eq('farm_id', farmId)
+      .single()
+    
+    if (fetchError || !settings) {
+      console.warn('⚠️ incrementCalfTagNumber: Could not fetch tagging settings:', fetchError?.message)
+      return
+    }
+    
+    const currentNumber = (settings as any).next_number || 1
+    const nextNumber = currentNumber + 1
+    
+    // Update with the incremented value
+    const { error: updateError } = await (supabase
+      .from('animal_tagging_settings') as any)
+      .update({ next_number: nextNumber })
+      .eq('farm_id', farmId)
+    
+    if (updateError) {
+      console.warn('⚠️ incrementCalfTagNumber: Could not update counter:', updateError.message)
+      return
+    }
+    
+    console.log('🐄 incrementCalfTagNumber: Successfully incremented counter from', currentNumber, 'to', nextNumber)
+  } catch (error) {
+    console.error('❌ incrementCalfTagNumber: Error:', error)
+    // Non-critical - calf tag generation will still work even if counter doesn't increment
+  }
+}
+  
 
 export type BreedingEvent = HeatDetectionEvent | InseminationEvent | PregnancyCheckEvent | CalvingEvent
 
@@ -144,46 +290,82 @@ export async function getAnimalsForPregnancyCheck(farmId: string) {
 export async function getAnimalsForCalving(farmId: string) {
   const supabase = createClient()
   
-  // Primary check: Animals explicitly marked as 'pregnant' or 'dry'
-  const { data: statusBasedData, error: statusError } = await supabase
-    .from('animals')
-    .select('id, tag_number, name, production_status')
-    .eq('farm_id', farmId)
-    .in('production_status', ['pregnant', 'dry'])
+  try {
+    console.log('🐄 getAnimalsForCalving: Starting query for farmId:', farmId)
     
-  if (!statusError && statusBasedData && statusBasedData.length > 0) {
+    // Primary check: Animals explicitly marked as 'pregnant' or 'dry'
+    console.log('🐄 getAnimalsForCalving: Attempting primary query (production_status)')
+    const { data: statusBasedData, error: statusError } = await supabase
+      .from('animals')
+      .select('id, tag_number, name, production_status')
+      .eq('farm_id', farmId)
+      .in('production_status', ['pregnant', 'dry'])
+    
+    console.log('🐄 getAnimalsForCalving: Primary query completed', { statusError, dataCount: statusBasedData?.length })
+    
+    if (!statusError && statusBasedData && statusBasedData.length > 0) {
+      console.log('🐄 getAnimalsForCalving: Primary query returned animals:', statusBasedData)
       return statusBasedData as any[]
-  }
+    }
 
-  // Fallback: Check breeding events for confirmed pregnancy
-  const { data, error } = await supabase
-    .from('animals')
-    .select(`
-      id, tag_number, name,
-      breeding_events!inner (
-        event_type,
-        pregnancy_result,
-        estimated_due_date
-      )
-    `)
-    .eq('farm_id', farmId)
-    .eq('status', 'active')
-    .eq('gender', 'female')
-    .eq('breeding_events.event_type', 'pregnancy_check')
-    .eq('breeding_events.pregnancy_result', 'pregnant')
-  
-  if (error) {
-    console.error('Error fetching animals for calving:', error)
+    // Fallback: Check breeding events for confirmed pregnancy
+    // Simplified version - just get all pregnant animals without inner join complexity
+    console.log('🐄 getAnimalsForCalving: Attempting fallback query (all animals on farm)')
+    const { data: allAnimals, error: allAnimalsError } = await supabase
+      .from('animals')
+      .select('id, tag_number, name, production_status')
+      .eq('farm_id', farmId)
+      .eq('gender', 'female')
+      .eq('status', 'active')
+    
+    console.log('🐄 getAnimalsForCalving: Fallback animals query completed', { allAnimalsError, dataCount: allAnimals?.length })
+    
+    if (allAnimalsError) {
+      console.error('❌ getAnimalsForCalving: Error fetching animals:', allAnimalsError)
+      return []
+    }
+
+    if (!allAnimals || allAnimals.length === 0) {
+      console.log('🐄 getAnimalsForCalving: No animals found on farm')
+      return []
+    }
+
+    // Now get breeding events for these animals (separate query)
+    console.log('🐄 getAnimalsForCalving: Fetching breeding events for animals')
+    const animalIds = (allAnimals as any[]).map(a => a.id)
+    const { data: events, error: eventsError } = await supabase
+      .from('breeding_events')
+      .select('animal_id, event_type, pregnancy_result, estimated_due_date')
+      .in('animal_id', animalIds)
+      .eq('event_type', 'pregnancy_check')
+      .eq('pregnancy_result', 'positive')
+      .order('event_date', { ascending: false })
+    
+    console.log('🐄 getAnimalsForCalving: Breeding events query completed', { eventsError, dataCount: events?.length })
+    
+    if (eventsError) {
+      console.error('❌ getAnimalsForCalving: Error fetching breeding events:', eventsError)
+      // Still return all animals even if breeding events fail
+      return allAnimals
+    }
+
+    // Filter to only animals with positive pregnancy checks
+    if (!events || events.length === 0) {
+      console.log('🐄 getAnimalsForCalving: No positive pregnancy checks found')
+      return []
+    }
+
+    const animalsWithPregnancy = (events as any[])
+      .map(event => (allAnimals as any[]).find(a => a.id === event.animal_id))
+      .filter(Boolean) as any[]
+
+    console.log('🐄 getAnimalsForCalving: Returning animals with positive pregnancy:', animalsWithPregnancy.length)
+    return animalsWithPregnancy
+
+  } catch (error) {
+    console.error('❌ getAnimalsForCalving: Unexpected error:', error)
     return []
   }
-  
-  // Unique filter
-  const animalsData = (data || []) as any[]
-  const uniqueAnimals = Array.from(new Set(animalsData.map(a => a.id)))
-    .map(id => animalsData.find(a => a.id === id))
-    .filter(Boolean) as any[]
-
-  return uniqueAnimals
 }
 
 // CLIENT-SIDE: This should call the API, not database directly
@@ -230,6 +412,48 @@ function mapDifficulty(outcome: string): string {
   return 'normal' // Default
 }
 
+/**
+ * Fetches the semen bull code from the latest insemination event
+ * for a given animal, to auto-populate sire information in calving form
+ */
+export async function fetchLatestSemenBullCode(animalId: string): Promise<string | null> {
+  const supabase = createClient()
+  
+  try {
+    console.log('🐄 fetchLatestSemenBullCode: Fetching for animal:', animalId)
+    
+    const { data, error } = await (supabase
+      .from('breeding_events') as any)
+      .select('semen_bull_code')
+      .eq('animal_id', animalId)
+      .eq('event_type', 'insemination')
+      .order('event_date', { ascending: false })
+      .limit(1)
+    
+    if (error) {
+      console.warn('⚠️ fetchLatestSemenBullCode: Error fetching semen bull code:', error.message)
+      return null
+    }
+    
+    if (!data || (data as any[]).length === 0) {
+      console.log('🐄 fetchLatestSemenBullCode: No semen bull code found')
+      return null
+    }
+
+    const semenBullCode = (data as any[])[0]?.semen_bull_code
+    
+    if (!semenBullCode) {
+      console.log('🐄 fetchLatestSemenBullCode: No semen bull code value found')
+      return null
+    }
+    
+    console.log('🐄 fetchLatestSemenBullCode: Found semen bull code:', semenBullCode)
+    return semenBullCode
+  } catch (error) {
+    console.error('❌ fetchLatestSemenBullCode: Unexpected error:', error)
+    return null
+  }
+}
 
 export async function processCalving(calvingEvent: CalvingEvent, farmId: string) {
   const supabase = createClient()
@@ -239,29 +463,62 @@ export async function processCalving(calvingEvent: CalvingEvent, farmId: string)
   }
 
   try {
-    // 1. GET ACTIVE PREGNANCY RECORD
-    const { data: pregRecord, error: pregError } = await (supabase
-      .from('pregnancy_records') as any)
-      .select('id, breeding_record_id') 
+    // 1. GET LATEST PREGNANCY CHECK EVENT FROM BREEDING_EVENTS TABLE
+    // Check for most recent positive pregnancy check
+    const { data: pregnancyCheckData, error: pregCheckError } = await (supabase
+      .from('breeding_events') as any)
+      .select('id, event_date, estimated_due_date, pregnancy_result') 
       .eq('animal_id', calvingEvent.animal_id)
-      .eq('pregnancy_status', 'confirmed')
-      .order('created_at', { ascending: false })
+      .eq('event_type', 'pregnancy_check')
+      .eq('pregnancy_result', 'pregnant')
+      .order('event_date', { ascending: false })
       .limit(1)
-      .single()
 
-    if (pregError || !pregRecord) {
-      console.error('No active pregnancy record found for mother:', calvingEvent.animal_id, 'Fetch Error:', pregError?.message);
+    if (pregCheckError) {
+      console.error('Error fetching pregnancy check event:', pregCheckError)
       return { 
         success: false, 
-        error: 'Cannot record calving: No active confirmed pregnancy record found for this animal.' 
+        error: 'Cannot record calving: Error fetching pregnancy check event.' 
       }
     }
 
-    // 2. CREATE CALF IN 'ANIMALS' TABLE
+    // Handle array response and get first record
+    const pregnancyCheckEvent = Array.isArray(pregnancyCheckData) && pregnancyCheckData.length > 0 
+      ? pregnancyCheckData[0] 
+      : null
+
+    if (!pregnancyCheckEvent) {
+      console.error('No positive pregnancy check found for mother:', calvingEvent.animal_id)
+      return { 
+        success: false, 
+        error: 'Cannot record calving: No positive pregnancy check found for this animal. Please create a pregnancy check record first.' 
+      }
+    }
+
+    console.log('🐄 processCalving: Found positive pregnancy check event:', pregnancyCheckEvent)
+
+    // 2. CHECK IF CALF TAG ALREADY EXISTS
+    console.log('🐄 processCalving: Checking if tag number already exists:', calvingEvent.calf_tag_number)
+    const { data: existingCalf, error: checkError } = await (supabase.from('animals') as any)
+      .select('id, tag_number, name')
+      .eq('tag_number', calvingEvent.calf_tag_number)
+      .eq('farm_id', farmId)
+      .limit(1)
+
+    if (!checkError && existingCalf && (existingCalf as any[]).length > 0) {
+      console.error('🐄 processCalving: Calf tag already exists:', calvingEvent.calf_tag_number)
+      return {
+        success: false,
+        error: `Calf tag "${calvingEvent.calf_tag_number}" already exists in the system. Please use a different tag number or increment the tag counter in Animal Tagging Settings.`
+      }
+    }
+
+    // 3. CREATE CALF IN 'ANIMALS' TABLE
     const newCalfData = {
       farm_id: farmId,
       tag_number: calvingEvent.calf_tag_number,
-      name: `Calf ${calvingEvent.calf_tag_number}`,
+      name: calvingEvent.calf_name || `Calf ${calvingEvent.calf_tag_number}`,
+      breed: calvingEvent.calf_breed,
       gender: calvingEvent.calf_gender || 'female',
       birth_date: calvingEvent.event_date,
       weight: calvingEvent.calf_weight,
@@ -283,16 +540,20 @@ export async function processCalving(calvingEvent: CalvingEvent, farmId: string)
       throw new Error(`Failed to create calf: ${calfError.message}`)
     }
 
-    // 3. CREATE CALVING RECORD (Legacy/Detailed table)
-    let sireInfo = null;
-    if (pregRecord.breeding_record_id) {
-       const { data: br } = await (supabase.from('breeding_records') as any).select('sire_tag, sire_breed').eq('id', pregRecord.breeding_record_id).single()
-       if (br) sireInfo = `${br.sire_tag || ''} ${br.sire_breed || ''}`.trim()
+    // 4. CREATE CALVING RECORD (Legacy/Detailed table) - OPTIONAL
+    // If breeding_records table exists, try to fetch sire info from it (optional)
+    let sireInfo = null
+    
+    // Try to get sire info from calf_father_info in the calving event first
+    if (calvingEvent.calf_father_info) {
+      sireInfo = calvingEvent.calf_father_info
+      console.log('🐄 processCalving: Using sire info from calving event:', sireInfo)
     }
 
+    // Create calving record if the table exists (optional step)
+    let calvingRecord = null
     const calvingRecordData = {
-      pregnancy_record_id: pregRecord.id,
-      mother_id: calvingEvent.animal_id,
+      animal_id: calvingEvent.animal_id,
       farm_id: farmId,
       calving_date: calvingEvent.event_date,
       calving_difficulty: mapDifficulty(calvingEvent.calving_outcome),
@@ -301,42 +562,58 @@ export async function processCalving(calvingEvent: CalvingEvent, farmId: string)
       calf_gender: calvingEvent.calf_gender,
       calf_alive: calvingEvent.calf_health_status !== 'deceased',
       calf_health_status: mapHealthStatus(calvingEvent.calf_health_status),
+      sire_info: sireInfo,
       notes: calvingEvent.notes
     }
 
-    const { data: calvingRecord, error: calvingError } = await (supabase.from('calving_records') as any)
-      .insert(calvingRecordData)
-      .select()
-      .single()
+    try {
+      const { data: calvingRecordResult, error: calvingError } = await (supabase.from('calving_records') as any)
+        .insert(calvingRecordData)
+        .select()
+        .single()
 
-    if (calvingError) {
-       console.error('Supabase Error creating calving record:', JSON.stringify(calvingError, null, 2))
-       throw new Error(`Failed to create calving record: ${calvingError.message}`)
+      if (!calvingError && calvingRecordResult) {
+        calvingRecord = calvingRecordResult
+        console.log('🐄 processCalving: Created calving record')
+      } else if (calvingError) {
+        console.warn('⚠️ processCalving: Could not create calving record (optional step):', calvingError.message)
+        // Continue anyway - calving record is optional
+      }
+    } catch (error) {
+      console.warn('⚠️ processCalving: Error creating calving record (optional):', error)
+      // Continue - calving record is optional
     }
 
-    // 4. CREATE CALF RECORD (Detail table)
-    const calfRecordData = {
-      calving_record_id: calvingRecord.id,
-      animal_id: newCalf.id,
-      farm_id: farmId,
-      dam_id: calvingEvent.animal_id,
-      birth_date: calvingEvent.event_date,
-      gender: calvingEvent.calf_gender,
-      birth_weight: calvingEvent.calf_weight,
-      health_status: mapHealthStatus(calvingEvent.calf_health_status),
-      sire_info: sireInfo, 
-      notes: 'Auto-generated from calving event'
+    // 5. CREATE CALF RECORD (Detail table) - OPTIONAL
+    // Only create if calving_records was successfully created
+    if (calvingRecord) {
+      const calfRecordData = {
+        calving_record_id: calvingRecord.id,
+        animal_id: newCalf.id,
+        farm_id: farmId,
+        dam_id: calvingEvent.animal_id,
+        birth_date: calvingEvent.event_date,
+        gender: calvingEvent.calf_gender,
+        birth_weight: calvingEvent.calf_weight,
+        health_status: mapHealthStatus(calvingEvent.calf_health_status),
+        sire_info: sireInfo, 
+        notes: 'Auto-generated from calving event'
+      }
+
+      const { error: calfRecError } = await (supabase.from('calf_records') as any)
+        .insert(calfRecordData)
+
+      if (calfRecError) {
+        console.warn('⚠️ processCalving: Could not create calf record detail (optional):', calfRecError.message)
+        // Continue - calf_records is optional detail table
+      } else {
+        console.log('🐄 processCalving: Created calf record detail')
+      }
+    } else {
+      console.log('🐄 processCalving: Skipping calf record detail (calving_records not available)')
     }
 
-    const { error: calfRecError } = await (supabase.from('calf_records') as any)
-      .insert(calfRecordData)
-
-    if (calfRecError) {
-      console.error('Supabase Error creating calf record:', JSON.stringify(calfRecError, null, 2))
-      throw new Error(`Failed to create calf detailed record: ${calfRecError.message}`)
-    }
-
-    // 5. UPDATE MOTHER & CLOSE PREGNANCY
+    // 6. UPDATE MOTHER & CLOSE PREGNANCY
     await (supabase.from('animals') as any)
       .update({
         production_status: 'lactating',
@@ -344,24 +621,25 @@ export async function processCalving(calvingEvent: CalvingEvent, farmId: string)
       })
       .eq('id', calvingEvent.animal_id)
 
-    await (supabase.from('pregnancy_records') as any)
-      .update({
-        pregnancy_status: 'completed',
-        actual_calving_date: calvingEvent.event_date,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', pregRecord.id)
-
-    if (pregRecord.breeding_record_id) {
-       await (supabase.from('breeding_records') as any)
-      .update({
-        pregnancy_status: 'completed',
-        actual_calving_date: calvingEvent.event_date
-      })
-      .eq('id', pregRecord.breeding_record_id)
+    // Update pregnancy record if it exists (legacy table)
+    try {
+      await (supabase.from('pregnancy_records') as any)
+        .update({
+          pregnancy_status: 'completed',
+          actual_calving_date: calvingEvent.event_date,
+          updated_at: new Date().toISOString()
+        })
+        .eq('animal_id', calvingEvent.animal_id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+      
+      console.log('🐄 processCalving: Updated pregnancy record (legacy table)')
+    } catch (error) {
+      console.warn('⚠️ processCalving: Could not update pregnancy record (optional):', error)
+      // Continue - pregnancy_records is legacy table
     }
 
-    // 6. ✅ NEW: CREATE BREEDING EVENT (For Timeline History)
+    // 7. ✅ NEW: CREATE BREEDING EVENT (For Timeline History)
     // This ensures the calving appears in the breeding_events table used by the timeline
     const breedingEventData = {
       farm_id: farmId,
@@ -369,10 +647,13 @@ export async function processCalving(calvingEvent: CalvingEvent, farmId: string)
       event_type: 'calving',
       event_date: calvingEvent.event_date,
       calving_outcome: calvingEvent.calving_outcome,
+      calf_name: calvingEvent.calf_name,
+      calf_breed: calvingEvent.calf_breed,
       calf_gender: calvingEvent.calf_gender,
       calf_weight: calvingEvent.calf_weight,
       calf_tag_number: calvingEvent.calf_tag_number,
       calf_health_status: calvingEvent.calf_health_status,
+      calf_father_info: calvingEvent.calf_father_info,
       notes: calvingEvent.notes || 'Recorded via Calving Process',
       created_by: calvingEvent.created_by
     }

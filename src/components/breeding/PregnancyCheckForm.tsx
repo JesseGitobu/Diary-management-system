@@ -16,6 +16,7 @@ import { CheckCircle, XCircle, HelpCircle } from 'lucide-react'
 const pregnancyCheckSchema = z.object({
   animal_id: z.string().min(1, 'Please select an animal'),
   event_date: z.string().min(1, 'Examination date is required'),
+  event_time: z.string().min(1, 'Time of examination is required'),
   pregnancy_result: z.enum(['pregnant', 'not_pregnant', 'uncertain']),
   examination_method: z.string().optional(),
   veterinarian_name: z.string().optional(),
@@ -50,6 +51,7 @@ export function PregnancyCheckForm({ farmId, onEventCreated, onCancel, preSelect
     defaultValues: {
       animal_id: preSelectedAnimalId || '',
       event_date: new Date().toISOString().split('T')[0],
+      event_time: new Date().toTimeString().slice(0, 5),
       pregnancy_result: 'uncertain',
       examination_method: '',
       veterinarian_name: '',
@@ -102,8 +104,16 @@ export function PregnancyCheckForm({ farmId, onEventCreated, onCancel, preSelect
     setError(null)
     
     try {
+      // Combine date and time WITHOUT timezone conversion
+      // Format: YYYY-MM-DDTHH:MM:SS (local time, not UTC)
+      const dateTime = `${data.event_date}T${data.event_time}:00`
+      
+      // Destructure to exclude event_time from API payload
+      const { event_time, ...restData } = data
+      
       const eventData: PregnancyCheckEvent = {
-        ...data,
+        ...restData,
+        event_date: dateTime,
         farm_id: farmId,
         event_type: 'pregnancy_check',
         estimated_due_date: data.estimated_due_date || undefined,
@@ -198,15 +208,26 @@ export function PregnancyCheckForm({ farmId, onEventCreated, onCancel, preSelect
           )}
         </div>
         
-        {/* Examination Date */}
-        <div>
-          <Label htmlFor="event_date">Examination Date *</Label>
-          <Input
-            id="event_date"
-            type="date"
-            {...form.register('event_date')}
-            error={form.formState.errors.event_date?.message}
-          />
+        {/* Examination Date and Time */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="event_date">Examination Date *</Label>
+            <Input
+              id="event_date"
+              type="date"
+              {...form.register('event_date')}
+              error={form.formState.errors.event_date?.message}
+            />
+          </div>
+          <div>
+            <Label htmlFor="event_time">Time of Examination *</Label>
+            <Input
+              id="event_time"
+              type="time"
+              {...form.register('event_time')}
+              error={form.formState.errors.event_time?.message}
+            />
+          </div>
         </div>
         
         {/* Pregnancy Result */}

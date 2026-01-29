@@ -88,19 +88,21 @@ export default async function DashboardLayout({ children }: { children: React.Re
   }))
 
   return (
-    <div className="h-screen bg-gray-50">
+    <div className="h-screen bg-gray-50 flex flex-col">
       <div className="hidden md:block">
         <DashboardHeader />
       </div>
       
-      {/* Pass props to MobileHeader */}
-      <MobileHeader 
-        trackingFeatures={trackingFeatures}
-        animalCount={animalCount}
-        farmId={userRole.farm_id}
-      />
+      {/* Sticky mobile header - stays in document flow */}
+      <div className="sticky top-0 z-50 md:hidden bg-white">
+        <MobileHeader 
+          trackingFeatures={trackingFeatures}
+          animalCount={animalCount}
+          farmId={userRole.farm_id}
+        />
+      </div>
       
-      <div className="flex h-full">
+      <div className="flex flex-1 overflow-hidden">
         <div className="hidden md:block">
           {/* Pass props to DashboardSidebar */}
           <DashboardSidebar 
@@ -110,8 +112,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
           />
         </div>
         
-        <main className="flex-1 hide-scrollbar overflow-y-auto overflow-x-hidden pb-20 md:pb-0">
-          <div className="py-4 md:py-6">
+        <main className="flex-1 hide-scrollbar overflow-y-auto overflow-x-hidden">
+          <div className="py-4 md:py-6 pb-20 md:pb-0">
             {children}
           </div>
         </main>

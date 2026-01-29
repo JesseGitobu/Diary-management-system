@@ -6,6 +6,7 @@ import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { recordCalvingUnified } from '@/lib/database/breeding-sync'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { addDays, parseISO } from 'date-fns'
 
 export async function POST(request: NextRequest) {
   try {
@@ -33,6 +34,15 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = await createServerSupabaseClient()
+
+    // Fetch farm breeding settings to get default gestation period
+    const { data: breedingSettings } = await supabase
+      .from('farm_breeding_settings')
+      .select('default_gestation')
+      .eq('farm_id', eventData.farm_id)
+      .single()
+
+    const defaultGestationDays = (breedingSettings as any)?.default_gestation || 280 // Default 280 days if not set
 
     // Handle different event types
     if (eventData.event_type === 'calving') {
@@ -89,13 +99,27 @@ export async function POST(request: NextRequest) {
 
     // For other events (heat detection, insemination, pregnancy check)
     // Create standalone event
+    // Auto-calculate estimated_due_date for insemination events
+    let eventToInsert = { ...eventData, created_by: user.id }
+    
+    // For insemination events, calculate estimated due date based on gestation period
+    if (eventData.event_type === 'insemination') {
+      try {
+        const eventDateTime = parseISO(eventData.event_date)
+        const estimatedDueDate = addDays(eventDateTime, defaultGestationDays)
+        // Format as date only (YYYY-MM-DD)
+        eventToInsert.estimated_due_date = estimatedDueDate.toISOString().split('T')[0]
+        console.log(`✓ Calculated estimated due date: ${eventToInsert.estimated_due_date} (${defaultGestationDays} days from ${eventData.event_date})`)
+      } catch (err) {
+        console.error('Error calculating estimated due date:', err)
+        // Continue without due date if calculation fails
+      }
+    }
+    
     // Cast supabase to any to prevent insertion type errors
     const { data: event, error } = await (supabase as any)
       .from('breeding_events')
-      .insert({
-        ...eventData,
-        created_by: user.id
-      })
+      .insert(eventToInsert)
       .select()
       .single()
 

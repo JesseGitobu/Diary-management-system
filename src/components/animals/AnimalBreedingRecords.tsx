@@ -30,7 +30,7 @@ import {
   Clock,
   Timer
 } from 'lucide-react'
-import { format, differenceInDays, addDays, parseISO, differenceInMonths, differenceInHours, differenceInMinutes } from 'date-fns'
+import { format, differenceInDays, addDays, parseISO, differenceInMonths, differenceInHours, differenceInMinutes, startOfDay, isSameDay, isAfter } from 'date-fns'
 
 // Import standardized breeding forms
 import { HeatDetectionForm } from '@/components/breeding/HeatDetectionForm'
@@ -59,10 +59,13 @@ interface PregnancyCheck {
   id: string
   breeding_record_id: string
   check_date: string
-  check_method: string
+  check_method?: string
+  examination_method?: string
   result: 'positive' | 'negative' | 'inconclusive'
-  checked_by: string
+  checked_by?: string
+  veterinarian_name?: string
   notes?: string
+  estimated_due_date?: string
   created_at?: string
 }
 
@@ -72,6 +75,15 @@ interface HeatEvent {
   event_date: string
   heat_signs: string[]
   heat_action_taken?: string
+  created_at?: string
+}
+
+interface CalvingEvent {
+  id: string
+  animal_id: string
+  event_date: string
+  estimated_due_date?: string
+  calving_outcome?: string
   created_at?: string
 }
 
@@ -103,11 +115,23 @@ interface AnimalBreedingRecordsProps {
 
 type ModalType = 'heat_detection' | 'insemination' | 'pregnancy_check' | 'calving' | null
 
+interface InseminationEvent {
+  id: string
+  animal_id: string
+  event_date: string
+  insemination_method: string
+  semen_bull_code?: string
+  technician_name?: string
+  created_at?: string
+}
+
 export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords }: AnimalBreedingRecordsProps) {
   const [activeTab, setActiveTab] = useState('overview')
   const [breedingRecords, setBreedingRecords] = useState<BreedingRecord[]>([])
   const [pregnancyChecks, setPregnancyChecks] = useState<PregnancyCheck[]>([])
   const [heatEvents, setHeatEvents] = useState<HeatEvent[]>([])
+  const [inseminationEvents, setInseminationEvents] = useState<InseminationEvent[]>([])
+  const [calvingEvents, setCalvingEvents] = useState<CalvingEvent[]>([])
   const [breedingSettings, setBreedingSettings] = useState<BreedingSettings | null>(null)
   const [breedingEligibility, setBreedingEligibility] = useState<BreedingEligibility | null>(null)
   
@@ -172,6 +196,20 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
           return timeB - timeA; // Newest entry first
         })
         setHeatEvents(sortedHeat)
+
+        const sortedInsemination = (data.inseminationEvents || []).sort((a: InseminationEvent, b: InseminationEvent) => {
+          const timeA = a.created_at ? new Date(a.created_at).getTime() : new Date(a.event_date).getTime();
+          const timeB = b.created_at ? new Date(b.created_at).getTime() : new Date(b.event_date).getTime();
+          return timeB - timeA; // Newest entry first
+        })
+        setInseminationEvents(sortedInsemination)
+
+        const sortedCalving = (data.calvingEvents || []).sort((a: CalvingEvent, b: CalvingEvent) => {
+          const timeA = a.created_at ? new Date(a.created_at).getTime() : new Date(a.event_date).getTime();
+          const timeB = b.created_at ? new Date(b.created_at).getTime() : new Date(b.event_date).getTime();
+          return timeB - timeA; // Newest entry first
+        })
+        setCalvingEvents(sortedCalving)
       }
     } catch (err) {
       setError('Failed to load records')
@@ -214,10 +252,34 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
       eligibility.reasons.push('Animal is already pregnant.')
     }
 
-    const lastCalving = breedingRecords
+    // Check for calving events - from both legacy records AND breeding_events table
+    let lastCalving = breedingRecords
       .filter(record => record.actual_calving_date)
-      // For calving history, we still prioritize the actual calving date
       .sort((a, b) => new Date(b.actual_calving_date!).getTime() - new Date(a.actual_calving_date!).getTime())[0]
+
+    // Also check breeding_events calvings (newer system)
+    if (calvingEvents.length > 0) {
+      const lastBreedingEventCalving = calvingEvents[0]
+      const calvingDate = parseISO(lastBreedingEventCalving.event_date)
+      
+      if (!lastCalving) {
+        lastCalving = {
+          id: lastBreedingEventCalving.id,
+          animal_id: animalId,
+          breeding_date: '',
+          breeding_method: 'natural',
+          actual_calving_date: lastBreedingEventCalving.event_date,
+          pregnancy_confirmed: true,
+          pregnancy_status: 'completed'
+        }
+      } else {
+        // Compare and use the more recent one
+        const legacyCalvingDate = parseISO(lastCalving.actual_calving_date!)
+        if (calvingDate > legacyCalvingDate) {
+          lastCalving.actual_calving_date = lastBreedingEventCalving.event_date
+        }
+      }
+    }
 
     if (lastCalving?.actual_calving_date) {
       const daysSinceCalving = differenceInDays(new Date(), parseISO(lastCalving.actual_calving_date))
@@ -257,95 +319,234 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
 
   // --- Breeding Window Logic ---
   const getBreedingWindowStatus = () => {
-    // 1. Check for Pending Insemination First (Priority over Heat)
-    // Relies on breedingRecords[0] being the most recent entry due to created_at sort
-    const latestRecord = breedingRecords[0]; 
-    const pendingBreeding = latestRecord?.pregnancy_status === 'pending' ? latestRecord : null;
-    
-    if (pendingBreeding) {
-      const daysSinceInsemination = differenceInDays(currentTime, new Date(pendingBreeding.breeding_date));
-      const minWaitDays = breedingSettings?.pregnancyCheckDays || 30; // Default 30 days if settings not loaded
-      
-      if (daysSinceInsemination >= minWaitDays) {
-        // Ready for Check
+    // 0. CHECK FOR POST-CALVING RECOVERY WINDOW (HIGHEST PRIORITY)
+    // If animal has recently calved, show recovery window instead of pregnancy
+    const lastCalving = calvingEvents[0]
+    if (lastCalving) {
+      const calvingDate = parseISO(lastCalving.event_date)
+      const daysSinceCalving = differenceInDays(currentTime, calvingDate)
+      const postpartumDelayDays = breedingSettings?.postpartumBreedingDelayDays || 60
+
+      // Show post-calving recovery window
+      if (daysSinceCalving < postpartumDelayDays) {
+        const daysRemaining = postpartumDelayDays - daysSinceCalving
         return {
-          status: 'ready_for_check',
+          status: 'post_calving',
           color: 'blue',
-          message: 'Ready for Pregnancy Check',
-          subMessage: `${daysSinceInsemination} days since insemination. Check now recommended.`,
-          action: 'check',
-          daysElapsed: daysSinceInsemination
-        };
-      } else {
-        // Waiting Period
-        return {
-          status: 'waiting',
-          color: 'gray',
-          message: 'Inseminated - Waiting Period',
-          subMessage: `${minWaitDays - daysSinceInsemination} more days until pregnancy check is recommended.`,
+          message: `Post-Calving Recovery (${daysRemaining} days remaining)`,
+          subMessage: `Calved on ${format(calvingDate, 'MMMM dd, yyyy')}. Ready to rebreed in ${daysRemaining} day${daysRemaining === 1 ? '' : 's'}.`,
           action: 'none',
-          daysElapsed: daysSinceInsemination
-        };
+          daysRemaining
+        }
+      }
+      
+      // After recovery period, show ready to rebreed
+      if (daysSinceCalving >= postpartumDelayDays) {
+        return {
+          status: 'ready_rebreed',
+          color: 'green',
+          message: 'Ready to Rebreed',
+          subMessage: `${daysSinceCalving} days since calving. Animal ready for heat detection.`,
+          action: 'none',
+          daysSinceCalving
+        }
       }
     }
 
-    // 2. Standard Heat Cycle Logic (If no pending breeding)
-    // Relies on heatEvents[0] being the most recent entry due to created_at sort
-    const lastHeat = heatEvents[0]
-    if (!lastHeat) return null
-
-    // Check if a breeding record has happened ON or AFTER this heat date
-    const breedingAfterHeat = breedingRecords.find(record => {
-      const breedingDate = new Date(record.breeding_date)
-      const heatDate = new Date(lastHeat.event_date)
-      breedingDate.setHours(0,0,0,0)
-      heatDate.setHours(0,0,0,0)
-      return breedingDate.getTime() >= heatDate.getTime()
+    // 1. Check for Confirmed Pregnancy + Calving Window (SECOND PRIORITY)
+    // Check both legacy breedingRecords AND event-driven pregnancy checks
+    const confirmedPregnancy = breedingRecords.find(r => r.pregnancy_status === 'confirmed' && !r.actual_calving_date)
+    
+    // Also check for positive pregnancy check from breeding_events table (event-driven)
+    const latestInsemination = inseminationEvents[0]
+    const positivePregnancyCheck = latestInsemination && pregnancyChecks.find(check => {
+      const checkDate = parseISO(check.check_date)
+      const inseminationDate = parseISO(latestInsemination.event_date)
+      return isAfter(checkDate, inseminationDate) && check.result === 'positive'
     })
-
-    if (breedingAfterHeat) return null // Cycle completed / Insemination recorded
-
-    // Note: We calculate biological window based on event_date, 
-    // but the banner is triggered because this specific record is at index [0] 
-    // (most recently created).
-    const heatDate = new Date(lastHeat.event_date)
-    const hoursElapsed = differenceInHours(currentTime, heatDate)
     
-    if (hoursElapsed > 36) return null // Heat window strictly closed
-
-    let status = 'unknown'
-    let color = 'gray'
-    let message = ''
-    let subMessage = ''
+    // Use either confirmed pregnancy from records or positive pregnancy check
+    const pregnancyConfirmed = confirmedPregnancy || positivePregnancyCheck
     
-    if (hoursElapsed < 8) {
-      status = 'early'
-      color = 'blue'
-      message = 'Heat Detected - Too Early to Breed'
-      subMessage = `Wait approx. ${12 - hoursElapsed} more hours for optimal conception.`
-    } else if (hoursElapsed >= 8 && hoursElapsed < 12) {
-      status = 'approaching'
-      color = 'yellow'
-      message = 'Approaching Optimal Window'
-      subMessage = 'Prepare for insemination soon.'
-    } else if (hoursElapsed >= 12 && hoursElapsed <= 18) {
-      status = 'optimal'
-      color = 'green'
-      message = 'OPTIMAL BREEDING WINDOW'
-      subMessage = 'Highest chance of conception. Breed now!'
-    } else if (hoursElapsed > 18 && hoursElapsed <= 24) {
-      status = 'late'
-      color = 'orange'
-      message = 'Late Window - Breed Immediately'
-      subMessage = 'Conception chances decreasing.'
-    } else {
-      status = 'expired'
-      color = 'red'
-      message = 'Breeding Window Expired'
-      subMessage = 'Consult vet or wait for next heat cycle.'
+    if (pregnancyConfirmed) {
+      // Get the due date from the insemination event (estimated_due_date was auto-calculated)
+      let dueDate = confirmedPregnancy?.expected_calving_date 
+        ? parseISO(confirmedPregnancy.expected_calving_date) 
+        : null
+      
+      // If not found in breedingRecords, check for estimated_due_date in calvingEvents or calculate from insemination
+      if (!dueDate && latestInsemination && positivePregnancyCheck) {
+        // Look for calving event with estimated due date
+        const calvingWithDueDate = calvingEvents.find(e => e.estimated_due_date)
+        if (calvingWithDueDate && calvingWithDueDate.estimated_due_date) {
+          dueDate = parseISO(calvingWithDueDate.estimated_due_date)
+        } else {
+          // Calculate from insemination date + gestation period
+          const gestationDays = breedingSettings?.defaultGestationPeriod || 280
+          dueDate = addDays(parseISO(latestInsemination.event_date), gestationDays)
+        }
+      }
+      
+      if (dueDate) {
+        const daysUntilDue = differenceInDays(dueDate, currentTime)
+        const hoursUntilDue = differenceInHours(dueDate, currentTime)
+        
+        // Show calving banner 7 days before and 7 days after due date
+        if (daysUntilDue >= -7 && daysUntilDue <= 7) {
+          let status = 'calving'
+          let color = 'purple'
+          let message = ''
+          let subMessage = ''
+          
+          if (daysUntilDue > 1) {
+            message = `Calving Due in ${daysUntilDue} days`
+            subMessage = `Expected: ${format(dueDate, 'MMMM dd, yyyy')}`
+          } else if (daysUntilDue === 1) {
+            message = 'Calving Due Tomorrow'
+            subMessage = `Expected: ${format(dueDate, 'MMMM dd, yyyy')}`
+          } else if (daysUntilDue === 0) {
+            message = 'Due Today'
+            subMessage = `Expected: ${format(dueDate, 'MMMM dd, yyyy')}`
+          } else if (daysUntilDue > -1) {
+            const minsOverdue = Math.floor(hoursUntilDue % 1 * 60)
+            message = `Overdue by ${Math.abs(hoursUntilDue)} hours`
+            subMessage = 'Monitor closely and contact veterinarian if needed'
+          } else {
+            message = `Overdue by ${Math.abs(daysUntilDue)} days`
+            subMessage = 'Monitor closely and contact veterinarian if needed'
+          }
+          
+          return { status, color, message, subMessage, action: 'calving', daysUntilDue, hoursUntilDue }
+        }
+      }
+      
+      // If not in calving window, show "Current Pregnancy" banner
+      if (dueDate) {
+        const daysUntilDue = differenceInDays(dueDate, currentTime)
+        return {
+          status: 'pregnant',
+          color: 'purple',
+          message: 'Current Pregnancy',
+          subMessage: `Estimated calving: ${format(dueDate, 'MMMM dd, yyyy')} (${daysUntilDue} days away)`,
+          action: 'none',
+          daysUntilDue
+        }
+      }
+      
+      return null // Pregnant but no due date set
     }
 
-    return { status, color, message, subMessage, action: 'breed', hoursElapsed }
+    // 1. Check for Pending Insemination (Second Priority) - Event-driven from breeding_events table
+    if (latestInsemination) {
+      // Check if a pregnancy check event exists AFTER this insemination
+      const pregnancyCheckAfterInsemination = pregnancyChecks.find(check => {
+        const checkDate = parseISO(check.check_date)
+        const inseminationDate = parseISO(latestInsemination.event_date)
+        // Only count pregnancy checks that came AFTER the insemination
+        return isAfter(checkDate, inseminationDate)
+      })
+      
+      // If a pregnancy check already exists, don't show this banner
+      // (pregnancy status should be handled by confirmed/not confirmed logic)
+      if (!pregnancyCheckAfterInsemination) {
+        const daysSinceInsemination = differenceInDays(currentTime, parseISO(latestInsemination.event_date))
+        const minWaitDays = breedingSettings?.pregnancyCheckDays || 30
+        const maxGestationDays = breedingSettings?.defaultGestationPeriod || 280
+        
+        // Don't show banner if days since insemination exceeds gestation period
+        // (indicates pregnancy would have been confirmed or failed by now)
+        if (daysSinceInsemination > maxGestationDays) {
+          return null
+        }
+        
+        if (daysSinceInsemination >= minWaitDays) {
+          return {
+            status: 'ready_for_check',
+            color: 'blue',
+            message: 'Ready for Pregnancy Check',
+            subMessage: `${daysSinceInsemination} days since insemination. Check now recommended.`,
+            action: 'check',
+            daysElapsed: daysSinceInsemination
+          }
+        } else {
+          return {
+            status: 'waiting',
+            color: 'gray',
+            message: 'Inseminated - Waiting Period',
+            subMessage: `${minWaitDays - daysSinceInsemination} more days until pregnancy check is recommended.`,
+            action: 'none',
+            daysElapsed: daysSinceInsemination
+          }
+        }
+      }
+    }
+
+    // 2. Heat Detection Window (Third Priority)
+    const lastHeat = heatEvents[0]
+    if (lastHeat) {
+      const heatDate = parseISO(lastHeat.event_date)
+      const heatDateStart = startOfDay(heatDate)
+      
+      // Check if insemination happened after heat
+      const inseminationAfterHeat = inseminationEvents.find(event => {
+        const inseminationDateTime = parseISO(event.event_date)
+        const inseminationDateStart = startOfDay(inseminationDateTime)
+        return isSameDay(inseminationDateStart, heatDateStart) || isAfter(inseminationDateStart, heatDateStart)
+      })
+
+      if (inseminationAfterHeat) return null // Heat cycle completed
+
+      // Check if breeding happened after heat
+      const breedingAfterHeat = breedingRecords.find(record => {
+        const breedingDateTime = parseISO(record.breeding_date)
+        const breedingDateStart = startOfDay(breedingDateTime)
+        return isSameDay(breedingDateStart, heatDateStart) || isAfter(breedingDateStart, heatDateStart)
+      })
+
+      if (breedingAfterHeat) return null // Heat cycle completed
+
+      // Calculate hours elapsed
+      const heatDateTime = parseISO(lastHeat.event_date)
+      const hoursElapsed = differenceInHours(currentTime, heatDateTime)
+      
+      if (hoursElapsed > 36) return null // Heat window strictly closed
+
+      let status = 'unknown'
+      let color = 'gray'
+      let message = ''
+      let subMessage = ''
+      
+      if (hoursElapsed < 8) {
+        status = 'early'
+        color = 'blue'
+        message = 'Heat Detected - Too Early to Breed'
+        subMessage = `Wait approx. ${12 - hoursElapsed} more hours for optimal conception.`
+      } else if (hoursElapsed >= 8 && hoursElapsed < 12) {
+        status = 'approaching'
+        color = 'yellow'
+        message = 'Approaching Optimal Window'
+        subMessage = 'Prepare for insemination soon.'
+      } else if (hoursElapsed >= 12 && hoursElapsed <= 18) {
+        status = 'optimal'
+        color = 'green'
+        message = 'OPTIMAL BREEDING WINDOW'
+        subMessage = 'Highest chance of conception. Breed now!'
+      } else if (hoursElapsed > 18 && hoursElapsed <= 24) {
+        status = 'late'
+        color = 'orange'
+        message = 'Late Window - Breed Immediately'
+        subMessage = 'Conception chances decreasing.'
+      } else {
+        status = 'expired'
+        color = 'red'
+        message = 'Breeding Window Expired'
+        subMessage = 'Consult vet or wait for next heat cycle.'
+      }
+
+      return { status, color, message, subMessage, action: 'breed', hoursElapsed }
+    }
+
+    return null // No active breeding event
   }
 
   const getPregnancyStatusBadge = (status: string, isAutoGenerated?: boolean) => {
@@ -371,18 +572,63 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
   const latestRecord = breedingRecords[0]
   const isPendingCheck = latestRecord?.pregnancy_status === 'pending'
   const currentPregnancy = breedingRecords.find(r => r.pregnancy_status === 'confirmed' && !r.actual_calving_date)
+  
+  // Also check for positive pregnancy check from event-driven pregnancy checks
+  const latestInsemination = inseminationEvents[0]
+  const positivePregnancyCheckConfirmed = latestInsemination && pregnancyChecks.find(check => {
+    const checkDate = parseISO(check.check_date)
+    const inseminationDate = parseISO(latestInsemination.event_date)
+    return isAfter(checkDate, inseminationDate) && check.result === 'positive'
+  })
 
   const breedingStats = {
-    totalBreedings: breedingRecords.length,
-    confirmedPregnancies: breedingRecords.filter(r => r.pregnancy_status === 'confirmed').length,
-    successRate: breedingRecords.length > 0
-      ? Math.round((breedingRecords.filter(r => r.pregnancy_confirmed).length / breedingRecords.length) * 100)
+    totalBreedings: breedingRecords.length + calvingEvents.length,
+    confirmedPregnancies: breedingRecords.filter(r => r.pregnancy_status === 'confirmed').length + calvingEvents.length,
+    successRate: (breedingRecords.length + calvingEvents.length) > 0
+      ? Math.round(((breedingRecords.filter(r => r.pregnancy_confirmed).length + calvingEvents.length) / (breedingRecords.length + calvingEvents.length)) * 100)
       : 0,
-    currentStatus: currentPregnancy ? 'Pregnant' : isPendingCheck ? 'Served' : 'Open',
+    currentStatus: (() => {
+      // Check post-calving recovery first
+      const lastCalving = calvingEvents[0]
+      if (lastCalving) {
+        const calvingDate = parseISO(lastCalving.event_date)
+        const daysSinceCalving = differenceInDays(new Date(), calvingDate)
+        const postpartumDelayDays = breedingSettings?.postpartumBreedingDelayDays || 60
+        
+        if (daysSinceCalving < postpartumDelayDays) {
+          return 'Lactating'
+        }
+      }
+      
+      // Then check pregnancy
+      return (currentPregnancy || positivePregnancyCheckConfirmed) ? 'Pregnant' : isPendingCheck ? 'Served' : 'Open'
+    })(),
   }
 
   const renderActionButtons = () => {
     if (!canAddRecords) return null
+
+    // CHECK FOR POST-CALVING RECOVERY PERIOD FIRST
+    // Hide all buttons during recovery, regardless of status
+    const lastCalving = calvingEvents[0]
+    if (lastCalving) {
+      const calvingDate = parseISO(lastCalving.event_date)
+      const daysSinceCalving = differenceInDays(new Date(), calvingDate)
+      const postpartumDelayDays = breedingSettings?.postpartumBreedingDelayDays || 60
+
+      // During recovery period, don't show any action buttons
+      if (daysSinceCalving < postpartumDelayDays) {
+        return null
+      }
+    }
+
+    // Check if there's a recent insemination without a pregnancy check
+    const latestInsemination = inseminationEvents[0]
+    const hasUnresolvedInsemination = latestInsemination && !pregnancyChecks.find(check => {
+      const checkDate = parseISO(check.check_date)
+      const inseminationDate = parseISO(latestInsemination.event_date)
+      return isAfter(checkDate, inseminationDate)
+    })
 
     if (breedingStats.currentStatus === 'Pregnant') {
       return (
@@ -413,7 +659,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
       )
     }
 
-    if (breedingStats.currentStatus === 'Served') {
+    if (breedingStats.currentStatus === 'Served' || hasUnresolvedInsemination) {
       return (
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
           <Button onClick={() => setActiveModal('pregnancy_check')} className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white">
@@ -559,6 +805,19 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                   >
                     <Stethoscope className="w-4 h-4 mr-2"/> 
                     Confirm Pregnancy
+                  </Button>
+                </div>
+              )}
+
+              {/* Action button for Calving */}
+              {breedingWindow.action === 'calving' && (
+                <div className="flex gap-2 w-full md:w-auto">
+                   <Button 
+                    onClick={() => setActiveModal('calving')} 
+                    className="bg-purple-600 hover:bg-purple-700 text-white shadow-md w-full md:w-auto"
+                  >
+                    <Baby className="w-4 h-4 mr-2"/> 
+                    Record Calving
                   </Button>
                 </div>
               )}
@@ -734,7 +993,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
               <CardTitle className="text-lg">Recent Activity</CardTitle>
             </CardHeader>
             <CardContent>
-              {breedingRecords.length === 0 && heatEvents.length === 0 ? (
+              {breedingRecords.length === 0 && heatEvents.length === 0 && inseminationEvents.length === 0 && pregnancyChecks.length === 0 ? (
                 <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-lg border border-dashed">
                   <Heart className="w-12 h-12 mx-auto mb-4 text-gray-300" />
                   <p>No breeding records found.</p>
@@ -746,69 +1005,190 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {/* Show latest Heat Event if it's the most recent activity based on the sorted order */}
-                  {heatEvents.length > 0 && (!breedingRecords[0] || 
-                    (heatEvents[0].created_at && breedingRecords[0].created_at 
-                      ? new Date(heatEvents[0].created_at) > new Date(breedingRecords[0].created_at)
-                      : new Date(heatEvents[0].event_date) > new Date(breedingRecords[0].breeding_date))
-                  ) && (
-                     <div key={`heat-${heatEvents[0].id}`} className="border rounded-lg p-4 bg-pink-50 border-pink-100">
-                       <div className="flex items-start justify-between">
-                         <div>
-                            <div className="flex items-center gap-2 mb-1">
-                               <Activity className="w-4 h-4 text-pink-500" />
-                               <span className="font-semibold text-gray-900">
-                                 {format(parseISO(heatEvents[0].event_date), 'MMMM dd, yyyy')}
-                               </span>
-                               <Badge variant="outline" className="bg-white text-pink-700 border-pink-200">Heat Detected</Badge>
+                  {/* Combine and sort all events (heat, insemination, pregnancy checks, breeding records, calving) by creation date */}
+                  {[
+                    ...heatEvents.map(e => ({ type: 'heat', date: e.event_date, created: e.created_at, data: e })),
+                    ...inseminationEvents.map(e => ({ type: 'insemination', date: e.event_date, created: e.created_at, data: e })),
+                    ...pregnancyChecks.map(e => ({ type: 'pregnancy_check', date: e.check_date, created: e.created_at, data: e })),
+                    ...breedingRecords.map(e => ({ type: 'breeding', date: e.breeding_date, created: e.created_at, data: e })),
+                    ...calvingEvents.map(e => ({ type: 'calving', date: e.event_date, created: e.created_at, data: e }))
+                  ]
+                    .sort((a, b) => {
+                      const timeA = a.created ? new Date(a.created).getTime() : new Date(a.date).getTime()
+                      const timeB = b.created ? new Date(b.created).getTime() : new Date(b.date).getTime()
+                      return timeB - timeA // Newest first
+                    })
+                    .slice(0, 10) // Show top 10 recent activities
+                    .map((item) => {
+                      // Heat Event
+                      if (item.type === 'heat') {
+                        const heat = item.data as HeatEvent
+                        const createdTime = heat.created_at ? parseISO(heat.created_at) : parseISO(heat.event_date)
+                        return (
+                          <div key={`heat-${heat.id}`} className="border rounded-lg p-4 bg-pink-50 border-pink-100">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <Activity className="w-4 h-4 text-pink-500 flex-shrink-0" />
+                                  <span className="font-semibold text-gray-900">
+                                    {format(parseISO(heat.event_date), 'MMMM dd, yyyy • h:mm a')}
+                                  </span>
+                                  <Badge variant="outline" className="bg-white text-pink-700 border-pink-200">Heat Detected</Badge>
+                                </div>
+                                <p className="text-sm text-gray-600 ml-6 mb-2">
+                                  Signs: {heat.heat_signs?.join(', ') || 'No signs recorded'}
+                                </p>
+                                <p className="text-xs text-gray-500 ml-6">
+                                  Added: {format(createdTime, 'MMM dd, yyyy • h:mm a')}
+                                </p>
+                              </div>
                             </div>
-                            <p className="text-sm text-gray-600 ml-6">
-                               Signs: {heatEvents[0].heat_signs.join(', ')}
-                            </p>
-                         </div>
-                       </div>
-                     </div>
-                  )}
+                          </div>
+                        )
+                      }
 
-                  {breedingRecords.slice(0, 5).map((record) => (
-                    <div key={record.id} className="border rounded-lg p-4 hover:bg-gray-50 transition-colors">
-                      <div className="flex items-start justify-between">
-                         <div>
-                           <div className="flex items-center gap-2 mb-1">
-                             <Calendar className="w-4 h-4 text-gray-500"/>
-                             <span className="font-semibold text-gray-900">
-                               {format(parseISO(record.breeding_date), 'MMMM dd, yyyy')}
-                             </span>
-                             {getPregnancyStatusBadge(record.pregnancy_status, record.auto_generated)}
-                           </div>
-                           <p className="text-sm text-gray-600 ml-6">
-                             {record.breeding_method === 'artificial_insemination' ? 'Artificial Insemination' : 'Natural Service'}
-                             {record.sire_tag && ` • Sire: ${record.sire_tag}`}
-                           </p>
-                         </div>
-                         
-                         {canAddRecords && record.pregnancy_status === 'pending' && (
-                           <Button 
-                              size="sm" 
-                              variant="outline" 
-                              onClick={() => setActiveModal('pregnancy_check')}
-                              className="text-blue-600 border-blue-200 hover:bg-blue-50"
-                           >
-                             <Stethoscope className="w-3 h-3 mr-1"/> Check
-                           </Button>
-                         )}
-                      </div>
-                      
-                      {(record.expected_calving_date || record.breeding_notes) && (
-                        <div className="mt-3 ml-6 pt-2 border-t border-gray-100 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-gray-500">
-                          {record.expected_calving_date && (
-                             <span>Expected Calving: {format(parseISO(record.expected_calving_date), 'MMM dd, yyyy')}</span>
-                          )}
-                          {record.breeding_notes && <span className="italic truncate">{record.breeding_notes}</span>}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                      // Insemination Event
+                      if (item.type === 'insemination') {
+                        const insem = item.data as InseminationEvent
+                        const createdTime = insem.created_at ? parseISO(insem.created_at) : parseISO(insem.event_date)
+                        return (
+                          <div key={`insem-${insem.id}`} className="border rounded-lg p-4 bg-green-50 border-green-100">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <Syringe className="w-4 h-4 text-green-600 flex-shrink-0" />
+                                  <span className="font-semibold text-gray-900">
+                                    {format(parseISO(insem.event_date), 'MMMM dd, yyyy • h:mm a')}
+                                  </span>
+                                  <Badge variant="outline" className="bg-white text-green-700 border-green-200">Insemination</Badge>
+                                </div>
+                                <p className="text-sm text-gray-600 ml-6 mb-2">
+                                  Method: {insem.insemination_method}
+                                  {insem.technician_name && ` • Technician: ${insem.technician_name}`}
+                                </p>
+                                <p className="text-xs text-gray-500 ml-6">
+                                  Added: {format(createdTime, 'MMM dd, yyyy • h:mm a')}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      }
+
+                      // Pregnancy Check Event
+                      if (item.type === 'pregnancy_check') {
+                        const check = item.data as PregnancyCheck
+                        const createdTime = check.created_at ? parseISO(check.created_at) : parseISO(check.check_date)
+                        const resultColor = check.result === 'positive' ? 'bg-green-100 text-green-800' : check.result === 'negative' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'
+                        return (
+                          <div key={`check-${check.id}`} className="border rounded-lg p-4 bg-blue-50 border-blue-100">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <Stethoscope className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                                  <span className="font-semibold text-gray-900">
+                                    {format(parseISO(check.check_date), 'MMMM dd, yyyy • h:mm a')}
+                                  </span>
+                                  <Badge className={resultColor}>
+                                    {check.result === 'positive' ? '✓ Positive' : check.result === 'negative' ? '✗ Negative' : 'Inconclusive'}
+                                  </Badge>
+                                </div>
+                                <p className="text-sm text-gray-600 ml-6 mb-2">
+                                  Method: {check.check_method}
+                                  {check.checked_by && ` • Checked by: ${check.checked_by}`}
+                                  {check.notes && ` • Notes: ${check.notes}`}
+                                </p>
+                                <p className="text-xs text-gray-500 ml-6">
+                                  Added: {format(createdTime, 'MMM dd, yyyy • h:mm a')}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      }
+
+                      // Breeding Record
+                      if (item.type === 'breeding') {
+                        const record = item.data as BreedingRecord
+                        const createdTime = record.created_at ? parseISO(record.created_at) : parseISO(record.breeding_date)
+                        return (
+                          <div key={record.id} className="border rounded-lg p-4 hover:bg-gray-50 transition-colors">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <Calendar className="w-4 h-4 text-gray-500 flex-shrink-0"/>
+                                  <span className="font-semibold text-gray-900">
+                                    {format(parseISO(record.breeding_date), 'MMMM dd, yyyy')}
+                                  </span>
+                                  {getPregnancyStatusBadge(record.pregnancy_status, record.auto_generated)}
+                                </div>
+                                <p className="text-sm text-gray-600 ml-6 mb-2">
+                                  {record.breeding_method === 'artificial_insemination' ? 'Artificial Insemination' : 'Natural Service'}
+                                  {record.sire_tag && ` • Sire: ${record.sire_tag}`}
+                                  {record.veterinarian && ` • Veterinarian: ${record.veterinarian}`}
+                                </p>
+                                {(record.expected_calving_date || record.breeding_notes) && (
+                                  <div className="ml-6 pt-2 border-t border-gray-100 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-gray-500 mb-2">
+                                    {record.expected_calving_date && (
+                                      <span>Expected Calving: {format(parseISO(record.expected_calving_date), 'MMM dd, yyyy')}</span>
+                                    )}
+                                    {record.breeding_notes && <span className="italic truncate">{record.breeding_notes}</span>}
+                                  </div>
+                                )}
+                                <p className="text-xs text-gray-500 ml-6">
+                                  Added: {format(createdTime, 'MMM dd, yyyy • h:mm a')}
+                                </p>
+                              </div>
+                              
+                              {canAddRecords && record.pregnancy_status === 'pending' && (
+                                <Button 
+                                  size="sm" 
+                                  variant="outline" 
+                                  onClick={() => setActiveModal('pregnancy_check')}
+                                  className="text-blue-600 border-blue-200 hover:bg-blue-50 flex-shrink-0 ml-4"
+                                >
+                                  <Stethoscope className="w-3 h-3 mr-1"/> Check
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      }
+
+                      // Calving Event
+                      if (item.type === 'calving') {
+                        const calving = item.data as CalvingEvent
+                        const createdTime = calving.created_at ? parseISO(calving.created_at) : parseISO(calving.event_date)
+                        return (
+                          <div key={`calving-${calving.id}`} className="border rounded-lg p-4 bg-purple-50 border-purple-100">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <Baby className="w-4 h-4 text-purple-600 flex-shrink-0" />
+                                  <span className="font-semibold text-gray-900">
+                                    {format(parseISO(calving.event_date), 'MMMM dd, yyyy • h:mm a')}
+                                  </span>
+                                  <Badge variant="outline" className="bg-white text-purple-700 border-purple-200">Calving</Badge>
+                                </div>
+                                {(calving.estimated_due_date || calving.calving_outcome) && (
+                                  <div className="ml-6 pt-2 border-t border-purple-100 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-gray-600 mb-2">
+                                    {calving.estimated_due_date && (
+                                      <span>Expected Due: {format(parseISO(calving.estimated_due_date), 'MMM dd, yyyy')}</span>
+                                    )}
+                                    {calving.calving_outcome && (
+                                      <span>Outcome: <span className="font-semibold">{calving.calving_outcome}</span></span>
+                                    )}
+                                  </div>
+                                )}
+                                <p className="text-xs text-gray-500 ml-6">
+                                  Added: {format(createdTime, 'MMM dd, yyyy • h:mm a')}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      }
+                    })}
                 </div>
               )}
             </CardContent>
@@ -817,38 +1197,256 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
 
         <TabsContent value="records">
           <Card>
-             <CardHeader><CardTitle>Full History</CardTitle></CardHeader>
+             <CardHeader>
+               <CardTitle>Full Breeding History</CardTitle>
+               <CardDescription>Complete record of all breeding events and history</CardDescription>
+             </CardHeader>
              <CardContent>
-               <div className="space-y-4">
-                  {breedingRecords.map((record) => (
-                    <div key={record.id} className="flex justify-between border-b pb-2">
-                       <div>
-                         <p className="font-medium">{format(parseISO(record.breeding_date), 'MMM dd, yyyy')}</p>
-                         <p className="text-xs text-gray-500">{record.breeding_method}</p>
-                       </div>
-                       {getPregnancyStatusBadge(record.pregnancy_status)}
-                    </div>
-                  ))}
-               </div>
+               {breedingRecords.length === 0 && heatEvents.length === 0 && inseminationEvents.length === 0 && pregnancyChecks.length === 0 && calvingEvents.length === 0 ? (
+                 <div className="text-center py-12 text-gray-500">
+                   <Heart className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                   <p>No breeding history recorded.</p>
+                 </div>
+               ) : (
+                 <div className="space-y-4">
+                   {/* Combine and sort all events by date (chronological order) */}
+                   {[
+                     ...heatEvents.map(e => ({ type: 'heat', date: parseISO(e.event_date), created: e.created_at, data: e })),
+                     ...inseminationEvents.map(e => ({ type: 'insemination', date: parseISO(e.event_date), created: e.created_at, data: e })),
+                     ...pregnancyChecks.map(e => ({ type: 'pregnancy_check', date: parseISO(e.check_date), created: e.created_at, data: e })),
+                     ...breedingRecords.map(e => ({ type: 'breeding', date: parseISO(e.breeding_date), created: e.created_at, data: e })),
+                     ...calvingEvents.map(e => ({ type: 'calving', date: parseISO(e.event_date), created: e.created_at, data: e }))
+                   ]
+                     .sort((a, b) => b.date.getTime() - a.date.getTime()) // Newest first
+                     .map((item, index) => {
+                       // Heat Event
+                       if (item.type === 'heat') {
+                         const heat = item.data as HeatEvent
+                         return (
+                           <div key={`heat-${heat.id}`} className="border rounded-lg p-4 bg-pink-50 border-pink-100 hover:shadow-md transition-shadow">
+                             <div className="flex items-start justify-between">
+                               <div className="flex-1">
+                                 <div className="flex items-center gap-2 mb-2">
+                                   <Activity className="w-5 h-5 text-pink-600 flex-shrink-0" />
+                                   <span className="font-semibold text-gray-900">Heat Detection</span>
+                                   <Badge className="bg-pink-100 text-pink-800">Heat</Badge>
+                                 </div>
+                                 <div className="ml-7 space-y-2 text-sm">
+                                   <p><span className="font-medium text-gray-700">Date:</span> {format(parseISO(heat.event_date), 'MMMM dd, yyyy • h:mm a')}</p>
+                                   <p><span className="font-medium text-gray-700">Signs:</span> {heat.heat_signs?.join(', ') || 'No signs recorded'}</p>
+                                   {heat.heat_action_taken && <p><span className="font-medium text-gray-700">Action:</span> {heat.heat_action_taken}</p>}
+                                   <p className="text-xs text-gray-500 pt-1">Recorded: {format(heat.created_at ? parseISO(heat.created_at) : parseISO(heat.event_date), 'MMM dd, yyyy • h:mm a')}</p>
+                                 </div>
+                               </div>
+                             </div>
+                           </div>
+                         )
+                       }
+
+                       // Insemination Event
+                       if (item.type === 'insemination') {
+                         const insem = item.data as InseminationEvent
+                         return (
+                           <div key={`insem-${insem.id}`} className="border rounded-lg p-4 bg-green-50 border-green-100 hover:shadow-md transition-shadow">
+                             <div className="flex items-start justify-between">
+                               <div className="flex-1">
+                                 <div className="flex items-center gap-2 mb-2">
+                                   <Syringe className="w-5 h-5 text-green-600 flex-shrink-0" />
+                                   <span className="font-semibold text-gray-900">Insemination</span>
+                                   <Badge className="bg-green-100 text-green-800">Insemination</Badge>
+                                 </div>
+                                 <div className="ml-7 space-y-2 text-sm">
+                                   <p><span className="font-medium text-gray-700">Date:</span> {format(parseISO(insem.event_date), 'MMMM dd, yyyy • h:mm a')}</p>
+                                   <p><span className="font-medium text-gray-700">Method:</span> {insem.insemination_method}</p>
+                                   {insem.semen_bull_code && <p><span className="font-medium text-gray-700">Semen Bull Code:</span> {insem.semen_bull_code}</p>}
+                                   {insem.technician_name && <p><span className="font-medium text-gray-700">Technician:</span> {insem.technician_name}</p>}
+                                   <p className="text-xs text-gray-500 pt-1">Recorded: {format(insem.created_at ? parseISO(insem.created_at) : parseISO(insem.event_date), 'MMM dd, yyyy • h:mm a')}</p>
+                                 </div>
+                               </div>
+                             </div>
+                           </div>
+                         )
+                       }
+
+                       // Pregnancy Check Event
+                       if (item.type === 'pregnancy_check') {
+                         const check = item.data as PregnancyCheck
+                         const resultColor = check.result === 'positive' ? 'bg-green-100 text-green-800' : check.result === 'negative' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'
+                         return (
+                           <div key={`check-${check.id}`} className="border rounded-lg p-4 bg-blue-50 border-blue-100 hover:shadow-md transition-shadow">
+                             <div className="flex items-start justify-between">
+                               <div className="flex-1">
+                                 <div className="flex items-center gap-2 mb-2">
+                                   <Stethoscope className="w-5 h-5 text-blue-600 flex-shrink-0" />
+                                   <span className="font-semibold text-gray-900">Pregnancy Check</span>
+                                   <Badge className={resultColor}>
+                                     {check.result === 'positive' ? '✓ Positive' : check.result === 'negative' ? '✗ Negative' : 'Inconclusive'}
+                                   </Badge>
+                                 </div>
+                                 <div className="ml-7 space-y-2 text-sm">
+                                   <p><span className="font-medium text-gray-700">Check Date:</span> {format(parseISO(check.check_date), 'MMMM dd, yyyy • h:mm a')}</p>
+                                   <p><span className="font-medium text-gray-700">Method:</span> {check.check_method}</p>
+                                   {check.checked_by && <p><span className="font-medium text-gray-700">Checked by:</span> {check.checked_by}</p>}
+                                   {check.notes && <p><span className="font-medium text-gray-700">Notes:</span> {check.notes}</p>}
+                                   <p className="text-xs text-gray-500 pt-1">Recorded: {format(check.created_at ? parseISO(check.created_at) : parseISO(check.check_date), 'MMM dd, yyyy • h:mm a')}</p>
+                                 </div>
+                               </div>
+                             </div>
+                           </div>
+                         )
+                       }
+
+                       // Breeding Record
+                       if (item.type === 'breeding') {
+                         const record = item.data as BreedingRecord
+                         return (
+                           <div key={record.id} className="border rounded-lg p-4 bg-white border-gray-200 hover:shadow-md transition-shadow">
+                             <div className="flex items-start justify-between">
+                               <div className="flex-1">
+                                 <div className="flex items-center gap-2 mb-2">
+                                   <Calendar className="w-5 h-5 text-gray-600 flex-shrink-0" />
+                                   <span className="font-semibold text-gray-900">Breeding Record</span>
+                                   {getPregnancyStatusBadge(record.pregnancy_status, record.auto_generated)}
+                                 </div>
+                                 <div className="ml-7 space-y-2 text-sm">
+                                   <p><span className="font-medium text-gray-700">Breeding Date:</span> {format(parseISO(record.breeding_date), 'MMMM dd, yyyy')}</p>
+                                   <p><span className="font-medium text-gray-700">Method:</span> {record.breeding_method === 'artificial_insemination' ? 'Artificial Insemination' : 'Natural Service'}</p>
+                                   {record.sire_tag && <p><span className="font-medium text-gray-700">Sire Tag:</span> {record.sire_tag}</p>}
+                                   {record.veterinarian && <p><span className="font-medium text-gray-700">Veterinarian:</span> {record.veterinarian}</p>}
+                                   {record.expected_calving_date && <p><span className="font-medium text-gray-700">Expected Calving:</span> {format(parseISO(record.expected_calving_date), 'MMMM dd, yyyy')}</p>}
+                                   {record.actual_calving_date && <p><span className="font-medium text-gray-700">Actual Calving:</span> {format(parseISO(record.actual_calving_date), 'MMMM dd, yyyy')}</p>}
+                                   {record.breeding_notes && <p><span className="font-medium text-gray-700">Notes:</span> {record.breeding_notes}</p>}
+                                   {record.breeding_cost && <p><span className="font-medium text-gray-700">Cost:</span> ${record.breeding_cost.toFixed(2)}</p>}
+                                   <p className="text-xs text-gray-500 pt-1">Recorded: {format(record.created_at ? parseISO(record.created_at) : parseISO(record.breeding_date), 'MMM dd, yyyy • h:mm a')}</p>
+                                 </div>
+                               </div>
+                             </div>
+                           </div>
+                         )
+                       }
+
+                       // Calving Event
+                       if (item.type === 'calving') {
+                         const calving = item.data as CalvingEvent
+                         return (
+                           <div key={`calving-${calving.id}`} className="border rounded-lg p-4 bg-purple-50 border-purple-100 hover:shadow-md transition-shadow">
+                             <div className="flex items-start justify-between">
+                               <div className="flex-1">
+                                 <div className="flex items-center gap-2 mb-2">
+                                   <Baby className="w-5 h-5 text-purple-600 flex-shrink-0" />
+                                   <span className="font-semibold text-gray-900">Calving Event</span>
+                                   <Badge className="bg-purple-100 text-purple-800">Calving</Badge>
+                                 </div>
+                                 <div className="ml-7 space-y-2 text-sm">
+                                   <p><span className="font-medium text-gray-700">Calving Date:</span> {format(parseISO(calving.event_date), 'MMMM dd, yyyy • h:mm a')}</p>
+                                   {calving.estimated_due_date && <p><span className="font-medium text-gray-700">Estimated Due Date:</span> {format(parseISO(calving.estimated_due_date), 'MMMM dd, yyyy')}</p>}
+                                   {calving.calving_outcome && <p><span className="font-medium text-gray-700">Outcome:</span> {calving.calving_outcome}</p>}
+                                   <p className="text-xs text-gray-500 pt-1">Recorded: {format(calving.created_at ? parseISO(calving.created_at) : parseISO(calving.event_date), 'MMM dd, yyyy • h:mm a')}</p>
+                                 </div>
+                               </div>
+                             </div>
+                           </div>
+                         )
+                       }
+                     })}
+                 </div>
+               )}
              </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="checks">
           <Card>
-             <CardHeader><CardTitle>Pregnancy Checks</CardTitle></CardHeader>
+             <CardHeader>
+               <CardTitle>Pregnancy Checks</CardTitle>
+               <CardDescription>Complete record of all pregnancy examinations</CardDescription>
+             </CardHeader>
              <CardContent>
-               {pregnancyChecks.length === 0 ? <p className="text-gray-500">No checks recorded.</p> : (
+               {pregnancyChecks.length === 0 ? (
+                 <p className="text-gray-500 text-center py-8">No pregnancy checks recorded.</p>
+               ) : (
                  <div className="space-y-4">
                     {pregnancyChecks.map((check) => (
-                      <div key={check.id} className="flex justify-between border-b pb-2">
-                         <div>
-                           <p className="font-medium">{format(parseISO(check.check_date), 'MMM dd, yyyy')}</p>
-                           <p className="text-xs text-gray-500">{check.check_method}</p>
+                      <div key={check.id} className="bg-blue-50 border border-blue-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                         <div className="space-y-3">
+                           {/* Header Row */}
+                           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                             <div className="flex items-start gap-3">
+                               <Stethoscope className="w-5 h-5 text-blue-600 mt-1 flex-shrink-0" />
+                               <div>
+                                 <p className="font-semibold text-gray-900">
+                                   {format(parseISO(check.check_date), 'MMMM dd, yyyy • h:mm a')}
+                                 </p>
+                                 <p className="text-sm text-gray-600 mt-1">Pregnancy Check</p>
+                               </div>
+                             </div>
+                             <Badge className={
+                               check.result === 'positive' 
+                                 ? 'bg-green-100 text-green-800 border-green-300' 
+                                 : check.result === 'negative'
+                                 ? 'bg-red-100 text-red-800 border-red-300'
+                                 : 'bg-yellow-100 text-yellow-800 border-yellow-300'
+                             }>
+                               {check.result === 'positive' ? '✓ Positive' : check.result === 'negative' ? '✗ Negative' : 'Inconclusive'}
+                             </Badge>
+                           </div>
+
+                           {/* Details Grid */}
+                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 ml-7 pt-2 border-t border-blue-200">
+                             {/* Examination Method */}
+                             {check.examination_method && (
+                               <div>
+                                 <p className="text-xs font-semibold text-gray-600 uppercase">Examination Method</p>
+                                 <p className="text-sm text-gray-900 mt-1 capitalize">
+                                   {check.examination_method.replace(/_/g, ' ')}
+                                 </p>
+                               </div>
+                             )}
+
+                             {/* Veterinarian */}
+                             {check.veterinarian_name && (
+                               <div>
+                                 <p className="text-xs font-semibold text-gray-600 uppercase">Examined By</p>
+                                 <p className="text-sm text-gray-900 mt-1">{check.veterinarian_name}</p>
+                               </div>
+                             )}
+
+                             {/* Estimated Due Date */}
+                             {check.estimated_due_date && (
+                               <div>
+                                 <p className="text-xs font-semibold text-gray-600 uppercase">Estimated Due Date</p>
+                                 <p className="text-sm text-gray-900 mt-1">
+                                   {format(parseISO(check.estimated_due_date), 'MMMM dd, yyyy')}
+                                 </p>
+                               </div>
+                             )}
+
+                             {/* Days to Due */}
+                             {check.result === 'positive' && check.estimated_due_date && (
+                               <div>
+                                 <p className="text-xs font-semibold text-gray-600 uppercase">Days to Calving</p>
+                                 <p className="text-sm text-gray-900 mt-1">
+                                   {differenceInDays(parseISO(check.estimated_due_date), new Date())} days remaining
+                                 </p>
+                               </div>
+                             )}
+                           </div>
+
+                           {/* Notes */}
+                           {check.notes && (
+                             <div className="ml-7 pt-2 border-t border-blue-200">
+                               <p className="text-xs font-semibold text-gray-600 uppercase mb-1">Notes</p>
+                               <p className="text-sm text-gray-700 bg-white rounded p-2 border border-blue-100">
+                                 {check.notes}
+                               </p>
+                             </div>
+                           )}
+
+                           {/* Recorded Timestamp */}
+                           <div className="ml-7 text-xs text-gray-500 pt-2 border-t border-blue-200">
+                             Recorded: {check.created_at ? format(parseISO(check.created_at), 'MMMM dd, yyyy • h:mm a') : 'N/A'}
+                           </div>
                          </div>
-                         <Badge className={check.result === 'positive' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}>
-                           {check.result}
-                         </Badge>
                       </div>
                     ))}
                  </div>

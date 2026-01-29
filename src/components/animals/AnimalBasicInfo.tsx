@@ -7,12 +7,12 @@ import { Button } from '@/components/ui/Button'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { cn } from '@/lib/utils/cn'
 import { HealthStatusBadge } from './HealthStatusBadge'
-import { 
+import {
   AlertTriangle,
-  Calendar, 
-  Tag, 
-  MapPin, 
-  User, 
+  Calendar,
+  Tag,
+  MapPin,
+  User,
   Edit,
   FileText,
   Heart,
@@ -34,9 +34,10 @@ interface AnimalBasicInfoProps {
   animal: any
   canEdit: boolean
   onEditClick: () => void
+  onViewFullHistory?: () => void
 }
 
-export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInfoProps) {
+export function AnimalBasicInfo({ animal, canEdit, onEditClick, onViewFullHistory }: AnimalBasicInfoProps) {
   const [showAllSections, setShowAllSections] = useState(false)
   const [expandedSections, setExpandedSections] = useState<string[]>(['identification'])
   const [animalData, setAnimalData] = useState(animal)
@@ -45,15 +46,15 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
   useEffect(() => {
     setAnimalData(animal)
   }, [animal])
-  
+
   const toggleSection = (sectionId: string) => {
-    setExpandedSections(prev => 
-      prev.includes(sectionId) 
+    setExpandedSections(prev =>
+      prev.includes(sectionId)
         ? prev.filter(id => id !== sectionId)
         : [...prev, sectionId]
     )
   }
-  
+
   const formatDate = (dateString: string) => {
     if (!dateString) return 'Not specified'
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -62,7 +63,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
       day: 'numeric'
     })
   }
-  
+
   const getSourceBadge = () => {
     if (animal.animal_source === 'newborn_calf') {
       return (
@@ -87,59 +88,59 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
     }
     return null
   }
-  
+
   const getProductionStatusBadge = () => {
-  const statusColors = {
-    calf: 'bg-yellow-100 text-yellow-800',
-    heifer: 'bg-blue-100 text-blue-800',
-    served: 'bg-purple-100 text-purple-800',
-    lactating: 'bg-green-100 text-green-800',
-    dry: 'bg-gray-100 text-gray-800',
-    bull: 'bg-orange-100 text-orange-800',
-  }
-  
-  const statusLabels: Record<string, string> = {
-    calf: 'Calf',
-    heifer: 'Heifer',
-    served: isMobile ? 'In Calf' : 'In Calf (Served)',
-    lactating: 'Lactating',
-    dry: 'Dry',
-    bull: 'Bull'
-  }
-  
-  if (!animal.production_status) return null
-  
-  return (
-    <Badge className={cn(
-      statusColors[animal.production_status as keyof typeof statusColors] || 'bg-gray-100 text-gray-800',
-      isMobile ? "text-xs px-2 py-0.5" : ""
-    )}>
-      {statusLabels[animal.production_status] || animal.production_status.replace('_', ' ').toUpperCase()}
-    </Badge>
-  )
-}
-  
-  const getHealthStatusBadge = () => {
-    
-    
+    const statusColors = {
+      calf: 'bg-yellow-100 text-yellow-800',
+      heifer: 'bg-blue-100 text-blue-800',
+      served: 'bg-purple-100 text-purple-800',
+      lactating: 'bg-green-100 text-green-800',
+      dry: 'bg-gray-100 text-gray-800',
+      bull: 'bg-orange-100 text-orange-800',
+    }
+
+    const statusLabels: Record<string, string> = {
+      calf: 'Calf',
+      heifer: 'Heifer',
+      served: isMobile ? 'In Calf' : 'In Calf (Served)',
+      lactating: 'Lactating',
+      dry: 'Dry',
+      bull: 'Bull'
+    }
+
+    if (!animal.production_status) return null
+
     return (
-      <HealthStatusBadge 
-      healthStatus={animalData.health_status}
-      size="md"
-      showIcon={true}
-      showPulse={true}
-    />
+      <Badge className={cn(
+        statusColors[animal.production_status as keyof typeof statusColors] || 'bg-gray-100 text-gray-800',
+        isMobile ? "text-xs px-2 py-0.5" : ""
+      )}>
+        {statusLabels[animal.production_status] || animal.production_status.replace('_', ' ').toUpperCase()}
+      </Badge>
     )
   }
-  
+
+  const getHealthStatusBadge = () => {
+
+
+    return (
+      <HealthStatusBadge
+        healthStatus={animalData.health_status}
+        size="md"
+        showIcon={true}
+        showPulse={true}
+      />
+    )
+  }
+
   const calculateAge = (birthDate: string) => {
     if (!birthDate) return 'Unknown'
-    
+
     const birth = new Date(birthDate)
     const now = new Date()
     const diffTime = Math.abs(now.getTime() - birth.getTime())
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-    
+
     if (diffDays < 30) {
       return isMobile ? `${diffDays}d` : `${diffDays} days old`
     } else if (diffDays < 365) {
@@ -148,19 +149,19 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
     } else {
       const years = Math.floor(diffDays / 365)
       const remainingMonths = Math.floor((diffDays % 365) / 30)
-      return isMobile 
+      return isMobile
         ? `${years}y ${remainingMonths}m`
         : `${years} year${years !== 1 ? 's' : ''} ${remainingMonths} month${remainingMonths !== 1 ? 's' : ''} old`
     }
   }
 
   // Mobile: Collapsible section component
-  const CollapsibleSection = ({ 
-    id, 
-    title, 
-    icon: Icon, 
-    children, 
-    defaultExpanded = false 
+  const CollapsibleSection = ({
+    id,
+    title,
+    icon: Icon,
+    children,
+    defaultExpanded = false
   }: {
     id: string
     title: string
@@ -169,7 +170,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
     defaultExpanded?: boolean
   }) => {
     const isExpanded = expandedSections.includes(id)
-    
+
     if (!isMobile) {
       return (
         <div>
@@ -181,7 +182,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
         </div>
       )
     }
-    
+
     return (
       <div className="border-b border-gray-100 last:border-0">
         <button
@@ -206,7 +207,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
       </div>
     )
   }
-  
+
   return (
     <div className={cn(
       "grid gap-6",
@@ -233,9 +234,9 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
               </CardDescription>
             </div>
             {canEdit && (
-              <Button 
-                variant="outline" 
-                size={isMobile ? "default" : "sm"} 
+              <Button
+                variant="outline"
+                size={isMobile ? "default" : "sm"}
                 onClick={onEditClick}
                 className={cn(
                   isMobile && "h-9 px-3"
@@ -266,7 +267,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
                   isMobile ? "text-sm" : ""
                 )}>{animal.tag_number}</span>
               </div>
-              
+
               <div>
                 <p className={cn(
                   "text-gray-600 mb-1",
@@ -277,7 +278,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
                   isMobile ? "text-sm" : ""
                 )}>{animal.name || 'Not named'}</span>
               </div>
-              
+
               <div>
                 <p className={cn(
                   "text-gray-600 mb-1",
@@ -288,7 +289,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
                   isMobile ? "text-sm" : ""
                 )}>{animal.breed || 'Not specified'}</span>
               </div>
-              
+
               <div>
                 <p className={cn(
                   "text-gray-600 mb-1",
@@ -303,7 +304,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
               </div>
             </div>
           </CollapsibleSection>
-          
+
           {/* Source & Status Section */}
           <CollapsibleSection id="status" title="Source & Status" icon={Activity}>
             <div className="space-y-3">
@@ -319,7 +320,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
                   {getSourceBadge()}
                 </div>
               )}
-              
+
               <div className={cn(
                 "flex items-center",
                 isMobile ? "justify-between" : "justify-between"
@@ -328,19 +329,19 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
                   "text-gray-600",
                   isMobile ? "text-sm" : "text-sm"
                 )}>Status:</span>
-                <Badge 
+                <Badge
                   className={cn(
                     animal.status === 'active' ? 'bg-green-100 text-green-800' :
-                    animal.status === 'pregnant' ? 'bg-blue-100 text-blue-800' :
-                    animal.status === 'dry' ? 'bg-yellow-100 text-yellow-800' :
-                    'bg-gray-100 text-gray-800',
+                      animal.status === 'pregnant' ? 'bg-blue-100 text-blue-800' :
+                        animal.status === 'dry' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-gray-100 text-gray-800',
                     isMobile ? "text-xs px-2 py-0.5" : ""
                   )}
                 >
                   {animal.status}
                 </Badge>
               </div>
-              
+
               {animal.production_status && (
                 <div className={cn(
                   "flex items-center",
@@ -353,7 +354,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
                   {getProductionStatusBadge()}
                 </div>
               )}
-              
+
               {animal.health_status && (
                 <div className={cn(
                   "flex items-center",
@@ -368,7 +369,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
               )}
             </div>
           </CollapsibleSection>
-          
+
           {/* Physical Details Section */}
           <CollapsibleSection id="physical" title="Physical Details" icon={Weight}>
             <div className={cn(
@@ -399,7 +400,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
                   </p>
                 )}
               </div>
-              
+
               <div>
                 <p className={cn(
                   "text-gray-600 mb-1",
@@ -412,112 +413,50 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
                   {animal.weight ? `${animal.weight} kg` : 'Not recorded'}
                 </span>
               </div>
-              
-              {/* {animal.purchase_date && (
-                <div className={cn(
-                  isMobile ? "col-span-1" : "col-span-2"
-                )}>
-                  <p className={cn(
-                    "text-gray-600 mb-1",
-                    isMobile ? "text-xs" : "text-sm"
-                  )}>Purchase Date</p>
-                  <div className="flex items-center space-x-2">
-                    <ShoppingCart className={cn(
-                      "text-gray-500",
-                      isMobile ? "w-3 h-3" : "w-4 h-4"
-                    )} />
-                    <span className={cn(
-                      "font-medium",
-                      isMobile ? "text-sm" : ""
-                    )}>{formatDate(animal.purchase_date)}</span>
-                  </div>
-                </div>
-              )} */}
-              {/* Source-Specific Information */}
-          {animal.animal_source === 'newborn_calf' && (
-            <>
-              {/* Parentage Section */}
-              <CollapsibleSection id="parentage" title="Parentage" icon={Heart}>
-                <div className="space-y-3">
-                  {animal.mother_id && (
-                    <div>
-                      <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Mother</p>
-                      <span className={cn("font-medium", isMobile ? "text-sm" : "")}>
-                        {animal.mother_tag || animal.mother_id}
-                      </span>
-                    </div>
-                  )}
-                  {animal.father_info && (
-                    <div>
-                      <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Father Info</p>
-                      <span className={cn("font-medium", isMobile ? "text-sm" : "")}>
-                        {animal.father_info}
-                      </span>
-                    </div>
-                  )}
-                  {animal.mother_production_info && (
-                    <div>
-                      <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Mother's Production</p>
-                      <div className="text-sm text-gray-700 space-y-1">
-                        {animal.mother_production_info.daily_production && (
-                          <p>Daily: {animal.mother_production_info.daily_production}L</p>
-                        )}
-                        {animal.mother_production_info.lactation_number && (
-                          <p>Lactation: {animal.mother_production_info.lactation_number}</p>
-                        )}
-                        {animal.mother_production_info.peak_production && (
-                          <p>Peak: {animal.mother_production_info.peak_production}L</p>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </CollapsibleSection>
-            </>
-          )}
 
-          {animal.animal_source === 'purchased_animal' && (
-            <>
-              {/* Purchase Information */}
-              <CollapsibleSection id="purchase" title="Purchase Information" icon={ShoppingCart}>
-                <div className="space-y-3">
-                  {animal.purchase_date && (
-                    <div>
-                      <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Purchase Date</p>
-                      <div className="flex items-center space-x-2">
-                        <Calendar className={cn("text-gray-500", isMobile ? "w-3 h-3" : "w-4 h-4")} />
-                        <span className={cn("font-medium", isMobile ? "text-sm" : "")}>{formatDate(animal.purchase_date)}</span>
-                      </div>
+              {/* Parentage Information for purchased animals */}
+              {animal.animal_source === 'purchased_animal' && (
+                <>
+                  {/* Purchase Information */}
+                  <CollapsibleSection id="purchase" title="Purchase Information" icon={ShoppingCart}>
+                    <div className="space-y-3">
+                      {animal.purchase_date && (
+                        <div>
+                          <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Purchase Date</p>
+                          <div className="flex items-center space-x-2">
+                            <Calendar className={cn("text-gray-500", isMobile ? "w-3 h-3" : "w-4 h-4")} />
+                            <span className={cn("font-medium", isMobile ? "text-sm" : "")}>{formatDate(animal.purchase_date)}</span>
+                          </div>
+                        </div>
+                      )}
+                      {animal.purchase_price && (
+                        <div>
+                          <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Purchase Price</p>
+                          <div className="flex items-center space-x-2">
+                            {/* <DollarSign className={cn("text-gray-500", isMobile ? "w-3 h-3" : "w-4 h-4")} /> */}
+                            <span className={cn("font-medium", isMobile ? "text-sm" : "")}>
+                              KSh {animal.purchase_price.toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      {animal.seller_info && (
+                        <div>
+                          <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Seller Information</p>
+                          <span className={cn("font-medium", isMobile ? "text-sm" : "")}>
+                            {animal.seller_info}
+                          </span>
+                        </div>
+                      )}
                     </div>
-                  )}
-                  {animal.purchase_price && (
-                    <div>
-                      <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Purchase Price</p>
-                      <div className="flex items-center space-x-2">
-                        {/* <DollarSign className={cn("text-gray-500", isMobile ? "w-3 h-3" : "w-4 h-4")} /> */}
-                        <span className={cn("font-medium", isMobile ? "text-sm" : "")}>
-                          KSh {animal.purchase_price.toLocaleString()}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                  {animal.seller_info && (
-                    <div>
-                      <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Seller Information</p>
-                      <span className={cn("font-medium", isMobile ? "text-sm" : "")}>
-                        {animal.seller_info}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </CollapsibleSection>
-            </>
-          )}
+                  </CollapsibleSection>
+                </>
+              )}
 
-          
+
             </div>
           </CollapsibleSection>
-          
+
           {/* Parentage Information for Newborn Calves */}
           {animal.animal_source === 'newborn_calf' && (
             <CollapsibleSection id="parentage" title="Parentage" icon={Heart}>
@@ -543,13 +482,29 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
                     "font-medium",
                     isMobile ? "text-sm" : ""
                   )}>
-                    {animal.father?.name || animal.father?.tag_number || 'Not recorded'}
+                    {animal.father_info || animal.father?.tag_number || 'Not recorded'}
                   </span>
                 </div>
+                {animal.mother_production_info && (
+                  <div>
+                    <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Mother's Production</p>
+                    <div className="text-sm text-gray-700 space-y-1">
+                      {animal.mother_production_info.daily_production && (
+                        <p>Daily: {animal.mother_production_info.daily_production}L</p>
+                      )}
+                      {animal.mother_production_info.lactation_number && (
+                        <p>Lactation: {animal.mother_production_info.lactation_number}</p>
+                      )}
+                      {animal.mother_production_info.peak_production && (
+                        <p>Peak: {animal.mother_production_info.peak_production}L</p>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </CollapsibleSection>
           )}
-          
+
           {/* Production Information for Lactating Animals */}
           {/* Production-Specific Information */}
           {(['served', 'lactating', 'dry'].includes(animal.production_status)) && (
@@ -609,7 +564,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
               </div>
             </CollapsibleSection>
           )}
-          
+
           {/* Service Information for Served Animals */}
           {animal.production_status === 'served' && (animal.service_date || animal.service_method) && (
             <CollapsibleSection id="service" title="Service Information" icon={Activity}>
@@ -647,7 +602,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
           )}
         </CardContent>
       </Card>
-      
+
       {/* Timeline & Additional Information */}
       <Card>
         <CardHeader className={cn(
@@ -696,7 +651,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
                 </div>
               </div>
             )}
-            
+
             {/* Purchase Event */}
             {animal.purchase_date && (
               <div className="flex items-start space-x-3">
@@ -721,7 +676,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
                 </div>
               </div>
             )}
-            
+
             {/* Farm Addition Event */}
             <div className="flex items-start space-x-3">
               <div className="w-3 h-3 bg-farm-green rounded-full mt-1.5" />
@@ -744,7 +699,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
                 </p>
               </div>
             </div>
-            
+
             {/* Service Event */}
             {animal.service_date && (
               <div className="flex items-start space-x-3">
@@ -769,7 +724,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
                 </div>
               </div>
             )}
-            
+
             {/* Future Events Placeholder */}
             <div className="flex items-start space-x-3 opacity-50">
               <div className="w-3 h-3 bg-gray-300 rounded-full mt-1.5" />
@@ -778,7 +733,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
                   "text-gray-500 italic",
                   isMobile ? "text-xs" : "text-sm"
                 )}>
-                  {isMobile 
+                  {isMobile
                     ? "More events will appear with records"
                     : "More events will appear as you add health and production records"
                   }
@@ -786,7 +741,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
               </div>
             </div>
           </div>
-          
+
           {/* Additional Notes Section */}
           {animal.notes && (
             <div className={cn(
@@ -808,7 +763,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
               </div>
             </div>
           )}
-          
+
           {/* Quick Actions */}
           <div className={cn(
             "pt-6 border-t",
@@ -822,9 +777,9 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
               "grid gap-2",
               isMobile ? "grid-cols-1" : "grid-cols-2"
             )}>
-              <Button 
-                variant="outline" 
-                size={isMobile ? "default" : "sm"} 
+              <Button
+                variant="outline"
+                size={isMobile ? "default" : "sm"}
                 className={cn(
                   isMobile ? "text-sm h-10 justify-start" : "text-xs"
                 )}
@@ -832,9 +787,9 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
                 <Plus className={cn("mr-2", isMobile ? "w-4 h-4" : "w-3 h-3")} />
                 Add Health Record
               </Button>
-              <Button 
-                variant="outline" 
-                size={isMobile ? "default" : "sm"} 
+              <Button
+                variant="outline"
+                size={isMobile ? "default" : "sm"}
                 className={cn(
                   isMobile ? "text-sm h-10 justify-start" : "text-xs"
                 )}
@@ -843,24 +798,25 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick }: AnimalBasicInf
                 Record Production
               </Button>
               {canEdit && (
-                <Button 
-                  variant="outline" 
-                  size={isMobile ? "default" : "sm"} 
+                <Button
+                  variant="outline"
+                  size={isMobile ? "default" : "sm"}
                   className={cn(
                     isMobile ? "text-sm h-10 justify-start" : "text-xs"
-                  )} 
+                  )}
                   onClick={onEditClick}
                 >
                   <Edit className={cn("mr-2", isMobile ? "w-4 h-4" : "w-3 h-3")} />
                   Edit Details
                 </Button>
               )}
-              <Button 
-                variant="outline" 
-                size={isMobile ? "default" : "sm"} 
+              <Button
+                variant="outline"
+                size={isMobile ? "default" : "sm"}
                 className={cn(
                   isMobile ? "text-sm h-10 justify-start" : "text-xs"
                 )}
+                onClick={onViewFullHistory}
               >
                 <FileText className={cn("mr-2", isMobile ? "w-4 h-4" : "w-3 h-3")} />
                 View Full History

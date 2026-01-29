@@ -416,16 +416,30 @@ export async function updateAnimal(animalId: string, farmId: string, animalData:
       return { success: false, error: 'Animal not found or access denied' }
     }
     
+    // ✅ DATE FIELDS that should accept null instead of empty strings
+    const dateFields = [
+      'birth_date',
+      'purchase_date',
+      'service_date',
+      'expected_calving_date'
+    ]
+    
     // Prepare update data
     const updateData = {
       ...animalData,
       updated_at: new Date().toISOString(),
     }
     
-    // Remove undefined/null values
+    // ✅ FIXED: Convert empty strings to null for date fields, remove undefined
     Object.keys(updateData).forEach(key => {
-      if (updateData[key] === undefined || updateData[key] === '') {
+      if (updateData[key] === undefined) {
         delete updateData[key]
+      } else if (updateData[key] === '' && dateFields.includes(key)) {
+        // ✅ Convert empty string to null for date fields
+        updateData[key] = null
+      } else if (updateData[key] === '') {
+        // For non-date fields, also convert empty string to null
+        updateData[key] = null
       }
     })
     

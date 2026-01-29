@@ -16,6 +16,7 @@ import { Syringe, Calendar, User, FileText } from 'lucide-react'
 const inseminationSchema = z.object({
   animal_id: z.string().min(1, 'Please select an animal'),
   event_date: z.string().min(1, 'Insemination date is required'),
+  event_time: z.string().min(1, 'Time of insemination is required'),
   insemination_method: z.enum(['artificial_insemination', 'natural_breeding']),
   semen_bull_code: z.string().optional(),
   technician_name: z.string().optional(),
@@ -67,6 +68,7 @@ export function InseminationForm({ farmId, onEventCreated, onCancel, preSelected
     defaultValues: {
       animal_id: preSelectedAnimalId || '',
       event_date: new Date().toISOString().split('T')[0],
+      event_time: new Date().toTimeString().slice(0, 5),
       insemination_method: 'artificial_insemination',
       semen_bull_code: '',
       technician_name: '',
@@ -120,6 +122,13 @@ export function InseminationForm({ farmId, onEventCreated, onCancel, preSelected
     setError(null)
     
     try {
+      // Combine date and time WITHOUT timezone conversion
+      // Format: YYYY-MM-DDTHH:MM:SS (local time, not UTC)
+      const dateTime = `${data.event_date}T${data.event_time}:00`
+      
+      // Destructure to exclude event_time from API payload
+      const { event_time, ...restData } = data
+      
       const response = await fetch('/api/breeding-events', {
         method: 'POST',
         headers: {
@@ -127,7 +136,8 @@ export function InseminationForm({ farmId, onEventCreated, onCancel, preSelected
         },
         body: JSON.stringify({
           eventData: {
-            ...data,
+            ...restData,
+            event_date: dateTime,
             farm_id: farmId,
             event_type: 'insemination',
           }
@@ -244,25 +254,39 @@ export function InseminationForm({ farmId, onEventCreated, onCancel, preSelected
           )}
         </div>
         
-        {/* Insemination Date */}
-        <div>
-          <Label htmlFor="event_date">Insemination Date *</Label>
-          <div className="relative">
-            <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <Input
-              id="event_date"
-              type="date"
-              {...form.register('event_date')}
-              error={form.formState.errors.event_date?.message}
-              className="pl-10"
-            />
+        {/* Insemination Date and Time */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="event_date">Insemination Date *</Label>
+            <div className="relative">
+              <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Input
+                id="event_date"
+                type="date"
+                {...form.register('event_date')}
+                error={form.formState.errors.event_date?.message}
+                className="pl-10"
+              />
+            </div>
+            <p className="text-xs text-gray-600 mt-1">
+              Record the actual date of insemination service
+            </p>
           </div>
-          <p className="text-xs text-gray-600 mt-1">
-            Record the actual date of insemination service
-          </p>
+          <div>
+            <Label htmlFor="event_time">Time of Insemination *</Label>
+            <Input
+              id="event_time"
+              type="time"
+              {...form.register('event_time')}
+              error={form.formState.errors.event_time?.message}
+            />
+            <p className="text-xs text-gray-600 mt-1">
+              Time when insemination was performed
+            </p>
+          </div>
         </div>
         
-        {/* Insemination Method */}
+        {/* Insemination Method */
         <div>
           <Label>Method of Insemination *</Label>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
@@ -291,7 +315,7 @@ export function InseminationForm({ farmId, onEventCreated, onCancel, preSelected
             ))}
           </div>
         </div>
-        
+}
         {/* Semen/Bull Code */}
         <div>
           <Label htmlFor="semen_bull_code">

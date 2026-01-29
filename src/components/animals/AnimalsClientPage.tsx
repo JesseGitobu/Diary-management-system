@@ -837,6 +837,7 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
           setSelectedAnimalForWeight(null)
         }}
         onAnimalUpdated={handleWeightUpdated}
+        onRefreshData={loadWeightRequirements}  // ✅ NEW: Pass refresh callback
         highlightWeight={true}
         weightUpdateReason={selectedAnimalForWeight.weightUpdateReason}
       />

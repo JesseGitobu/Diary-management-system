@@ -15,6 +15,7 @@ import { CheckCircle, Circle } from 'lucide-react'
 const heatDetectionSchema = z.object({
   animal_id: z.string().min(1, 'Please select an animal'),
   event_date: z.string().min(1, 'Event date is required'),
+  event_time: z.string().min(1, 'Time observed is required'),
   heat_signs: z.array(z.string()).min(1, 'Please select at least one heat sign'),
   heat_action_taken: z.string().optional(),
   notes: z.string().optional(),
@@ -61,6 +62,7 @@ export function HeatDetectionForm({ farmId, onEventCreated, onCancel, preSelecte
     defaultValues: {
       animal_id: preSelectedAnimalId || '',
       event_date: new Date().toISOString().split('T')[0],
+      event_time: new Date().toTimeString().slice(0, 5),
       heat_signs: [],
       heat_action_taken: '',
       notes: '',
@@ -121,6 +123,13 @@ export function HeatDetectionForm({ farmId, onEventCreated, onCancel, preSelecte
     setError(null)
     
     try {
+      // Combine date and time WITHOUT timezone conversion
+      // Format: YYYY-MM-DDTHH:MM:SS (local time, not UTC)
+      const dateTime = `${data.event_date}T${data.event_time}:00`
+      
+      // Destructure to exclude event_time from API payload
+      const { event_time, ...restData } = data
+      
       const response = await fetch('/api/breeding-events', {
         method: 'POST',
         headers: {
@@ -128,7 +137,8 @@ export function HeatDetectionForm({ farmId, onEventCreated, onCancel, preSelecte
         },
         body: JSON.stringify({
           eventData: {
-            ...data,
+            ...restData,
+            event_date: dateTime,
             farm_id: farmId,
             event_type: 'heat_detection',
             heat_signs: selectedSigns,
@@ -188,10 +198,16 @@ export function HeatDetectionForm({ farmId, onEventCreated, onCancel, preSelecte
           )}
         </div>
         
-        {/* Rest of the form inputs... */}
-        <div>
-          <Label htmlFor="event_date">Date Observed *</Label>
-          <Input id="event_date" type="date" {...form.register('event_date')} error={form.formState.errors.event_date?.message} />
+        {/* Date and Time Observed */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="event_date">Date Observed *</Label>
+            <Input id="event_date" type="date" {...form.register('event_date')} error={form.formState.errors.event_date?.message} />
+          </div>
+          <div>
+            <Label htmlFor="event_time">Time Observed *</Label>
+            <Input id="event_time" type="time" {...form.register('event_time')} error={form.formState.errors.event_time?.message} />
+          </div>
         </div>
         
         <div>

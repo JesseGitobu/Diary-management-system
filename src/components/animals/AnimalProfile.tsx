@@ -11,6 +11,7 @@ import { AnimalHealthRecords } from '@/components/animals/AnimalHealthRecords'
 import { AnimalProductionRecords } from '@/components/animals/AnimalProductionRecords'
 import { AnimalFeedingRecords } from '@/components/animals/AnimalFeedingRecords'
 import { AnimalBreedingRecords } from '@/components/animals/AnimalBreedingRecords'
+import { AnimalHistoryTab } from '@/components/animals/AnimalHistoryTab'
 import { EditAnimalModal } from '@/components/animals/EditAnimalModal'
 import { ReleaseAnimalModal } from '@/components/animals/ReleaseAnimalModal'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
@@ -29,7 +30,8 @@ import {
   MoreVertical,
   Share,
   Utensils,
-  Baby
+  Baby,
+  Clock
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -204,6 +206,7 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
       icon: Baby 
     }] : []),
     { value: 'production', label: isMobile ? 'Prod.' : 'Production', icon: Milk },
+    { value: 'history', label: isMobile ? 'History' : 'Timeline', icon: Clock },
     { value: 'notes', label: 'Notes', icon: FileText }
   ]
   
@@ -214,7 +217,7 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
     )}>
       {/* Mobile Header */}
       {isMobile ? (
-        <div className="sticky top-0 bg-white border-b border-gray-200 z-10 px-4 py-3">
+        <div className="bg-white border-b border-gray-200 px-4 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <Button variant="ghost" size="sm" asChild className="p-2">
@@ -487,7 +490,7 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
 {/* Main Content Tabs - Mobile Optimized */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <div className={cn(
-          isMobile && "sticky top-16 bg-white border-b border-gray-200 z-10 -mx-4 px-4 pb-2"
+          isMobile && "sticky top-0 bg-white border-b border-gray-200 z-40 -mx-4 px-4 pb-2"
         )}>
           <TabsList className={cn(
             "grid w-full",
@@ -525,6 +528,7 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
               animal={animalData} 
               canEdit={canEdit}
               onEditClick={() => setShowEditModal(true)}
+              onViewFullHistory={() => setActiveTab('history')}
             />
           </TabsContent>
           
@@ -561,6 +565,15 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
               animalId={animalData.id}
               animal={animalData}
               canAddRecords={canAddRecords}
+            />
+          </TabsContent>
+          
+          <TabsContent value="history" className="space-y-6 mt-0">
+            <AnimalHistoryTab
+              animalId={animalData.id}
+              animalName={animalData.name || `#${animalData.tag_number}`}
+              animalTag={animalData.tag_number}
+              farmId={farmId}
             />
           </TabsContent>
           

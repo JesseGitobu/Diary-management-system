@@ -62,6 +62,7 @@ interface EditAnimalModalProps {
   onAnimalUpdated: (updatedAnimal: any) => void
   highlightWeight?: boolean 
   weightUpdateReason?: string
+  onRefreshData?: () => void
 }
 
 export function EditAnimalModal({ 
@@ -71,7 +72,8 @@ export function EditAnimalModal({
   onClose, 
   onAnimalUpdated,
   highlightWeight = false,
-  weightUpdateReason 
+  weightUpdateReason,
+  onRefreshData
 }: EditAnimalModalProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -201,23 +203,34 @@ export function EditAnimalModal({
       if (data.expected_calving_date) conditionalData.expected_calving_date = data.expected_calving_date
     }
     
+    // ✅ Clean up data: convert empty strings to null for all fields
+    const cleanedData: any = {
+      tag_number: data.tag_number,
+      name: data.name,
+      breed: data.breed,
+      gender: data.gender,
+      birth_date: data.birth_date || null,
+      weight: data.weight,
+      health_status: data.health_status,
+      production_status: data.production_status,
+      notes: data.notes,
+      ...conditionalData,
+    }
+    
+    // Convert empty strings to null for all date fields
+    const dateFields = ['birth_date', 'service_date', 'expected_calving_date']
+    Object.keys(cleanedData).forEach(key => {
+      if (cleanedData[key] === '') {
+        cleanedData[key] = null
+      }
+    })
+    
     const response = await fetch(`/api/animals/${animal.id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        tag_number: data.tag_number,
-        name: data.name,
-        breed: data.breed,
-        gender: data.gender,
-        birth_date: data.birth_date,
-        weight: data.weight,
-        health_status: data.health_status,
-        production_status: data.production_status,
-        notes: data.notes,
-        ...conditionalData, // ✅ Add conditional fields
-      }),
+      body: JSON.stringify(cleanedData),
     })
     
     if (!response.ok) {
@@ -234,6 +247,13 @@ export function EditAnimalModal({
     })
     
     onAnimalUpdated(result.animal)
+    
+    // ✅ Trigger parent refresh if callback provided
+    if (onRefreshData) {
+      console.log('🔄 [EditModal] Calling refresh callback...')
+      onRefreshData()
+    }
+    
     onClose()
     
   } catch (err: any) {
@@ -431,18 +451,7 @@ export function EditAnimalModal({
           </div>
           
           {/* Physical & Status Information */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div>
-              <Label htmlFor="weight">Weight (kg)</Label>
-              <Input
-                id="weight"
-                type="number"
-                step="0.1"
-                {...form.register('weight', { valueAsNumber: true })}
-                placeholder="e.g., 450"
-              />
-            </div>
-            
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <Label htmlFor="health_status">Health Status</Label>
               <Select

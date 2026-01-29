@@ -23,6 +23,7 @@ interface WeightUpdateModalProps {
   }
   reason: string
   onWeightUpdated: (weightRecord: any) => void
+  onRefreshData?: () => void  // ✅ NEW: Callback to refresh parent data
 }
 
 export function WeightUpdateModal({
@@ -30,7 +31,8 @@ export function WeightUpdateModal({
   onClose,
   animal,
   reason,
-  onWeightUpdated
+  onWeightUpdated,
+  onRefreshData  // ✅ NEW: Destructure callback
 }: WeightUpdateModalProps) {
   const [weight, setWeight] = useState('')
   const [measurementDate, setMeasurementDate] = useState(
@@ -64,8 +66,8 @@ export function WeightUpdateModal({
           animal_id: animal.id,
           weight_kg: parseFloat(weight),
           measurement_date: measurementDate,
-          measurement_type: reason.includes('calf') ? 'birth' :
-            reason.includes('purchased') ? 'purchase' : 'routine',
+          measurement_type: reason.includes('calf') ? 'update_initial' :
+            reason.includes('purchased') ? 'update_initial' : 'routine',
           notes,
           is_required: true
         })
@@ -81,6 +83,13 @@ export function WeightUpdateModal({
       console.log('📊 [WeightModal] Result:', result)
       toast.success('Weight recorded successfully!')
       onWeightUpdated(result.data)
+      
+      // ✅ NEW: Refresh parent component data to remove from 'Weight Updates Required' banner
+      if (onRefreshData) {
+        console.log('🔄 [WeightModal] Refreshing parent data...')
+        onRefreshData()
+      }
+      
       onClose()
     } catch (error) {
       console.error('Error recording weight:', error)

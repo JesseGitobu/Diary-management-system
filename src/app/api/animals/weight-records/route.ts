@@ -65,13 +65,26 @@ export async function POST(request: NextRequest) {
     console.log('✅ [Weight Record] Created:', weightRecord.id)
 
     // Update animal's current weight
+    // Prepare update data with null conversion for date fields
+    const updateData: any = {
+      weight: weight_kg,
+      updated_at: new Date().toISOString()
+    }
+
+    // Define date fields that might cause issues if empty
+    const dateFields = ['birth_date', 'purchase_date', 'service_date', 'expected_calving_date']
+    
+    // Ensure no empty strings in date fields
+    Object.keys(updateData).forEach(key => {
+      if (updateData[key] === '' && dateFields.includes(key)) {
+        updateData[key] = null
+      }
+    })
+
     // Cast supabase to any here as well
     const { error: updateError } = await (supabase as any)
       .from('animals')
-      .update({ 
-        weight: weight_kg, 
-        updated_at: new Date().toISOString() 
-      })
+      .update(updateData)
       .eq('id', animal_id)
 
     if (updateError) {

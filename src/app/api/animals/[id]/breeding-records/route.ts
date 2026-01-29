@@ -36,6 +36,31 @@ export async function GET(
         p => p.breeding_record_id === record.id
       )
 
+      // ✅ NEW: Check for most recent pregnancy check event for this breeding record
+      // This ensures we use the actual pregnancy check result, not the database field
+      const relatedPregnancyChecks = history.events
+        .filter((e: any) => 
+          e.event_type === 'pregnancy_check' && 
+          e.animal_id === record.animal_id
+        )
+        .sort((a: any, b: any) => new Date(b.event_date).getTime() - new Date(a.event_date).getTime())
+
+      const mostRecentPregnancyCheck = relatedPregnancyChecks[0]
+
+      // ✅ Determine pregnancy status: prefer breeding_event data if available
+      let pregnancyStatus = mapPregnancyStatus(pregnancy?.pregnancy_status)
+      
+      if (mostRecentPregnancyCheck && mostRecentPregnancyCheck.event_date >= record.breeding_date) {
+        // If there's a pregnancy check event after this breeding, use its result
+        pregnancyStatus = mostRecentPregnancyCheck.pregnancy_result === 'pregnant' 
+          ? 'confirmed'
+          : mostRecentPregnancyCheck.pregnancy_result === 'not_pregnant'
+          ? 'negative'
+          : mostRecentPregnancyCheck.pregnancy_result === 'uncertain'
+          ? 'uncertain'
+          : 'pending'
+      }
+
       return {
         id: record.id,
         animal_id: record.animal_id,
@@ -43,11 +68,11 @@ export async function GET(
         breeding_method: record.breeding_type,
         sire_tag: record.sire_name,
         sire_breed: record.sire_breed,
-        expected_calving_date: pregnancy?.expected_calving_date,
+        expected_calving_date: pregnancy?.expected_calving_date || mostRecentPregnancyCheck?.estimated_due_date,
         actual_calving_date: pregnancy?.actual_calving_date,
-        pregnancy_confirmed: pregnancy?.pregnancy_status === 'confirmed',
-        pregnancy_check_date: pregnancy?.confirmed_date,
-        pregnancy_status: mapPregnancyStatus(pregnancy?.pregnancy_status),
+        pregnancy_confirmed: pregnancyStatus === 'confirmed',
+        pregnancy_check_date: pregnancy?.confirmed_date || mostRecentPregnancyCheck?.event_date,
+        pregnancy_status: pregnancyStatus,
         gestation_period: pregnancy?.gestation_length || 280,
         breeding_notes: record.notes,
         veterinarian: record.technician_name,
@@ -72,10 +97,50 @@ export async function GET(
         created_at: e.created_at
       }))
 
-    // 3. Filter Pregnancy Checks
-    // Assuming history.events also contains standalone pregnancy checks or they are in pregnancyRecords
-    // We format pregnancyRecords to match the 'PregnancyCheck' interface in frontend
-    const formattedPregnancyChecks = history.pregnancyRecords.map((p: any) => ({
+    // 2B. Extract Insemination Events from breeding_events
+    // These are needed to clear the heat banner when breeding is recorded
+    const inseminationEvents = history.events
+      .filter((e: any) => e.event_type === 'insemination')
+      .map((e: any) => ({
+        id: e.id,
+        animal_id: e.animal_id,
+        event_date: e.event_date,
+        insemination_method: e.insemination_method,
+        technician_name: e.technician_name,
+        created_at: e.created_at
+      }))
+
+    // 2C. Extract Calving Events from breeding_events
+    // These are needed for calving countdown banners
+    const calvingEvents = history.events
+      .filter((e: any) => e.event_type === 'calving')
+      .map((e: any) => ({
+        id: e.id,
+        animal_id: e.animal_id,
+        event_date: e.event_date,
+        estimated_due_date: e.estimated_due_date,
+        calving_outcome: e.calving_outcome,
+        created_at: e.created_at
+      }))
+
+    // 3. Filter & Extract Pregnancy Checks from Both Sources
+    // PRIMARY: From breeding_events table (standalone pregnancy checks)
+    const pregnancyCheckEventsFromEvents = history.events
+      .filter((e: any) => e.event_type === 'pregnancy_check')
+      .map((e: any) => ({
+        id: e.id,
+        breeding_record_id: null,
+        check_date: e.event_date,
+        check_method: e.examination_method || 'Unknown',
+        result: e.pregnancy_result === 'pregnant' ? 'positive' : 
+                e.pregnancy_result === 'not_pregnant' ? 'negative' : 'inconclusive',
+        checked_by: e.veterinarian_name || 'System',
+        notes: e.notes,
+        created_at: e.created_at
+      }))
+
+    // SECONDARY: From pregnancy_records table (linked to breeding records)
+    const pregnancyChecksFromRecords = history.pregnancyRecords.map((p: any) => ({
       id: p.id,
       breeding_record_id: p.breeding_record_id,
       check_date: p.confirmed_date || p.created_at,
@@ -83,8 +148,22 @@ export async function GET(
       result: p.pregnancy_status === 'confirmed' ? 'positive' : 
               p.pregnancy_status === 'false' ? 'negative' : 'inconclusive',
       checked_by: p.checked_by || 'System',
-      notes: p.notes
+      notes: p.notes,
+      created_at: p.created_at
     }))
+
+    // Combine both sources, avoiding duplicates
+    const formattedPregnancyChecks = [
+      ...pregnancyCheckEventsFromEvents,
+      ...pregnancyChecksFromRecords.filter(check => 
+        !pregnancyCheckEventsFromEvents.some(e => e.id === check.id)
+      )
+    ]
+    
+    // Sort by date descending (most recent first)
+    formattedPregnancyChecks.sort((a, b) => 
+      new Date(b.check_date).getTime() - new Date(a.check_date).getTime()
+    )
 
     return NextResponse.json({
       success: true,
@@ -93,6 +172,10 @@ export async function GET(
       pregnancyChecks: formattedPregnancyChecks, 
       // Add 'heatEvents' specifically for the breeding window logic
       heatEvents: heatEvents,
+      // Add 'inseminationEvents' to help clear the heat banner
+      inseminationEvents: inseminationEvents,
+      // Add 'calvingEvents' for calving countdown logic
+      calvingEvents: calvingEvents,
       // Keep raw events for debugging or other lists
       allEvents: history.events 
     })
