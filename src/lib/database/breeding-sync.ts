@@ -3,6 +3,7 @@
 
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { createClient } from '@/lib/supabase/client'
+import { updateAnimal, getAnimalById } from '@/lib/database/animals'
 
 export interface UnifiedBreedingRecord {
   // Core breeding record fields
@@ -27,6 +28,115 @@ export interface UnifiedBreedingRecord {
   created_at: string
   updated_at: string
   auto_generated?: boolean
+}
+
+/**
+ * ✅ Helper: Calculate days in milk from calving date
+ */
+export function calculateDaysInMilk(calvingDate: string): number {
+  const calving = new Date(calvingDate)
+  const today = new Date()
+  const diffTime = Math.abs(today.getTime() - calving.getTime())
+  return Math.floor(diffTime / (1000 * 60 * 60 * 24))
+}
+
+/**
+ * ✅ Helper: Determine if animal should be dried off based on days pregnant
+ * Returns { shouldDryOff: boolean, daysUntilDryOff: number }
+ */
+export async function calculateDryOffStatus(
+  animalId: string,
+  farmId: string,
+  isServerSide = false
+): Promise<{ shouldDryOff: boolean; daysUntilDryOff: number; daysPregnantAtDryoff: number }> {
+  const supabase = isServerSide 
+    ? await createServerSupabaseClient() 
+    : createClient()
+  
+  try {
+    // Get breeding settings for this farm
+    const { data: settings } = await supabase
+      .from('farm_breeding_settings')
+      .select('days_pregnant_at_dryoff')
+      .eq('farm_id', farmId)
+      .single()
+    
+    const daysPregnantAtDryoff = (settings as any)?.days_pregnant_at_dryoff || 220
+    
+    // Get animal and latest pregnancy record
+    const animal = await getAnimalById(animalId)
+    if (!animal || (animal as any).production_status !== 'served') {
+      return { shouldDryOff: false, daysUntilDryOff: 0, daysPregnantAtDryoff }
+    }
+    
+    // If service_date exists, calculate days pregnant
+    if ((animal as any).service_date) {
+      const serviceDate = new Date((animal as any).service_date)
+      const today = new Date()
+      const daysPregnant = Math.floor((today.getTime() - serviceDate.getTime()) / (1000 * 60 * 60 * 24))
+      const daysUntilDryOff = Math.max(0, daysPregnantAtDryoff - daysPregnant)
+      
+      return {
+        shouldDryOff: daysPregnant >= daysPregnantAtDryoff,
+        daysUntilDryOff,
+        daysPregnantAtDryoff
+      }
+    }
+    
+    return { shouldDryOff: false, daysUntilDryOff: 0, daysPregnantAtDryoff }
+  } catch (error) {
+    console.error('Error calculating dry-off status:', error)
+    return { shouldDryOff: false, daysUntilDryOff: 0, daysPregnantAtDryoff: 220 }
+  }
+}
+
+/**
+ * ✅ Helper: Get lactation summary data
+ */
+export async function getLactationSummary(
+  animalId: string,
+  isServerSide = false
+): Promise<{
+  daysInMilk: number
+  lactationNumber: number | null
+  currentDailyProduction: number | null
+  calvingDate: string | null
+}> {
+  const animal = await getAnimalById(animalId)
+  if (!animal) {
+    return { daysInMilk: 0, lactationNumber: null, currentDailyProduction: null, calvingDate: null }
+  }
+  
+  // Calculate days in milk from days_in_milk field if available
+  let daysInMilk = (animal as any).days_in_milk || 0
+  
+  // If production_status is lactating but days_in_milk is 0, try to calculate from calving
+  if ((animal as any).production_status === 'lactating' && daysInMilk === 0 && (animal as any).birth_date) {
+    // Try to find the most recent calving date from breeding events
+    const supabase = isServerSide 
+      ? await createServerSupabaseClient() 
+      : createClient()
+    
+    const { data: events } = await (supabase as any)
+      .from('breeding_events')
+      .select('event_date')
+      .eq('animal_id', animalId)
+      .eq('event_type', 'calving')
+      .order('event_date', { ascending: false })
+      .limit(1)
+      .single()
+    
+    if (events) {
+      daysInMilk = calculateDaysInMilk((events as any).event_date)
+    }
+  }
+  
+  return {
+    daysInMilk,
+    lactationNumber: (animal as any).lactation_number,
+    currentDailyProduction: (animal as any).current_daily_production,
+    calvingDate: null // Would need to query from breeding_events if needed
+  }
 }
 
 /**
@@ -282,6 +392,8 @@ export async function recordCalvingUnified(
         production_status: 'lactating',
         lactation_number: (await supabase.rpc('increment_lactation', { animal_id: animalId } as any)).data,
         expected_calving_date: null,
+        days_in_milk: 0,  // ✅ NEW: Reset days_in_milk to 0 at calving
+        service_date: null,  // ✅ NEW: Clear service_date after calving
         updated_at: new Date().toISOString()
       })
       .eq('id', animalId)
@@ -290,10 +402,133 @@ export async function recordCalvingUnified(
       console.error('Failed to update animal status:', animalError)
     }
     
+    console.log('✅ [Breeding-Sync] Calving recorded successfully for animal:', animalId)
+    console.log('📊 [Breeding-Sync] Production status updated to: lactating')
+    console.log('📅 [Breeding-Sync] Days in milk reset to: 0')
+    
     return { success: true, calf: calfData }
     
   } catch (error: any) {
     console.error('Error recording calving:', error)
+    return { success: false, error: error.message }
+  }
+}
+
+/**
+ * Handle insemination event - updates animal status to 'served'
+ */
+export async function handleInseminationEvent(
+  animalId: string,
+  farmId: string,
+  inseminationDate: string,
+  userId: string,
+  isServerSide = false
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = isServerSide 
+    ? await createServerSupabaseClient() 
+    : createClient()
+  
+  try {
+    // Get current animal data
+    const animal = await getAnimalById(animalId)
+    if (!animal) {
+      return { success: false, error: 'Animal not found' }
+    }
+    
+    // Only update if not already served
+    if ((animal as any).production_status !== 'served') {
+      console.log('🔄 [Breeding-Sync] Updating animal status to "served" for insemination:', animalId)
+      
+      // Calculate expected calving date (default 280 days)
+      const { data: breedingSettings } = await supabase
+        .from('farm_breeding_settings')
+        .select('default_gestation')
+        .eq('farm_id', farmId)
+        .single()
+      
+      const gestationDays = (breedingSettings as any)?.default_gestation || 280
+      const expectedCalvingDate = new Date(inseminationDate)
+      expectedCalvingDate.setDate(expectedCalvingDate.getDate() + gestationDays)
+      
+      // Update animal status
+      const result = await updateAnimal(animalId, farmId, {
+        production_status: 'served',
+        service_date: inseminationDate,
+        expected_calving_date: expectedCalvingDate.toISOString().split('T')[0],
+        days_in_milk: null,  // ✅ Clear days_in_milk when entering served status
+        updated_at: new Date().toISOString()
+      })
+      
+      if (!result.success) {
+        console.error('Failed to update animal status:', result.error)
+        return { success: false, error: result.error }
+      }
+      
+      console.log('✅ [Breeding-Sync] Animal status updated to served:', animalId)
+      console.log('📅 [Breeding-Sync] Expected calving date:', expectedCalvingDate.toISOString().split('T')[0])
+    }
+    
+    return { success: true }
+  } catch (error: any) {
+    console.error('Error handling insemination event:', error)
+    return { success: false, error: error.message }
+  }
+}
+
+/**
+ * Handle pregnancy check event - updates status based on result
+ * If pregnancy_status is negative/failed, revert back to lactating or heat cycle
+ */
+export async function handlePregnancyCheckEvent(
+  animalId: string,
+  farmId: string,
+  pregnancyCheckDate: string,
+  pregnancyStatus: 'confirmed' | 'negative' | 'pending',
+  userId: string,
+  isServerSide = false
+): Promise<{ success: boolean; error?: string; statusUpdated?: boolean }> {
+  const supabase = isServerSide 
+    ? await createServerSupabaseClient() 
+    : createClient()
+  
+  try {
+    const animal = await getAnimalById(animalId)
+    if (!animal) {
+      return { success: false, error: 'Animal not found' }
+    }
+    
+    let statusUpdated = false
+    
+    // If pregnancy check is negative, revert back to lactating (heat cycle)
+    if (pregnancyStatus === 'negative' && (animal as any).production_status === 'served') {
+      console.log('🔄 [Breeding-Sync] Pregnancy check failed for animal:', animalId)
+      console.log('📊 [Breeding-Sync] Reverting status from "served" back to "lactating"')
+      
+      const result = await updateAnimal(animalId, farmId, {
+        production_status: 'lactating',
+        service_date: null,
+        expected_calving_date: null,
+        updated_at: new Date().toISOString()
+      })
+      
+      if (!result.success) {
+        console.error('Failed to update animal status:', result.error)
+        return { success: false, error: result.error }
+      }
+      
+      console.log('✅ [Breeding-Sync] Animal ready for re-breeding')
+      statusUpdated = true
+    }
+    
+    // If pregnancy is confirmed, keep status as 'served' (no change needed)
+    if (pregnancyStatus === 'confirmed') {
+      console.log('✅ [Breeding-Sync] Pregnancy confirmed for animal:', animalId)
+      console.log('📊 [Breeding-Sync] Maintaining status: served')
+    }
+    
+    return { success: true, statusUpdated }
+  } catch (error: any) {
+    console.error('Error handling pregnancy check event:', error)
     return { success: false, error: error.message }
   }
 }

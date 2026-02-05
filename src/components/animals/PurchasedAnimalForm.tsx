@@ -69,6 +69,18 @@ const purchasedAnimalSchema = z.object({
     message: 'Expected calving date is required for dry animals',
     path: ['expected_calving_date'], // Show error on this field
   }
+).refine(
+  (data) => {
+    // ✅ Breeding cycle number is REQUIRED for served, dry, and lactating animals
+    if (data.production_status === 'served' || data.production_status === 'dry' || data.production_status === 'lactating') {
+      return !!data.lactation_number && data.lactation_number > 0
+    }
+    return true
+  },
+  {
+    message: 'Breeding cycle number is required for animals with reproductive status',
+    path: ['lactation_number'], // Show error on this field
+  }
 )
 
 type PurchasedAnimalFormData = z.infer<typeof purchasedAnimalSchema>
@@ -91,6 +103,10 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
   const [allowedStatuses, setAllowedStatuses] = useState<string[]>([])
   const [canOverrideStatus, setCanOverrideStatus] = useState(false)
   const [ageInMonths, setAgeInMonths] = useState<number>(0)
+
+  // ✅ NEW: Breeding settings and gestation calculation states
+  const [breedingSettings, setBreedingSettings] = useState<{ default_gestation: number } | null>(null)
+  const [gestationPeriodError, setGestationPeriodError] = useState<string | null>(null)
 
   const form = useForm<PurchasedAnimalFormData>({
     resolver: zodResolver(purchasedAnimalSchema),
@@ -123,6 +139,96 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
 
   const formData = form.watch()
   const productionStatusValue = form.watch('production_status')
+
+  // ✅ NEW: Utility function to add days to a date (maintains realistic years)
+  const addDaysToDate = (dateStr: string, days: number): string => {
+    if (!dateStr) return ''
+    const date = new Date(dateStr)
+    date.setDate(date.getDate() + days)
+    return date.toISOString().split('T')[0]
+  }
+
+  // ✅ NEW: Utility function to subtract days from a date (maintains realistic years)
+  const subtractDaysFromDate = (dateStr: string, days: number): string => {
+    if (!dateStr) return ''
+    const date = new Date(dateStr)
+    date.setDate(date.getDate() - days)
+    return date.toISOString().split('T')[0]
+  }
+
+  // ✅ NEW: Fetch breeding settings on mount
+  useEffect(() => {
+    const fetchBreedingSettings = async () => {
+      try {
+        const response = await fetch(`/api/breeding-settings?farm_id=${farmId}`)
+        if (response.ok) {
+          const data = await response.json()
+          // Access the default_gestation field from the response
+          const gestationPeriod = data.default_gestation || 280
+          setBreedingSettings({ default_gestation: gestationPeriod })
+          console.log('✅ [Form] Breeding settings fetched:', { default_gestation: gestationPeriod })
+        } else {
+          console.warn('⚠️ [Form] Failed to fetch breeding settings, using default gestation: 280')
+          setBreedingSettings({ default_gestation: 280 })
+        }
+      } catch (error) {
+        console.error('❌ [Form] Error fetching breeding settings:', error)
+        setBreedingSettings({ default_gestation: 280 })
+      }
+    }
+
+    if (farmId) {
+      fetchBreedingSettings()
+    }
+  }, [farmId])
+
+  // ✅ NEW: Auto-calculate expected_calving_date when service_date changes (for 'served' animals)
+  useEffect(() => {
+    const serviceDate = form.watch('service_date')
+    const currentCalvingDate = form.watch('expected_calving_date')
+    const status = form.watch('production_status')
+
+    if (status === 'served' && serviceDate && breedingSettings) {
+      const calculatedCalvingDate = addDaysToDate(serviceDate, breedingSettings.default_gestation)
+      
+      // Only auto-fill if the expected_calving_date is empty
+      if (!currentCalvingDate || currentCalvingDate.trim() === '') {
+        form.setValue('expected_calving_date', calculatedCalvingDate, {
+          shouldValidate: false,
+          shouldDirty: true
+        })
+        console.log('✅ [Form] Auto-calculated calving date from service date:', {
+          serviceDate,
+          gestationDays: breedingSettings.default_gestation,
+          calculatedCalvingDate
+        })
+      }
+    }
+  }, [form.watch('service_date'), form.watch('production_status'), breedingSettings, form])
+
+  // ✅ NEW: Auto-calculate service_date when expected_calving_date changes (for 'served' animals)
+  useEffect(() => {
+    const expectedCalvingDate = form.watch('expected_calving_date')
+    const currentServiceDate = form.watch('service_date')
+    const status = form.watch('production_status')
+
+    if (status === 'served' && expectedCalvingDate && breedingSettings) {
+      const calculatedServiceDate = subtractDaysFromDate(expectedCalvingDate, breedingSettings.default_gestation)
+      
+      // Only auto-fill if the service_date is empty
+      if (!currentServiceDate || currentServiceDate.trim() === '') {
+        form.setValue('service_date', calculatedServiceDate, {
+          shouldValidate: false,
+          shouldDirty: true
+        })
+        console.log('✅ [Form] Auto-calculated service date from calving date:', {
+          expectedCalvingDate,
+          gestationDays: breedingSettings.default_gestation,
+          calculatedServiceDate
+        })
+      }
+    }
+  }, [form.watch('expected_calving_date'), form.watch('production_status'), breedingSettings, form])
 
   // ✅ NEW: Auto-calculate production status based on birth date and gender
   useEffect(() => {
@@ -317,14 +423,19 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
         if (data.service_date) conditionalData.service_date = data.service_date
         if (data.service_method) conditionalData.service_method = data.service_method
         if (data.expected_calving_date) conditionalData.expected_calving_date = data.expected_calving_date
+        // ✅ NEW: Add breeding cycle number for served animals
+        if (data.lactation_number) conditionalData.lactation_number = data.lactation_number
       } else if (finalProductionStatus === 'lactating') {
         if (data.current_daily_production) conditionalData.current_daily_production = data.current_daily_production
         if (data.days_in_milk) conditionalData.days_in_milk = data.days_in_milk
         if (data.lactation_number) conditionalData.lactation_number = data.lactation_number
       } else if (finalProductionStatus === 'dry') {
-        // ✅ CRITICAL: For dry animals, ONLY add expected_calving_date
+        // ✅ NEW: For dry animals, add expected_calving_date AND breeding cycle number
         if (data.expected_calving_date) {
           conditionalData.expected_calving_date = data.expected_calving_date
+        }
+        if (data.lactation_number) {
+          conditionalData.lactation_number = data.lactation_number
         }
       }
 
@@ -738,7 +849,21 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
               <div className="flex items-center space-x-2 mb-4">
                 <Calendar className="w-5 h-5 text-purple-600" />
                 <h4 className="font-medium text-purple-900">Service Information</h4>
+                <Info className="w-4 h-4 text-purple-500" />
               </div>
+
+              {/* ✅ NEW: Display gestation period info */}
+              {breedingSettings && (
+                <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg mb-4">
+                  <p className="text-sm text-purple-700">
+                    <span className="font-medium">Gestation Period:</span> {breedingSettings.default_gestation} days ({Math.round(breedingSettings.default_gestation / 30)} months)
+                  </p>
+                  <p className="text-xs text-purple-600 mt-1">
+                    💡 Dates will be auto-calculated using this gestation period. You can enter either the service date or expected calving date.
+                  </p>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="service_date">Service Date</Label>
@@ -746,7 +871,13 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
                     id="service_date"
                     type="date"
                     {...form.register('service_date')}
+                    onChange={(e) => {
+                      form.setValue('service_date', e.target.value)
+                    }}
                   />
+                  <p className="text-xs text-gray-500">
+                    When the animal was serviced
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="service_method">Service Method</Label>
@@ -771,9 +902,103 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
                     id="expected_calving_date"
                     type="date"
                     {...form.register('expected_calving_date')}
+                    onChange={(e) => {
+                      form.setValue('expected_calving_date', e.target.value)
+                    }}
                   />
+                  <p className="text-xs text-gray-500">
+                    Calculated or estimated date
+                  </p>
                 </div>
               </div>
+
+              {/* ✅ NEW: Breeding Cycle Number for Served Animals */}
+              <div className="mt-4">
+                <div className="space-y-2">
+                  <Label htmlFor="lactation_number">
+                    Breeding Cycle Number *
+                    <span className="text-xs text-gray-500 ml-2">(Required)</span>
+                  </Label>
+                  <Input
+                    id="lactation_number"
+                    type="number"
+                    min="1"
+                    required
+                    {...form.register('lactation_number', { valueAsNumber: true })}
+                    placeholder="e.g., 1 (first cycle), 2 (second cycle), etc."
+                    className={form.formState.errors.lactation_number ? 'border-red-500' : ''}
+                  />
+                  {form.formState.errors.lactation_number && (
+                    <p className="text-sm text-red-600 flex items-center">
+                      <AlertTriangle className="w-3 h-3 mr-1" />
+                      {form.formState.errors.lactation_number.message}
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-500">
+                    💡 Required: Which breeding cycle number is this animal on? (1st, 2nd, 3rd cycle, etc.)
+                  </p>
+                </div>
+              </div>
+
+              {/* ✅ NEW: Display calculation summary */}
+              {(form.watch('service_date') || form.watch('expected_calving_date')) && breedingSettings && (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg mt-4">
+                  <div className="flex items-start space-x-2">
+                    <Info className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                    <div className="text-sm text-blue-700">
+                      <p className="font-medium">Service & Calving Timeline:</p>
+                      {form.watch('service_date') && (
+                        <p className="mt-1">
+                          Service Date: <span className="font-medium">{new Date(form.watch('service_date') as string).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                          {form.watch('expected_calving_date') && form.watch('service_date') !== '' && (
+                            <>
+                              <br />
+                              Expected Calving: <span className="font-medium">{new Date(form.watch('expected_calving_date') as string).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                              <br />
+                              <span className="text-xs text-blue-600 mt-1">
+                                Gestation period: {breedingSettings.default_gestation} days ({Math.round(breedingSettings.default_gestation / 30)} months, ~{Math.round(breedingSettings.default_gestation / 7)} weeks)
+                              </span>
+                            </>
+                          )}
+                        </p>
+                      )}
+                      {form.watch('expected_calving_date') && !form.watch('service_date') && (
+                        <p className="mt-1">
+                          Expected Calving: <span className="font-medium">{new Date(form.watch('expected_calving_date') as string).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                          <br />
+                          Service Date: <span className="font-medium">{new Date(subtractDaysFromDate(form.watch('expected_calving_date') as string, breedingSettings.default_gestation)).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                          <br />
+                          <span className="text-xs text-blue-600 mt-1">
+                            Gestation period: {breedingSettings.default_gestation} days ({Math.round(breedingSettings.default_gestation / 30)} months, ~{Math.round(breedingSettings.default_gestation / 7)} weeks)
+                          </span>
+                        </p>
+                      )}
+                      {(() => {
+                        const serviceDate = form.watch('service_date')
+                        const calvingDate = form.watch('expected_calving_date') ? new Date(form.watch('expected_calving_date') as string) : null
+                        const today = new Date()
+                        const daysUntilCalving = calvingDate ? Math.ceil((calvingDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) : null
+
+                        if (daysUntilCalving) {
+                          return (
+                            <>
+                              <p className="mt-2 font-medium">
+                                Days until calving: <span className="text-purple-700">{daysUntilCalving} days</span>
+                              </p>
+                              {daysUntilCalving < 0 && (
+                                <p className="mt-1 text-red-600 text-xs">
+                                  ⚠️ This calving date is in the past
+                                </p>
+                              )}
+                            </>
+                          )
+                        }
+                        return null
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -808,14 +1033,25 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="lactation_number">Lactation Number</Label>
+                  <Label htmlFor="lactation_number_lactating">
+                    Lactation Number *
+                    <span className="text-xs text-gray-500 ml-2">(Required)</span>
+                  </Label>
                   <Input
-                    id="lactation_number"
+                    id="lactation_number_lactating"
                     type="number"
                     min="1"
+                    required
                     {...form.register('lactation_number', { valueAsNumber: true })}
                     placeholder="e.g., 2"
+                    className={form.formState.errors.lactation_number ? 'border-red-500' : ''}
                   />
+                  {form.formState.errors.lactation_number && (
+                    <p className="text-sm text-red-600 flex items-center">
+                      <AlertTriangle className="w-3 h-3 mr-1" />
+                      {form.formState.errors.lactation_number.message}
+                    </p>
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -835,45 +1071,93 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
                 This is normal preparation for the next lactation.
               </p>
 
-              {/* ✅ REQUIRED: Expected Calving Date */}
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="expected_calving_date">
-                    Expected Calving Date *
-                    <span className="text-xs text-red-600 ml-2">(Required for dry animals)</span>
-                  </Label>
-                  <Input
-                    id="expected_calving_date"
-                    type="date"
-                    {...form.register('expected_calving_date')}
-                    min={new Date().toISOString().split('T')[0]} // Can't be in the past
-                    className={form.formState.errors.expected_calving_date ? 'border-red-500' : ''}
-                  />
-                  {form.formState.errors.expected_calving_date && (
-                    <p className="text-sm text-red-600 flex items-center">
-                      <AlertTriangle className="w-3 h-3 mr-1" />
-                      {form.formState.errors.expected_calving_date.message}
-                    </p>
-                  )}
-                  <p className="text-xs text-gray-500">
-                    When is this animal expected to calve?
+              {/* ✅ NEW: Display gestation period info */}
+              {breedingSettings && (
+                <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg mb-4">
+                  <p className="text-sm text-gray-700">
+                    <span className="font-medium">Gestation Period:</span> {breedingSettings.default_gestation} days ({Math.round(breedingSettings.default_gestation / 30)} months)
+                  </p>
+                  <p className="text-xs text-gray-600 mt-1">
+                    💡 This information is used to calculate when the animal was serviced based on the expected calving date.
                   </p>
                 </div>
+              )}
 
-                {/* ✅ Calculate and show dry period duration */}
-                {form.watch('expected_calving_date') && (
+              {/* ✅ REQUIRED: Expected Calving Date and Breeding Cycle Number */}
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="expected_calving_date">
+                      Expected Calving Date *
+                      <span className="text-xs text-red-600 ml-2">(Required for dry animals)</span>
+                    </Label>
+                    <Input
+                      id="expected_calving_date"
+                      type="date"
+                      {...form.register('expected_calving_date')}
+                      min={new Date().toISOString().split('T')[0]} // Can't be in the past
+                      className={form.formState.errors.expected_calving_date ? 'border-red-500' : ''}
+                    />
+                    {form.formState.errors.expected_calving_date && (
+                      <p className="text-sm text-red-600 flex items-center">
+                        <AlertTriangle className="w-3 h-3 mr-1" />
+                        {form.formState.errors.expected_calving_date.message}
+                      </p>
+                    )}
+                    <p className="text-xs text-gray-500">
+                      When is this animal expected to calve?
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="lactation_number_dry">
+                      Breeding Cycle Number *
+                      <span className="text-xs text-gray-500 ml-2">(Required)</span>
+                    </Label>
+                    <Input
+                      id="lactation_number_dry"
+                      type="number"
+                      min="1"
+                      required
+                      {...form.register('lactation_number', { valueAsNumber: true })}
+                      placeholder="e.g., 1 (first cycle), 2 (second cycle), etc."
+                      className={form.formState.errors.lactation_number ? 'border-red-500' : ''}
+                    />
+                    {form.formState.errors.lactation_number && (
+                      <p className="text-sm text-red-600 flex items-center">
+                        <AlertTriangle className="w-3 h-3 mr-1" />
+                        {form.formState.errors.lactation_number.message}
+                      </p>
+                    )}
+                    <p className="text-xs text-gray-500">
+                      💡 Required: Which breeding cycle number is this animal on?
+                    </p>
+                  </div>
+                </div>
+
+                {/* ✅ Calculate and show service date + dry period duration */}
+                {form.watch('expected_calving_date') && breedingSettings && (
                   <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
                     <div className="flex items-start space-x-2">
                       <Info className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
                       <div className="text-sm text-blue-700">
-                        <p className="font-medium">Dry Period Information:</p>
-                        <p className="mt-1">
-                          Expected calving: {form.watch('expected_calving_date') ? new Date(form.watch('expected_calving_date') as string).toLocaleDateString('en-US', {
-                            weekday: 'long',
+                        <p className="font-medium">Dry Period & Breeding Information:</p>
+                        <p className="mt-2">
+                          Expected calving: <span className="font-medium">{new Date(form.watch('expected_calving_date') as string).toLocaleDateString('en-US', {
+                            weekday: 'short',
                             year: 'numeric',
-                            month: 'long',
+                            month: 'short',
                             day: 'numeric'
-                          }) : ''}
+                          })}</span>
+                        </p>
+                        <p className="mt-1">
+                          Service date (calculated): <span className="font-medium">{new Date(subtractDaysFromDate(form.watch('expected_calving_date') as string, breedingSettings.default_gestation)).toLocaleDateString('en-US', {
+                            weekday: 'short',
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric'
+                          })}</span>
+                          <br />
+                          <span className="text-xs text-blue-600">(Gestation period: {breedingSettings.default_gestation} days / ~{Math.round(breedingSettings.default_gestation / 7)} weeks)</span>
                         </p>
                         {(() => {
                           const expectedDate = form.watch('expected_calving_date')
@@ -883,8 +1167,8 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
 
                           return (
                             <>
-                              <p className="mt-1">
-                                Days until calving: <span className="font-semibold">{daysUntilCalving} days</span>
+                              <p className="mt-2 font-medium">
+                                Days until calving: <span className="text-gray-700">{daysUntilCalving} days</span>
                               </p>
                               {daysUntilCalving < 0 && (
                                 <p className="mt-1 text-red-600 font-medium">

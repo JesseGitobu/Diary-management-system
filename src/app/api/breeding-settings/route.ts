@@ -13,35 +13,45 @@ export async function GET(request: NextRequest) {
       console.warn('⚠️ [BREEDING-SETTINGS] No authenticated user, returning defaults')
       return NextResponse.json({
         success: true,
-        settings: getDefaultSettings()
+        default_gestation: 280
       })
     }
 
-    // Get user's farm_id
-    const { data: userFarmResult, error: farmError } = await supabase
-      .from('user_roles')
-      .select('farm_id')
-      .eq('user_id', user.id)
-      .single()
+    // Check if farm_id is provided as query parameter, otherwise get from user's farm
+    const searchParams = request.nextUrl.searchParams
+    const queryFarmId = searchParams.get('farm_id')
+    
+    let farmIdToUse = queryFarmId
 
-    // Cast to any to fix "Property 'farm_id' does not exist on type 'never'"
-    const userFarm = userFarmResult as any
+    if (!farmIdToUse) {
+      // Get user's farm_id from user_roles
+      const { data: userFarmResult, error: farmError } = await supabase
+        .from('user_roles')
+        .select('farm_id')
+        .eq('user_id', user.id)
+        .single()
 
-    if (farmError || !userFarm?.farm_id) {
-      console.warn('⚠️ [BREEDING-SETTINGS] No farm found for user, returning defaults')
-      return NextResponse.json({
-        success: true,
-        settings: getDefaultSettings()
-      })
+      // Cast to any to fix "Property 'farm_id' does not exist on type 'never'"
+      const userFarm = userFarmResult as any
+
+      if (farmError || !userFarm?.farm_id) {
+        console.warn('⚠️ [BREEDING-SETTINGS] No farm found for user, returning defaults')
+        return NextResponse.json({
+          success: true,
+          default_gestation: 280
+        })
+      }
+
+      farmIdToUse = userFarm.farm_id
     }
 
-    console.log('🔍 [BREEDING-SETTINGS] Fetching settings for farm:', userFarm.farm_id)
+    console.log('🔍 [BREEDING-SETTINGS] Fetching settings for farm:', farmIdToUse)
 
     // Get breeding settings for the farm
     const { data: settingsResult, error } = await supabase
       .from('farm_breeding_settings')
       .select('*')
-      .eq('farm_id', userFarm.farm_id)
+      .eq('farm_id', farmIdToUse!)
       .single()
 
     // Cast settings to any to ensure properties are accessible
@@ -57,7 +67,9 @@ export async function GET(request: NextRequest) {
       console.log('ℹ️ [BREEDING-SETTINGS] No settings found, returning defaults')
       return NextResponse.json({
         success: true,
-        settings: getDefaultSettings()
+        default_gestation: 280,
+        pregnancy_check_days: 45,
+        postpartum_breeding_delay_days: 60
       })
     }
 
@@ -67,24 +79,14 @@ export async function GET(request: NextRequest) {
       preg_check: settings.pregnancy_check_days
     })
 
-    // Map database fields to component expectations
-    const mappedSettings = {
-      minimumBreedingAgeMonths: settings.minimum_breeding_age_months || 15,
-      defaultGestationPeriod: settings.default_gestation || 280,
-      pregnancyCheckDays: settings.pregnancy_check_days || 45,
-      autoSchedulePregnancyCheck: settings.auto_schedule_pregnancy_check ?? true,
-      postpartumBreedingDelayDays: settings.postpartum_breeding_delay_days || 60,
-      dryOffBeforeCalvingDays: settings.days_pregnant_at_dryoff 
-        ? (settings.default_gestation - settings.days_pregnant_at_dryoff) 
-        : 60,
-      heatCycleDays: settings.default_cycle_interval || 21,
-      enableHeatDetection: settings.detection_method === 'sensor',
-      enableBreedingAlerts: (settings.smart_alerts as { breedingReminders?: boolean })?.breedingReminders ?? true
-    }
-
+    // Return raw database fields (camelCase conversion will be done in the component if needed)
     return NextResponse.json({
       success: true,
-      settings: mappedSettings
+      default_gestation: settings.default_gestation || 280,
+      pregnancy_check_days: settings.pregnancy_check_days || 45,
+      postpartum_breeding_delay_days: settings.postpartum_breeding_delay_days || 60,
+      minimum_breeding_age_months: settings.minimum_breeding_age_months || 15,
+      default_cycle_interval: settings.default_cycle_interval || 21
     })
   } catch (error: any) {
     console.error('❌ [BREEDING-SETTINGS] Error:', error)

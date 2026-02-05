@@ -26,8 +26,14 @@ type AuthContextType = {
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 // Session configuration constants
+// IDLE_TIMEOUT: Time in milliseconds before auto-logout
+// ADJUST THIS VALUE TO TEST:
+// - 1 minute (testing): 1 * 60 * 1000 = 60,000ms
+// - 5 minutes (testing): 5 * 60 * 1000 = 300,000ms
+// - 15 minutes (testing): 15 * 60 * 1000 = 900,000ms
+// - 30 minutes (production default): 30 * 60 * 1000 = 1,800,000ms
 const SESSION_CONFIG = {
-  IDLE_TIMEOUT: 30 * 60 * 1000,
+  IDLE_TIMEOUT: 30 * 60 * 1000, // ← CHANGE THIS NUMBER TO TEST (currently 1 minute)
   REFRESH_BUFFER: 5 * 60 * 1000,
   ACTIVITY_THROTTLE: 1000,
   PERMISSION_CACHE_TTL: 5 * 60 * 1000,
@@ -361,6 +367,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       clearAllTimers()
+      
+      // Call Supabase sign out to clear session and refresh token
       const { error } = await supabase.auth.signOut()
 
       if (error) {
@@ -369,11 +377,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         debugLogger.success('AuthProvider', 'Sign out successful')
       }
 
+      // Clear local state
       setUser(null)
       setUserRole(null)
       setSessionStatus('unauthenticated')
+      setLastActivity(0)
+
+      // Redirect to auth page (if in browser)
+      if (typeof window !== 'undefined') {
+        // Use window.location for a hard redirect to ensure middleware re-evaluates
+        setTimeout(() => {
+          window.location.href = '/auth'
+        }, 100)
+      }
     } catch (error) {
       debugLogger.error('AuthProvider', 'Sign out exception', { error })
+      // Still attempt redirect even if there's an error
+      if (typeof window !== 'undefined') {
+        setTimeout(() => {
+          window.location.href = '/auth'
+        }, 100)
+      }
     }
   }
 

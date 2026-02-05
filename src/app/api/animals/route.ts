@@ -168,11 +168,24 @@ export async function POST(request: NextRequest) {
       console.log('✅ [API] Production status valid for gender')
     }
 
+    // ===== BREEDING CYCLE NUMBER TRANSFORMATION =====
+    // For SERVED and DRY animals: transform breeding_cycle_number to lactation_number
+    // Logic: if breeding_cycle_number > 1, then lactation_number = breeding_cycle_number - 1
+    //        otherwise, lactation_number = breeding_cycle_number
+    let finalLactationNumber = animalData.lactation_number
+    
+    if ((finalProductionStatus === 'served' || finalProductionStatus === 'dry') && animalData.lactation_number) {
+      // Apply transformation: if > 1, subtract 1
+      finalLactationNumber = animalData.lactation_number > 1 ? animalData.lactation_number - 1 : animalData.lactation_number
+      console.log(`✅ [API] Breeding cycle transformation: ${animalData.lactation_number} → ${finalLactationNumber}`)
+    }
+    
     // Prepare final animal data
     const finalAnimalData = {
       ...animalData,
       tag_number: finalTagNumber.trim(),
-      production_status: finalProductionStatus
+      production_status: finalProductionStatus,
+      lactation_number: finalLactationNumber // ✅ Use transformed value
     }
     
     console.log('🔍 [API] Creating animal with final data:', finalAnimalData)
@@ -493,207 +506,564 @@ async function autoGenerateBreedingRecords(
     let pregnancyData: any = null
 
     // Scenario 1: SERVED Status (Recently bred, pending confirmation)
-    if (data.production_status === 'served' && data.service_date) {
-      console.log('✅ [AUTO-BREEDING] Scenario: SERVED - Creating pending breeding record')
+    // ✅ NOW: Creates current cycle + all past completed cycles based on breeding cycle number
+    if (data.production_status === 'served' && data.service_date && data.lactation_number) {
+      console.log('✅ [AUTO-BREEDING] Scenario: SERVED - Creating complete breeding history up to current cycle')
+      console.log('🔄 [AUTO-BREEDING] Breeding cycle number:', data.lactation_number)
       
-      // Calculate expected calving date
-      const breedingDate = new Date(data.service_date)
-      const expectedCalving = data.expected_calving_date || 
-        new Date(breedingDate.getTime() + gestationPeriod * 24 * 60 * 60 * 1000)
-          .toISOString().split('T')[0]
-
       breedingData = {
         animal_id: animalId,
         farm_id: farmId,
-        breeding_type: data.service_method === 'artificial_insemination' ? 'artificial_insemination' :
-                       data.service_method === 'natural' ? 'natural' : 'artificial_insemination',
-        breeding_date: data.service_date,
-        notes: '🤖 Auto-generated from registration (Served status)',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        cycles: [] // Will hold all breeding cycles
       }
+      
+      const postpartumDelay = breedingSettings?.postpartum_breeding_delay_days || 60
+      
+      // ===== CALCULATE CURRENT CYCLE DATES =====
+      const currentServiceDate = new Date(data.service_date)
+      const currentServiceDateStr = data.service_date
+      
+      // ===== GENERATE ALL PAST COMPLETED CYCLES (1 through lactation_number - 1) =====
+      // Work backwards from current cycle service date, accounting for postpartum delay
+      
+      // Next cycle's service date (for calculating previous cycle)
+      let nextCycleServiceDate = currentServiceDate
+      
+      for (let i = data.lactation_number - 1; i >= 1; i--) {
+        // ✅ Updated logic: Calving must be postpartumDelay days BEFORE the next cycle's service
+        // This ensures proper recovery time
+        const calvingDate = new Date(nextCycleServiceDate.getTime() - postpartumDelay * 24 * 60 * 60 * 1000)
+        const calvingDateStr = calvingDate.toISOString().split('T')[0]
+        
+        // Calculate service date for THIS cycle (gestation before calving)
+        const breedingDate = new Date(calvingDate.getTime() - gestationPeriod * 24 * 60 * 60 * 1000)
+        const breedingDateStr = breedingDate.toISOString().split('T')[0]
+        
+        // Heat detection 3 days before service
+        const heatDate = new Date(breedingDate.getTime() - 3 * 24 * 60 * 60 * 1000)
+        const heatDateStr = heatDate.toISOString()
+        
+        // Pregnancy check ~45 days after service
+        const pregnancyCheckDate = new Date(breedingDate.getTime() + pregnancyCheckDays * 24 * 60 * 60 * 1000)
+        const pregnancyCheckDateStr = pregnancyCheckDate.toISOString().split('T')[0]
 
-      pregnancyData = {
-        animal_id: animalId,
-        farm_id: farmId,
-        pregnancy_status: 'suspected',
-        expected_calving_date: expectedCalving,
-        gestation_length: gestationPeriod,
-        pregnancy_notes: 'Auto-generated from registration data',
+        const cycle = {
+          lactationNumber: i,
+          isCurrentLactation: false,
+          calvingDate: calvingDateStr,
+          breedingDate: breedingDateStr,
+          heatDate: heatDateStr,
+          pregnancyCheckDate: pregnancyCheckDateStr,
+          breeding_type: data.service_method === 'artificial_insemination' ? 'artificial_insemination' : 'artificial_insemination',
+          notes: `🤖 Auto-generated from registration (Past Lactation #${i} - Calved ${calvingDateStr}, ${postpartumDelay} days before Cycle #${i + 1} service)`,
+          auto_generated: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }
+        
+        breedingData.cycles.push(cycle)
+        console.log(`📅 [AUTO-BREEDING] Past Lactation #${i}: Calving=${calvingDateStr}, Breeding=${breedingDateStr}, (${postpartumDelay} days before Cycle #${i + 1} service)`)
+        
+        // For next iteration, THIS cycle's service becomes the reference
+        nextCycleServiceDate = breedingDate
+      }
+      
+      // Add CURRENT cycle (currently SERVED, pending pregnancy confirmation)
+      const expectedCalving = data.expected_calving_date || 
+        new Date(currentServiceDate.getTime() + gestationPeriod * 24 * 60 * 60 * 1000)
+          .toISOString().split('T')[0]
+      const heatDate = new Date(currentServiceDate.getTime() - 3 * 24 * 60 * 60 * 1000)
+      const heatDateStr = heatDate.toISOString()
+      const pregnancyCheckDate = new Date(currentServiceDate.getTime() + pregnancyCheckDays * 24 * 60 * 60 * 1000)
+      const pregnancyCheckDateStr = pregnancyCheckDate.toISOString().split('T')[0]
+
+      const currentCycle = {
+        lactationNumber: data.lactation_number,
+        isCurrentLactation: true,
+        calvingDate: expectedCalving,
+        breedingDate: currentServiceDateStr,
+        heatDate: heatDateStr,
+        pregnancyCheckDate: pregnancyCheckDateStr,
+        breeding_type: data.service_method === 'artificial_insemination' ? 'artificial_insemination' : 'artificial_insemination',
+        notes: `🤖 Auto-generated from registration (Served - Cycle #${data.lactation_number})`,
+        auto_generated: true,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }
+      
+      breedingData.cycles.push(currentCycle)
+      console.log(`📅 [AUTO-BREEDING] Current SERVED Cycle #${data.lactation_number}: Breeding=${currentServiceDateStr}, Expected Calving=${expectedCalving}`)
     }
     
     // Scenario 2: DRY Status (Confirmed pregnant)
-    else if (data.production_status === 'dry' && data.expected_calving_date) {
-      console.log('✅ [AUTO-BREEDING] Scenario: DRY - Creating confirmed breeding record')
+    // ✅ NOW: Creates all completed cycles + current cycle with confirmed pregnancy
+    else if (data.production_status === 'dry' && data.expected_calving_date && data.lactation_number) {
+      console.log('✅ [AUTO-BREEDING] Scenario: DRY - Creating complete breeding history including current cycle')
+      console.log('🔄 [AUTO-BREEDING] Breeding cycle number:', data.lactation_number)
       
-      // Calculate breeding date (work backwards from calving date)
-      const calvingDate = new Date(data.expected_calving_date)
-      const breedingDate = new Date(calvingDate.getTime() - gestationPeriod * 24 * 60 * 60 * 1000)
-      const breedingDateStr = breedingDate.toISOString().split('T')[0]
-      
-      // Calculate confirmation date (pregnancy check days after breeding)
-      const confirmationDate = new Date(breedingDate.getTime() + pregnancyCheckDays * 24 * 60 * 60 * 1000)
-      const confirmationDateStr = confirmationDate.toISOString().split('T')[0]
-
       breedingData = {
         animal_id: animalId,
         farm_id: farmId,
-        breeding_type: data.service_method === 'artificial_insemination' ? 'artificial_insemination' :
-                       data.service_method === 'natural' ? 'natural' : 'artificial_insemination',
-        breeding_date: breedingDateStr,
-        notes: '🤖 Auto-generated from registration (Dry/Pregnant status)',
+        cycles: [] // Will hold all breeding cycles
+      }
+      
+      const postpartumDelay = breedingSettings?.postpartum_breeding_delay_days || 60
+      
+      // ===== CALCULATE CURRENT CYCLE DATES =====
+      const currentCalvingDate = new Date(data.expected_calving_date)
+      const currentCalvingDateStr = data.expected_calving_date
+      const currentServiceDate = new Date(currentCalvingDate.getTime() - gestationPeriod * 24 * 60 * 60 * 1000)
+      const currentServiceDateStr = currentServiceDate.toISOString().split('T')[0]
+      
+      // ===== GENERATE ALL PAST COMPLETED CYCLES (1 through lactation_number - 1) =====
+      // Work backwards from current cycle service date, accounting for postpartum delay
+      
+      // Next cycle's service date (for calculating previous cycle)
+      let nextCycleServiceDate = currentServiceDate
+      
+      for (let i = data.lactation_number - 1; i >= 1; i--) {
+        // ✅ Updated logic: Calving must be postpartumDelay days BEFORE the next cycle's service
+        const calvingDate = new Date(nextCycleServiceDate.getTime() - postpartumDelay * 24 * 60 * 60 * 1000)
+        const calvingDateStr = calvingDate.toISOString().split('T')[0]
+        
+        // Calculate service date for THIS cycle (gestation before calving)
+        const breedingDate = new Date(calvingDate.getTime() - gestationPeriod * 24 * 60 * 60 * 1000)
+        const breedingDateStr = breedingDate.toISOString().split('T')[0]
+        
+        // Heat detection 3 days before service
+        const heatDate = new Date(breedingDate.getTime() - 3 * 24 * 60 * 60 * 1000)
+        const heatDateStr = heatDate.toISOString()
+        
+        // Pregnancy check ~45 days after service
+        const pregnancyCheckDate = new Date(breedingDate.getTime() + pregnancyCheckDays * 24 * 60 * 60 * 1000)
+        const pregnancyCheckDateStr = pregnancyCheckDate.toISOString().split('T')[0]
+
+        const cycle = {
+          lactationNumber: i,
+          isCurrentLactation: false,
+          calvingDate: calvingDateStr,
+          breedingDate: breedingDateStr,
+          heatDate: heatDateStr,
+          pregnancyCheckDate: pregnancyCheckDateStr,
+          breeding_type: data.service_method === 'artificial_insemination' ? 'artificial_insemination' : 'artificial_insemination',
+          notes: `🤖 Auto-generated from registration (Past Lactation #${i} - Calved ${calvingDateStr}, ${postpartumDelay} days before Cycle #${i + 1} service)`,
+          auto_generated: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }
+        
+        breedingData.cycles.push(cycle)
+        console.log(`📅 [AUTO-BREEDING] Past Lactation #${i}: Calving=${calvingDateStr}, Breeding=${breedingDateStr}, (${postpartumDelay} days before Cycle #${i + 1} service)`)
+        
+        // For next iteration, THIS cycle's service becomes the reference
+        nextCycleServiceDate = breedingDate
+      }
+      
+      // Add CURRENT cycle (currently DRY, confirmed pregnant, awaiting calving)
+      const heatDate = new Date(currentServiceDate.getTime() - 3 * 24 * 60 * 60 * 1000)
+      const heatDateStr = heatDate.toISOString()
+      const pregnancyCheckDate = new Date(currentServiceDate.getTime() + pregnancyCheckDays * 24 * 60 * 60 * 1000)
+      const pregnancyCheckDateStr = pregnancyCheckDate.toISOString().split('T')[0]
+
+      const currentCycle = {
+        lactationNumber: data.lactation_number,
+        isCurrentLactation: true,
+        calvingDate: currentCalvingDateStr,
+        breedingDate: currentServiceDateStr,
+        heatDate: heatDateStr,
+        pregnancyCheckDate: pregnancyCheckDateStr,
+        breeding_type: data.service_method === 'artificial_insemination' ? 'artificial_insemination' : 'artificial_insemination',
+        notes: `🤖 Auto-generated from registration (Dry/Pregnant - Cycle #${data.lactation_number})`,
+        auto_generated: true,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }
-
+      
+      breedingData.cycles.push(currentCycle)
+      console.log(`📅 [AUTO-BREEDING] Current DRY Cycle #${data.lactation_number}: Breeding=${currentServiceDateStr}, Expected Calving=${currentCalvingDateStr}`)
+      
+      // Construct pregnancyData for insertion loop
+      const currentDryCycle = breedingData.cycles[breedingData.cycles.length - 1]
       pregnancyData = {
         animal_id: animalId,
         farm_id: farmId,
         pregnancy_status: 'confirmed',
-        confirmed_date: confirmationDateStr,
+        confirmed_date: currentDryCycle.pregnancyCheckDate,
         confirmation_method: 'rectal_palpation',
-        expected_calving_date: data.expected_calving_date,
+        expected_calving_date: currentDryCycle.calvingDate,
         gestation_length: gestationPeriod,
-        pregnancy_notes: `Auto-generated from registration data. Pregnancy confirmed on ${confirmationDateStr}`,
+        pregnancy_notes: `Auto-generated from registration. Animal is dry and confirmed pregnant (Cycle #${data.lactation_number}).`,
         created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        _cycles: breedingData.cycles // Store cycles for event creation
       }
     }
     
-    // Scenario 3: LACTATING Status (Already calved)
+    // Scenario 1b: SERVED Status - set pregnancyData after cycles created
+    if (data.production_status === 'served' && breedingData?.cycles) {
+      console.log('✅ [AUTO-BREEDING] Setting pregnancyData for SERVED animal')
+      const currentServedCycle = breedingData.cycles[breedingData.cycles.length - 1]
+      
+      pregnancyData = {
+        animal_id: animalId,
+        farm_id: farmId,
+        pregnancy_status: 'suspected',
+        expected_calving_date: currentServedCycle.calvingDate,
+        gestation_length: gestationPeriod,
+        pregnancy_notes: `Auto-generated from registration. Animal is served and awaiting pregnancy confirmation (Cycle #${data.lactation_number}).`,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        _cycles: breedingData.cycles // Store cycles for event creation
+      }
+    }
+    
+    // Scenario 3: LACTATING Status (Already calved - comprehensive breeding history for ALL lactations)
     else if (data.production_status === 'lactating' && data.lactation_number && data.lactation_number > 0) {
-      console.log('✅ [AUTO-BREEDING] Scenario: LACTATING - Creating completed breeding record')
+      console.log('✅ [AUTO-BREEDING] Scenario: LACTATING - Creating complete breeding history for', data.lactation_number, 'lactation cycles')
       
       const today = new Date()
       const daysInMilk = data.days_in_milk || 60 // Default assumption
+      const postpartumDelay = breedingSettings?.postpartum_breeding_delay_days || 60
       
-      // Calculate calving date (work backwards from today)
-      const calvingDate = new Date(today.getTime() - daysInMilk * 24 * 60 * 60 * 1000)
-      const calvingDateStr = calvingDate.toISOString().split('T')[0]
-      
-      // Calculate breeding date (work backwards from calving)
-      const breedingDate = new Date(calvingDate.getTime() - gestationPeriod * 24 * 60 * 60 * 1000)
-      const breedingDateStr = breedingDate.toISOString().split('T')[0]
-
+      // ===== GENERATE BREEDING DATA FOR EACH LACTATION CYCLE =====
+      // Store all cycles for later processing
       breedingData = {
         animal_id: animalId,
         farm_id: farmId,
-        breeding_type: 'artificial_insemination',
-        breeding_date: breedingDateStr,
-        notes: `🤖 Auto-generated from registration (Lactating, Lactation #${data.lactation_number}, ${daysInMilk} DIM)`,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        cycles: [] // Will hold all breeding cycles
       }
+      
+      // For each lactation, generate a complete breeding cycle
+      for (let i = data.lactation_number; i >= 1; i--) {
+        const isCurrentLactation = i === data.lactation_number
+        
+        // Calculate days back from today for this lactation
+        // Current lactation: Today - DIM
+        // Previous lactations: Need to account for gestation + postpartum + previous DIM
+        let calvingDate
+        
+        if (isCurrentLactation) {
+          // Current lactation: calved DIM days ago
+          calvingDate = new Date(today.getTime() - daysInMilk * 24 * 60 * 60 * 1000)
+        } else {
+          // Previous lactations: work backwards
+          // Each complete cycle = gestation (280) + postpartum (60) + average DIM for that lactation (estimate 305 days)
+          const cycleLength = gestationPeriod + postpartumDelay + 305 // ~645 days per cycle
+          const cyclesBack = data.lactation_number - i
+          calvingDate = new Date(today.getTime() - daysInMilk * 24 * 60 * 60 * 1000 - (cyclesBack * cycleLength * 24 * 60 * 60 * 1000))
+        }
+        
+        const calvingDateStr = calvingDate.toISOString().split('T')[0]
+        
+        // Breeding date: Calving date - Gestation period
+        const breedingDate = new Date(calvingDate.getTime() - gestationPeriod * 24 * 60 * 60 * 1000)
+        const breedingDateStr = breedingDate.toISOString().split('T')[0]
+        
+        // Heat detection: 3 days before breeding
+        const heatDate = new Date(breedingDate.getTime() - 3 * 24 * 60 * 60 * 1000)
+        const heatDateStr = heatDate.toISOString()
+        
+        // Pregnancy check: ~45 days after breeding
+        const pregnancyCheckDate = new Date(breedingDate.getTime() + pregnancyCheckDays * 24 * 60 * 60 * 1000)
+        const pregnancyCheckDateStr = pregnancyCheckDate.toISOString().split('T')[0]
 
+        const cycle = {
+          lactationNumber: i,
+          isCurrentLactation: isCurrentLactation,
+          calvingDate: calvingDateStr,
+          breedingDate: breedingDateStr,
+          heatDate: heatDateStr,
+          pregnancyCheckDate: pregnancyCheckDateStr,
+          breeding_type: 'artificial_insemination',
+          notes: `🤖 Auto-generated from registration (Lactation #${i}${isCurrentLactation ? ` - Current, ${daysInMilk} DIM` : ''})`,
+          auto_generated: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }
+        
+        breedingData.cycles.push(cycle)
+        
+        console.log(`📅 [AUTO-BREEDING] Lactation #${i} cycle: Breeding=${breedingDateStr}, Calving=${calvingDateStr}`)
+      }
+      
+      // Use the current lactation (first in array after sorting) for primary breeding data
+      const currentCycle = breedingData.cycles[0]
+      
       pregnancyData = {
         animal_id: animalId,
         farm_id: farmId,
         pregnancy_status: 'completed',
-        confirmed_date: breedingDateStr, // Use breeding date as rough confirmation
-        confirmation_method: 'visual',
-        expected_calving_date: calvingDateStr,
-        actual_calving_date: calvingDateStr,
+        confirmed_date: currentCycle.pregnancyCheckDate,
+        confirmation_method: 'ultrasound',
+        expected_calving_date: currentCycle.calvingDate,
+        actual_calving_date: currentCycle.calvingDate,
         gestation_length: gestationPeriod,
-        pregnancy_notes: `Auto-generated from registration data. Calved ${daysInMilk} days ago.`,
+        pregnancy_notes: `Auto-generated from registration. Animal is now lactating (${daysInMilk} DIM). Lactation #${data.lactation_number}.`,
         created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        _cycles: breedingData.cycles // Store cycles for event creation
       }
     }
 
     // Insert breeding and pregnancy records if generated
     if (breedingData && pregnancyData) {
-      console.log('💾 [AUTO-BREEDING] Inserting breeding record...')
+      console.log('💾 [AUTO-BREEDING] Inserting breeding records...')
       
-      // 1. Insert breeding record
-      // Cast supabase to any
-      const { data: breedingRecord, error: breedingError } = await (supabase as any)
-        .from('breeding_records')
-        .insert(breedingData)
-        .select()
-        .single()
-
-      if (breedingError) {
-        console.error('❌ [AUTO-BREEDING] Failed to insert breeding record:', breedingError)
-        return null
-      }
-
-      console.log('✅ [AUTO-BREEDING] Breeding record created:', breedingRecord.id)
-
-      // 2. Create breeding event
-      const breedingEvent = {
-        farm_id: farmId,
-        animal_id: animalId,
-        event_type: 'insemination',
-        event_date: breedingData.breeding_date,
-        insemination_method: breedingData.breeding_type,
-        semen_bull_code: breedingData.sire_name,
-        technician_name: breedingData.technician_name,
-        notes: `🤖 Auto-generated from registration (${data.production_status} status)`,
-        created_by: userId 
-      }
-
-      // Cast to any
-      const { error: eventError } = await (supabase as any)
-        .from('breeding_events')
-        .insert(breedingEvent)
-
-      if (eventError) {
-        console.error('❌ [AUTO-BREEDING] Failed to create breeding event:', eventError)
-        // Don't fail the whole operation, just log the error
-      } else {
-        console.log('✅ [AUTO-BREEDING] Breeding event created')
-      }
-
-      // 3. Insert pregnancy record with breeding_record_id
-      pregnancyData.breeding_record_id = breedingRecord.id
+      // Track all created records
+      let lastBreedingRecord = null
+      let lastPregnancyRecord = null
+      const cycles = pregnancyData._cycles || (breedingData.cycles ? breedingData.cycles : [])
       
-      // Cast to any
-      const { data: pregnancyRecord, error: pregnancyError } = await (supabase as any)
-        .from('pregnancy_records')
-        .insert(pregnancyData)
-        .select()
-        .single()
+      // Handle LACTATING scenarios with multiple cycles
+      if (cycles && cycles.length > 0) {
+        console.log(`🔄 [AUTO-BREEDING] Processing ${cycles.length} lactation cycles...`)
+        
+        // Process each lactation cycle (iterate in reverse so current is last)
+        for (const cycle of cycles) {
+          console.log(`📝 [AUTO-BREEDING] Processing Lactation #${cycle.lactationNumber}`)
+          
+          // 1. Create BREEDING RECORD for this cycle
+          const breedingRecordData = {
+            animal_id: animalId,
+            farm_id: farmId,
+            breeding_type: cycle.breeding_type,
+            breeding_date: cycle.breedingDate,
+            notes: cycle.notes,
+            auto_generated: cycle.auto_generated,
+            created_at: cycle.created_at,
+            updated_at: cycle.updated_at
+          }
+          
+          const { data: breedingRecord, error: breedingError } = await (supabase as any)
+            .from('breeding_records')
+            .insert(breedingRecordData)
+            .select()
+            .single()
 
-      if (pregnancyError) {
-        console.error('❌ [AUTO-BREEDING] Failed to insert pregnancy record:', pregnancyError)
-        return breedingRecord // Return breeding record even if pregnancy fails
-      }
+          if (breedingError) {
+            console.error('❌ [AUTO-BREEDING] Failed to insert breeding record for cycle', cycle.lactationNumber, breedingError)
+            continue
+          }
 
-      // 4. Create pregnancy check event if pregnancy is confirmed
-      if (pregnancyData.pregnancy_status === 'confirmed') {
-        const pregnancyEvent = {
-          farm_id: farmId,
-          animal_id: animalId,
-          event_type: 'pregnancy_check',
-          event_date: pregnancyData.confirmed_date,
-          pregnancy_result: 'pregnant',
-          examination_method: pregnancyData.confirmation_method,
-          veterinarian_name: pregnancyData.veterinarian,
-          estimated_due_date: pregnancyData.expected_calving_date,
-          notes: pregnancyData.pregnancy_notes,
-          created_by: userId 
+          console.log(`✅ [AUTO-BREEDING] Breeding record #${cycle.lactationNumber} created:`, breedingRecord.id)
+          lastBreedingRecord = breedingRecord
+
+          // 2. Create HEAT DETECTION event
+          const heatEvent = {
+            farm_id: farmId,
+            animal_id: animalId,
+            event_type: 'heat_detection',
+            event_date: cycle.heatDate,
+            heat_signs: ['standing_heat', 'tail_raising', 'mucus_discharge'],
+            heat_action_taken: 'insemination_scheduled',
+            notes: `🤖 Auto-generated Lactation #${cycle.lactationNumber} heat detection`,
+            created_by: userId
+          }
+
+          const { error: heatError } = await (supabase as any)
+            .from('breeding_events')
+            .insert(heatEvent)
+
+          if (heatError) {
+            console.error('❌ [AUTO-BREEDING] Failed to create heat detection for cycle', cycle.lactationNumber, heatError)
+          } else {
+            console.log(`✅ [AUTO-BREEDING] Heat detection event #${cycle.lactationNumber} created`)
+          }
+
+          // 3. Create INSEMINATION event
+          const inseminationEvent = {
+            farm_id: farmId,
+            animal_id: animalId,
+            event_type: 'insemination',
+            event_date: cycle.breedingDate,
+            insemination_method: cycle.breeding_type,
+            semen_bull_code: 'AUTO_GEN_' + Math.random().toString(36).substr(2, 9).toUpperCase(),
+            technician_name: 'Auto-System',
+            notes: `🤖 Auto-generated Lactation #${cycle.lactationNumber} insemination`,
+            created_by: userId 
+          }
+
+          const { error: insemError } = await (supabase as any)
+            .from('breeding_events')
+            .insert(inseminationEvent)
+
+          if (insemError) {
+            console.error('❌ [AUTO-BREEDING] Failed to create insemination for cycle', cycle.lactationNumber, insemError)
+          } else {
+            console.log(`✅ [AUTO-BREEDING] Insemination event #${cycle.lactationNumber} created`)
+          }
+
+          // 4. Create PREGNANCY RECORD for this cycle
+          // ✅ UPDATED: Handle SERVED/DRY/LACTATING differently for current vs past cycles
+          let pregnancyStatus = 'completed' // Default for past cycles
+          let confirmedDate = cycle.pregnancyCheckDate
+          let actualCalvingDate = cycle.calvingDate
+          let pregnancyNotes = ''
+          
+          // For current cycle in SERVED status
+          if (data.production_status === 'served' && cycle.isCurrentLactation) {
+            pregnancyStatus = 'suspected'
+            confirmedDate = null
+            actualCalvingDate = null
+            pregnancyNotes = `Auto-generated Served Status. Animal recently serviced, awaiting pregnancy confirmation (Cycle #${cycle.lactationNumber}).`
+          }
+          // For current cycle in DRY status
+          else if (data.production_status === 'dry' && cycle.isCurrentLactation) {
+            pregnancyStatus = 'confirmed'
+            confirmedDate = cycle.pregnancyCheckDate
+            actualCalvingDate = null // Not calved yet
+            pregnancyNotes = `Auto-generated Dry Status. Animal confirmed pregnant, awaiting calving (Cycle #${cycle.lactationNumber}).`
+          }
+          // For past cycles in any status
+          else if (!cycle.isCurrentLactation) {
+            pregnancyStatus = 'completed'
+            confirmedDate = cycle.pregnancyCheckDate
+            actualCalvingDate = cycle.calvingDate
+            pregnancyNotes = `Auto-generated historical cycle (Lactation #${cycle.lactationNumber}). Previous lactation cycle.`
+          }
+          // For current cycle in LACTATING status
+          else {
+            pregnancyStatus = 'completed'
+            confirmedDate = cycle.pregnancyCheckDate
+            actualCalvingDate = cycle.calvingDate
+            pregnancyNotes = `Auto-generated Lactation #${cycle.lactationNumber}. Currently in lactation (${data.days_in_milk || 60} DIM).`
+          }
+
+          const pregnancyRecordData = {
+            animal_id: animalId,
+            farm_id: farmId,
+            breeding_record_id: breedingRecord.id,
+            pregnancy_status: pregnancyStatus,
+            confirmed_date: confirmedDate,
+            confirmation_method: pregnancyStatus === 'suspected' ? null : (pregnancyStatus === 'confirmed' ? 'rectal_palpation' : 'ultrasound'),
+            expected_calving_date: cycle.calvingDate,
+            actual_calving_date: actualCalvingDate,
+            gestation_length: gestationPeriod,
+            pregnancy_notes: pregnancyNotes,
+            created_at: cycle.created_at,
+            updated_at: cycle.updated_at
+          }
+
+          const { data: pregnancyRecord, error: pregnancyError } = await (supabase as any)
+            .from('pregnancy_records')
+            .insert(pregnancyRecordData)
+            .select()
+            .single()
+
+          if (pregnancyError) {
+            console.error('❌ [AUTO-BREEDING] Failed to insert pregnancy record for cycle', cycle.lactationNumber, pregnancyError)
+            continue
+          }
+
+          console.log(`✅ [AUTO-BREEDING] Pregnancy record #${cycle.lactationNumber} created:`, pregnancyRecord.id)
+          lastPregnancyRecord = pregnancyRecord
+
+          // 5. Create PREGNANCY CHECK event
+          // ✅ UPDATED: Only create for confirmed/completed pregnancies, not for SERVED current (awaiting check)
+          const shouldCreatePregnancyCheck = (data.production_status !== 'served') || !cycle.isCurrentLactation
+          
+          if (shouldCreatePregnancyCheck) {
+            const pregnancyCheckEvent = {
+              farm_id: farmId,
+              animal_id: animalId,
+              event_type: 'pregnancy_check',
+              event_date: cycle.pregnancyCheckDate,
+              pregnancy_result: 'pregnant',
+              examination_method: (data.production_status === 'dry' && cycle.isCurrentLactation) ? 'rectal_palpation' : 'ultrasound',
+              veterinarian_name: 'Auto-System',
+              estimated_due_date: cycle.calvingDate,
+              notes: `🤖 Auto-generated Lactation #${cycle.lactationNumber} pregnancy confirmation`,
+              created_by: userId 
+            }
+
+            const { error: pregnancyEventError } = await (supabase as any)
+              .from('breeding_events')
+              .insert(pregnancyCheckEvent)
+
+            if (pregnancyEventError) {
+              console.error('❌ [AUTO-BREEDING] Failed to create pregnancy check for cycle', cycle.lactationNumber, pregnancyEventError)
+            } else {
+              console.log(`✅ [AUTO-BREEDING] Pregnancy check event #${cycle.lactationNumber} created`)
+            }
+          } else {
+            console.log(`ℹ️ [AUTO-BREEDING] Skipping pregnancy check for SERVED current cycle #${cycle.lactationNumber} (scheduled for ${cycle.pregnancyCheckDate})`)
+          }
+
+          // 6. Create CALVING event and record
+          // ✅ UPDATED: Only create calving records for cycles that have already calved
+          // Skip for SERVED/DRY current cycles as they haven't calved yet
+          const hasCalved = (data.production_status === 'lactating') || 
+                           (data.production_status === 'served' && !cycle.isCurrentLactation) ||
+                           (data.production_status === 'dry' && !cycle.isCurrentLactation)
+          
+          if (hasCalved) {
+            const calvingEvent = {
+              farm_id: farmId,
+              animal_id: animalId,
+              event_type: 'calving',
+              event_date: cycle.calvingDate,
+              calving_outcome: 'normal',
+              calf_gender: Math.random() > 0.5 ? 'female' : 'male',
+              calf_weight: parseFloat((40 + Math.random() * 10).toFixed(2)), // 40-50 kg
+              calf_health_status: 'healthy',
+              notes: `🤖 Auto-generated Lactation #${cycle.lactationNumber} calving`,
+              created_by: userId
+            }
+
+            const { error: calvingEventError } = await (supabase as any)
+              .from('breeding_events')
+              .insert(calvingEvent)
+
+            if (calvingEventError) {
+              console.error('❌ [AUTO-BREEDING] Failed to create calving event for cycle', cycle.lactationNumber, calvingEventError)
+            } else {
+              console.log(`✅ [AUTO-BREEDING] Calving event #${cycle.lactationNumber} created`)
+            }
+
+            // 7. Create CALVING RECORD
+            const calvingRecord = {
+              pregnancy_record_id: pregnancyRecord.id,
+              mother_id: animalId,
+              farm_id: farmId,
+              calving_date: cycle.calvingDate,
+              calving_time: '12:00:00', // Noon default
+              calving_difficulty: 'normal',
+              assistance_required: false,
+              veterinarian: null,
+              complications: null,
+              birth_weight: calvingEvent.calf_weight,
+              calf_gender: calvingEvent.calf_gender,
+              calf_alive: true,
+              calf_health_status: 'healthy',
+              colostrum_quality: 'excellent',
+              notes: `🤖 Auto-generated Lactation #${cycle.lactationNumber} from registration`,
+              created_at: cycle.created_at,
+              updated_at: cycle.updated_at
+            }
+
+            const { error: calvingRecordError, data: calvingRecordData } = await (supabase as any)
+              .from('calving_records')
+              .insert(calvingRecord)
+              .select()
+              .single()
+
+            if (calvingRecordError) {
+              console.error('❌ [AUTO-BREEDING] Failed to create calving record for cycle', cycle.lactationNumber, calvingRecordError)
+            } else {
+              console.log(`✅ [AUTO-BREEDING] Calving record #${cycle.lactationNumber} created:`, calvingRecordData?.id)
+            }
+          } else {
+            console.log(`ℹ️ [AUTO-BREEDING] Skipping calving record for cycle #${cycle.lactationNumber} (not yet calved)`)
+          }
         }
 
-        // Cast to any
-        const { error: pregnancyEventError } = await (supabase as any)
-          .from('breeding_events')
-          .insert(pregnancyEvent)
-
-        if (pregnancyEventError) {
-          console.error('❌ [AUTO-BREEDING] Failed to create pregnancy check event:', pregnancyEventError)
-        } else {
-          console.log('✅ [AUTO-BREEDING] Pregnancy check event created')
-        }
+        console.log(`✅ [AUTO-BREEDING] All ${cycles.length} lactation cycles processed with complete breeding history`)
       }
-
-      console.log('✅ [AUTO-BREEDING] Auto-generation complete')
 
       return {
-        breedingRecord,
-        pregnancyRecord
+        breedingRecord: lastBreedingRecord,
+        pregnancyRecord: lastPregnancyRecord,
+        lactationsCycles: cycles.length
       }
     }
 

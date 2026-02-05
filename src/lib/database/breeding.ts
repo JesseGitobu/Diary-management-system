@@ -403,6 +403,17 @@ function mapHealthStatus(status?: string): string {
   return 'healthy'
 }
 
+function mapCalvingHealthStatus(status?: string): string {
+  // Maps calf health status from form to calving_records constraint values
+  // Valid values: 'healthy', 'weak', 'sick', 'deceased'
+  const s = status?.toLowerCase() || ''
+  if (s.includes('excellent') || s.includes('good') || s.includes('healthy')) return 'healthy'
+  if (s.includes('fair') || s.includes('weak') || s.includes('requires attention')) return 'weak'
+  if (s.includes('poor') || s.includes('sick')) return 'sick'
+  if (s.includes('dead') || s.includes('deceased')) return 'deceased'
+  return 'healthy' // Default
+}
+
 function mapDifficulty(outcome: string): string {
   const o = outcome.toLowerCase()
   if (o === 'caesarean') return 'cesarean' // Matches DB constraint
@@ -540,30 +551,73 @@ export async function processCalving(calvingEvent: CalvingEvent, farmId: string)
       throw new Error(`Failed to create calf: ${calfError.message}`)
     }
 
-    // 4. CREATE CALVING RECORD (Legacy/Detailed table) - OPTIONAL
-    // If breeding_records table exists, try to fetch sire info from it (optional)
-    let sireInfo = null
-    
+    // 4. GET OR CREATE PREGNANCY RECORD ID
+    // We need the pregnancy_record_id for the calving_records table (it's a required FK)
+    let pregnancyRecordId = null
+    try {
+      console.log('🐄 processCalving: Looking for pregnancy_record for animal:', calvingEvent.animal_id)
+      
+      // First try to find existing confirmed pregnancy record
+      const { data: pregnancyRecordData, error: pregRecError } = await (supabase
+        .from('pregnancy_records') as any)
+        .select('id')
+        .eq('animal_id', calvingEvent.animal_id)
+        .eq('pregnancy_status', 'confirmed')
+        .order('created_at', { ascending: false })
+        .limit(1)
+
+      if (!pregRecError && pregnancyRecordData && (pregnancyRecordData as any[]).length > 0) {
+        pregnancyRecordId = (pregnancyRecordData as any[])[0].id
+        console.log('🐄 processCalving: Found existing pregnancy_record_id:', pregnancyRecordId)
+      } else {
+        console.log('🐄 processCalving: No confirmed pregnancy record found')
+        console.log('🐄 processCalving: For now, returning error - pregnancy record must exist or be created via pregnancy check first')
+        throw new Error('Cannot create calving record: No confirmed pregnancy record found. Please record a positive pregnancy check first.')
+      }
+    } catch (error) {
+      console.error('❌ processCalving: Error getting/creating pregnancy record ID:', error)
+      throw error // This is now critical since we need this ID
+    }
+
+    if (!pregnancyRecordId) {
+      throw new Error('Failed to obtain pregnancy_record_id for calving record')
+    }
+
+    // 4B. CREATE CALVING RECORD
+    // Extract calving_time from event_date if it contains time info
+    let calvingTime = null
+    if (calvingEvent.event_date && calvingEvent.event_date.includes('T')) {
+      const timePart = calvingEvent.event_date.split('T')[1]
+      if (timePart) {
+        calvingTime = timePart.split('.')[0] // Extract HH:MM:SS
+      }
+    }
+
+    // Extract just the date part
+    const calvingDate = calvingEvent.event_date.split('T')[0]
+
     // Try to get sire info from calf_father_info in the calving event first
+    let sireInfo = null
     if (calvingEvent.calf_father_info) {
       sireInfo = calvingEvent.calf_father_info
       console.log('🐄 processCalving: Using sire info from calving event:', sireInfo)
     }
 
-    // Create calving record if the table exists (optional step)
+    // Create calving record (required table)
     let calvingRecord = null
     const calvingRecordData = {
-      animal_id: calvingEvent.animal_id,
-      farm_id: farmId,
-      calving_date: calvingEvent.event_date,
-      calving_difficulty: mapDifficulty(calvingEvent.calving_outcome),
-      assistance_required: ['assisted', 'difficult', 'caesarean'].includes(calvingEvent.calving_outcome),
-      birth_weight: calvingEvent.calf_weight,
-      calf_gender: calvingEvent.calf_gender,
-      calf_alive: calvingEvent.calf_health_status !== 'deceased',
-      calf_health_status: mapHealthStatus(calvingEvent.calf_health_status),
-      sire_info: sireInfo,
-      notes: calvingEvent.notes
+      pregnancy_record_id: pregnancyRecordId, // Required FK
+      mother_id: calvingEvent.animal_id, // Required FK
+      farm_id: farmId, // Required FK
+      calving_date: calvingDate, // Required - date only
+      calving_time: calvingTime, // Optional - time without timezone
+      calving_difficulty: mapDifficulty(calvingEvent.calving_outcome), // maps to 'easy', 'normal', 'difficult', 'assisted', 'cesarean'
+      assistance_required: ['assisted', 'difficult', 'caesarean'].includes(calvingEvent.calving_outcome), // boolean
+      birth_weight: calvingEvent.calf_weight, // numeric(5,2) - kg
+      calf_gender: calvingEvent.calf_gender, // 'male' or 'female'
+      calf_alive: calvingEvent.calf_health_status !== 'deceased', // boolean
+      calf_health_status: mapCalvingHealthStatus(calvingEvent.calf_health_status), // 'healthy', 'weak', 'sick', 'deceased'
+      notes: calvingEvent.notes // text
     }
 
     try {
@@ -574,14 +628,14 @@ export async function processCalving(calvingEvent: CalvingEvent, farmId: string)
 
       if (!calvingError && calvingRecordResult) {
         calvingRecord = calvingRecordResult
-        console.log('🐄 processCalving: Created calving record')
+        console.log('🐄 processCalving: Created calving record with ID:', calvingRecord.id)
       } else if (calvingError) {
-        console.warn('⚠️ processCalving: Could not create calving record (optional step):', calvingError.message)
-        // Continue anyway - calving record is optional
+        console.error('❌ processCalving: Failed to create calving record:', calvingError.message)
+        throw new Error(`Failed to create calving record: ${calvingError.message}`)
       }
     } catch (error) {
-      console.warn('⚠️ processCalving: Error creating calving record (optional):', error)
-      // Continue - calving record is optional
+      console.error('❌ processCalving: Error creating calving record:', error)
+      throw error // This is now a required step, so fail if it doesn't work
     }
 
     // 5. CREATE CALF RECORD (Detail table) - OPTIONAL

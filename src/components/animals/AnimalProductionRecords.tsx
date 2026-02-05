@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { cn } from '@/lib/utils/cn'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -19,11 +20,13 @@ import {
   BarChart3,
   Clock,
   ThermometerSun,
-  Baby
+  Baby,
+  CheckCircle2
 } from 'lucide-react'
 import { Animal } from '@/types/database'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { ProductionSettings } from '@/types/production-distribution-settings'
+import { toast } from 'react-hot-toast'
 
 interface ProductionRecord {
   id: string
@@ -55,12 +58,14 @@ interface AnimalProductionRecordsProps {
   animalId: string
   animal: Animal
   canAddRecords: boolean
+  onProductionStatusChanged?: (newStatus: string) => void
 }
 
 export function AnimalProductionRecords({ 
   animalId, 
   animal,
-  canAddRecords 
+  canAddRecords,
+  onProductionStatusChanged
 }: AnimalProductionRecordsProps) {
   const [records, setRecords] = useState<ProductionRecord[]>([])
   const [stats, setStats] = useState<AnimalProductionStats | null>(null)
@@ -68,6 +73,13 @@ export function AnimalProductionRecords({
   const [showAddModal, setShowAddModal] = useState(false)
   const [selectedPeriod, setSelectedPeriod] = useState<7 | 30 | 90>(30)
   const [productionSettings, setProductionSettings] = useState<ProductionSettings | null>(null)
+  const [dryingOff, setDryingOff] = useState(false)
+  const [daysInMilk, setDaysInMilk] = useState(0)
+  const [lactationNumber, setLactationNumber] = useState<number | null>(null)
+  const [shouldShowDryOffSuggestion, setShouldShowDryOffSuggestion] = useState(false)
+  const [showDryOffButton, setShowDryOffButton] = useState(false)  // ✅ ENHANCED: Button visibility flag
+  const [daysUntilDryOff, setDaysUntilDryOff] = useState(0)
+  const [daysPregnant, setDaysPregnant] = useState(0)
   
   // Determine if production records are applicable
   const isLactating = animal.production_status === 'lactating'
@@ -105,6 +117,38 @@ export function AnimalProductionRecords({
       loadProductionData()
     }
   }, [animalId, selectedPeriod, showProductionRecords])
+  
+  // ✅ NEW: Load lactation metrics
+  useEffect(() => {
+    if (isLactating || isServed) {
+      loadLactationMetrics()
+    }
+  }, [animalId, animal.production_status, animal.days_in_milk, animal.lactation_number])
+  
+  const loadLactationMetrics = async () => {
+    try {
+      // Update days_in_milk from animal data
+      setDaysInMilk(animal.days_in_milk || 0)
+      setLactationNumber(animal.lactation_number)
+      
+      // For served animals, check if they should be dried off
+      if (isServed && animal.farm_id) {
+        const response = await fetch(
+          `/api/animals/${animalId}/drying-status?farmId=${animal.farm_id}`
+        )
+        
+        if (response.ok) {
+          const result = await response.json()
+          setShouldShowDryOffSuggestion(result.shouldDryOff)
+          setShowDryOffButton(result.showDryOffButton)  // ✅ ENHANCED: Set button visibility
+          setDaysUntilDryOff(result.daysUntilDryOff)
+          setDaysPregnant(result.daysPregnant)
+        }
+      }
+    } catch (error) {
+      console.error('Error loading lactation metrics:', error)
+    }
+  }
   
   const loadProductionData = async () => {
     setLoading(true)
@@ -177,6 +221,46 @@ export function AnimalProductionRecords({
   const handleRecordAdded = () => {
     setShowAddModal(false)
     loadProductionData()
+  }
+  
+  const handleStartDryOff = async () => {
+    const confirmed = window.confirm(
+      `Start dry off period for ${animal.name || animal.tag_number}?\n\n` +
+      `This will change the production status to "dry" and pause milk production tracking.\n\n` +
+      `Click OK to proceed or Cancel to review.`
+    )
+    
+    if (!confirmed) return
+    
+    setDryingOff(true)
+    try {
+      const response = await fetch(`/api/animals/${animalId}/production-status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          production_status: 'dry',
+          dry_off_date: new Date().toISOString().split('T')[0]
+        })
+      })
+      
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to update production status')
+      }
+      
+      const result = await response.json()
+      
+      toast.success('Animal moved to dry period successfully!')
+      
+      // Notify parent component of status change
+      onProductionStatusChanged?.('dry')
+      
+      // Refresh animal data in parent component - could also trigger a refresh
+    } catch (error) {
+      toast.error(`Failed to start dry off: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setDryingOff(false)
+    }
   }
   
   const getInactiveMessage = () => {
@@ -295,95 +379,245 @@ export function AnimalProductionRecords({
         )}
       </div>
       
-      {/* Production Status Badge */}
-      <div className="flex items-center space-x-2">
-        <Badge 
-          className={
-            isLactating 
-              ? "bg-green-100 text-green-800" 
-              : isServed
-              ? "bg-blue-100 text-blue-800"
-              : isDry
-              ? "bg-yellow-100 text-yellow-800"
-              : "bg-gray-100 text-gray-800"
-          }
-        >
-          {animal.production_status?.replace('_', ' ').toUpperCase() || 'UNKNOWN'}
-        </Badge>
-        {isServed && (
-          <span className="text-sm text-gray-600">
-            (Pregnant - Production will resume after calving)
-          </span>
+      {/* Production Status Badge and Dry Off Button */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 p-4 bg-gray-50 rounded-lg">
+        <div className="flex items-center space-x-3">
+          <Badge 
+            className={
+              isLactating 
+                ? "bg-green-100 text-green-800" 
+                : isServed
+                ? "bg-blue-100 text-blue-800"
+                : isDry
+                ? "bg-yellow-100 text-yellow-800"
+                : "bg-gray-100 text-gray-800"
+            }
+          >
+            {animal.production_status?.replace('_', ' ').toUpperCase() || 'UNKNOWN'}
+          </Badge>
+          {isServed && (
+            <span className="text-sm text-gray-600">
+              (Pregnant - Production will resume after calving)
+            </span>
+          )}
+        </div>
+        
+        {/* Start Dry Off Button - Only for SERVED animals (pregnant) when ready */}
+        {isServed && showDryOffButton && canAddRecords && (
+          <Button
+            onClick={handleStartDryOff}
+            disabled={dryingOff}
+            className={cn(
+              "transition-all",
+              shouldShowDryOffSuggestion 
+                ? "bg-red-600 hover:bg-red-700 animate-pulse"  // Urgent - past threshold
+                : "bg-amber-600 hover:bg-amber-700"              // Warning - within 2 days
+            )}
+          >
+            <CheckCircle2 className="mr-2 h-4 w-4" />
+            {dryingOff ? 'Starting Dry Off...' : 'Start Dry Off Period'}
+          </Button>
         )}
       </div>
+      
+      {/* ✅ NEW: Lactation Metrics Display */}
+      {isLactating && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
+          {/* Days in Milk */}
+          <Card className="h-full">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-gray-600">Days in Milk</p>
+                  <p className="text-2xl md:text-3xl font-bold text-purple-600 mt-2">
+                    {daysInMilk}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {daysInMilk > 0 ? `${daysInMilk} days since calving` : 'Tracking lactation period'}
+                  </p>
+                </div>
+                <Clock className="w-6 h-6 md:w-8 md:h-8 text-purple-400 flex-shrink-0" />
+              </div>
+            </CardContent>
+          </Card>
+          
+          {/* Lactation Number */}
+          {lactationNumber !== null && (
+            <Card className="h-full">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-gray-600">Lactation Number</p>
+                    <p className="text-2xl md:text-3xl font-bold text-indigo-600 mt-2">
+                      {lactationNumber}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Current lactation cycle
+                    </p>
+                  </div>
+                  <Milk className="w-6 h-6 md:w-8 md:h-8 text-indigo-400 flex-shrink-0" />
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+      
+      {/* ✅ ENHANCED: Served (Pregnant) Animal Metrics */}
+      {isServed && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
+          {/* Days Pregnant */}
+          <Card className="border-blue-200 bg-blue-50 h-full">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-blue-900">Days Pregnant</p>
+                  <p className="text-2xl md:text-3xl font-bold text-blue-700 mt-2">
+                    {daysPregnant}
+                  </p>
+                  <p className="text-xs text-blue-600 mt-1">
+                    Expected calving: {animal.expected_calving_date 
+                      ? new Date(animal.expected_calving_date).toLocaleDateString() 
+                      : 'TBD'}
+                  </p>
+                </div>
+                <Calendar className="w-6 h-6 md:w-8 md:h-8 text-blue-400 flex-shrink-0" />
+              </div>
+            </CardContent>
+          </Card>
+          
+          {/* Drying Off Status */}
+          <Card className={cn(
+            "border-2 transition-all h-full",
+            shouldShowDryOffSuggestion 
+              ? "border-red-300 bg-red-50" 
+              : showDryOffButton 
+              ? "border-amber-300 bg-amber-50"
+              : "border-gray-200 bg-gray-50"
+          )}>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className={cn(
+                    "text-sm font-medium",
+                    shouldShowDryOffSuggestion 
+                      ? "text-red-900" 
+                      : showDryOffButton 
+                      ? "text-amber-900"
+                      : "text-gray-600"
+                  )}>
+                    {shouldShowDryOffSuggestion 
+                      ? "🚨 Ready to Dry Off Now" 
+                      : showDryOffButton 
+                      ? "⚠️ Dry Off Ready Soon" 
+                      : "Days Until Dry Off"}
+                  </p>
+                  <p className={cn(
+                    "text-2xl md:text-3xl font-bold mt-2",
+                    shouldShowDryOffSuggestion 
+                      ? "text-red-700" 
+                      : showDryOffButton 
+                      ? "text-amber-700"
+                      : "text-blue-600"
+                  )}>
+                    {daysUntilDryOff}
+                  </p>
+                  <p className={cn(
+                    "text-xs mt-1",
+                    shouldShowDryOffSuggestion 
+                      ? "text-red-600" 
+                      : showDryOffButton 
+                      ? "text-amber-600"
+                      : "text-gray-500"
+                  )}>
+                    {shouldShowDryOffSuggestion 
+                      ? "Click button to initiate dry-off" 
+                      : showDryOffButton 
+                      ? `${daysUntilDryOff} days until recommended dry-off`
+                      : "Check back soon"}
+                  </p>
+                </div>
+                <AlertCircle className={cn(
+                  "w-6 h-6 md:w-8 md:h-8 flex-shrink-0",
+                  shouldShowDryOffSuggestion 
+                    ? "text-red-500" 
+                    : showDryOffButton 
+                    ? "text-amber-500"
+                    : "text-gray-400"
+                )} />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
       
       {/* Active Production Section */}
       {showProductionRecords && !loading && (
         <>
           {/* Production Statistics */}
           {stats && (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <Card>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+              <Card className="h-full">
                 <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex-1 min-w-0">
                       <p className="text-sm text-gray-600">Total Volume</p>
-                      <p className="text-2xl font-bold text-blue-600">
+                      <p className="text-2xl md:text-3xl font-bold text-blue-600 mt-2">
                         {stats.totalVolume.toFixed(1)}L
                       </p>
                       <p className="text-xs text-gray-500">Last {selectedPeriod} days</p>
                     </div>
-                    <Droplets className="w-8 h-8 text-blue-400" />
+                    <Droplets className="w-6 h-6 md:w-8 md:h-8 text-blue-400 flex-shrink-0" />
                   </div>
                 </CardContent>
               </Card>
               
-              <Card>
+              <Card className="h-full">
                 <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex-1 min-w-0">
                       <p className="text-sm text-gray-600">Avg Daily</p>
-                      <p className="text-2xl font-bold text-green-600">
+                      <p className="text-2xl md:text-3xl font-bold text-green-600 mt-2">
                         {stats.avgDailyVolume.toFixed(1)}L
                       </p>
-                      <div className={`flex items-center space-x-1 mt-1 px-2 py-0.5 rounded ${getTrendColor(stats.currentTrend)}`}>
+                      <div className={`flex items-center space-x-1 mt-1 px-2 py-0.5 rounded fit-content ${getTrendColor(stats.currentTrend)}`}>
                         {getTrendIcon(stats.currentTrend)}
                         <span className="text-xs font-medium capitalize">
                           {stats.currentTrend}
                         </span>
                       </div>
                     </div>
-                    <BarChart3 className="w-8 h-8 text-green-400" />
+                    <BarChart3 className="w-6 h-6 md:w-8 md:h-8 text-green-400 flex-shrink-0" />
                   </div>
                 </CardContent>
               </Card>
               
-              <Card>
+              <Card className="h-full">
                 <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex-1 min-w-0">
                       <p className="text-sm text-gray-600">Avg Fat</p>
-                      <p className="text-2xl font-bold text-orange-600">
+                      <p className="text-2xl md:text-3xl font-bold text-orange-600 mt-2">
                         {stats.avgFatContent.toFixed(2)}%
                       </p>
                       <p className="text-xs text-gray-500">Quality metric</p>
                     </div>
-                    <Target className="w-8 h-8 text-orange-400" />
+                    <Target className="w-6 h-6 md:w-8 md:h-8 text-orange-400 flex-shrink-0" />
                   </div>
                 </CardContent>
               </Card>
               
-              <Card>
+              <Card className="h-full">
                 <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex-1 min-w-0">
                       <p className="text-sm text-gray-600">Avg Protein</p>
-                      <p className="text-2xl font-bold text-purple-600">
+                      <p className="text-2xl md:text-3xl font-bold text-purple-600 mt-2">
                         {stats.avgProteinContent.toFixed(2)}%
                       </p>
                       <p className="text-xs text-gray-500">Quality metric</p>
                     </div>
-                    <Activity className="w-8 h-8 text-purple-400" />
+                    <Activity className="w-6 h-6 md:w-8 md:h-8 text-purple-400 flex-shrink-0" />
                   </div>
                 </CardContent>
               </Card>

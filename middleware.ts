@@ -43,17 +43,22 @@ export async function middleware(request: NextRequest) {
 
     // ---------------------------------------------
     // Supabase session handling
-    // ---------------------------------------------
-    let session = null
+    // Supabase session handling - Use getUser() for more reliable auth state
     let user = null
 
     try {
-      const {
-        data: { session: fetchedSession },
-      } = await supabase.auth.getSession()
-
-      session = fetchedSession
-      user = fetchedSession?.user ?? null
+      // Use getUser() instead of getSession() to get the most current auth state
+      // getUser() is more reliable after logout operations
+      const { data: { user: fetchedUser }, error: userError } = await supabase.auth.getUser()
+      
+      if (userError) {
+        if (!userError.message.includes('AuthSessionMissingError')) {
+          console.error('Unexpected user error in middleware:', userError)
+        }
+        user = null
+      } else {
+        user = fetchedUser ?? null
+      }
     } catch (error) {
       if (
         error instanceof Error &&

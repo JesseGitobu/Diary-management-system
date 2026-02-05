@@ -153,10 +153,17 @@ export async function GET(
     }))
 
     // Combine both sources, avoiding duplicates
+    // Filter out pregnancy_records that have corresponding pregnancy_check events (auto-generated records)
     const formattedPregnancyChecks = [
       ...pregnancyCheckEventsFromEvents,
       ...pregnancyChecksFromRecords.filter(check => 
-        !pregnancyCheckEventsFromEvents.some(e => e.id === check.id)
+        // Keep pregnancy_record only if there's NO pregnancy_check event with same/similar date
+        !pregnancyCheckEventsFromEvents.some(e => {
+          const checkDate = new Date(check.check_date).getTime()
+          const eventDate = new Date(e.check_date).getTime()
+          // Consider them duplicates if within 1 day of each other (auto-generated records)
+          return Math.abs(checkDate - eventDate) < 86400000 // 24 hours in milliseconds
+        })
       )
     ]
     

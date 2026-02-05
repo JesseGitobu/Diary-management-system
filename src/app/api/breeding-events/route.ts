@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
-import { recordCalvingUnified } from '@/lib/database/breeding-sync'
+import { recordCalvingUnified, handleInseminationEvent, handlePregnancyCheckEvent } from '@/lib/database/breeding-sync'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { addDays, parseISO } from 'date-fns'
 
@@ -126,6 +126,47 @@ export async function POST(request: NextRequest) {
     if (error) {
       console.error('Database error:', error)
       return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+
+    // ===== HANDLE PRODUCTION STATUS UPDATES BASED ON EVENT TYPE =====
+    
+    // Handle insemination events - update status to 'served'
+    if (eventData.event_type === 'insemination') {
+      console.log('📊 [API] Processing insemination event for production status update...')
+      const insemResult = await handleInseminationEvent(
+        eventData.animal_id,
+        eventData.farm_id,
+        eventData.event_date,
+        user.id,
+        true
+      )
+      
+      if (!insemResult.success) {
+        console.error('⚠️ [API] Failed to update production status for insemination:', insemResult.error)
+        // Don't fail the whole request - the event is recorded, just log the status update failure
+      } else {
+        console.log('✅ [API] Production status updated for insemination event')
+      }
+    }
+    
+    // Handle pregnancy check events - may revert status if negative
+    if (eventData.event_type === 'pregnancy_check') {
+      console.log('📊 [API] Processing pregnancy check event for production status update...')
+      const pregnancyResult = await handlePregnancyCheckEvent(
+        eventData.animal_id,
+        eventData.farm_id,
+        eventData.event_date,
+        eventData.pregnancy_status || 'pending',
+        user.id,
+        true
+      )
+      
+      if (!pregnancyResult.success) {
+        console.error('⚠️ [API] Failed to update production status for pregnancy check:', pregnancyResult.error)
+        // Don't fail the whole request
+      } else if (pregnancyResult.statusUpdated) {
+        console.log('✅ [API] Production status updated for pregnancy check event')
+      }
     }
 
     return NextResponse.json({

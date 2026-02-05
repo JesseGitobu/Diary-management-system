@@ -205,9 +205,9 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
         setInseminationEvents(sortedInsemination)
 
         const sortedCalving = (data.calvingEvents || []).sort((a: CalvingEvent, b: CalvingEvent) => {
-          const timeA = a.created_at ? new Date(a.created_at).getTime() : new Date(a.event_date).getTime();
-          const timeB = b.created_at ? new Date(b.created_at).getTime() : new Date(b.event_date).getTime();
-          return timeB - timeA; // Newest entry first
+          const timeA = new Date(a.event_date).getTime();
+          const timeB = new Date(b.event_date).getTime();
+          return timeB - timeA; // Newest event date first
         })
         setCalvingEvents(sortedCalving)
       }
@@ -582,8 +582,8 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
   })
 
   const breedingStats = {
-    totalBreedings: breedingRecords.length + calvingEvents.length,
-    confirmedPregnancies: breedingRecords.filter(r => r.pregnancy_status === 'confirmed').length + calvingEvents.length,
+    totalBreedings: breedingRecords.length ,
+    confirmedPregnancies: breedingRecords.filter(r => r.pregnancy_status === 'confirmed').length ,
     successRate: (breedingRecords.length + calvingEvents.length) > 0
       ? Math.round(((breedingRecords.filter(r => r.pregnancy_confirmed).length + calvingEvents.length) / (breedingRecords.length + calvingEvents.length)) * 100)
       : 0,
@@ -1014,9 +1014,9 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                     ...calvingEvents.map(e => ({ type: 'calving', date: e.event_date, created: e.created_at, data: e }))
                   ]
                     .sort((a, b) => {
-                      const timeA = a.created ? new Date(a.created).getTime() : new Date(a.date).getTime()
-                      const timeB = b.created ? new Date(b.created).getTime() : new Date(b.date).getTime()
-                      return timeB - timeA // Newest first
+                      const timeA = new Date(a.date).getTime()
+                      const timeB = new Date(b.date).getTime()
+                      return timeB - timeA // Newest first (by event date)
                     })
                     .slice(0, 10) // Show top 10 recent activities
                     .map((item) => {

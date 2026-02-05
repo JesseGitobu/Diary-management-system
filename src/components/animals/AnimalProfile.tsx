@@ -64,6 +64,7 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
   const [showReleaseModal, setShowReleaseModal] = useState(false)
   const [showActionMenu, setShowActionMenu] = useState(false)
   const [animalData, setAnimalData] = useState(animal)
+  const [refreshing, setRefreshing] = useState(false)
   const router = useRouter()
   const { isMobile, isTouch } = useDeviceInfo()
   
@@ -159,6 +160,28 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
   const handleAnimalUpdated = (updatedAnimal: any) => {
     setAnimalData(updatedAnimal)
     setShowEditModal(false)
+  }
+  
+  const handleProductionStatusChanged = async (newStatus: string) => {
+    // Update local state immediately for UI responsiveness
+    setAnimalData((prev: any) => ({
+      ...prev,
+      production_status: newStatus
+    }))
+    
+    // Fetch latest animal data from server to ensure sync
+    setRefreshing(true)
+    try {
+      const response = await fetch(`/api/animals/${animal.id}`)
+      if (response.ok) {
+        const result = await response.json()
+        setAnimalData(result.animal)
+      }
+    } catch (error) {
+      console.error('Error refreshing animal data:', error)
+    } finally {
+      setRefreshing(false)
+    }
   }
   
   const handleAnimalReleased = () => {
@@ -565,6 +588,7 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
               animalId={animalData.id}
               animal={animalData}
               canAddRecords={canAddRecords}
+              onProductionStatusChanged={handleProductionStatusChanged}
             />
           </TabsContent>
           
