@@ -1023,7 +1023,7 @@ export function AnimalFeedingRecords({ animalId, farmId, canAddRecords, feedType
         }
       })
 
-      const newRecordData = {
+      const newRecordData: any = {
         farmId,
         feedingTime: feedingDateTime.toISOString(),
         mode: sessionData.feedingMode || 'individual',
@@ -1034,6 +1034,12 @@ export function AnimalFeedingRecords({ animalId, farmId, canAddRecords, feedType
           wasteKg: sessionData.wasteKg || 0,
           notes: sessionData.observations?.notes || ''
         }
+      }
+
+      // Add feedMixRecipeId if in feed-mix-recipe mode
+      if (sessionData.feedingMode === 'feed-mix-recipe' && sessionData.feedMixRecipeId) {
+        newRecordData.feedMixRecipeId = sessionData.feedMixRecipeId
+        newRecordData.animalCount = 1  // Recording for a single animal
       }
 
       const response = await fetch('/api/feed/consumption', {
@@ -2040,12 +2046,9 @@ export function AnimalFeedingRecords({ animalId, farmId, canAddRecords, feedType
             <FeedingSessionForm
               animalId={animalId}
               farmId={farmId}
-              availableFeeds={availableFeedOptions.map(feed => ({
-                id: feed.id,
-                name: feed.name,
-                category: localFeedTypeCategories.find(cat => cat.id === feed.feed_category_id)?.name
-              }))}
+              availableFeeds={availableFeedOptions}
               nutritionalTargets={nutritionalTargets}
+              animalDetails={animalDetails}
               onSubmit={handleSessionFormSubmit}
               isLoading={submitting}
             />
