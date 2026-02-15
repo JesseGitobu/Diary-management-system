@@ -89,7 +89,10 @@ export function AnimalProductionRecords({
   const isCalf = animal.production_status === 'calf'
   const isBull = animal.gender === 'male'
   
-  const isProducingMilk = isLactating || isServed
+  // ✅ ENHANCED: Check lactation number - animals with lactation_number = 0 cannot have production records
+  // This excludes first-time pregnant heifers from production tracking until after first calving
+  const hasNoLactationHistory = animal.lactation_number === 0 || animal.lactation_number === null
+  const isProducingMilk = (isLactating || isServed) && !hasNoLactationHistory
   
   const showProductionRecords = isProducingMilk
   const canAddProductionRecords = canAddRecords && isProducingMilk
@@ -277,6 +280,16 @@ export function AnimalProductionRecords({
         title: "Production Not Started",
         message: "This calf is too young for production tracking. Production records will become available after first calving.",
         icon: <Calendar className="w-12 h-12 text-gray-400" />
+      }
+    }
+    
+    // ✅ ENHANCED: First-time pregnant heifers (served but lactation_number = 0)
+    if (isServed && hasNoLactationHistory) {
+      return {
+        title: "Production Not Yet Available",
+        message: "This heifer is pregnant for the first time. Production tracking will become available after the first calving.",
+        icon: <Baby className="w-12 h-12 text-blue-400" />,
+        tip: "💡 Tip: Once this heifer gives birth, production records will automatically activate and you can begin tracking milk production."
       }
     }
     
@@ -788,8 +801,8 @@ export function AnimalProductionRecords({
                 {getInactiveMessage().message}
               </p>
               
-              {/* Show past production history for dry/served cows */}
-              {(isDry || isServed) && getInactiveMessage().showHistory && (
+              {/* Show past production history for dry/served cows (but not first-time heifers) */}
+              {(isDry || (isServed && !hasNoLactationHistory)) && getInactiveMessage().showHistory && (
                 <div className="mt-6">
                   <Button 
                     variant="outline"
@@ -804,8 +817,8 @@ export function AnimalProductionRecords({
                 </div>
               )}
               
-              {/* Helpful info for heifers */}
-              {isHeifer && getInactiveMessage().tip && (
+              {/* Helpful info for heifers or first-time pregnant heifers */}
+              {(isHeifer || (isServed && hasNoLactationHistory)) && getInactiveMessage().tip && (
                 <div className="mt-6 p-4 bg-blue-50 rounded-lg max-w-md mx-auto">
                   <p className="text-sm text-blue-800">
                     {getInactiveMessage().tip}

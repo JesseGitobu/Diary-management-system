@@ -434,8 +434,8 @@ export async function getMatchingAnimalsCount(
     .eq('farm_id', farmId)
     .eq('status', 'active')
   
-  // Apply gender filter
-  if (category.gender) {
+  // Apply gender filter (skip 'any' gender)
+  if (category.gender && category.gender !== 'any') {
     query = query.eq('gender', category.gender)
   }
   
@@ -454,23 +454,43 @@ export async function getMatchingAnimalsCount(
     }
   }
   
-  // Apply characteristic filters
-  if (category.characteristics) {
-    if (category.characteristics.lactating) {
-      query = query.eq('production_status', 'lactating')
+  // Apply production status filter if specified
+  if (category.production_status) {
+    query = query.eq('production_status', category.production_status)
+  } else if (category.characteristics) {
+    // If no production_status, apply characteristic-based filters
+    const hasCharacteristics = 
+      category.characteristics.lactating ||
+      category.characteristics.pregnant ||
+      category.characteristics.breeding_male ||
+      category.characteristics.growth_phase
+
+    if (hasCharacteristics) {
+      // Build list of applicable production statuses from characteristics
+      const applicableStatuses: string[] = []
+      
+      if (category.characteristics.lactating) {
+        applicableStatuses.push('lactating')
+      }
+      
+      if (category.characteristics.pregnant) {
+        applicableStatuses.push('served')
+      }
+      
+      if (category.characteristics.growth_phase) {
+        applicableStatuses.push('calf', 'heifer')
+      }
+      
+      // Filter by applicable statuses (OR condition)
+      if (applicableStatuses.length > 0) {
+        query = query.in('production_status', applicableStatuses)
+      }
     }
-    
-    if (category.characteristics.pregnant) {
-      query = query.eq('production_status', 'served')
-    }
-    
-    if (category.characteristics.breeding_male) {
-      query = query.eq('gender', 'male')
-    }
-    
-    if (category.characteristics.growth_phase) {
-      query = query.in('production_status', ['calf', 'heifer'])
-    }
+  }
+  
+  // Handle breeding male constraint separately (overrides gender if both specified)
+  if (category.characteristics?.breeding_male) {
+    query = query.eq('gender', 'male')
   }
   
   const { count, error } = await query
@@ -508,8 +528,8 @@ export async function getMatchingAnimals(
     .order('tag_number', { ascending: true })
     .limit(limit)
   
-  // Apply gender filter
-  if (category.gender) {
+  // Apply gender filter (skip 'any' gender)
+  if (category.gender && category.gender !== 'any') {
     query = query.eq('gender', category.gender)
   }
   
@@ -528,23 +548,43 @@ export async function getMatchingAnimals(
     }
   }
   
-  // Apply characteristic filters
-  if (category.characteristics) {
-    if (category.characteristics.lactating) {
-      query = query.eq('production_status', 'lactating')
+  // Apply production status filter if specified
+  if (category.production_status) {
+    query = query.eq('production_status', category.production_status)
+  } else if (category.characteristics) {
+    // If no production_status, apply characteristic-based filters
+    const hasCharacteristics = 
+      category.characteristics.lactating ||
+      category.characteristics.pregnant ||
+      category.characteristics.breeding_male ||
+      category.characteristics.growth_phase
+
+    if (hasCharacteristics) {
+      // Build list of applicable production statuses from characteristics
+      const applicableStatuses: string[] = []
+      
+      if (category.characteristics.lactating) {
+        applicableStatuses.push('lactating')
+      }
+      
+      if (category.characteristics.pregnant) {
+        applicableStatuses.push('served')
+      }
+      
+      if (category.characteristics.growth_phase) {
+        applicableStatuses.push('calf', 'heifer')
+      }
+      
+      // Filter by applicable statuses (OR condition)
+      if (applicableStatuses.length > 0) {
+        query = query.in('production_status', applicableStatuses)
+      }
     }
-    
-    if (category.characteristics.pregnant) {
-      query = query.eq('production_status', 'served')
-    }
-    
-    if (category.characteristics.breeding_male) {
-      query = query.eq('gender', 'male')
-    }
-    
-    if (category.characteristics.growth_phase) {
-      query = query.in('production_status', ['calf', 'heifer'])
-    }
+  }
+  
+  // Handle breeding male constraint separately (overrides gender if both specified)
+  if (category.characteristics?.breeding_male) {
+    query = query.eq('gender', 'male')
   }
   
   const { data, error } = await query
@@ -736,8 +776,8 @@ export async function getBatchAnimalCounts(farmId: string, batchId: string) {
           .eq('farm_id', farmId)
           .eq('status', 'active')
 
-        // Apply gender filter
-        if (category.gender) {
+        // Apply gender filter (skip 'any' gender)
+        if (category.gender && category.gender !== 'any') {
           animalQuery = animalQuery.eq('gender', category.gender)
         }
 
@@ -756,25 +796,35 @@ export async function getBatchAnimalCounts(farmId: string, batchId: string) {
           }
         }
 
-        // Apply characteristic filters
-        if (category.characteristics && typeof category.characteristics === 'object' && !Array.isArray(category.characteristics)) {
+        // Apply production status filter if specified
+        if (category.production_status) {
+          animalQuery = animalQuery.eq('production_status', category.production_status)
+        } else if (category.characteristics && typeof category.characteristics === 'object' && !Array.isArray(category.characteristics)) {
+          // Build applicable statuses from characteristics using OR logic
           const characteristics = category.characteristics as Record<string, any>
+          const applicableStatuses: string[] = []
           
           if (characteristics.lactating) {
-            animalQuery = animalQuery.eq('production_status', 'lactating')
+            applicableStatuses.push('lactating')
           }
           
           if (characteristics.pregnant) {
-            animalQuery = animalQuery.eq('production_status', 'served')
-          }
-          
-          if (characteristics.breeding_male) {
-            animalQuery = animalQuery.eq('gender', 'male')
+            applicableStatuses.push('served')
           }
           
           if (characteristics.growth_phase) {
-            animalQuery = animalQuery.in('production_status', ['calf', 'heifer'])
+            applicableStatuses.push('calf', 'heifer')
           }
+          
+          // Apply as single OR condition if we have multiple statuses
+          if (applicableStatuses.length > 0) {
+            animalQuery = animalQuery.in('production_status', applicableStatuses)
+          }
+        }
+
+        // Handle breeding male constraint separately (overrides gender if both specified)
+        if (category.characteristics?.breeding_male) {
+          animalQuery = animalQuery.eq('gender', 'male')
         }
 
         const { count, error: countError } = await animalQuery
@@ -931,8 +981,8 @@ export async function getBatchTargetedAnimals(farmId: string, batchId: string): 
           .eq('status', 'active')
           .order('tag_number', { ascending: true })
 
-        // Apply gender filter
-        if (category.gender) {
+        // Apply gender filter (skip 'any' gender)
+        if (category.gender && category.gender !== 'any') {
           animalQuery = animalQuery.eq('gender', category.gender)
         }
 
@@ -949,25 +999,35 @@ export async function getBatchTargetedAnimals(farmId: string, batchId: string): 
           }
         }
 
-        // Apply characteristic filters
-        if (category.characteristics && typeof category.characteristics === 'object' && !Array.isArray(category.characteristics)) {
+        // Apply production status filter if specified
+        if (category.production_status) {
+          animalQuery = animalQuery.eq('production_status', category.production_status)
+        } else if (category.characteristics && typeof category.characteristics === 'object' && !Array.isArray(category.characteristics)) {
+          // Build applicable statuses from characteristics using OR logic
           const characteristics = category.characteristics as Record<string, any>
+          const applicableStatuses: string[] = []
           
           if (characteristics.lactating) {
-            animalQuery = animalQuery.eq('production_status', 'lactating')
+            applicableStatuses.push('lactating')
           }
           
           if (characteristics.pregnant) {
-            animalQuery = animalQuery.eq('production_status', 'served')
-          }
-          
-          if (characteristics.breeding_male) {
-            animalQuery = animalQuery.eq('gender', 'male')
+            applicableStatuses.push('served')
           }
           
           if (characteristics.growth_phase) {
-            animalQuery = animalQuery.in('production_status', ['calf', 'heifer'])
+            applicableStatuses.push('calf', 'heifer')
           }
+          
+          // Apply as single OR condition if we have multiple statuses
+          if (applicableStatuses.length > 0) {
+            animalQuery = animalQuery.in('production_status', applicableStatuses)
+          }
+        }
+
+        // Handle breeding male constraint separately (overrides gender if both specified)
+        if (category.characteristics?.breeding_male) {
+          animalQuery = animalQuery.eq('gender', 'male')
         }
 
         const { data: categoryAnimalsData, error: animalsError } = await animalQuery

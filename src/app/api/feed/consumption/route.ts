@@ -73,60 +73,107 @@ export async function POST(request: NextRequest) {
     const feedingDate = new Date(body.feedingTime || now)
     const timeDifferenceHours = (feedingDate.getTime() - now.getTime()) / (1000 * 60 * 60)
 
-    // Validate required fields (existing validation code...)
+    // Validate required fields
     if (!body.entries || !Array.isArray(body.entries) || body.entries.length === 0) {
       return NextResponse.json({ 
         error: 'Missing required field: entries (must be non-empty array)' 
       }, { status: 400 })
     }
 
-    if (!body.mode || !['individual', 'batch'].includes(body.mode)) {
+    if (!body.mode || !['individual', 'batch', 'feed-mix-recipe'].includes(body.mode)) {
       return NextResponse.json({ 
-        error: 'Invalid or missing mode. Must be "individual" or "batch"' 
+        error: 'Invalid or missing mode. Must be "individual", "batch", or "feed-mix-recipe"' 
       }, { status: 400 })
     }
 
-    // Validate each entry (existing validation...)
-    for (let i = 0; i < body.entries.length; i++) {
-      const entry = body.entries[i]
+    // Mode-specific validation
+    if (body.mode === 'feed-mix-recipe') {
+      // Feed mix recipe mode validation
+      if (!body.feedMixRecipeId) {
+        return NextResponse.json({ 
+          error: 'Feed mix recipe mode requires feedMixRecipeId' 
+        }, { status: 400 })
+      }
       
-      if (!entry.feedTypeId || !entry.quantityKg) {
+      if (!body.animalCount || body.animalCount <= 0) {
         return NextResponse.json({ 
-          error: `Entry ${i + 1}: Missing required fields (feedTypeId, quantityKg)` 
+          error: 'Feed mix recipe mode requires animalCount greater than 0' 
         }, { status: 400 })
       }
 
-      if (entry.quantityKg <= 0) {
+      // Validate entries for recipe mode
+      for (let i = 0; i < body.entries.length; i++) {
+        const entry = body.entries[i]
+        
+        if (!entry.feedTypeId || entry.quantityKg === undefined) {
+          return NextResponse.json({ 
+            error: `Entry ${i + 1}: Missing required fields (feedTypeId, quantityKg)` 
+          }, { status: 400 })
+        }
+
+        if (entry.quantityKg < 0) {
+          return NextResponse.json({ 
+            error: `Entry ${i + 1}: Quantity cannot be negative` 
+          }, { status: 400 })
+        }
+      }
+    } else {
+      // Individual or Batch mode validation
+      // Validate each entry
+      for (let i = 0; i < body.entries.length; i++) {
+        const entry = body.entries[i]
+        
+        if (!entry.feedTypeId || !entry.quantityKg) {
+          return NextResponse.json({ 
+            error: `Entry ${i + 1}: Missing required fields (feedTypeId, quantityKg)` 
+          }, { status: 400 })
+        }
+
+        if (entry.quantityKg <= 0) {
+          return NextResponse.json({ 
+            error: `Entry ${i + 1}: Quantity must be greater than 0` 
+          }, { status: 400 })
+        }
+
+        // Mode-specific validation
+        if (body.mode === 'individual') {
+          if (!entry.animalIds || !Array.isArray(entry.animalIds) || entry.animalIds.length === 0) {
+            return NextResponse.json({ 
+              error: `Entry ${i + 1}: Individual mode requires animalIds array with at least one animal` 
+            }, { status: 400 })
+          }
+        } else if (body.mode === 'batch') {
+          if (!entry.animalCount || entry.animalCount <= 0) {
+            return NextResponse.json({ 
+              error: `Entry ${i + 1}: Batch mode requires animalCount greater than 0` 
+            }, { status: 400 })
+          }
+        }
+
+        // Validate the entry against database constraints
+        const validation = await validateConsumptionEntry(userRole.farm_id, entry)
+        if (!validation.valid) {
+          return NextResponse.json({ 
+            error: `Entry ${i + 1}: ${validation.error}` 
+          }, { status: 400 })
+        }
+      }
+    }
+
+    // Optional: Validate appetite score if provided
+    if (body.appetiteScore !== undefined && body.appetiteScore !== null) {
+      if (body.appetiteScore < 1 || body.appetiteScore > 5) {
         return NextResponse.json({ 
-          error: `Entry ${i + 1}: Quantity must be greater than 0` 
+          error: 'Appetite score must be between 1 and 5' 
         }, { status: 400 })
       }
+    }
 
-      // Mode-specific validation...
-      if (body.mode === 'individual') {
-        if (!entry.animalIds || !Array.isArray(entry.animalIds) || entry.animalIds.length === 0) {
-          return NextResponse.json({ 
-            error: `Entry ${i + 1}: Individual mode requires animalIds array with at least one animal` 
-          }, { status: 400 })
-        }
-      } else if (body.mode === 'batch') {
-        if (!entry.animalCount || entry.animalCount <= 0) {
-          return NextResponse.json({ 
-            error: `Entry ${i + 1}: Batch mode requires animalCount greater than 0` 
-          }, { status: 400 })
-        }
-        if (!entry.animalIds || !Array.isArray(entry.animalIds) || entry.animalIds.length === 0) {
-          return NextResponse.json({ 
-            error: `Entry ${i + 1}: Batch mode requires animalIds array to track individual animal consumption` 
-          }, { status: 400 })
-        }
-      }
-
-      // Validate the entry against database constraints
-      const validation = await validateConsumptionEntry(userRole.farm_id, entry)
-      if (!validation.valid) {
+    // Optional: Validate waste quantity if provided
+    if (body.approximateWasteKg !== undefined && body.approximateWasteKg !== null) {
+      if (body.approximateWasteKg < 0) {
         return NextResponse.json({ 
-          error: `Entry ${i + 1}: ${validation.error}` 
+          error: 'Approximate waste cannot be negative' 
         }, { status: 400 })
       }
     }
@@ -157,9 +204,15 @@ export async function POST(request: NextRequest) {
         feedingTime: body.feedingTime || new Date().toISOString(),
         mode: body.mode,
         batchId: body.batchId || null,
+        feedMixRecipeId: body.feedMixRecipeId || null,
         entries: body.entries,
         recordedBy: user.email || 'Unknown',
-        globalNotes: body.notes
+        globalNotes: body.notes,
+        appetiteScore: body.appetiteScore || null,
+        approximateWasteKg: body.approximateWasteKg || null,
+        observationalNotes: body.observationalNotes || null,
+        observations: body.observations || null,
+        animalCount: body.animalCount || null
       }
 
       const result = await recordFeedConsumption(consumptionData, user.id)

@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Badge } from '@/components/ui/Badge'
-import { getAnimalsForPregnancyCheck, createBreedingEvent, type PregnancyCheckEvent } from '@/lib/database/breeding'
+import { getAnimalsForPregnancyCheck } from '@/lib/database/breeding'
 import { CheckCircle, XCircle, HelpCircle } from 'lucide-react'
 
 const pregnancyCheckSchema = z.object({
@@ -45,6 +45,7 @@ export function PregnancyCheckForm({ farmId, onEventCreated, onCancel, preSelect
   const [loading, setLoading] = useState(false)
   const [animals, setAnimals] = useState<any[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [inseminationEvents, setInseminationEvents] = useState<any[]>([])
   
   const form = useForm<PregnancyCheckFormData>({
     resolver: zodResolver(pregnancyCheckSchema),
@@ -68,6 +69,8 @@ export function PregnancyCheckForm({ farmId, onEventCreated, onCancel, preSelect
   useEffect(() => {
     if (preSelectedAnimalId) {
       form.setValue('animal_id', preSelectedAnimalId)
+      // Also fetch insemination data for this animal
+      loadInseminationEvents(preSelectedAnimalId)
     }
   }, [preSelectedAnimalId, form])
   
@@ -98,6 +101,31 @@ export function PregnancyCheckForm({ farmId, onEventCreated, onCancel, preSelect
       setError('Failed to load animals')
     }
   }
+
+  // ✅ NEW: Fetch insemination events for the selected animal
+  const loadInseminationEvents = async (animalId: string) => {
+    try {
+      console.log('🔄 [PregnancyCheckForm] Loading insemination events for animal:', animalId)
+      const response = await fetch(`/api/animals/${animalId}/breeding-records`)
+      const data = await response.json()
+      if (data.success && data.inseminationEvents) {
+        setInseminationEvents(data.inseminationEvents || [])
+        console.log('✅ [PregnancyCheckForm] Loaded insemination events:', data.inseminationEvents)
+      } else {
+        console.warn('⚠️ [PregnancyCheckForm] No insemination events returned:', data)
+      }
+    } catch (err) {
+      console.error('❌ [PregnancyCheckForm] Error loading insemination events:', err)
+    }
+  }
+
+  // ✅ UPDATED: Watch animal_id and load insemination events when it changes
+  useEffect(() => {
+    const animalId = form.watch('animal_id')
+    if (animalId && !preSelectedAnimalId) {
+      loadInseminationEvents(animalId)
+    }
+  }, [form.watch('animal_id'), preSelectedAnimalId])
   
   const handleSubmit = async (data: PregnancyCheckFormData) => {
     setLoading(true)
@@ -111,16 +139,24 @@ export function PregnancyCheckForm({ farmId, onEventCreated, onCancel, preSelect
       // Destructure to exclude event_time from API payload
       const { event_time, ...restData } = data
       
-      const eventData: PregnancyCheckEvent = {
-        ...restData,
-        event_date: dateTime,
-        farm_id: farmId,
-        event_type: 'pregnancy_check',
-        estimated_due_date: data.estimated_due_date || undefined,
-        created_by: 'system', // TODO: Replace with actual user ID if available
-      }
+      const response = await fetch('/api/breeding-events', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          eventData: {
+            ...restData,
+            event_date: dateTime,
+            farm_id: farmId,
+            event_type: 'pregnancy_check',
+            pregnancy_result: data.pregnancy_result,
+            estimated_due_date: data.estimated_due_date || undefined,
+          }
+        }),
+      })
       
-      const result = await createBreedingEvent(eventData)
+      const result = await response.json()
       
       if (result.success) {
         onEventCreated()
@@ -137,14 +173,25 @@ export function PregnancyCheckForm({ farmId, onEventCreated, onCancel, preSelect
   const pregnancyResult = form.watch('pregnancy_result')
   const examinationDate = form.watch('event_date')
   
-  // Calculate estimated due date (283 days from examination for positive result)
+  // ✅ UPDATED: Use estimated due date from insemination event (breeding_events table)
   useEffect(() => {
-    if (pregnancyResult === 'pregnant' && examinationDate) {
-      const examDate = new Date(examinationDate)
-      const dueDate = new Date(examDate.getTime() + (283 * 24 * 60 * 60 * 1000))
-      form.setValue('estimated_due_date', dueDate.toISOString().split('T')[0])
+    if (pregnancyResult === 'pregnant') {
+      // Get the estimated_due_date from the most recent insemination event
+      if (inseminationEvents.length > 0) {
+        const latestInsemination = inseminationEvents[0] // Most recent insemination
+        
+        if (latestInsemination.estimated_due_date) {
+          // Use the due date from the insemination event
+          form.setValue('estimated_due_date', latestInsemination.estimated_due_date)
+          console.log('✅ [PregnancyCheckForm] Auto-populated due date from insemination:', latestInsemination.estimated_due_date)
+        } else {
+          console.warn('⚠️ [PregnancyCheckForm] Latest insemination missing estimated_due_date:', latestInsemination)
+        }
+      } else {
+        console.log('ℹ️ [PregnancyCheckForm] No insemination events available for due date')
+      }
     }
-  }, [pregnancyResult, examinationDate, form])
+  }, [pregnancyResult, inseminationEvents, form])
   
   const getResultIcon = (result: string) => {
     switch (result) {
@@ -294,7 +341,7 @@ export function PregnancyCheckForm({ farmId, onEventCreated, onCancel, preSelect
               {...form.register('estimated_due_date')}
             />
             <p className="text-sm text-gray-600 mt-1">
-              Automatically calculated as 283 days from examination date
+              ✅ Auto-filled from insemination event. You can modify if needed.
             </p>
           </div>
         )}

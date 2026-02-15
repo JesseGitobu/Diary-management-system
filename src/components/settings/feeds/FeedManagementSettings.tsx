@@ -1,7 +1,7 @@
 // src/components/settings/feeds/FeedManagementSettings.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -15,10 +15,8 @@ import {
   ArrowLeft,
   Wheat,
   Tags,
-  Users,
   Scale,
   Utensils,
-  Settings,
   Info
 } from 'lucide-react'
 
@@ -26,20 +24,22 @@ interface FeedManagementSettingsProps {
   farmId: string
   userRole: string
   feedTypeCategories: any[]
+  feedTypes?: any[]
   weightConversions: any[]
   consumptionBatches: any[]
   batchFactors: any[]
-  animalCategories: any[] // still needed for ConsumptionBatchesManager
+  animalCategories: any[]
 }
 
 export function FeedManagementSettings({
   farmId,
   userRole,
   feedTypeCategories: initialFeedTypeCategories,
+  feedTypes: initialFeedTypes = [],
   weightConversions: initialWeightConversions,
   consumptionBatches: initialConsumptionBatches,
   batchFactors: initialBatchFactors,
-  animalCategories: initialAnimalCategories // still needed for ConsumptionBatchesManager
+  animalCategories: initialAnimalCategories
 }: FeedManagementSettingsProps) {
   const router = useRouter()
   const { isMobile } = useDeviceInfo()
@@ -47,10 +47,10 @@ export function FeedManagementSettings({
 
   // State for managing data
   const [feedTypeCategories, setFeedTypeCategories] = useState(initialFeedTypeCategories)
+  const [feedTypes, setFeedTypes] = useState(initialFeedTypes)
   const [weightConversions, setWeightConversions] = useState(initialWeightConversions)
   const [consumptionBatches, setConsumptionBatches] = useState(initialConsumptionBatches)
   const [batchFactors, setBatchFactors] = useState(initialBatchFactors)
-  // Animal categories are passed down but not managed here anymore
   const [animalCategories, setAnimalCategories] = useState(initialAnimalCategories)
 
   const canManageSettings = ['farm_owner', 'farm_manager'].includes(userRole)
@@ -104,7 +104,7 @@ export function FeedManagementSettings({
               Feed Management Settings
             </h1>
             <p className={`text-gray-600 ${isMobile ? 'text-sm' : 'text-base'}`}>
-              Configure feed types, animal categories, and consumption settings
+              Configure feed type categories, weight conversions, and consumption settings
             </p>
           </div>
         </div>
@@ -131,28 +131,28 @@ export function FeedManagementSettings({
         <Card>
           <CardContent className="p-4">
             <div className="text-2xl font-bold text-green-600">{feedTypeCategories.length}</div>
-            <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>Feed Categories</p>
+            <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>Categories</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardContent className="p-4">
-            <div className="text-2xl font-bold text-blue-600">{animalCategories.length}</div>
-            <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>Animal Types</p>
+            <div className="text-2xl font-bold text-blue-600">{feedTypes.length}</div>
+            <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>Feed Types</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardContent className="p-4">
-            <div className="text-2xl font-bold text-purple-600">{weightConversions.length}</div>
-            <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>Weight Units</p>
+            <div className="text-2xl font-bold text-orange-600">{weightConversions.length}</div>
+            <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>Units</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardContent className="p-4">
-            <div className="text-2xl font-bold text-orange-600">{consumptionBatches.length}</div>
-            <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>Feed Batches</p>
+            <div className="text-2xl font-bold text-indigo-600">{consumptionBatches.length}</div>
+            <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>Batches</p>
           </CardContent>
         </Card>
       </div>
@@ -161,7 +161,7 @@ export function FeedManagementSettings({
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList className={`
           ${isMobile
-            ? 'w-full h-auto p-1 grid grid-cols-3 gap-1'
+            ? 'w-full h-auto p-1 flex gap-1 overflow-x-auto'
             : 'h-12 w-auto inline-flex gap-2 justify-start'
           }
         `}>
@@ -171,7 +171,7 @@ export function FeedManagementSettings({
               value={tab.id}
               className={`
                 ${isMobile
-                  ? 'text-xs px-2 py-3 h-auto flex flex-col items-center space-y-1'
+                  ? 'text-xs px-2 py-2 h-10'
                   : 'text-sm px-6 py-2 h-10 min-w-[140px] flex items-center space-x-2'
                 }
               `}
@@ -268,12 +268,13 @@ export function FeedManagementSettings({
           <div className="flex items-start space-x-3">
             <Info className="w-5 h-5 text-blue-600 mt-0.5" />
             <div>
-              <h4 className="font-medium text-blue-800 mb-1">How These Settings Work</h4>
+              <h4 className="font-medium text-blue-800 mb-1">How These Settings Work Together</h4>
               <ul className="text-sm text-blue-700 space-y-1">
-                <li>• <strong>Categories</strong> help organize your feed types and animals</li>
-                <li>• <strong>Weight conversions</strong> let you use local measurements instead of scales</li>
-                <li>• <strong>Consumption batches</strong> create feeding templates for different animal groups</li>
-                <li>• Changes here will be reflected in your daily feed management</li>
+                <li>• <strong>Feed Type Categories</strong> organize your feeds into logical groups</li>
+                <li>• <strong>Weight Conversions</strong> let you use local measurements instead of scales</li>
+                <li>• <strong>Consumption Batches</strong> create feeding templates for animal groups</li>
+                <li>• <strong>Nutritional Data</strong> and <strong>Feed Mix Recipes</strong> tabs are now in Feed Management dashboard</li>
+                <li>• All changes are reflected in daily feed management and recommendations</li>
               </ul>
             </div>
           </div>

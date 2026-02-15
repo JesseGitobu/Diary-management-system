@@ -28,9 +28,13 @@ export function SessionGuard({
   useEffect(() => {
     if (loading) return
 
-    // Handle unauthenticated users
+    // Handle unauthenticated users - use hard redirect for reliability in dev mode
     if (sessionStatus === 'unauthenticated' || !user) {
-      router.push(fallbackRoute)
+      console.log('🔄 SessionGuard: Redirecting unauthenticated user to:', fallbackRoute)
+      // Use hard redirect for maximum compatibility (especially in dev mode)
+      if (typeof window !== 'undefined') {
+        window.location.replace(fallbackRoute)
+      }
       return
     }
 
@@ -42,6 +46,7 @@ export function SessionGuard({
 
     // Check permissions if required role specified
     if (requiredRole && !hasPermission(requiredRole)) {
+      console.log('🔄 SessionGuard: Insufficient permissions, redirecting to /unauthorized')
       router.push('/unauthorized')
       return
     }

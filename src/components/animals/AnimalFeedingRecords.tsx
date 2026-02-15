@@ -15,6 +15,7 @@ import { Progress } from '@/components/ui/Progress'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { ScheduleTabContent } from '@/components/animals/ScheduleTabContent'
+import { FeedingSessionForm } from '@/components/feed/FeedingSessionForm'
 import { cn } from '@/lib/utils/cn'
 import {
   Plus,
@@ -980,6 +981,91 @@ export function AnimalFeedingRecords({ animalId, farmId, canAddRecords, feedType
     setActiveTab('overview')
   }
 
+  // Handle multi-feed session submission from FeedingSessionForm
+  const handleSessionFormSubmit = async (sessionData: any) => {
+    try {
+      setSubmitting(true)
+      setError(null)
+
+      if (!sessionData.feeds || sessionData.feeds.length === 0) {
+        setError('Please add at least one feed to record')
+        return
+      }
+
+      // Create proper timestamp from feeding date/time
+      const feedingDateTime = new Date(`${sessionData.feeding_date || format(new Date(), 'yyyy-MM-dd')}T${sessionData.feeding_time || format(new Date(), 'HH:mm')}`)
+      const now = new Date()
+      const timeDifferenceHours = (feedingDateTime.getTime() - now.getTime()) / (1000 * 60 * 60)
+
+      // Transform sessionData.feeds into entries format
+      const entries = sessionData.feeds.map((feed: any) => {
+        const requestedQuantity = Number(feed.quantity_kg) || 0
+        if (requestedQuantity <= 0) {
+          throw new Error(`Invalid quantity for ${feed.feed_name}`)
+        }
+
+        // Validate inventory has stock
+        const selectedFeedOption = availableFeedOptions.find(option => option.id === feed.feed_type_id)
+        if (!selectedFeedOption) {
+          throw new Error(`Feed ${feed.feed_name} not found in inventory`)
+        }
+
+        if (requestedQuantity > selectedFeedOption.totalStock) {
+          throw new Error(`Insufficient stock for ${feed.feed_name}. Only ${selectedFeedOption.totalStock}kg available`)
+        }
+
+        return {
+          feedTypeId: feed.feed_type_id,
+          quantityKg: requestedQuantity,
+          animalIds: [animalId],
+          costPerKg: feed.cost_per_kg || selectedFeedOption.averageCost,
+          notes: feed.notes || undefined
+        }
+      })
+
+      const newRecordData = {
+        farmId,
+        feedingTime: feedingDateTime.toISOString(),
+        mode: sessionData.feedingMode || 'individual',
+        batchId: null,
+        entries: entries,
+        observations: {
+          appetiteScore: sessionData.appetiteScore || 4,
+          wasteKg: sessionData.wasteKg || 0,
+          notes: sessionData.observations?.notes || ''
+        }
+      }
+
+      const response = await fetch('/api/feed/consumption', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newRecordData)
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to record feeding session')
+      }
+
+      const result = await response.json()
+
+      // Switch tab if scheduled
+      if (result.type === 'scheduled') {
+        setActiveTab('schedule')
+      }
+
+      // Reload feeding data and close modal
+      await loadFeedingData()
+      setShowAddRecordModal(false)
+      resetRecordForm()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to record feeding session')
+      console.error('Error recording feeding session:', err)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   // Helper function to check if inventory is expiring soon
   const isExpiringSoon = (expiryDate: Date | null) => {
     if (!expiryDate) return false
@@ -1938,281 +2024,33 @@ export function AnimalFeedingRecords({ animalId, farmId, canAddRecords, feedType
         </TabsContent>
       </Tabs>
 
-      {/* Updated Add Record Modal with inventory-based feed selection */}
+      {/* Updated Add Record Modal with multi-feed form */}
       {showAddRecordModal && (
         <Modal isOpen={showAddRecordModal} onClose={handleCloseAddModal}>
           <div className="p-6 max-h-[90vh] overflow-y-auto">
-            <h2 className="text-xl font-semibold mb-4">Record Feeding</h2>
+            <h2 className="text-xl font-semibold mb-4">Record Feeding Session</h2>
+            
+            {error && (
+              <Alert className="border-red-200 bg-red-50 mb-4">
+                <AlertCircle className="h-4 w-4 text-red-600" />
+                <AlertDescription className="text-red-800">{error}</AlertDescription>
+              </Alert>
+            )}
 
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="feeding_date">Date *</Label>
-                  <Input
-                    id="feeding_date"
-                    type="date"
-                    value={recordForm.feeding_date}
-                    onChange={(e) => handleRecordFormChange('feeding_date', e.target.value)}
-                    max={format(new Date(), 'yyyy-MM-dd')}
-                    autoComplete="off"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="feeding_time">Time *</Label>
-                  <Input
-                    id="feeding_time"
-                    type="time"
-                    value={recordForm.feeding_time}
-                    onChange={(e) => handleRecordFormChange('feeding_time', e.target.value)}
-                    autoComplete="off"
-                  />
+            <FeedingSessionForm
+              animalId={animalId}
+              farmId={farmId}
+              availableFeeds={availableFeedOptions.map(feed => ({
+                id: feed.id,
+                name: feed.name,
+                category: localFeedTypeCategories.find(cat => cat.id === feed.feed_category_id)?.name
+              }))}
+              nutritionalTargets={nutritionalTargets}
+              onSubmit={handleSessionFormSubmit}
+              isLoading={submitting}
+            />
 
-                </div>
-              </div>
-
-              {(() => {
-                if (!recordForm.feeding_date || !recordForm.feeding_time) return null
-
-                const feedingDateTime = new Date(`${recordForm.feeding_date}T${recordForm.feeding_time}`)
-                const now = new Date()
-                const timeDifferenceHours = (feedingDateTime.getTime() - now.getTime()) / (1000 * 60 * 60)
-
-                if (timeDifferenceHours > 1) {
-                  return (
-                    <Alert className="border-blue-200 bg-blue-50">
-                      <Clock className="h-4 w-4 text-blue-600" />
-                      <AlertDescription className="text-blue-800">
-                        <strong>Scheduled Feeding:</strong> This feeding is more than 1 hour in the future and will be added to your schedule.
-                        You can confirm it when the feeding time approaches.
-                      </AlertDescription>
-                    </Alert>
-                  )
-                } else if (timeDifferenceHours < 0) {
-                  const hoursLate = Math.abs(timeDifferenceHours)
-                  return (
-                    <Alert className="border-orange-200 bg-orange-50">
-                      <AlertTriangle className="h-4 w-4 text-orange-600" />
-                      <AlertDescription className="text-orange-800">
-                        <strong>Past Feeding:</strong> This feeding time is {hoursLate.toFixed(1)} hours ago.
-                        It will be recorded as a historical feeding.
-                      </AlertDescription>
-                    </Alert>
-                  )
-                }
-
-                return null
-              })()}
-
-              <div>
-                <Label htmlFor="feed_type_id">Feed Type *</Label>
-                <Select
-                  value={recordForm.feed_type_id}
-                  onValueChange={(value) => {
-                    const selectedFeed = availableFeedOptions.find(f => f.id === value);
-                    setRecordForm(prev => ({
-                      ...prev,
-                      feed_type_id: value,
-                      cost_per_kg: selectedFeed?.averageCost.toFixed(2) || ''
-                    }));
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select feed type from inventory" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableFeedOptions.length > 0 ? (
-                      availableFeedOptions.map((feed, index) => {
-                        // Only use real feed IDs, not fallback values
-                        if (!feed.id) {
-                          console.warn('Feed option missing ID:', feed)
-                          return null
-                        }
-
-                        return (
-                          <SelectItem
-                            key={feed.id}
-                            value={feed.id}
-                          >
-                            <div className="flex items-center space-x-2 w-full">
-                              <div className="flex-1">
-                                <div className="flex items-center space-x-2">
-                                  <span className="font-medium">{feed.name}</span>
-                                  {feed.feed_category_id && localFeedTypeCategories.find(cat => cat.id === feed.feed_category_id) && (
-                                    <div
-                                      className="w-3 h-3 rounded-full"
-                                      style={{
-                                        backgroundColor: localFeedTypeCategories.find(cat => cat.id === feed.feed_category_id)?.color || '#gray'
-                                      }}
-                                    />
-                                  )}
-                                  <Badge variant="outline" className="text-xs">
-                                    {feed.totalStock.toFixed(1)}kg available
-                                  </Badge>
-                                </div>
-                                <div className="flex items-center space-x-2 text-xs text-gray-500">
-                                  <span>Avg: ${feed.averageCost.toFixed(2)}/kg</span>
-                                  {feed.oldestExpiry && (
-                                    <span className={cn(
-                                      "px-1.5 py-0.5 rounded text-xs font-medium",
-                                      isExpired(feed.oldestExpiry) ? "bg-red-100 text-red-700" :
-                                        isExpiringSoon(feed.oldestExpiry) ? "bg-yellow-100 text-yellow-700" :
-                                          "bg-green-100 text-green-700"
-                                    )}>
-                                      {isExpired(feed.oldestExpiry) ? "Expired" :
-                                        isExpiringSoon(feed.oldestExpiry) ? "Expiring Soon" :
-                                          "Fresh"
-                                      }
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </SelectItem>
-                        )
-                      }).filter(Boolean) // Remove null entries
-                    ) : (
-                      <SelectItem key="no-inventory" value="no-inventory" disabled>
-                        No feed inventory available
-                      </SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
-
-                {/* Show inventory details for selected feed */}
-                {recordForm.feed_type_id && (
-                  <div className="mt-2 p-3 bg-blue-50 rounded-lg">
-                    {(() => {
-                      const selectedFeed = availableFeedOptions.find(f => f.id === recordForm.feed_type_id)
-                      if (!selectedFeed) return null
-
-                      return (
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium text-blue-900">
-                              Available Stock: {selectedFeed.totalStock.toFixed(1)}kg
-                            </span>
-                            <span className="text-sm text-blue-700">
-                              Avg Cost: ${selectedFeed.averageCost.toFixed(2)}/kg
-                            </span>
-                          </div>
-
-                          {selectedFeed.inventoryItems.length > 1 && (
-                            <div className="text-xs text-blue-600">
-                              {selectedFeed.inventoryItems.length} inventory batches available
-                            </div>
-                          )}
-
-                          {selectedFeed.oldestExpiry && (
-                            <div className="text-xs text-blue-600">
-                              Oldest expiry: {format(selectedFeed.oldestExpiry, 'MMM dd, yyyy')}
-                              {isExpiringSoon(selectedFeed.oldestExpiry) && (
-                                <span className="ml-1 text-yellow-600 font-medium">⚠️ Expiring soon</span>
-                              )}
-                              {isExpired(selectedFeed.oldestExpiry) && (
-                                <span className="ml-1 text-red-600 font-medium">❌ Expired</span>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })()}
-                  </div>
-                )}
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="quantity_kg">Quantity (kg) *</Label>
-                  <Input
-                    id="quantity_kg"
-                    type="number"
-                    value={recordForm.quantity_kg}
-                    onChange={(e) => handleRecordFormChange('quantity_kg', e.target.value)}
-                    placeholder="0.0"
-                    min="0"
-                    step="0.1"
-                    autoComplete="off"
-                  />
-                  {/* Show stock validation */}
-                  {recordForm.quantity_kg && recordForm.feed_type_id && (
-                    <div className="mt-1">
-                      {(() => {
-                        const selectedFeed = availableFeedOptions.find(f => f.id === recordForm.feed_type_id)
-                        const requestedQty = Number(recordForm.quantity_kg)
-
-                        if (!selectedFeed) return null
-
-                        if (requestedQty > selectedFeed.totalStock) {
-                          return (
-                            <p className="text-xs text-red-600">
-                              ❌ Insufficient stock (only {selectedFeed.totalStock.toFixed(1)}kg available)
-                            </p>
-                          )
-                        } else if (requestedQty > selectedFeed.totalStock * 0.8) {
-                          return (
-                            <p className="text-xs text-yellow-600">
-                              ⚠️ Using {((requestedQty / selectedFeed.totalStock) * 100).toFixed(0)}% of available stock
-                            </p>
-                          )
-                        } else {
-                          return (
-                            <p className="text-xs text-green-600">
-                              ✅ {(selectedFeed.totalStock - requestedQty).toFixed(1)}kg will remain
-                            </p>
-                          )
-                        }
-                      })()}
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <Label htmlFor="cost_per_kg">Cost per kg ($)</Label>
-                  <Input
-                    id="cost_per_kg"
-                    type="number"
-                    value={recordForm.cost_per_kg}
-                    onChange={(e) => handleRecordFormChange('cost_per_kg', e.target.value)}
-                    placeholder="0.00"
-                    min="0"
-                    step="0.01"
-                    autoComplete="off"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Leave empty to use average inventory cost
-                  </p>
-                </div>
-              </div>
-
-              <div>
-                <Label htmlFor="notes">Notes</Label>
-                <Textarea
-                  id="notes"
-                  value={recordForm.notes}
-                  onChange={(e) => handleRecordFormChange('notes', e.target.value)}
-                  placeholder="Additional observations or notes"
-                  rows={3}
-                />
-              </div>
-
-              {recordForm.quantity_kg && recordForm.feed_type_id && (
-                <Alert>
-                  <CheckCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    {(() => {
-                      const selectedFeed = availableFeedOptions.find(f => f.id === recordForm.feed_type_id)
-                      const costPerKg = recordForm.cost_per_kg ?
-                        Number(recordForm.cost_per_kg) :
-                        selectedFeed?.averageCost || 0
-                      const totalCost = Number(recordForm.quantity_kg) * costPerKg
-
-                      return `Total cost: $${totalCost.toFixed(2)}`
-                    })()}
-                  </AlertDescription>
-                </Alert>
-              )}
-            </div>
-
-            <div className="flex justify-end space-x-2 mt-6">
+            <div className="flex justify-end space-x-2 mt-6 border-t pt-4">
               <Button
                 type="button"
                 variant="outline"
@@ -2220,20 +2058,6 @@ export function AnimalFeedingRecords({ animalId, farmId, canAddRecords, feedType
                 disabled={submitting}
               >
                 Cancel
-              </Button>
-              <Button
-                type="button"
-                onClick={handleAddRecord}
-                disabled={!recordForm.feed_type_id || !recordForm.quantity_kg || submitting}
-              >
-                {submitting ? (
-                  <>
-                    <LoadingSpinner size="sm" />
-                    <span className="ml-2">Recording...</span>
-                  </>
-                ) : (
-                  'Record Feeding'
-                )}
               </Button>
             </div>
           </div>

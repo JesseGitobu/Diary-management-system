@@ -27,13 +27,11 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 // Session configuration constants
 // IDLE_TIMEOUT: Time in milliseconds before auto-logout
-// ADJUST THIS VALUE TO TEST:
-// - 1 minute (testing): 1 * 60 * 1000 = 60,000ms
-// - 5 minutes (testing): 5 * 60 * 1000 = 300,000ms
-// - 15 minutes (testing): 15 * 60 * 1000 = 900,000ms
-// - 30 minutes (production default): 30 * 60 * 1000 = 1,800,000ms
+// DEV_MODE: Set to true to enable 1-minute timeout for testing logout flows
+const DEV_MODE = process.env.NODE_ENV === 'development' // ← This will be true in dev server
+
 const SESSION_CONFIG = {
-  IDLE_TIMEOUT: 30 * 60 * 1000, // ← CHANGE THIS NUMBER TO TEST (currently 1 minute)
+  IDLE_TIMEOUT: DEV_MODE ? 1 * 60 * 1000 : 30 * 60 * 1000, // 1 min in dev, 30 min in prod
   REFRESH_BUFFER: 5 * 60 * 1000,
   ACTIVITY_THROTTLE: 1000,
   PERMISSION_CACHE_TTL: 5 * 60 * 1000,
@@ -383,20 +381,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSessionStatus('unauthenticated')
       setLastActivity(0)
 
-      // Redirect to auth page (if in browser)
+      // Force redirect to auth page using hard redirect
+      // This ensures middleware re-evaluates and redirects correctly
       if (typeof window !== 'undefined') {
-        // Use window.location for a hard redirect to ensure middleware re-evaluates
-        setTimeout(() => {
-          window.location.href = '/auth'
-        }, 100)
+        // Use a hard redirect to ensure browser makes a fresh request
+        // Middleware will then evaluate and confirm no active session
+        window.location.replace('/auth')
       }
     } catch (error) {
       debugLogger.error('AuthProvider', 'Sign out exception', { error })
-      // Still attempt redirect even if there's an error
+      // Still attempt hard redirect even if there's an error
       if (typeof window !== 'undefined') {
-        setTimeout(() => {
-          window.location.href = '/auth'
-        }, 100)
+        window.location.replace('/auth')
       }
     }
   }

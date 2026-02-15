@@ -14,6 +14,8 @@ import { FeedInventoryTab } from '@/components/feed/FeedInventoryTab'
 import { FeedConsumptionTab } from '@/components/feed/FeedConsumptionTab'
 import { FeedTypesTab } from '@/components/feed/FeedTypesTab'
 import { FeedStatsCards } from '@/components/feed/FeedStatsCards'
+import { FeedMixRecipeManager } from '@/components/feed/FeedMixRecipeManager'
+import { NutritionalDataManager } from '@/components/feed/NutritionalDataManager'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import {
   Plus,
@@ -23,7 +25,9 @@ import {
   Wheat,
   MoreVertical,
   Clock,
-  Users
+  Users,
+  Lightbulb,
+  Zap
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -44,6 +48,7 @@ interface FeedManagementDashboardProps {
   animalCategories: any[]
   weightConversions: any[]
   consumptionBatches: any[]
+  feedMixRecipes?: any[]
 }
 
 export function FeedManagementDashboard({
@@ -58,6 +63,7 @@ export function FeedManagementDashboard({
   animalCategories,
   weightConversions,
   consumptionBatches,
+  feedMixRecipes: initialFeedMixRecipes = [],
 }: FeedManagementDashboardProps) {
   const [activeTab, setActiveTab] = useState('overview')
   const [showAddTypeModal, setShowAddTypeModal] = useState(false)
@@ -66,7 +72,26 @@ export function FeedManagementDashboard({
   const [feedTypes, setFeedTypes] = useState(initialFeedTypes)
   const [inventory, setInventory] = useState(initialInventory)
   const [consumptionRecords, setConsumptionRecords] = useState(initialConsumptionRecords)
+  const [feedMixRecipes, setFeedMixRecipes] = useState(initialFeedMixRecipes)
   const [editingRecord, setEditingRecord] = useState<any>(null)
+
+  useEffect(() => {
+    // Load feed recipes on mount if not provided
+    if (feedMixRecipes.length === 0) {
+      loadFeedMixRecipes()
+    }
+  }, [farmId])
+
+  async function loadFeedMixRecipes() {
+    try {
+      const response = await fetch(`/api/farms/${farmId}/feed-recipes`)
+      if (!response.ok) throw new Error('Failed to load recipes')
+      const data = await response.json()
+      setFeedMixRecipes(data.recipes || [])
+    } catch (error) {
+      console.error('Error loading recipes:', error)
+    }
+  }
 
   useEffect(() => {
   const handleMobileNavAction = (event: Event) => {
@@ -475,12 +500,12 @@ export function FeedManagementDashboard({
       )}
 
       {/* Horizontal Tabs - Optimized for both Mobile and Desktop */}
-      <div className="px-4 lg:px-0">
+      <div className="px-4 lg:px-0 mb-6">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           {/* Horizontal Tab Layout for both Mobile and Desktop */}
           <TabsList className={`
             ${isMobile
-              ? 'w-full h-12 p-1 grid grid-cols-4 gap-1'
+              ? 'w-full h-auto p-1 flex gap-1 overflow-x-auto'
               : 'h-12 w-auto inline-flex gap-2 justify-start'
             }
           `}>
@@ -527,6 +552,28 @@ export function FeedManagementDashboard({
               `}
             >
               Types
+            </TabsTrigger>
+            <TabsTrigger
+              value="nutrition"
+              className={`
+                ${isMobile
+                  ? 'text-xs px-2 py-2 h-10'
+                  : 'text-sm px-6 py-2 h-10 min-w-[120px]'
+                }
+              `}
+            >
+              {isMobile ? 'Nutrition' : 'Nutrition Data'}
+            </TabsTrigger>
+            <TabsTrigger
+              value="recipes"
+              className={`
+                ${isMobile
+                  ? 'text-xs px-2 py-2 h-10'
+                  : 'text-sm px-6 py-2 h-10 min-w-[120px]'
+                }
+              `}
+            >
+              {isMobile ? 'Recipes' : 'Mix Recipes'}
             </TabsTrigger>
           </TabsList>
 
@@ -583,6 +630,61 @@ export function FeedManagementDashboard({
               weightConversions={weightConversions}
             />
           </TabsContent>
+
+          <TabsContent value="nutrition" className="mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <Zap className="w-5 h-5" />
+                  <span>Nutritional Data</span>
+                </CardTitle>
+                <CardDescription>
+                  Add and manage nutritional information for your feed types. This data is used for 
+                  smart feeding recommendations and nutritional calculations.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <NutritionalDataManager
+                  farmId={farmId}
+                  feedTypes={feedTypes}
+                  canEdit={canManageFeed}
+                  onUpdate={async (feedId, nutritionData) => {
+                    // Update local state
+                    setFeedTypes(feedTypes.map(f =>
+                      f.id === feedId ? { ...f, nutritional_info: nutritionData } : f
+                    ))
+                  }}
+                />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="recipes" className="mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <Lightbulb className="w-5 h-5" />
+                  <span>Feed Mix Recipes</span>
+                </CardTitle>
+                <CardDescription>
+                  Create reusable feed mix recipes for different animal conditions. Recipes help ensure 
+                  consistent nutrition and can be applied to feeding sessions.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <FeedMixRecipeManager
+                  farmId={farmId}
+                  availableFeeds={feedTypes.map(f => ({ id: f.id, name: f.name, category: f.category_id }))}
+                  onRecipeCreated={(recipe) => {
+                    setFeedMixRecipes([...feedMixRecipes, recipe])
+                  }}
+                  onRecipeDeleted={(recipeId) => {
+                    setFeedMixRecipes(feedMixRecipes.filter(r => r.id !== recipeId))
+                  }}
+                />
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
       </div>
 
@@ -618,6 +720,7 @@ export function FeedManagementDashboard({
         consumptionBatches={consumptionBatches}
         feedTypeCategories={feedTypeCategories}
         animalCategories={animalCategories}
+        feedMixRecipes={feedMixRecipes}
         editingRecord={editingRecord}
       />
     </div>

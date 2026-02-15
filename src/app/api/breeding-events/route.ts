@@ -128,6 +128,114 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
 
+    // ===== SAVE INSEMINATION TO breeding_records TABLE =====
+    if (eventData.event_type === 'insemination') {
+      console.log('💾 [API] Recording insemination to breeding_records table...')
+      
+      try {
+        // Determine breeding type based on insemination method
+        const breedingType = eventData.insemination_method === 'artificial_insemination' 
+          ? 'artificial_insemination' 
+          : 'natural'
+        
+        // Extract date only from the event_date (which is datetime format)
+        const breedingDate = eventData.event_date.split('T')[0]
+        
+        // Insert into breeding_records
+        const breedingRecordData = {
+          animal_id: eventData.animal_id,
+          farm_id: eventData.farm_id,
+          breeding_type: breedingType,
+          breeding_date: breedingDate,
+          sire_id: null, // Cannot determine actual bull ID from semen_bull_code
+          sire_name: eventData.semen_bull_code || null, // Use semen code as sire identifier
+          sire_breed: null,
+          sire_registration_number: null,
+          technician_name: eventData.technician_name || null,
+          notes: eventData.notes || null,
+          cost: null,
+          success_rate: null,
+          auto_generated: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }
+        
+        const { data: breedingRecord, error: breedingError } = await (supabase as any)
+          .from('breeding_records')
+          .insert(breedingRecordData)
+          .select()
+          .single()
+        
+        if (breedingError) {
+          console.error('⚠️ [API] Failed to insert into breeding_records:', breedingError.message)
+          // Don't fail the whole request - breeding_event is already saved
+        } else {
+          console.log('✅ [API] Breeding record created successfully:', breedingRecord.id)
+        }
+      } catch (err: any) {
+        console.error('❌ [API] Error processing breeding record:', err.message)
+        // Continue - don't fail the overall request
+      }
+    }
+
+    // ===== SAVE PREGNANCY CHECK TO pregnancy_records TABLE =====
+    if (eventData.event_type === 'pregnancy_check') {
+      console.log('💾 [API] Recording pregnancy check to pregnancy_records table...')
+      
+      try {
+        // Map pregnancy_result to pregnancy_status for pregnancy_records table
+        const pregnancyStatusMap: { [key: string]: string } = {
+          'pregnant': 'confirmed',
+          'not_pregnant': 'false',
+          'uncertain': 'suspected'
+        }
+        const pregnancyStatus = pregnancyStatusMap[eventData.pregnancy_result] || 'suspected'
+        
+        // Map examination method to valid confirmation_method values
+        // Valid values: 'ultrasound', 'blood_test', 'rectal_palpation', 'visual'
+        const methodMap: { [key: string]: string } = {
+          'Ultrasound': 'ultrasound',
+          'Blood test': 'blood_test',
+          'Rectal palpation': 'rectal_palpation',
+          'Visual observation': 'visual',
+          'Milk test': 'visual' // Default to visual if method doesn't match
+        }
+        const confirmationMethod = eventData.examination_method 
+          ? methodMap[eventData.examination_method] || 'visual'
+          : 'visual'
+        
+        // Insert into pregnancy_records
+        const pregnancyRecordData = {
+          animal_id: eventData.animal_id,
+          farm_id: eventData.farm_id,
+          pregnancy_status: pregnancyStatus,
+          confirmed_date: eventData.event_date.split('T')[0], // Extract date only
+          confirmation_method: confirmationMethod,
+          expected_calving_date: eventData.estimated_due_date || null,
+          pregnancy_notes: eventData.notes || null,
+          veterinarian: eventData.veterinarian_name || null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }
+        
+        const { data: pregnancyRecord, error: pregnancyError } = await (supabase as any)
+          .from('pregnancy_records')
+          .insert(pregnancyRecordData)
+          .select()
+          .single()
+        
+        if (pregnancyError) {
+          console.error('⚠️ [API] Failed to insert into pregnancy_records:', pregnancyError.message)
+          // Don't fail the whole request - breeding_event is already saved
+        } else {
+          console.log('✅ [API] Pregnancy record created successfully:', pregnancyRecord.id)
+        }
+      } catch (err: any) {
+        console.error('❌ [API] Error processing pregnancy record:', err.message)
+        // Continue - don't fail the overall request
+      }
+    }
+
     // ===== HANDLE PRODUCTION STATUS UPDATES BASED ON EVENT TYPE =====
     
     // Handle insemination events - update status to 'served'
@@ -152,11 +260,15 @@ export async function POST(request: NextRequest) {
     // Handle pregnancy check events - may revert status if negative
     if (eventData.event_type === 'pregnancy_check') {
       console.log('📊 [API] Processing pregnancy check event for production status update...')
+      // Map pregnancy_result to pregnancy_status for handler compatibility
+      const pregnancyStatus = eventData.pregnancy_result === 'pregnant' ? 'confirmed' : 
+                              eventData.pregnancy_result === 'not_pregnant' ? 'negative' : 
+                              'pending'
       const pregnancyResult = await handlePregnancyCheckEvent(
         eventData.animal_id,
         eventData.farm_id,
         eventData.event_date,
-        eventData.pregnancy_status || 'pending',
+        pregnancyStatus,
         user.id,
         true
       )

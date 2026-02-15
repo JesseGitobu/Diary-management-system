@@ -132,8 +132,15 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
   const [heatEvents, setHeatEvents] = useState<HeatEvent[]>([])
   const [inseminationEvents, setInseminationEvents] = useState<InseminationEvent[]>([])
   const [calvingEvents, setCalvingEvents] = useState<CalvingEvent[]>([])
+  const [allEvents, setAllEvents] = useState<any[]>([])
   const [breedingSettings, setBreedingSettings] = useState<BreedingSettings | null>(null)
-  const [breedingEligibility, setBreedingEligibility] = useState<BreedingEligibility | null>(null)
+  const [breedingEligibility, setBreedingEligibility] = useState<BreedingEligibility>({ 
+    eligible: true, 
+    reasons: [], 
+    warnings: [], 
+    ageInMonths: 0,
+    productionStatus: ''
+  })
   
   // UI State
   const [activeModal, setActiveModal] = useState<ModalType>(null)
@@ -178,17 +185,19 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
       const data = await response.json()
       if (data.success) {
         // --- UPDATED SORTING LOGIC ---
-        // Sorts by created_at first. If created_at is missing, falls back to the event date.
-        // This ensures the banners react to the most recently entered data.
+        // Sorts by breeding_date (most recent first). When multiple records have same created_at (batch import),
+        // use breeding_date to identify current cycle correctly.
+        // This ensures the banners react to the most recent breeding event.
 
         const sortedRecords = (data.breedingRecords || []).sort((a: BreedingRecord, b: BreedingRecord) => {
-          const timeA = a.created_at ? new Date(a.created_at).getTime() : new Date(a.breeding_date).getTime();
-          const timeB = b.created_at ? new Date(b.created_at).getTime() : new Date(b.breeding_date).getTime();
-          return timeB - timeA; // Newest entry first
+          const dateA = new Date(a.breeding_date).getTime();
+          const dateB = new Date(b.breeding_date).getTime();
+          return dateB - dateA; // Most recent breeding date first
         })
         setBreedingRecords(sortedRecords)
         
         setPregnancyChecks(data.pregnancyChecks || [])
+        setAllEvents(data.allEvents || [])
         
         const sortedHeat = (data.heatEvents || []).sort((a: HeatEvent, b: HeatEvent) => {
           const timeA = a.created_at ? new Date(a.created_at).getTime() : new Date(a.event_date).getTime();
@@ -231,26 +240,54 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
       isReadyForReService: false
     }
 
-    if (animal.birth_date) {
-      eligibility.ageInMonths = differenceInMonths(new Date(), parseISO(animal.birth_date))
-      if (eligibility.ageInMonths < breedingSettings.minimumBreedingAgeMonths) {
+    // ⚠️ EARLY EXIT: DRY and SERVED animals are ALWAYS eligible
+    // They are in active breeding states and should NEVER show "Not Eligible"
+    const isDry = animal.production_status?.toLowerCase() === 'dry'
+    const isServed = animal.production_status?.toLowerCase() === 'served'
+    
+    if (isDry || isServed) {
+      console.error(`✅ BREEDING RECORDS DEBUG: ${isDry ? 'DRY' : 'SERVED'} ANIMAL - EARLY RETURN WITH ELIGIBLE=TRUE`, {
+        animal_id: animalId,
+        production_status: animal.production_status,
+        breeding_records_count: breedingRecords.length,
+        breeding_records: breedingRecords.map(r => ({
+          id: r.id,
+          pregnancy_status: r.pregnancy_status,
+          actual_calving_date: r.actual_calving_date,
+          expected_calving_date: r.expected_calving_date
+        })),
+        eligibility_being_set: eligibility
+      })
+      setBreedingEligibility(eligibility) // Return with eligible: true
+      return
+    }
+
+    // ⚠️ SPECIAL CASE: LACTATING animals are ALWAYS eligible (they're in active production)
+    // Don't apply any ineligibility checks to lactating animals
+    const isLactatStatus = animal.production_status?.toLowerCase() === 'lactating'
+    
+    if (!isLactatStatus) {
+      if (animal.birth_date) {
+        eligibility.ageInMonths = differenceInMonths(new Date(), parseISO(animal.birth_date))
+        // ONLY mark too young if it's a HEIFER (first breeding attempt)
+        if (eligibility.ageInMonths < breedingSettings.minimumBreedingAgeMonths && 
+            animal.production_status?.toLowerCase() === 'heifer') {
+          eligibility.eligible = false
+          eligibility.reasons.push(`Too young (${eligibility.ageInMonths}m). Min: ${breedingSettings.minimumBreedingAgeMonths}m.`)
+        }
+      }
+
+      const eligibleStatuses = ['heifer', 'dry', 'lactating', 'served', 'pregnant']
+      if (!eligibleStatuses.includes(animal.production_status?.toLowerCase() || '')) {
         eligibility.eligible = false
-        eligibility.reasons.push(`Too young (${eligibility.ageInMonths}m). Min: ${breedingSettings.minimumBreedingAgeMonths}m.`)
+        eligibility.reasons.push(`Status "${animal.production_status}" is not eligible.`)
       }
     }
 
-    const eligibleStatuses = ['heifer', 'dry', 'lactating', 'served', 'pregnant']
-    if (!eligibleStatuses.includes(animal.production_status?.toLowerCase() || '')) {
-      eligibility.eligible = false
-      eligibility.reasons.push(`Status "${animal.production_status}" is not eligible.`)
-    }
-
     // Check for active pregnancy based on current records state
+    // Note: Active pregnancies are a valid state (shown via pregnancy banner)
+    // so we don't mark the animal as ineligible - just track that pregnancy exists
     const activePregnancy = breedingRecords.find(r => r.pregnancy_status === 'confirmed' && !r.actual_calving_date)
-    if (activePregnancy) {
-      eligibility.eligible = false
-      eligibility.reasons.push('Animal is already pregnant.')
-    }
 
     // Check for calving events - from both legacy records AND breeding_events table
     let lastCalving = breedingRecords
@@ -281,10 +318,16 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
       }
     }
 
-    if (lastCalving?.actual_calving_date) {
+    // ⚠️ Only check post-calving waiting period for non-lactating animals
+    if (lastCalving?.actual_calving_date && !isLactatStatus) {
       const daysSinceCalving = differenceInDays(new Date(), parseISO(lastCalving.actual_calving_date))
       eligibility.daysSinceCalving = daysSinceCalving
-      if (daysSinceCalving < breedingSettings.postpartumBreedingDelayDays) {
+      // Only enforce post-calving waiting period for animals NOT currently in a breeding cycle
+      // - SERVED animals are in active breeding cycle (pending/pending pregnancy confirmation)
+      // - DRY animals are in active breeding cycle (confirmed pregnancy)
+      const isInActiveBreedingCycle = ['served', 'dry'].includes(animal.production_status?.toLowerCase() || '')
+      
+      if (daysSinceCalving < breedingSettings.postpartumBreedingDelayDays && !isInActiveBreedingCycle) {
         eligibility.eligible = false
         eligibility.reasons.push(`In waiting period (${daysSinceCalving} days). Wait ${breedingSettings.postpartumBreedingDelayDays} days.`)
       }
@@ -306,6 +349,14 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
     }
 
     setBreedingEligibility(eligibility)
+    
+    console.error(`✅ FINAL ELIGIBILITY RESULT`, {
+      animal_id: animalId,
+      production_status: animal.production_status,
+      eligible: eligibility.eligible,
+      reasons: eligibility.reasons,
+      ageInMonths: eligibility.ageInMonths
+    })
   }
 
   const handleEventCreated = async () => {
@@ -341,7 +392,15 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
       }
       
       // After recovery period, show ready to rebreed
+      // ⚠️ But NOT if animal is currently 'served' (active breeding cycle) or 'dry' (between cycles)
       if (daysSinceCalving >= postpartumDelayDays) {
+        const currentProdStatus = animal?.production_status?.toLowerCase()
+        
+        // Never show "Ready to Rebreed" for SERVED or DRY animals - they're in active reproductive cycles
+        if (currentProdStatus === 'served' || currentProdStatus === 'dry') {
+          return null
+        }
+
         return {
           status: 'ready_rebreed',
           color: 'green',
@@ -357,6 +416,26 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
     // Check both legacy breedingRecords AND event-driven pregnancy checks
     const confirmedPregnancy = breedingRecords.find(r => r.pregnancy_status === 'confirmed' && !r.actual_calving_date)
     
+    // FALLBACK: If no breeding records, check allEvents for pregnancy confirmation
+    const pregnancyEventConfirmed = confirmedPregnancy ? null : allEvents.find((e: any) => 
+      e.event_type === 'pregnancy_check' && 
+      e.pregnancy_result === 'pregnant'
+    )
+    
+    console.error(`✅ BREEDING RECORDS DEBUG: PREGNANCY CHECK`, {
+      animal_id: animalId,
+      production_status: animal.production_status,
+      breeding_records_count: breedingRecords.length,
+      breeding_records: breedingRecords.map(r => ({
+        pregnancy_status: r.pregnancy_status,
+        actual_calving_date: r.actual_calving_date,
+        expected_calving_date: r.expected_calving_date
+      })),
+      confirmedPregnancy_from_records: !!confirmedPregnancy,
+      pregnancyEvent_from_events: !!pregnancyEventConfirmed,
+      pregnancyEventData: pregnancyEventConfirmed ? { pregnancy_result: pregnancyEventConfirmed.pregnancy_result, estimated_due_date: pregnancyEventConfirmed.estimated_due_date } : null
+    })
+    
     // Also check for positive pregnancy check from breeding_events table (event-driven)
     const latestInsemination = inseminationEvents[0]
     const positivePregnancyCheck = latestInsemination && pregnancyChecks.find(check => {
@@ -365,16 +444,18 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
       return isAfter(checkDate, inseminationDate) && check.result === 'positive'
     })
     
-    // Use either confirmed pregnancy from records or positive pregnancy check
-    const pregnancyConfirmed = confirmedPregnancy || positivePregnancyCheck
+    // Use either confirmed pregnancy from records, positive pregnancy check, or pregnancyEventConfirmed from breeding_events
+    const pregnancyConfirmed = confirmedPregnancy || positivePregnancyCheck || pregnancyEventConfirmed
     
     if (pregnancyConfirmed) {
       // Get the due date from the insemination event (estimated_due_date was auto-calculated)
       let dueDate = confirmedPregnancy?.expected_calving_date 
         ? parseISO(confirmedPregnancy.expected_calving_date) 
+        : pregnancyEventConfirmed?.estimated_due_date
+        ? parseISO(pregnancyEventConfirmed.estimated_due_date)
         : null
       
-      // If not found in breedingRecords, check for estimated_due_date in calvingEvents or calculate from insemination
+      // If not found in breedingRecords or breeding_events, check for estimated_due_date in calvingEvents or calculate from insemination
       if (!dueDate && latestInsemination && positivePregnancyCheck) {
         // Look for calving event with estimated due date
         const calvingWithDueDate = calvingEvents.find(e => e.estimated_due_date)
@@ -853,13 +934,54 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
       )}
 
       {/* Warnings */}
-      {!breedingEligibility?.eligible && (
-         <Alert className="border-red-200 bg-red-50">
-           <XCircle className="h-4 w-4 text-red-600" />
-           <AlertDescription className="text-red-800 ml-2">
-             <strong>Not eligible:</strong> {breedingEligibility?.reasons.join(', ')}
-           </AlertDescription>
-         </Alert>
+      {(() => {
+        // Default to eligible=true if not set (defensive programming)
+        const isEligible = breedingEligibility?.eligible !== false
+        const shouldShowNotEligible = !isEligible && !breedingWindow
+        if (shouldShowNotEligible) {
+          console.error(`🔴 RENDERING NOT ELIGIBLE BANNER`, {
+            animal_id: animalId,
+            production_status: animal.production_status,
+            breedingEligibility_eligible: breedingEligibility?.eligible,
+            breedingWindow_exists: !!breedingWindow,
+            breedingWindow_content: breedingWindow,
+            isEligible: isEligible
+          })
+        }
+        return shouldShowNotEligible
+      })() && (
+        <Card className="border-red-300 bg-red-50">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center text-red-900">
+              <XCircle className="w-5 h-5 mr-2 text-red-600" />
+              Not Eligible for Breeding
+            </CardTitle>
+            <CardDescription className="text-red-800">
+              Please address the following before this animal can be bred:
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {breedingEligibility?.reasons.map((reason, idx) => (
+                <div key={idx} className="flex items-start gap-3 p-2 rounded bg-red-100/50">
+                  <AlertTriangle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
+                  <p className="text-sm text-red-800">{reason}</p>
+                </div>
+              ))}
+            </div>
+            
+            {breedingEligibility?.warnings && breedingEligibility.warnings.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-red-200">
+                <p className="text-xs font-semibold text-red-900 mb-2">⚠️ Additional Warnings:</p>
+                <div className="space-y-1">
+                  {breedingEligibility.warnings.map((warning, idx) => (
+                    <p key={idx} className="text-xs text-red-700 ml-4">• {warning}</p>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {/* Settings Summary */}

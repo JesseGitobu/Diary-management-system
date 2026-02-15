@@ -39,11 +39,17 @@ export interface FeedConsumptionEntry {
 export interface ConsumptionData {
   farmId: string
   feedingTime: string
-  mode: 'individual' | 'batch'
+  mode: 'individual' | 'batch' | 'feed-mix-recipe'
   batchId?: string
+  feedMixRecipeId?: string
   entries: FeedConsumptionEntry[]
   recordedBy?: string
   globalNotes?: string
+  appetiteScore?: number | null
+  approximateWasteKg?: number | null
+  observationalNotes?: string
+  observations?: any
+  animalCount?: number
 }
 
 export interface FeedConsumptionStats {
@@ -69,10 +75,25 @@ export async function recordFeedConsumption(
     // FIXED: Explicitly type the array
     const consumptionRecords: any[] = []
 
+    // Create proper timestamp
+    let feedingTimestamp: string
+    if (data.feedingTime) {
+      if (data.feedingTime.match(/^\d{2}:\d{2}$/)) {
+        const today = new Date()
+        const [hours, minutes] = data.feedingTime.split(':')
+        today.setHours(parseInt(hours), parseInt(minutes), 0, 0)
+        feedingTimestamp = today.toISOString()
+      } else {
+        feedingTimestamp = new Date(data.feedingTime).toISOString()
+      }
+    } else {
+      feedingTimestamp = new Date().toISOString()
+    }
+
     // Process each entry
     for (const entry of data.entries) {
       // Validate entry
-      if (!entry.feedTypeId || !entry.quantityKg) {
+      if (!entry.feedTypeId || entry.quantityKg === undefined) {
         return { success: false, error: 'Each entry must have feedTypeId and quantityKg' }
       }
 
@@ -85,36 +106,34 @@ export async function recordFeedConsumption(
         if (!entry.animalCount || entry.animalCount <= 0) {
           return { success: false, error: 'Batch mode requires animalCount greater than 0' }
         }
-      }
-
-      // Create proper timestamp
-      let feedingTimestamp: string
-      if (data.feedingTime) {
-        if (data.feedingTime.match(/^\d{2}:\d{2}$/)) {
-          const today = new Date()
-          const [hours, minutes] = data.feedingTime.split(':')
-          today.setHours(parseInt(hours), parseInt(minutes), 0, 0)
-          feedingTimestamp = today.toISOString()
-        } else {
-          feedingTimestamp = new Date(data.feedingTime).toISOString()
+      } else if (data.mode === 'feed-mix-recipe') {
+        if (!data.feedMixRecipeId) {
+          return { success: false, error: 'Feed mix recipe mode requires feedMixRecipeId' }
         }
-      } else {
-        feedingTimestamp = new Date().toISOString()
       }
 
       // Create consumption record
-      const insertData = {
+      const insertData: any = {
         farm_id: data.farmId,
         feed_type_id: entry.feedTypeId,
-        quantity_kg: parseFloat(entry.quantityKg.toString()),
+        quantity_kg: entry.quantityKg >= 0 ? parseFloat(entry.quantityKg.toString()) : 0,
         feeding_time: feedingTimestamp,
         feeding_mode: data.mode,
-        animal_count: data.mode === 'batch' ? entry.animalCount : (entry.animalIds?.length || 1),
-        consumption_batch_id: entry.batchId || data.batchId || undefined,
+        animal_count: data.animalCount || (data.mode === 'batch' ? entry.animalCount : (entry.animalIds?.length || 1)),
+        consumption_batch_id: data.batchId || entry.batchId || undefined,
+        feed_mix_recipe_id: data.mode === 'feed-mix-recipe' ? data.feedMixRecipeId : undefined,
         notes: entry.notes || data.globalNotes || undefined,
+        appetite_score: data.appetiteScore || undefined,
+        approximate_waste_kg: data.approximateWasteKg || undefined,
+        observational_notes: data.observationalNotes || undefined,
+        observations: data.observations || undefined,
+        entries: data.mode === 'feed-mix-recipe' ? data.entries : undefined,
         recorded_by: data.recordedBy || 'Unknown',
         created_by: userId
-      } as const
+      }
+
+      // Remove undefined values
+      Object.keys(insertData).forEach(key => insertData[key] === undefined && delete insertData[key])
 
       // FIXED: Cast to any to bypass 'never' type error
       const { data: consumptionRecord, error: consumptionError } = await (supabase
@@ -131,8 +150,8 @@ export async function recordFeedConsumption(
         }
       }
 
-      // Create animal consumption records
-      if (entry.animalIds && entry.animalIds.length > 0) {
+      // Create animal consumption records (for individual/batch modes)
+      if ((data.mode === 'individual' || data.mode === 'batch') && entry.animalIds && entry.animalIds.length > 0) {
         // Calculate quantity per animal
         let quantityPerAnimal: number
         if (entry.perCowQuantityKg) {
@@ -143,8 +162,7 @@ export async function recordFeedConsumption(
 
         const animalRecords = entry.animalIds.map(animalId => ({
           consumption_id: consumptionRecord.id,
-          animal_id: animalId,
-          //quantity_kg: quantityPerAnimal
+          animal_id: animalId
         }))
 
         // FIXED: Cast to any
@@ -159,8 +177,10 @@ export async function recordFeedConsumption(
         }
       }
 
-      // Update inventory (deduct consumed feed)
-      await updateFeedInventory(data.farmId, entry.feedTypeId, -entry.quantityKg)
+      // Update inventory (deduct consumed feed) - only for non-zero quantities
+      if (entry.quantityKg > 0) {
+        await updateFeedInventory(data.farmId, entry.feedTypeId, -entry.quantityKg)
+      }
 
       consumptionRecords.push(consumptionRecord)
     }
@@ -215,16 +235,25 @@ export async function updateFeedConsumption(
     }
 
     // Update consumption record
-    const updateData: Partial<FeedConsumptionRecord> = {
+    const updateData: any = {
       feed_type_id: entry.feedTypeId,
       quantity_kg: parseFloat(entry.quantityKg.toString()),
       feeding_time: feedingTimestamp,
       feeding_mode: data.mode,
-      animal_count: data.mode === 'batch' ? entry.animalCount : (entry.animalIds?.length || 1),
-      consumption_batch_id: entry.batchId || data.batchId || undefined,
+      animal_count: data.animalCount || (data.mode === 'batch' ? entry.animalCount : (entry.animalIds?.length || 1)),
+      consumption_batch_id: data.batchId || entry.batchId || undefined,
+      feed_mix_recipe_id: data.mode === 'feed-mix-recipe' ? data.feedMixRecipeId : undefined,
       notes: entry.notes || data.globalNotes || undefined,
+      appetite_score: data.appetiteScore || undefined,
+      approximate_waste_kg: data.approximateWasteKg || undefined,
+      observational_notes: data.observationalNotes || undefined,
+      observations: data.observations || undefined,
+      entries: data.mode === 'feed-mix-recipe' ? data.entries : undefined,
       updated_at: new Date().toISOString()
     }
+
+    // Remove undefined values
+    Object.keys(updateData).forEach(key => updateData[key] === undefined && delete updateData[key])
 
     // FIXED: Cast to any
     const { data: updatedRecord, error: updateError } = await (supabase
@@ -243,36 +272,36 @@ export async function updateFeedConsumption(
       }
     }
 
-    // Delete existing animal records
-    // FIXED: Cast to any
-    await (supabase
-      .from('feed_consumption_animals') as any)
-      .delete()
-      .eq('consumption_id', recordId)
-
-    // Create new animal consumption records
-    if (entry.animalIds && entry.animalIds.length > 0) {
-      let quantityPerAnimal: number
-      if (entry.perCowQuantityKg) {
-        quantityPerAnimal = entry.perCowQuantityKg
-      } else {
-        quantityPerAnimal = entry.quantityKg / entry.animalIds.length
-      }
-
-      const animalRecords = entry.animalIds.map(animalId => ({
-        consumption_id: recordId,
-        animal_id: animalId,
-        quantity_kg: quantityPerAnimal,
-        feeding_time: feedingTimestamp
-      }))
-
+    // Delete existing animal records for individual/batch modes
+    if (data.mode === 'individual' || data.mode === 'batch') {
       // FIXED: Cast to any
-      const { error: animalError } = await (supabase
+      await (supabase
         .from('feed_consumption_animals') as any)
-        .insert(animalRecords)
+        .delete()
+        .eq('consumption_id', recordId)
 
-      if (animalError) {
-        console.error('Animal consumption insert error:', animalError)
+      // Create new animal consumption records
+      if (entry.animalIds && entry.animalIds.length > 0) {
+        let quantityPerAnimal: number
+        if (entry.perCowQuantityKg) {
+          quantityPerAnimal = entry.perCowQuantityKg
+        } else {
+          quantityPerAnimal = entry.quantityKg / entry.animalIds.length
+        }
+
+        const animalRecords = entry.animalIds.map(animalId => ({
+          consumption_id: recordId,
+          animal_id: animalId
+        }))
+
+        // FIXED: Cast to any
+        const { error: animalError } = await (supabase
+          .from('feed_consumption_animals') as any)
+          .insert(animalRecords)
+
+        if (animalError) {
+          console.error('Animal consumption insert error:', animalError)
+        }
       }
     }
 
@@ -290,7 +319,9 @@ export async function updateFeedConsumption(
     } else {
       // Different feed type - restore original and deduct new
       await updateFeedInventory(data.farmId, original.feed_type_id, original.quantity_kg)
-      await updateFeedInventory(data.farmId, entry.feedTypeId, -entry.quantityKg)
+      if (entry.quantityKg > 0) {
+        await updateFeedInventory(data.farmId, entry.feedTypeId, -entry.quantityKg)
+      }
     }
 
     return { success: true, data: updatedRecord }
@@ -302,6 +333,7 @@ export async function updateFeedConsumption(
     }
   }
 }
+    
 
 // ============ DELETE FEED CONSUMPTION ============
 

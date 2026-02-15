@@ -107,6 +107,7 @@ export async function GET(
         event_date: e.event_date,
         insemination_method: e.insemination_method,
         technician_name: e.technician_name,
+        estimated_due_date: e.estimated_due_date,  // ✅ ADDED: For PregnancyCheckForm
         created_at: e.created_at
       }))
 

@@ -146,6 +146,7 @@ interface BatchFormData {
   breeding_status: string
   milk_production: string
   body_condition: string
+  health_status: string
   season: string
 }
 
@@ -196,6 +197,7 @@ export function ConsumptionBatchesManager({
     breeding_status: '',
     milk_production: '',
     body_condition: '',
+    health_status: '',
     season: ''
   })
 
@@ -215,9 +217,34 @@ export function ConsumptionBatchesManager({
       breeding_status: '',
       milk_production: '',
       body_condition: '',
+      health_status: '',
       season: ''
     })
   }, [])
+
+  // Auto-calculate Quantity per Feeding from feed type categories
+  useEffect(() => {
+    const totalQuantity = batchFormData.feed_type_categories.reduce((sum, category) => {
+      return sum + (category.quantity_kg || 0)
+    }, 0)
+    
+    setBatchFormData(prev => ({
+      ...prev,
+      default_quantity_kg: totalQuantity > 0 ? totalQuantity.toFixed(3) : ''
+    }))
+  }, [batchFormData.feed_type_categories])
+
+  // Auto-calculate Daily Consumption per Animal
+  useEffect(() => {
+    const totalPerFeeding = parseFloat(batchFormData.default_quantity_kg) || 0
+    const feedingFrequency = parseInt(batchFormData.feeding_frequency_per_day) || 1
+    const dailyConsumption = totalPerFeeding * feedingFrequency
+    
+    setBatchFormData(prev => ({
+      ...prev,
+      daily_consumption_per_animal_kg: dailyConsumption > 0 ? dailyConsumption.toFixed(3) : ''
+    }))
+  }, [batchFormData.default_quantity_kg, batchFormData.feeding_frequency_per_day])
 
   const fetchBatchAnimals = async (batchId: string) => {
     try {
@@ -356,6 +383,7 @@ export function ConsumptionBatchesManager({
       breeding_status: batch.batch_factors?.breeding_status || '',
       milk_production: batch.batch_factors?.milk_production || '',
       body_condition: batch.batch_factors?.body_condition || '',
+      health_status: batch.batch_factors?.health_status || '',
       season: batch.batch_factors?.season || ''
     })
     setEditingBatch(batch)
@@ -391,6 +419,7 @@ export function ConsumptionBatchesManager({
         breeding_status: batchFormData.breeding_status,
         milk_production: batchFormData.milk_production,
         body_condition: batchFormData.body_condition,
+        health_status: batchFormData.health_status,
         season: batchFormData.season
       }
 
@@ -400,6 +429,11 @@ export function ConsumptionBatchesManager({
           delete batchFactors[key as keyof typeof batchFactors]
         }
       })
+
+      // Sanitize feeding times to ensure HH:MM format
+      const sanitizedFeedingTimes = batchFormData.feeding_times
+        .map(time => (typeof time === 'string' ? time.trim() : ''))
+        .filter(time => /^([01]\d|2[0-3]):([0-5]\d)$/.test(time))
 
       const payload = {
         batch_name: batchFormData.batch_name,
@@ -411,10 +445,10 @@ export function ConsumptionBatchesManager({
         daily_consumption_per_animal_kg: parseFloat(batchFormData.daily_consumption_per_animal_kg) || 0,
         consumption_unit: batchFormData.consumption_unit,
         feeding_frequency_per_day: parseInt(batchFormData.feeding_frequency_per_day) || 2,
-        feeding_times: batchFormData.feeding_times,
+        feeding_times: sanitizedFeedingTimes,
         target_mode: batchFormData.target_mode,
         feeding_schedule: {
-          times: batchFormData.feeding_times,
+          times: sanitizedFeedingTimes,
           frequency: parseInt(batchFormData.feeding_frequency_per_day),
           feed_categories: batchFormData.feed_type_categories
         },
@@ -535,10 +569,6 @@ export function ConsumptionBatchesManager({
               <Eye className="mr-2 h-4 w-4" />
               View Animals ({batch.targeted_animals_count || 0})
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => handleViewFactors(batch)}>
-              <Settings className="mr-2 h-4 w-4" />
-              Manage Factors
-            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => handleViewInsights(batch)}>
               <BarChart3 className="mr-2 h-4 w-4" />
               View Insights
@@ -566,33 +596,26 @@ export function ConsumptionBatchesManager({
     }
 
     return (
-      <div className="flex items-center space-x-2">
+      <div className="flex flex-wrap gap-1 sm:gap-2 justify-end">
         <Button
           variant="outline"
           size="sm"
           onClick={() => handleViewAnimals(batch)}
-          className="hover:bg-blue-50"
+          className="hover:bg-blue-50 text-xs sm:text-sm px-2 sm:px-3"
         >
-          <Eye className="h-4 w-4 mr-1" />
-          {batch.targeted_animals_count || 0} Animals
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => handleViewFactors(batch)}
-          className="hover:bg-blue-50"
-        >
-          <Settings className="h-4 w-4 mr-1" />
-          Factors
+          <Eye className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+          <span className="hidden sm:inline">Animals</span>
+          <span className="sm:hidden">View</span>
         </Button>
         <Button
           variant="outline"
           size="sm"
           onClick={() => handleViewInsights(batch)}
-          className="hover:bg-blue-50"
+          className="hover:bg-blue-50 text-xs sm:text-sm px-2 sm:px-3"
         >
-          <BarChart3 className="h-4 w-4 mr-1" />
-          Insights
+          <BarChart3 className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+          <span className="hidden sm:inline">Insights</span>
+          <span className="sm:hidden">Info</span>
         </Button>
         {canEdit && (
           <>
@@ -600,20 +623,20 @@ export function ConsumptionBatchesManager({
               variant="outline"
               size="sm"
               onClick={() => handleEditBatch(batch)}
-              className="hover:bg-blue-50"
+              className="hover:bg-blue-50 text-xs sm:text-sm px-2 sm:px-3"
             >
-              <Edit className="h-4 w-4 mr-1" />
-              Edit
+              <Edit className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+              <span className="hidden lg:inline">Edit</span>
             </Button>
             {!batch.is_preset && (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setDeletingBatch(batch)}
-                className="text-red-600 border-red-200 hover:bg-red-50"
+                className="text-red-600 border-red-200 hover:bg-red-50 text-xs sm:text-sm px-2 sm:px-3"
               >
-                <Trash2 className="h-4 w-4 mr-1" />
-                Delete
+                <Trash2 className="h-3 w-3 sm:h-4 sm:w-4 mr-0 sm:mr-1" />
+                <span className="hidden sm:inline">Delete</span>
               </Button>
             )}
           </>
@@ -648,92 +671,100 @@ export function ConsumptionBatchesManager({
             return (
               <div
                 key={batch.id}
-                className={`p-4 border rounded-lg ${isMobile ? 'space-y-3' : 'flex items-center justify-between'
-                  }`}
+                className={`p-3 sm:p-4 border rounded-lg transition-all hover:shadow-md ${
+                  isMobile ? 'space-y-3' : 'flex flex-col lg:flex-row lg:items-start lg:gap-4'
+                }`}
               >
-                <div className={`flex-1 ${isMobile ? 'space-y-2' : 'flex items-center space-x-4'}`}>
-                  <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
+                {/* Icon and Header - Compact on Mobile */}
+                <div className={`flex-shrink-0 ${isMobile ? '' : 'lg:w-12'}`}>
+                  <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
                     <Utensils className="w-5 h-5 text-orange-600" />
                   </div>
+                </div>
 
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-2 mb-1">
-                      <h4 className="font-medium">{batch.batch_name}</h4>
-                      {batch.is_preset && (
-                        <Badge variant="secondary" className="text-xs">Preset</Badge>
-                      )}
-                      <Badge
-                        variant="outline"
-                        className={`text-xs text-${targetModeDisplay.color}-700 bg-${targetModeDisplay.color}-50`}
-                      >
-                        {targetModeDisplay.label}
-                      </Badge>
-                      {!batch.is_active && (
-                        <Badge variant="outline" className="text-xs">Inactive</Badge>
-                      )}
+                {/* Main Content Section - Responsive Layout */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-col space-y-2">
+                    {/* Title with Badges - Wrapping for Mobile */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h4 className="font-medium text-sm sm:text-base truncate">{batch.batch_name}</h4>
+                      <div className="flex flex-wrap gap-1">
+                        {batch.is_preset && (
+                          <Badge variant="secondary" className="text-xs flex-shrink-0">Preset</Badge>
+                        )}
+                        <Badge
+                          variant="outline"
+                          className={`text-xs flex-shrink-0 text-${targetModeDisplay.color}-700 bg-${targetModeDisplay.color}-50`}
+                        >
+                          {targetModeDisplay.label}
+                        </Badge>
+                        {!batch.is_active && (
+                          <Badge variant="outline" className="text-xs flex-shrink-0">Inactive</Badge>
+                        )}
+                      </div>
                     </div>
 
+                    {/* Description - Line Clamped for Mobile */}
                     {batch.description && (
-                      <p className="text-sm text-gray-600 mb-2">{batch.description}</p>
+                      <p className="text-xs sm:text-sm text-gray-600 line-clamp-2">{batch.description}</p>
                     )}
 
-                    <div className="flex flex-wrap gap-2 text-xs text-gray-500 mb-2">
-                      <div className="flex items-center space-x-1">
-                        <Users className="w-3 h-3" />
-                        <span>{batch.targeted_animals_count || 0} targeted animals</span>
+                    {/* Key Metrics Grid - Responsive */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 text-xs text-gray-600 py-2">
+                      <div className="flex items-center space-x-1 min-w-0">
+                        <Users className="w-3 h-3 flex-shrink-0" />
+                        <span className="truncate">{batch.targeted_animals_count || 0} animals</span>
                       </div>
+                      
+                      <div className="flex items-center space-x-1 min-w-0">
+                        <Target className="w-3 h-3 flex-shrink-0" />
+                        <span className="truncate">{batch.default_quantity_kg}kg</span>
+                      </div>
+                      
+                      <div className="flex items-center space-x-1 min-w-0">
+                        <Clock className="w-3 h-3 flex-shrink-0" />
+                        <span className="truncate">{batch.feeding_frequency_per_day}x/day</span>
+                      </div>
+                      
                       {batch.target_mode === 'mixed' && (
-                        <>
-                          <span>•</span>
-                          <span>{batch.category_animals_count || 0} from categories</span>
-                          <span>•</span>
-                          <span>{batch.specific_animals_count || 0} specific</span>
-                        </>
+                        <div className="flex items-center space-x-1 min-w-0">
+                          <Tags className="w-3 h-3 flex-shrink-0" />
+                          <span className="truncate">Mixed</span>
+                        </div>
                       )}
-                      <span>•</span>
-                      <div className="flex items-center space-x-1">
-                        <Target className="w-3 h-3" />
-                        <span>{batch.default_quantity_kg}kg per feeding</span>
-                      </div>
-                      <span>•</span>
-                      <div className="flex items-center space-x-1">
-                        <Clock className="w-3 h-3" />
-                        <span>{batch.feeding_frequency_per_day}x daily</span>
-                      </div>
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
+                    {/* Feature Tags - Responsive Wrapping */}
+                    <div className={`flex flex-wrap gap-2 text-xs ${isMobile ? 'pt-1' : 'lg:pt-1'}`}>
                       {batch.animal_category_ids?.length > 0 && (
-                        <div className="flex items-center space-x-1">
-                          <Users className="w-3 h-3 text-blue-600" />
-                          <span className="text-xs text-blue-600">
-                            {batch.animal_category_ids.length} categories
-                          </span>
+                        <div className="flex items-center space-x-1 px-2 py-1 bg-blue-50 rounded text-blue-700 whitespace-nowrap">
+                          <Users className="w-3 h-3 flex-shrink-0" />
+                          <span className="hidden sm:inline">{batch.animal_category_ids.length} categories</span>
+                          <span className="sm:hidden">{batch.animal_category_ids.length} cat.</span>
                         </div>
                       )}
 
                       {batch.feed_type_categories?.length > 0 && (
-                        <div className="flex items-center space-x-1">
-                          <Tags className="w-3 h-3 text-green-600" />
-                          <span className="text-xs text-green-600">
-                            {batch.feed_type_categories.length} feed types
-                          </span>
+                        <div className="flex items-center space-x-1 px-2 py-1 bg-green-50 rounded text-green-700 whitespace-nowrap">
+                          <Tags className="w-3 h-3 flex-shrink-0" />
+                          <span className="hidden sm:inline">{batch.feed_type_categories.length} feed types</span>
+                          <span className="sm:hidden">{batch.feed_type_categories.length} feed</span>
                         </div>
                       )}
 
                       {batch.batch_factors && Object.keys(batch.batch_factors).length > 0 && (
-                        <div className="flex items-center space-x-1">
-                          <Settings className="w-3 h-3 text-purple-600" />
-                          <span className="text-xs text-purple-600">
-                            {Object.keys(batch.batch_factors).length} factors
-                          </span>
+                        <div className="flex items-center space-x-1 px-2 py-1 bg-purple-50 rounded text-purple-700 whitespace-nowrap">
+                          <Settings className="w-3 h-3 flex-shrink-0" />
+                          <span className="hidden sm:inline">{Object.keys(batch.batch_factors).length} factors</span>
+                          <span className="sm:hidden">{Object.keys(batch.batch_factors).length} fac.</span>
                         </div>
                       )}
                     </div>
                   </div>
                 </div>
 
-                <div className={isMobile ? 'self-end' : ''}>
+                {/* Action Buttons - Mobile Optimized */}
+                <div className={`flex-shrink-0 ${isMobile ? 'pt-2 border-t' : 'lg:pt-0'}`}>
                   <BatchActionButtons batch={batch} />
                 </div>
               </div>
@@ -1313,29 +1344,51 @@ export function ConsumptionBatchesManager({
               <h4 className="font-medium text-gray-900">Feeding Quantities</h4>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <Label htmlFor="default_quantity_kg">Quantity per Feeding (kg)</Label>
-                  <Input
-                    id="default_quantity_kg"
-                    type="number"
-                    step="0.1"
-                    value={batchFormData.default_quantity_kg}
-                    onChange={(e) => setBatchFormData(prev => ({ ...prev, default_quantity_kg: e.target.value }))}
-                    placeholder="25.0"
-                  />
+                  <Label htmlFor="default_quantity_kg">
+                    Total Quantity per Feeding (kg)
+                    <span className="text-xs text-blue-600 ml-1">(auto-calculated)</span>
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id="default_quantity_kg"
+                      type="number"
+                      step="0.001"
+                      value={batchFormData.default_quantity_kg}
+                      readOnly
+                      placeholder="Sum of feed type categories"
+                      className="bg-blue-50 cursor-not-allowed"
+                    />
+                    <div className="absolute right-3 top-2.5 text-blue-600">
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">Automatically sum of all selected feed type categories below</p>
                 </div>
 
                 <div>
-                  <Label htmlFor="daily_consumption">Daily Consumption per Animal</Label>
+                  <Label htmlFor="daily_consumption">
+                    Daily Consumption per Animal
+                    <span className="text-xs text-blue-600 ml-1">(auto-calculated)</span>
+                  </Label>
                   <div className="flex space-x-2">
-                    <Input
-                      id="daily_consumption"
-                      type="number"
-                      step="0.001"
-                      value={batchFormData.daily_consumption_per_animal_kg}
-                      onChange={(e) => setBatchFormData(prev => ({ ...prev, daily_consumption_per_animal_kg: e.target.value }))}
-                      placeholder="2.5"
-                      className="flex-1"
-                    />
+                    <div className="flex-1 relative">
+                      <Input
+                        id="daily_consumption"
+                        type="number"
+                        step="0.001"
+                        value={batchFormData.daily_consumption_per_animal_kg}
+                        readOnly
+                        placeholder="Quantity × Feedings"
+                        className="bg-blue-50 cursor-not-allowed"
+                      />
+                      <div className="absolute right-3 top-2.5 text-blue-600">
+                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                    </div>
                     <select
                       value={batchFormData.consumption_unit}
                       onChange={(e) => setBatchFormData(prev => ({ ...prev, consumption_unit: e.target.value as 'kg' | 'grams' }))}
@@ -1345,6 +1398,7 @@ export function ConsumptionBatchesManager({
                       <option value="grams">grams</option>
                     </select>
                   </div>
+                  <p className="text-xs text-gray-500 mt-1">Quantity per Feeding × Feedings per Day</p>
                 </div>
 
                 <div>
@@ -1360,6 +1414,7 @@ export function ConsumptionBatchesManager({
                     <option value="3">3 times daily</option>
                     <option value="4">4 times daily</option>
                   </select>
+                  <p className="text-xs text-gray-500 mt-1">Affects daily consumption calculation</p>
                 </div>
               </div>
             </div>
@@ -1460,39 +1515,74 @@ export function ConsumptionBatchesManager({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="age_factor">Age Factor</Label>
-                  <Input
+                  <select
                     id="age_factor"
                     value={batchFormData.age_factor}
                     onChange={(e) => setBatchFormData(prev => ({ ...prev, age_factor: e.target.value }))}
-                    placeholder="e.g., young, mature, senior"
-                  />
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Select age factor...</option>
+                    <option value="young">Young</option>
+                    <option value="mature">Mature</option>
+                    <option value="senior">Senior</option>
+                  </select>
                 </div>
                 <div>
                   <Label htmlFor="breeding_status">Breeding Status</Label>
-                  <Input
+                  <select
                     id="breeding_status"
                     value={batchFormData.breeding_status}
                     onChange={(e) => setBatchFormData(prev => ({ ...prev, breeding_status: e.target.value }))}
-                    placeholder="e.g., pregnant, dry, lactating"
-                  />
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Select breeding status...</option>
+                    <option value="pregnant">Pregnant</option>
+                    <option value="dry">Dry</option>
+                    <option value="lactating">Lactating</option>
+                  </select>
                 </div>
                 <div>
                   <Label htmlFor="milk_production">Milk Production Level</Label>
-                  <Input
+                  <select
                     id="milk_production"
                     value={batchFormData.milk_production}
                     onChange={(e) => setBatchFormData(prev => ({ ...prev, milk_production: e.target.value }))}
-                    placeholder="e.g., high, medium, low"
-                  />
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Select production level...</option>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                  </select>
                 </div>
                 <div>
                   <Label htmlFor="body_condition">Body Condition</Label>
-                  <Input
+                  <select
                     id="body_condition"
                     value={batchFormData.body_condition}
                     onChange={(e) => setBatchFormData(prev => ({ ...prev, body_condition: e.target.value }))}
-                    placeholder="e.g., good, thin, fat"
-                  />
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Select body condition...</option>
+                    <option value="good">Good</option>
+                    <option value="thin">Thin</option>
+                    <option value="fat">Fat</option>
+                  </select>
+                </div>
+                <div>
+                  <Label htmlFor="health_status">Health Status</Label>
+                  <select
+                    id="health_status"
+                    value={batchFormData.health_status}
+                    onChange={(e) => setBatchFormData(prev => ({ ...prev, health_status: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Select health status...</option>
+                    <option value="healthy">Healthy</option>
+                    <option value="sick">Sick</option>
+                    <option value="requires_attention">Requires Attention</option>
+                    <option value="quarantined">Quarantined</option>
+                  </select>
                 </div>
               </div>
             </div>

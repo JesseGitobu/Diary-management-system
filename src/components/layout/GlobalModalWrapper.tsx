@@ -33,6 +33,7 @@ interface GlobalModalWrapperProps {
   feedTypeCategories?: any[]
   animalCategories?: any[]
   weightConversions?: any[]
+  feedMixRecipes?: any[]
   
   // Health props
   veterinarians?: any[]
@@ -52,6 +53,7 @@ export function GlobalModalWrapper({
   feedTypeCategories = [],
   animalCategories = [],
   weightConversions = [],
+  feedMixRecipes = [],
   veterinarians = [],
   channels = [],
   availableVolume = 0,
@@ -144,6 +146,7 @@ export function GlobalModalWrapper({
           isMobile={true}
           feedTypeCategories={feedTypeCategories}
           animalCategories={animalCategories}
+          feedMixRecipes={feedMixRecipes}
         />
       )}
       {activeModal === 'showAddFeedTypeModal' && (

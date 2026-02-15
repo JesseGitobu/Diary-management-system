@@ -4,7 +4,7 @@ import { getUserRole } from '@/lib/database/auth'
 import { redirect } from 'next/navigation'
 import { DashboardHeader } from '@/components/layout/DashboardHeader'
 import { DashboardSidebar } from '@/components/layout/DashboardSidebar'
-import { MobileHeader } from '@/components/mobile/MobileHeader'
+import { MobileHeaderWrapper } from '@/components/mobile/MobileHeaderWrapper'
 import { MobileBottomNav } from '@/components/mobile/MobileBottomNav'
 import { GlobalModalWrapper } from '@/components/layout/GlobalModalWrapper'
 
@@ -30,7 +30,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (!userRole?.farm_id) {
     return (
       <div className="flex flex-col h-screen overflow-hidden bg-gray-50">
-        <MobileHeader farmId={null} />
+        <MobileHeaderWrapper farmId={null} />
         <main className="flex-1 hide-scrollbar overflow-y-auto overflow-x-hidden pb-20 md:pb-0">
           <div className="py-4 md:py-6">{children}</div>
         </main>
@@ -95,7 +95,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       
       {/* Sticky mobile header - stays in document flow */}
       <div className="sticky top-0 z-50 md:hidden bg-white">
-        <MobileHeader 
+        <MobileHeaderWrapper 
           trackingFeatures={trackingFeatures}
           animalCount={animalCount}
           farmId={userRole.farm_id}
