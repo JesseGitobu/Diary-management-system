@@ -87,6 +87,11 @@ export function ProductionDistributionDashboard({
   const [showActionSheet, setShowActionSheet] = useState(false)
   const [productionRecords, setProductionRecords] = useState(initialProductionRecords)
   const [distributionRecords, setDistributionRecords] = useState(initialDistributionRecords)
+  
+  // State for viewing/editing production records
+  const [selectedProductionRecord, setSelectedProductionRecord] = useState<any>(null)
+  const [showProductionDetailModal, setShowProductionDetailModal] = useState(false)
+  const [showProductionEditModal, setShowProductionEditModal] = useState(false)
 
   useEffect(() => {
     const handleMobileNavAction = (event: Event) => {
@@ -111,8 +116,30 @@ export function ProductionDistributionDashboard({
   const canAddRecords = ['farm_owner', 'farm_manager', 'worker'].includes(userRole)
   const canManageDistribution = ['farm_owner', 'farm_manager'].includes(userRole)
   
+  // Production Record Handlers
+  const handleViewProductionRecord = (record: any) => {
+    setSelectedProductionRecord(record)
+    setShowProductionDetailModal(true)
+  }
+
+  const handleEditProductionRecord = (record: any) => {
+    setSelectedProductionRecord(record)
+    setShowProductionEditModal(true)
+  }
+
+  const handleDeleteProductionRecord = (recordId: string) => {
+    // Remove the record from the list
+    setProductionRecords(prev => prev.filter(r => r.id !== recordId))
+  }
+  
   const handleProductionRecordAdded = () => {
     setShowProductionEntryModal(false)
+    window.location.reload()
+  }
+
+  const handleProductionRecordEdited = () => {
+    setShowProductionEditModal(false)
+    setSelectedProductionRecord(null)
     window.location.reload()
   }
 
@@ -320,13 +347,25 @@ export function ProductionDistributionDashboard({
           icon: Plus,
           color: 'text-blue-600',
           onClick: () => setShowProductionEntryModal(true)
-        },
-        // ... other items
+        }
       ] : []
     } else {
-      return [
-        // ... distribution items
-      ]
+      return canAddRecords ? [
+        {
+          id: 'record-distribution',
+          label: 'Record Distribution',
+          icon: Plus,
+          color: 'text-blue-600',
+          onClick: () => setShowDistributionEntryModal(true)
+        },
+        {
+          id: 'manage-channels',
+          label: 'Manage Channels',
+          icon: Settings,
+          color: 'text-purple-600',
+          onClick: () => setShowChannelModal(true)
+        }
+      ] : []
     }
   }
 
@@ -359,10 +398,16 @@ export function ProductionDistributionDashboard({
                </Button>
             )}
              {!isMobile && activeTab === 'distribution' && canAddRecords && (
-               <Button onClick={() => setShowDistributionEntryModal(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Record Distribution
-               </Button>
+               <>
+                  <Button onClick={() => setShowDistributionEntryModal(true)}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Record Distribution
+                  </Button>
+                  <Button onClick={() => setShowChannelModal(true)} variant="outline">
+                    <Settings className="mr-2 h-4 w-4" />
+                    Manage Channels
+                  </Button>
+               </>
             )}
             {isMobile && canAddRecords && (
               <Button onClick={() => setShowActionSheet(true)} size="lg" className="h-12 w-12 rounded-full p-0">
@@ -436,6 +481,9 @@ export function ProductionDistributionDashboard({
                   records={productionRecords} 
                   canEdit={canAddRecords}
                   isMobile={isMobile}
+                  onView={handleViewProductionRecord}
+                  onEdit={handleEditProductionRecord}
+                  onDelete={handleDeleteProductionRecord}
                 />
               </CardContent>
             </Card>
@@ -534,6 +582,165 @@ export function ProductionDistributionDashboard({
           </div>
         </Modal>
       )}
-    </div>
+
+      {/* Production Record Detail View Modal */}
+      {showProductionDetailModal && selectedProductionRecord && (
+        <Modal 
+          isOpen={showProductionDetailModal} 
+          onClose={() => {
+            setShowProductionDetailModal(false)
+            setSelectedProductionRecord(null)
+          }}
+          className={`${isMobile ? 'max-w-full mx-4 my-4 h-[90vh] overflow-y-auto' : 'max-w-2xl'}`}
+        >
+          <div className={`${isMobile ? 'p-4' : 'p-6'}`}>
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                  {selectedProductionRecord.animals?.name || `Animal ${selectedProductionRecord.animals?.tag_number}`}
+                </h2>
+                <p className="text-gray-600">Tag: {selectedProductionRecord.animals?.tag_number}</p>
+              </div>
+
+              {/* Basic Info */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4 border-b border-gray-200">
+                <div>
+                  <label className="text-sm font-semibold text-gray-700">Date</label>
+                  <p className="text-lg text-gray-900">{new Date(selectedProductionRecord.record_date).toLocaleDateString('en-GB')}</p>
+                </div>
+                <div>
+                  <label className="text-sm font-semibold text-gray-700">Milking Session</label>
+                  <p className="text-lg text-gray-900 capitalize">{selectedProductionRecord.milking_session}</p>
+                </div>
+                <div>
+                  <label className="text-sm font-semibold text-gray-700">Milk Volume</label>
+                  <p className="text-lg text-gray-900">{selectedProductionRecord.milk_volume} Liters</p>
+                </div>
+                <div>
+                  <label className="text-sm font-semibold text-gray-700">Safety Status</label>
+                  <Badge className={
+                    selectedProductionRecord.milk_safety_status === 'safe' 
+                      ? 'bg-green-100 text-green-800 mt-1' 
+                      : selectedProductionRecord.milk_safety_status === 'unsafe_health'
+                      ? 'bg-red-100 text-red-800 mt-1'
+                      : 'bg-yellow-100 text-yellow-800 mt-1'
+                  }>
+                    {selectedProductionRecord.milk_safety_status === 'safe' && 'Safe'}
+                    {selectedProductionRecord.milk_safety_status === 'unsafe_health' && 'Unsafe - Health'}
+                    {selectedProductionRecord.milk_safety_status === 'unsafe_colostrum' && 'Colostrum'}
+                  </Badge>
+                </div>
+              </div>
+
+              {/* Quality Metrics */}
+              {(selectedProductionRecord.fat_content || selectedProductionRecord.protein_content || 
+                selectedProductionRecord.somatic_cell_count || selectedProductionRecord.temperature || 
+                selectedProductionRecord.ph_level || selectedProductionRecord.lactose_content) && (
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Quality Parameters</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    {selectedProductionRecord.fat_content && (
+                      <div className="bg-orange-50 p-4 rounded-lg">
+                        <p className="text-sm text-orange-600 font-medium">Fat Content</p>
+                        <p className="text-2xl font-bold text-orange-600">{selectedProductionRecord.fat_content}%</p>
+                      </div>
+                    )}
+                    {selectedProductionRecord.protein_content && (
+                      <div className="bg-green-50 p-4 rounded-lg">
+                        <p className="text-sm text-green-600 font-medium">Protein Content</p>
+                        <p className="text-2xl font-bold text-green-600">{selectedProductionRecord.protein_content}%</p>
+                      </div>
+                    )}
+                    {selectedProductionRecord.somatic_cell_count && (
+                      <div className="bg-purple-50 p-4 rounded-lg">
+                        <p className="text-sm text-purple-600 font-medium">SCC</p>
+                        <p className="text-2xl font-bold text-purple-600">{(selectedProductionRecord.somatic_cell_count / 1000).toFixed(0)}k</p>
+                      </div>
+                    )}
+                    {selectedProductionRecord.temperature && (
+                      <div className="bg-red-50 p-4 rounded-lg">
+                        <p className="text-sm text-red-600 font-medium">Temperature</p>
+                        <p className="text-2xl font-bold text-red-600">{selectedProductionRecord.temperature}°C</p>
+                      </div>
+                    )}
+                    {selectedProductionRecord.ph_level && (
+                      <div className="bg-indigo-50 p-4 rounded-lg">
+                        <p className="text-sm text-indigo-600 font-medium">pH Level</p>
+                        <p className="text-2xl font-bold text-indigo-600">{selectedProductionRecord.ph_level}</p>
+                      </div>
+                    )}
+                    {selectedProductionRecord.lactose_content && (
+                      <div className="bg-blue-50 p-4 rounded-lg">
+                        <p className="text-sm text-blue-600 font-medium">Lactose</p>
+                        <p className="text-2xl font-bold text-blue-600">{selectedProductionRecord.lactose_content}%</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Notes */}
+              {selectedProductionRecord.notes && (
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Notes</h3>
+                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <p className="text-gray-700">{selectedProductionRecord.notes}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Metadata */}
+              <div className="pt-4 border-t border-gray-200">
+                <p className="text-xs text-gray-500">
+                  Recorded on {new Date(selectedProductionRecord.created_at).toLocaleString('en-GB')}
+                </p>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center gap-3">
+                <Button 
+                  onClick={() => handleEditProductionRecord(selectedProductionRecord)}
+                  className="flex-1"
+                >
+                  Edit Record
+                </Button>
+                <Button 
+                  variant="outline"
+                  onClick={() => {
+                    setShowProductionDetailModal(false)
+                    setSelectedProductionRecord(null)
+                  }}
+                  className="flex-1"
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Production Record Edit Modal */}
+      {showProductionEditModal && selectedProductionRecord && (
+        <Modal 
+          isOpen={showProductionEditModal} 
+          onClose={() => {
+            setShowProductionEditModal(false)
+            setSelectedProductionRecord(null)
+          }}
+          className={`${isMobile ? 'max-w-full mx-4 my-4 h-[90vh] overflow-y-auto' : 'max-w-4xl'}`}
+        >
+          <div className={`${isMobile ? 'p-4' : 'p-6'}`}>
+            <ProductionEntryForm
+              farmId={farmId}
+              animals={animals}
+              initialData={selectedProductionRecord}
+              onSuccess={handleProductionRecordEdited}
+              isMobile={isMobile}
+              settings={productionSettings}
+            />
+          </div>
+        </Modal>
+      )}    </div>
   )
 }

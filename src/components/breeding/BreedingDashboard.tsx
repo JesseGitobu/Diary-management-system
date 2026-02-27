@@ -84,6 +84,25 @@ export function BreedingDashboard({
   const [timelineUpdateTrigger, setTimelineUpdateTrigger] = useState(0)
 
   const [mounted, setMounted] = useState(false)
+  const [pregnantAnimals, setPregnantAnimals] = useState<any[]>([])
+
+  // Fetch pregnant animals on mount
+  useEffect(() => {
+    const loadPregnantAnimals = async () => {
+      try {
+        const response = await fetch(`/api/breeding/pregnant?farmId=${farmId}`)
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success && data.pregnantAnimals) {
+            setPregnantAnimals(data.pregnantAnimals)
+          }
+        }
+      } catch (error) {
+        console.error('Error loading pregnant animals:', error)
+      }
+    }
+    loadPregnantAnimals()
+  }, [farmId])
 
   useEffect(() => {
     setMounted(true)
@@ -144,29 +163,31 @@ export function BreedingDashboard({
     })
   }, [calendarEvents, completedActions])
 
-  // Calculate dynamic stats based on recent actions
-  const currentStats = useMemo(() => {
-    const calvingsRecorded = completedActions.filter(a => a.type === 'calving').length;
-    const heatRecorded = completedActions.filter(a => a.type === 'heat_detection').length;
-    const inseminationsRecorded = completedActions.filter(a => a.type === 'insemination').length;
-    
-    // We assume if a calving is recorded, it was likely "expected this month" if it appeared on the dashboard
-    // Use Math.max to prevent negative numbers
-    return {
-      ...breedingStats,
-      totalBreedings: breedingStats.totalBreedings + inseminationsRecorded,
-      heatDetected: breedingStats.heatDetected + heatRecorded,
-      currentPregnant: Math.max(0, breedingStats.currentPregnant - calvingsRecorded),
-      expectedCalvingsThisMonth: Math.max(0, breedingStats.expectedCalvingsThisMonth - calvingsRecorded)
-    };
-  }, [breedingStats, completedActions]);
-
-  // Identify animals that have just calved so we can hide them from the list
+  // Calculate visible pregnant animals based on completed calvings
   const completedCalvingIds = useMemo(() => {
     return completedActions
       .filter(a => a.type === 'calving')
       .map(a => a.animalId);
   }, [completedActions]);
+
+  const visiblePregnantAnimals = useMemo(() => {
+    return pregnantAnimals.filter(animal => !completedCalvingIds.includes(animal.animal_id));
+  }, [pregnantAnimals, completedCalvingIds]);
+
+  // Calculate dynamic stats based on recent actions and visible animals
+  const currentStats = useMemo(() => {
+    const heatRecorded = completedActions.filter(a => a.type === 'heat_detection').length;
+    const inseminationsRecorded = completedActions.filter(a => a.type === 'insemination').length;
+    const calvingsRecorded = completedActions.filter(a => a.type === 'calving').length;
+    
+    return {
+      ...breedingStats,
+      totalBreedings: breedingStats.totalBreedings + inseminationsRecorded,
+      heatDetected: breedingStats.heatDetected + heatRecorded,
+      currentPregnant: visiblePregnantAnimals.length,
+      expectedCalvingsThisMonth: Math.max(0, breedingStats.expectedCalvingsThisMonth - calvingsRecorded)
+    };
+  }, [breedingStats, completedActions, visiblePregnantAnimals]);
 
   const handleEventCreated = () => {
     // Optimistically update UI
@@ -237,14 +258,14 @@ export function BreedingDashboard({
             )}>
               {modalTitles[activeModal]}
             </h2>
-            <Button
+            {/* <Button
               variant="ghost"
               onClick={handleModalClose}
               size={isMobile ? "default" : "sm"}
               className={cn(isMobile && "h-10 w-10")}
             >
               ✕
-            </Button>
+            </Button> */}
           </div>
 
           {activeModal === 'heat_detection' && <HeatDetectionForm {...commonProps} />}

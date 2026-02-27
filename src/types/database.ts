@@ -222,6 +222,7 @@ export interface ProductionRecord {
   animal_id: string
   record_date: string
   milk_volume?: number
+  milk_safety_status?: 'safe' | 'unsafe_health' | 'unsafe_colostrum'
   fat_content?: number
   protein_content?: number
   somatic_cell_count?: number
@@ -461,6 +462,7 @@ export interface ProductionRecordFormData {
   animal_id: string
   record_date: string
   milk_volume?: number
+  milk_safety_status?: 'safe' | 'unsafe_health' | 'unsafe_colostrum'
   fat_content?: number
   protein_content?: number
   somatic_cell_count?: number

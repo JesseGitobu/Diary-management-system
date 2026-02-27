@@ -18,6 +18,7 @@ type ProductionFormData = {
   record_date: string;
   milking_session: 'morning' | 'afternoon' | 'evening';
   milk_volume: number;
+  milk_safety_status: 'safe' | 'unsafe_health' | 'unsafe_colostrum';
   fat_content?: number | null;
   protein_content?: number | null;
   somatic_cell_count?: number | null;
@@ -79,6 +80,9 @@ export function ProductionEntryForm({
       milk_volume: z.number()
         .min(0.1, 'Volume must be positive')
         .max(100, 'Volume seems too high'),
+      milk_safety_status: z.enum(['safe', 'unsafe_health', 'unsafe_colostrum'], {
+        errorMap: () => ({ message: 'Please select a milk safety status' })
+      }),
       
       // Dynamic validation based on settings
       fat_content: createNumberSchema(isQualityFocused && !!settings?.fatContentRequired, "Fat Content", 0, 15),
@@ -99,6 +103,7 @@ export function ProductionEntryForm({
       record_date: initialData?.record_date || new Date().toISOString().split('T')[0],
       milking_session: initialData?.milking_session || settings?.defaultSession || 'morning',
       milk_volume: initialData?.milk_volume || undefined,
+      milk_safety_status: initialData?.milk_safety_status || 'safe',
       fat_content: initialData?.fat_content || null,
       protein_content: initialData?.protein_content || null,
       somatic_cell_count: initialData?.somatic_cell_count || null,
@@ -120,6 +125,7 @@ export function ProductionEntryForm({
   const preprocessFormData = (data: ProductionFormData) => {
     return {
       ...data,
+      milk_safety_status: data.milk_safety_status || 'safe',
       fat_content: data.fat_content === undefined ? null : data.fat_content,
       protein_content: data.protein_content === undefined ? null : data.protein_content,
       somatic_cell_count: data.somatic_cell_count === undefined ? null : data.somatic_cell_count,
@@ -164,6 +170,7 @@ export function ProductionEntryForm({
         record_date: new Date().toISOString().split('T')[0],
         milking_session: settings?.defaultSession || 'morning',
         milk_volume: undefined,
+        milk_safety_status: 'safe',
         fat_content: null,
         protein_content: null,
         somatic_cell_count: null,
@@ -265,7 +272,7 @@ export function ProductionEntryForm({
             </div>
           </div>
 
-          {/* Volume is always required */}
+          {/* Volume and Milk Safety Status */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <Label htmlFor="milk_volume">Milk Volume ({settings?.productionUnit || 'liters'}) *</Label>
@@ -278,19 +285,37 @@ export function ProductionEntryForm({
                 placeholder="e.g., 25.5"
               />
             </div>
-            
-            {/* Show notes alongside volume in basic mode to save space */}
-            {isBasicMode && (
-               <div>
-                <Label htmlFor="notes">Notes</Label>
-                <Input
-                  id="notes"
-                  {...form.register('notes')}
-                  placeholder="Optional notes"
-                />
-              </div>
-            )}
+
+            <div>
+              <Label htmlFor="milk_safety_status">Milk Safety Status *</Label>
+              <select
+                id="milk_safety_status"
+                {...form.register('milk_safety_status')}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+              >
+                <option value="safe">Safe - Approved for Sale</option>
+                <option value="unsafe_health">Unsafe - Animal Health Issue</option>
+                <option value="unsafe_colostrum">Unsafe - Colostrum (Cannot Sell)</option>
+              </select>
+              {form.formState.errors.milk_safety_status && (
+                <p className="text-sm text-red-600 mt-1">
+                  {form.formState.errors.milk_safety_status.message}
+                </p>
+              )}
+            </div>
           </div>
+
+          {/* Notes in basic mode */}
+          {isBasicMode && (
+             <div>
+              <Label htmlFor="notes">Notes</Label>
+              <Input
+                id="notes"
+                {...form.register('notes')}
+                placeholder="Optional notes"
+              />
+            </div>
+          )}
 
           {/* Conditional Quality Fields */}
           {isQualityVisible && (
