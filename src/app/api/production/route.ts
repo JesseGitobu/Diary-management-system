@@ -41,8 +41,8 @@ export async function POST(request: NextRequest) {
     if (productionData.milk_volume === undefined || productionData.milk_volume === null) {
       return NextResponse.json({ error: 'milk_volume is required' }, { status: 400 })
     }
-    if (!productionData.milking_session) {
-      return NextResponse.json({ error: 'milking_session is required' }, { status: 400 })
+    if (!productionData.milking_session_id) {
+      return NextResponse.json({ error: 'milking_session_id is required' }, { status: 400 })
     }
     if (!productionData.milk_safety_status) {
       return NextResponse.json({ error: 'milk_safety_status is required' }, { status: 400 })
@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
       animal_id: productionData.animal_id,
       record_date: productionData.record_date,
       milk_volume: Number(productionData.milk_volume),
-      milking_session: productionData.milking_session,
+      milking_session_id: productionData.milking_session_id,
       milk_safety_status: productionData.milk_safety_status,
       temperature: productionData.temperature ? Number(productionData.temperature) : null,
       mastitis_test_performed: productionData.mastitis_test_performed ?? false,

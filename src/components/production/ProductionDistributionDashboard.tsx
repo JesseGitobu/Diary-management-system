@@ -118,6 +118,15 @@ export function ProductionDistributionDashboard({
   const canAddRecords = ['farm_owner', 'farm_manager', 'worker'].includes(userRole)
   const canManageDistribution = ['farm_owner', 'farm_manager'].includes(userRole)
   
+  // Helper function to get session name from ID
+  const getSessionName = (sessionId?: string) => {
+    if (!sessionId || !productionSettings?.milkingSessions) {
+      return 'Unknown Session'
+    }
+    const session = productionSettings.milkingSessions.find(s => s.id === sessionId)
+    return session?.name || sessionId
+  }
+  
   // Production Record Handlers
   const handleViewProductionRecord = (record: any) => {
     setSelectedProductionRecord(record)
@@ -204,7 +213,7 @@ export function ProductionDistributionDashboard({
     // Count unique animals milked today for this specific session
     const uniqueMilkedAnimals = new Set(
       productionRecords
-        .filter(r => r.record_date === todayStr && r.milking_session === activeSession!.name)
+        .filter(r => r.record_date === todayStr && r.milking_session_id === activeSession!.name)
         .map(r => r.animal_id)
     ).size;
 
@@ -619,7 +628,7 @@ export function ProductionDistributionDashboard({
                 </div>
                 <div>
                   <label className="text-sm font-semibold text-gray-700">Milking Session</label>
-                  <p className="text-lg text-gray-900 capitalize">{selectedProductionRecord.milking_session}</p>
+                  <p className="text-lg text-gray-900">{getSessionName(selectedProductionRecord.milking_session_id)}</p>
                 </div>
                 <div>
                   <label className="text-sm font-semibold text-gray-700">Milk Volume</label>

@@ -34,6 +34,7 @@ interface GroupRecordFormProps {
     production_status: string 
   }>
   session: string
+  sessionId?: string
   recordDate: string
   settings: ProductionSettings | null
   onSuccess?: () => void
@@ -43,6 +44,7 @@ export function GroupRecordForm({
   farmId,
   animals,
   session,
+  sessionId,
   recordDate,
   settings,
   onSuccess
@@ -84,7 +86,7 @@ export function GroupRecordForm({
           const records = Array.isArray(result.data) ? result.data : []
           
           // Filter by session since API doesn't support that parameter
-          const sessionFilteredRecords = records.filter((r: any) => r.milking_session === session)
+          const sessionFilteredRecords = records.filter((r: any) => r.milking_session_id === session)
           console.log(`[GroupRecordForm] Filtered to session "${session}": ${sessionFilteredRecords.length} pre-recorded animals`)
           
           const preRecordedIds = new Set<string>(sessionFilteredRecords.map((r: any) => r.animal_id))
@@ -554,6 +556,7 @@ export function GroupRecordForm({
               production_status: selectedAnimal.production_status
             }]}
             session={session}
+            sessionId={sessionId}
             recordDate={recordDate}
             settings={settings}
             closeAfterSuccess={false}

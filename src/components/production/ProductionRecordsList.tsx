@@ -37,7 +37,6 @@ interface ProductionRecord {
   id: string
   animal_id: string
   record_date: string
-  milking_session: 'morning' | 'afternoon' | 'evening'
   milk_volume: number
   milk_safety_status?: 'safe' | 'unsafe_health' | 'unsafe_colostrum'
   fat_content?: number
@@ -50,6 +49,7 @@ interface ProductionRecord {
   created_at: string
   recording_type?: 'individual' | 'group'
   milking_group_id?: string
+  milking_session_id?: string
   animals?: {
     id: string
     tag_number: string
@@ -117,8 +117,40 @@ export function ProductionRecordsList({
   const [viewTab, setViewTab] = useState<ViewTab>('individual')
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [milkingGroups, setMilkingGroups] = useState<Map<string, string>>(new Map())
+  const [availableSessions, setAvailableSessions] = useState<Array<{ id: string; name: string }>>([])
   
   const RECORDS_PER_PAGE = 10
+
+  // Fetch milking sessions on mount
+  React.useEffect(() => {
+    if (!farmId) return
+
+    const fetchMilkingSessions = async () => {
+      try {
+        console.log(`[SessionFilter] Fetching sessions for farm: ${farmId}`)
+        const response = await fetch(`/api/farms/${farmId}/production/milking-sessions-list`)
+        if (response.ok) {
+          const result = await response.json()
+          console.log('[SessionFilter] API Response:', result)
+          console.log('[SessionFilter] Sessions to populate dropdown:', result.data?.map((s: any) => ({ id: s.id, name: s.name })))
+          setAvailableSessions(result.data || [])
+        } else {
+          const error = await response.text()
+          console.error('[SessionFilter] API returned error:', response.status, error)
+        }
+      } catch (error) {
+        console.error('[SessionFilter] Error fetching milking sessions:', error)
+        console.log('[SessionFilter] Using fallback default sessions')
+        setAvailableSessions([
+          { id: 'morning', name: 'Morning' },
+          { id: 'afternoon', name: 'Afternoon' },
+          { id: 'evening', name: 'Evening' },
+        ])
+      }
+    }
+
+    fetchMilkingSessions()
+  }, [farmId])
 
   // Fetch milking group names on mount
   React.useEffect(() => {
@@ -147,8 +179,8 @@ export function ProductionRecordsList({
   // Apply filters
   const filteredRecords = useMemo(() => {
     return records.filter(record => {
-      // Session filter
-      if (filterSession !== 'all' && record.milking_session !== filterSession) {
+      // Session filter - use milking_session_id
+      if (filterSession !== 'all' && record.milking_session_id !== filterSession) {
         return false
       }
 
@@ -210,13 +242,6 @@ export function ProductionRecordsList({
     })
   }, [filteredRecords])
 
-  // Pagination
-  const displayData = viewTab === 'individual' ? individualRecords : groupedRecords
-  const totalPages = Math.ceil(displayData.length / RECORDS_PER_PAGE)
-  const startIndex = (currentPage - 1) * RECORDS_PER_PAGE
-  const endIndex = startIndex + RECORDS_PER_PAGE
-  const paginatedData = displayData.slice(startIndex, endIndex)
-
   // Reset to page 1 when filters change
   const resetPagination = () => {
     setCurrentPage(1)
@@ -229,6 +254,8 @@ export function ProductionRecordsList({
   }
 
   const handleFilterSessionChange = (session: string) => {
+    console.log('[SessionFilter] Selected session:', session)
+    console.log('[SessionFilter] Available sessions:', availableSessions)
     setFilterSession(session)
     resetPagination()
   }
@@ -285,14 +312,207 @@ export function ProductionRecordsList({
     }
   }
   
-  const getSessionBadgeColor = (session: string) => {
-    switch (session) {
-      case 'morning': return 'bg-blue-100 text-blue-800'
-      case 'afternoon': return 'bg-yellow-100 text-yellow-800'
-      case 'evening': return 'bg-purple-100 text-purple-800'
-      default: return 'bg-gray-100 text-gray-800'
+  const getSessionBadgeColor = (sessionId?: string) => {
+    // Get session name from availableSessions to determine color
+    const sessionName = availableSessions.find(s => s.id === sessionId)?.name?.toLowerCase() || ''
+    if (sessionName.includes('morning')) return 'bg-blue-100 text-blue-800'
+    if (sessionName.includes('afternoon')) return 'bg-yellow-100 text-yellow-800'
+    if (sessionName.includes('evening')) return 'bg-purple-100 text-purple-800'
+    return 'bg-gray-100 text-gray-800'
+  }
+
+  const getSessionName = (sessionId?: string) => {
+    return availableSessions.find(s => s.id === sessionId)?.name || sessionId || 'Unknown Session'
+  }
+
+  // Helper function to get first and last session times
+  const getFirstAndLastSessionTimes = () => {
+    if (availableSessions.length === 0) return { firstTime: '00:00', lastTime: '23:59' }
+    // Assuming sessions in availableSessions are in configured order
+    const firstSession = availableSessions[0]
+    const lastSession = availableSessions[availableSessions.length - 1]
+    return {
+      firstTime: firstSession.id || '00:00',
+      lastTime: lastSession.id || '23:59',
+      firstSessionId: firstSession.id,
+      lastSessionId: lastSession.id
     }
   }
+
+  // Helper function to calculate the "milking cycle date" for a record
+  // A cycle runs from first session to last session, potentially crossing calendar days
+  const calculateMilkingCycleDate = (record: ProductionRecord) => {
+    const { firstSessionId } = getFirstAndLastSessionTimes()
+    if (!firstSessionId) return record.record_date
+    
+    // Get the index of the record's session in availableSessions
+    const recordSessionIndex = availableSessions.findIndex(s => s.id === record.milking_session_id)
+    const firstSessionIndex = availableSessions.findIndex(s => s.id === firstSessionId)
+    
+    // If the record's session comes before the first session in the configured order,
+    // it belongs to the previous day's cycle
+    if (recordSessionIndex < firstSessionIndex) {
+      const prevDate = new Date(record.record_date)
+      prevDate.setDate(prevDate.getDate() - 1)
+      return prevDate.toISOString().split('T')[0]
+    }
+    
+    return record.record_date
+  }
+
+  // Group records by milking cycle when "All Sessions" is selected
+  const milkingCycleGroupedRecords = useMemo(() => {
+    if (filterSession !== 'all') return null
+    
+    const cycleMap = new Map<string, ProductionRecord[]>()
+    
+    filteredRecords.forEach(record => {
+      const cycleDate = calculateMilkingCycleDate(record)
+      if (!cycleMap.has(cycleDate)) {
+        cycleMap.set(cycleDate, [])
+      }
+      cycleMap.get(cycleDate)!.push(record)
+    })
+    
+    return cycleMap
+  }, [filteredRecords, filterSession, availableSessions])
+
+  // Create daily summary data for individual animals view
+  const dailySummaryRecords = useMemo(() => {
+    if (!milkingCycleGroupedRecords) return null
+    
+    const summaries: Array<{
+      cycleDate: string
+      animal_id: string
+      animalName: string
+      animalTag: string
+      totalMilkVolume: number
+      recordCount: number
+      avgFatContent: number | null
+      avgProteinContent: number | null
+      sessions: string[]
+      records: ProductionRecord[]
+    }> = []
+    
+    milkingCycleGroupedRecords.forEach((cycleRecords, cycleDate) => {
+      const byAnimal = new Map<string, ProductionRecord[]>()
+      
+      cycleRecords.forEach(record => {
+        const animalId = record.animal_id
+        if (!byAnimal.has(animalId)) {
+          byAnimal.set(animalId, [])
+        }
+        byAnimal.get(animalId)!.push(record)
+      })
+      
+      byAnimal.forEach((animalRecords, animalId) => {
+        const totalVolume = animalRecords.reduce((sum, r) => sum + (r.milk_volume || 0), 0)
+        const fatRecords = animalRecords.filter(r => r.fat_content)
+        const proteinRecords = animalRecords.filter(r => r.protein_content)
+        const avgFat = fatRecords.length > 0 
+          ? fatRecords.reduce((sum, r) => sum + (r.fat_content || 0), 0) / fatRecords.length
+          : null
+        const avgProtein = proteinRecords.length > 0
+          ? proteinRecords.reduce((sum, r) => sum + (r.protein_content || 0), 0) / proteinRecords.length
+          : null
+        const sessions = [...new Set(animalRecords.map(r => r.milking_session_id).filter(Boolean as any))]
+        
+        summaries.push({
+          cycleDate,
+          animal_id: animalId,
+          animalName: animalRecords[0].animals?.name || `Animal ${animalRecords[0].animals?.tag_number}`,
+          animalTag: animalRecords[0].animals?.tag_number || '',
+          totalMilkVolume: totalVolume,
+          recordCount: animalRecords.length,
+          avgFatContent: avgFat,
+          avgProteinContent: avgProtein,
+          sessions: sessions as string[],
+          records: animalRecords
+        })
+      })
+    })
+    
+    // Sort by cycle date (most recent first), then by animal name
+    return summaries.sort((a, b) => {
+      const dateCompare = new Date(b.cycleDate).getTime() - new Date(a.cycleDate).getTime()
+      return dateCompare !== 0 ? dateCompare : a.animalName.localeCompare(b.animalName)
+    })
+  }, [milkingCycleGroupedRecords])
+
+  // Create daily summary data for groups view
+  const dailySummaryGroups = useMemo(() => {
+    if (!milkingCycleGroupedRecords) return null
+    
+    const summaries: Array<{
+      cycleDate: string
+      milking_group_id: string | null
+      groupName: string
+      totalMilkVolume: number
+      totalRecords: number
+      avgFatContent: number | null
+      avgProteinContent: number | null
+      animalCount: number
+      records: ProductionRecord[]
+    }> = []
+    
+    milkingCycleGroupedRecords.forEach((cycleRecords, cycleDate) => {
+      const byGroup = new Map<string | null, ProductionRecord[]>()
+      
+      cycleRecords.forEach(record => {
+        const groupId = record.milking_group_id || 'default'
+        if (!byGroup.has(groupId)) {
+          byGroup.set(groupId, [])
+        }
+        byGroup.get(groupId)!.push(record)
+      })
+      
+      byGroup.forEach((groupRecords, groupId) => {
+        const totalVolume = groupRecords.reduce((sum, r) => sum + (r.milk_volume || 0), 0)
+        const fatRecords = groupRecords.filter(r => r.fat_content)
+        const proteinRecords = groupRecords.filter(r => r.protein_content)
+        const avgFat = fatRecords.length > 0
+          ? fatRecords.reduce((sum, r) => sum + (r.fat_content || 0), 0) / fatRecords.length
+          : null
+        const avgProtein = proteinRecords.length > 0
+          ? proteinRecords.reduce((sum, r) => sum + (r.protein_content || 0), 0) / proteinRecords.length
+          : null
+        const uniqueAnimals = new Set(groupRecords.map(r => r.animal_id)).size
+        const actualGroupId = groupId === 'default' ? null : (groupId as string)
+        const groupName = groupId !== 'default' ? milkingGroups.get(groupId as string) : null
+        
+        summaries.push({
+          cycleDate,
+          milking_group_id: actualGroupId,
+          groupName: groupName || (groupId === 'default' ? 'Default Group' : `Milking Group ${groupId}`),
+          totalMilkVolume: totalVolume,
+          totalRecords: groupRecords.length,
+          avgFatContent: avgFat,
+          avgProteinContent: avgProtein,
+          animalCount: uniqueAnimals,
+          records: groupRecords
+        })
+      })
+    })
+    
+    // Sort by cycle date (most recent first), then by group name
+    return summaries.sort((a, b) => {
+      const dateCompare = new Date(b.cycleDate).getTime() - new Date(a.cycleDate).getTime()
+      return dateCompare !== 0 ? dateCompare : a.groupName.localeCompare(b.groupName)
+    })
+  }, [milkingCycleGroupedRecords, milkingGroups])
+
+  // Pagination - now declared after all summary memos
+  const displayData = useMemo(() => {
+    if (filterSession === 'all') {
+      return viewTab === 'individual' ? (dailySummaryRecords || []) : (dailySummaryGroups || [])
+    }
+    return viewTab === 'individual' ? individualRecords : groupedRecords
+  }, [filterSession, viewTab, dailySummaryRecords, dailySummaryGroups, individualRecords, groupedRecords])
+  
+  const totalPages = Math.ceil(displayData.length / RECORDS_PER_PAGE)
+  const startIndex = (currentPage - 1) * RECORDS_PER_PAGE
+  const endIndex = startIndex + RECORDS_PER_PAGE
+  const paginatedData = displayData.slice(startIndex, endIndex)
 
   const getSafetyStatusBadge = (status?: string) => {
     switch (status) {
@@ -376,9 +596,11 @@ export function ProductionRecordsList({
               className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-farm-green"
             >
               <option value="all">All Sessions</option>
-              <option value="morning">Morning</option>
-              <option value="afternoon">Afternoon</option>
-              <option value="evening">Evening</option>
+              {availableSessions.map((session) => (
+                <option key={session.id} value={session.id}>
+                  {session.name}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -432,8 +654,16 @@ export function ProductionRecordsList({
         {/* Filter Results Summary */}
         <div className="mt-3 pt-3 border-t border-gray-200">
           <p className="text-xs text-gray-600">
-            Showing <span className="font-semibold">{paginatedData.length}</span> of <span className="font-semibold">{displayData.length}</span> {viewTab === 'individual' ? 'records' : 'groups'}
-            {displayData.length < filteredRecords.length && ` (${filteredRecords.length - displayData.length} filtered out)`}
+            {filterSession === 'all' ? (
+              <>
+                Showing <span className="font-semibold">{paginatedData.length}</span> of <span className="font-semibold">{displayData.length}</span> daily {viewTab === 'individual' ? 'animal totals' : 'group totals'}
+              </>
+            ) : (
+              <>
+                Showing <span className="font-semibold">{paginatedData.length}</span> of <span className="font-semibold">{displayData.length}</span> {viewTab === 'individual' ? 'records' : 'groups'}
+                {displayData.length < filteredRecords.length && ` (${filteredRecords.length - displayData.length} filtered out)`}
+              </>
+            )}
           </p>
         </div>
       </div>
@@ -483,11 +713,173 @@ export function ProductionRecordsList({
             Clear Filters
           </Button>
         </div>
+      ) : filterSession === 'all' && viewTab === 'individual' && dailySummaryRecords ? (
+        // Daily totals view for individual animals
+        <div className="space-y-4">
+          {dailySummaryRecords.map((summary, idx) => {
+            const qualityIndicator = getQualityIndicator(summary.avgFatContent || undefined, summary.avgProteinContent || undefined)
+            
+            return (
+              <Card key={`summary-${summary.cycleDate}-${summary.animal_id}`} className="hover:shadow-md transition-shadow overflow-hidden">
+                <CardContent className="p-4 md:p-6">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start space-x-4 flex-1 min-w-0">
+                      <div className="flex-shrink-0">
+                        <div className="w-12 h-12 bg-farm-green/10 rounded-lg flex items-center justify-center">
+                          <Droplets className="w-6 h-6 text-farm-green" />
+                        </div>
+                      </div>
+                      
+                      <div className="min-w-0 flex-1">
+                        {/* Header Row */}
+                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-3">
+                          <div>
+                            <h4 className="text-base md:text-lg font-semibold text-gray-900 truncate">
+                              {summary.animalName}
+                            </h4>
+                            <p className="text-xs md:text-sm text-gray-600">
+                              Tag: {summary.animalTag}
+                            </p>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge className="bg-blue-100 text-blue-800">
+                              <Calendar className="w-3 h-3 mr-1" />
+                              {formatDate(summary.cycleDate)}
+                            </Badge>
+                            <Badge className="bg-indigo-100 text-indigo-800">
+                              <Clock className="w-3 h-3 mr-1" />
+                              {summary.recordCount} session{summary.recordCount !== 1 ? 's' : ''}
+                            </Badge>
+                            {qualityIndicator && (
+                              <Badge className={qualityIndicator.color}>
+                                {qualityIndicator.label}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        
+                        {/* Production Metrics Grid */}
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+                          <div className="text-center p-2 md:p-3 bg-blue-50 rounded">
+                            <p className="text-lg md:text-2xl font-bold text-blue-600">{summary.totalMilkVolume.toFixed(1)}</p>
+                            <p className="text-xs text-blue-600 font-medium">Total Liters</p>
+                          </div>
+                          {summary.avgFatContent !== null && (
+                            <div className="text-center p-2 md:p-3 bg-orange-50 rounded">
+                              <p className="text-base md:text-xl font-bold text-orange-600">{summary.avgFatContent.toFixed(2)}%</p>
+                              <p className="text-xs text-orange-600 font-medium">Avg Fat</p>
+                            </div>
+                          )}
+                          {summary.avgProteinContent !== null && (
+                            <div className="text-center p-2 md:p-3 bg-green-50 rounded">
+                              <p className="text-base md:text-xl font-bold text-green-600">{summary.avgProteinContent.toFixed(2)}%</p>
+                              <p className="text-xs text-green-600 font-medium">Avg Protein</p>
+                            </div>
+                          )}
+                          <div className="text-center p-2 md:p-3 bg-purple-50 rounded">
+                            <p className="text-base md:text-lg font-bold text-purple-600">{summary.recordCount}</p>
+                            <p className="text-xs text-purple-600 font-medium">Records</p>
+                          </div>
+                        </div>
+
+                        {/* Sessions in this cycle */}
+                        <div className="mt-4 pt-4 border-t border-gray-200">
+                          <p className="text-xs font-semibold text-gray-600 mb-2">Sessions in cycle:</p>
+                          <div className="flex flex-wrap gap-2">
+                            {summary.sessions.map(sessionId => (
+                              <Badge key={sessionId} className={getSessionBadgeColor(sessionId)}>
+                                {getSessionName(sessionId)}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
+      ) : filterSession === 'all' && viewTab === 'groups' && dailySummaryGroups ? (
+        // Daily totals view for milking groups
+        <div className="space-y-4">
+          {dailySummaryGroups.map((summary) => {
+            const qualityIndicator = getQualityIndicator(summary.avgFatContent || undefined, summary.avgProteinContent || undefined)
+            
+            return (
+              <Card key={`group-summary-${summary.cycleDate}-${summary.milking_group_id}`} className="hover:shadow-md transition-shadow overflow-hidden">
+                <CardContent className="p-4 md:p-6">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start space-x-4 flex-1 min-w-0">
+                      <div className="flex-shrink-0">
+                        <div className="w-12 h-12 bg-farm-green/10 rounded-lg flex items-center justify-center">
+                          <Users className="w-6 h-6 text-farm-green" />
+                        </div>
+                      </div>
+                      
+                      <div className="min-w-0 flex-1">
+                        {/* Header Row */}
+                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-3">
+                          <div>
+                            <h4 className="text-base md:text-lg font-semibold text-gray-900 truncate">
+                              {summary.groupName}
+                            </h4>
+                            <p className="text-xs md:text-sm text-gray-600">
+                              {summary.animalCount} animal{summary.animalCount !== 1 ? 's' : ''} • {summary.totalRecords} milking record{summary.totalRecords !== 1 ? 's' : ''}
+                            </p>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge className="bg-blue-100 text-blue-800">
+                              <Calendar className="w-3 h-3 mr-1" />
+                              {formatDate(summary.cycleDate)}
+                            </Badge>
+                            {qualityIndicator && (
+                              <Badge className={qualityIndicator.color}>
+                                {qualityIndicator.label}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        
+                        {/* Production Metrics Grid */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                          <div className="text-center p-2 md:p-3 bg-blue-50 rounded">
+                            <p className="text-lg md:text-2xl font-bold text-blue-600">{summary.totalMilkVolume.toFixed(1)}</p>
+                            <p className="text-xs text-blue-600 font-medium">Total Liters</p>
+                          </div>
+                          {summary.avgFatContent !== null && (
+                            <div className="text-center p-2 md:p-3 bg-orange-50 rounded">
+                              <p className="text-base md:text-xl font-bold text-orange-600">{summary.avgFatContent.toFixed(2)}%</p>
+                              <p className="text-xs text-orange-600 font-medium">Avg Fat</p>
+                            </div>
+                          )}
+                          {summary.avgProteinContent !== null && (
+                            <div className="text-center p-2 md:p-3 bg-green-50 rounded">
+                              <p className="text-base md:text-xl font-bold text-green-600">{summary.avgProteinContent.toFixed(2)}%</p>
+                              <p className="text-xs text-green-600 font-medium">Avg Protein</p>
+                            </div>
+                          )}
+                          <div className="text-center p-2 md:p-3 bg-purple-50 rounded">
+                            <p className="text-base md:text-lg font-bold text-purple-600">{summary.totalRecords}</p>
+                            <p className="text-xs text-purple-600 font-medium">Records</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
       ) : viewTab === 'individual' ? (
         // Individual records view
         <div className="space-y-4">
-          {(paginatedData as ProductionRecord[]).map((record) => {
-            const qualityIndicator = getQualityIndicator(record.fat_content, record.protein_content)
+          {(paginatedData as any[]).map((record) => {
+            const qualityIndicator = getQualityIndicator(record.avgFatContent || undefined, record.avgProteinContent || undefined)
             const safetyStatus = getSafetyStatusBadge(record.milk_safety_status)
             const recordingTypeBadge = getRecordingTypeBadge(record.recording_type)
             const SafetyIcon = safetyStatus.icon
@@ -517,9 +909,9 @@ export function ProductionRecordsList({
                           </div>
 
                           <div className="flex flex-wrap items-center gap-2">
-                            <Badge className={getSessionBadgeColor(record.milking_session)}>
+                            <Badge className={getSessionBadgeColor(record.milking_session_id)}>
                               <Clock className="w-3 h-3 mr-1" />
-                              {record.milking_session}
+                              {getSessionName(record.milking_session_id)}
                             </Badge>
                             <Badge className={safetyStatus.color}>
                               <SafetyIcon className="w-3 h-3 mr-1" />
@@ -640,13 +1032,13 @@ export function ProductionRecordsList({
       ) : (
         // Groups view
         <div className="space-y-4">
-          {(paginatedData as GroupData[]).map((group, index) => {
-            const isExpanded = expandedGroups.has(group.milking_group_id || 'default')
-            const mostRecent = group.mostRecentSession
-            const recentQuality = mostRecent ? getQualityIndicator(mostRecent.fat_content, mostRecent.protein_content) : null
+          {(paginatedData as any[]).map((summary: any, index) => {
+            const isExpanded = expandedGroups.has(summary.milking_group_id || 'default')
+            const recentQuality = getQualityIndicator(summary.avgFatContent || undefined, summary.avgProteinContent || undefined)
+            const mostRecent = summary.records && summary.records.length > 0 ? summary.records[0] : null
             const recentSafety = mostRecent ? getSafetyStatusBadge(mostRecent.milk_safety_status) : null
             const RecentSafetyIcon = recentSafety?.icon
-            const groupName = group.milking_group_id ? milkingGroups.get(group.milking_group_id) : null
+            const displayGroupName = summary.groupName || summary.milking_group_id || `Milking Group ${index + 1}`
             
             return (
               <Card key={`group-${index}`} className="hover:shadow-md transition-shadow overflow-hidden">
@@ -655,7 +1047,7 @@ export function ProductionRecordsList({
                   <button
                     onClick={() => {
                       const newSet = new Set(expandedGroups)
-                      const groupKey = group.milking_group_id || 'default'
+                      const groupKey = summary.milking_group_id || 'default'
                       if (newSet.has(groupKey)) {
                         newSet.delete(groupKey)
                       } else {
@@ -675,10 +1067,10 @@ export function ProductionRecordsList({
                         
                         <div className="min-w-0 flex-1">
                           <h4 className="text-base md:text-lg font-semibold text-gray-900">
-                            {groupName || `Milking Group ${index + 1}`}
+                            {displayGroupName}
                           </h4>
                           <p className="text-sm text-gray-600 mt-1">
-                            {group.recordCount} animal{group.recordCount !== 1 ? 's' : ''} recorded
+                            {summary.animalCount || summary.recordCount || summary.totalRecords} animal{summary.animalCount !== 1 ? 's' : ''} recorded
                           </p>
                           
                           {/* Most Recent Session Info */}
@@ -688,9 +1080,9 @@ export function ProductionRecordsList({
                                 <span className="font-semibold">Most Recent Session:</span> {formatDateTime(mostRecent.created_at)}
                               </p>
                               <div className="flex flex-wrap items-center gap-2">
-                                <Badge className={getSessionBadgeColor(mostRecent.milking_session)}>
+                                <Badge className={getSessionBadgeColor(mostRecent.milking_session_id)}>
                                   <Clock className="w-3 h-3 mr-1" />
-                                  {mostRecent.milking_session}
+                                  {getSessionName(mostRecent.milking_session_id)}
                                 </Badge>
                                 {RecentSafetyIcon && (
                                   <Badge className={recentSafety?.color}>
@@ -712,14 +1104,14 @@ export function ProductionRecordsList({
                       {/* Group Stats */}
                       <div className="flex-shrink-0 text-right">
                         <div className="text-2xl font-bold text-farm-green">
-                          {group.totalMilkVolume.toFixed(1)}
+                          {summary.totalMilkVolume.toFixed(1)}
                         </div>
                         <p className="text-xs text-gray-600 font-medium">Total Liters</p>
-                        <button className="mt-3 text-gray-500 hover:text-gray-700">
+                        <div className="mt-3 text-gray-500 hover:text-gray-700 flex justify-end pointer-events-none">
                           <ChevronDown 
                             className={`w-5 h-5 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
                           />
-                        </button>
+                        </div>
                       </div>
                     </div>
                   </button>
@@ -728,7 +1120,7 @@ export function ProductionRecordsList({
                   {isExpanded && (
                     <div className="mt-6 pt-6 border-t border-gray-200 space-y-3">
                       <h5 className="font-semibold text-gray-900 mb-3">Animals in this group:</h5>
-                      {group.animalRecords.map((record) => {
+                      {summary.records.map((record: ProductionRecord) => {
                         const recordingTypeBadge = getRecordingTypeBadge(record.recording_type)
                         const RecordingTypeIcon = recordingTypeBadge.icon
                         
@@ -752,7 +1144,7 @@ export function ProductionRecordsList({
                                   </span>
                                   <span className="flex items-center">
                                     <Clock className="w-3 h-3 mr-1" />
-                                    {record.milking_session}
+                                    {getSessionName(record.milking_session_id)}
                                   </span>
                                   <span>{formatDate(record.record_date)}</span>
                                 </div>

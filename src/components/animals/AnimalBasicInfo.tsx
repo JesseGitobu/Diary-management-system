@@ -47,41 +47,6 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick, onViewFullHistor
     setAnimalData(animal)
   }, [animal])
 
-  // ========== DEBUG LOGGING ==========
-  useEffect(() => {
-    console.log('[AnimalBasicInfo] === COMPONENT DEBUG ===')
-    console.log('[AnimalBasicInfo] Animal received:', {
-      id: animal.id,
-      tag: animal.tag_number,
-      name: animal.name,
-      source: animal.animal_source,
-      productionStatus: animal.production_status,
-    })
-    
-    console.log('[AnimalBasicInfo] Purchase info:', {
-      purchase_date: animal.purchase_date,
-      purchase_price: animal.purchase_price,
-      seller_info: animal.seller_info,
-      seller_contact: animal.seller_contact,
-      previous_farm_tag: animal.previous_farm_tag,
-      origin_dam_tag: animal.origin_dam_tag,
-      origin_dam_name: animal.origin_dam_name,
-      origin_sire_tag: animal.origin_sire_tag,
-      origin_sire_name: animal.origin_sire_name,
-    })
-    
-    console.log('[AnimalBasicInfo] Lactation info:', {
-      lactation_number: animal.lactation_number,
-      lactation_start_date: animal.lactation_start_date,
-      lactation_expected_end: animal.lactation_expected_end,
-      days_in_milk: animal.days_in_milk,
-      current_daily_production: animal.current_daily_production,
-    })
-    
-    console.log('[AnimalBasicInfo] === END DEBUG ===')
-  }, [animal])
-  // ========== END DEBUG LOGGING ==========
-
   const toggleSection = (sectionId: string) => {
     setExpandedSections(prev =>
       prev.includes(sectionId)
@@ -130,9 +95,8 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick, onViewFullHistor
       heifer: 'bg-blue-100 text-blue-800',
       served: 'bg-purple-100 text-purple-800',
       lactating: 'bg-green-100 text-green-800',
-      steaming_dry_cows: 'bg-orange-100 text-orange-800',
-      open_culling_dry_cows: 'bg-gray-100 text-gray-800',
-      bull: 'bg-blue-100 text-blue-800',
+      dry: 'bg-gray-100 text-gray-800',
+      bull: 'bg-orange-100 text-orange-800',
     }
 
     const statusLabels: Record<string, string> = {
@@ -140,8 +104,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick, onViewFullHistor
       heifer: 'Heifer',
       served: isMobile ? 'In Calf' : 'In Calf (Served)',
       lactating: 'Lactating',
-      steaming_dry_cows: 'Steaming Dry',
-      open_culling_dry_cows: 'Open Culling',
+      dry: 'Dry',
       bull: 'Bull'
     }
 
@@ -302,7 +265,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick, onViewFullHistor
                 <span className={cn(
                   "font-medium",
                   isMobile ? "text-sm" : ""
-                )}>{animal.tag_number || 'N/A'}</span>
+                )}>{animal.tag_number}</span>
               </div>
 
               <div>
@@ -313,7 +276,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick, onViewFullHistor
                 <span className={cn(
                   "font-medium",
                   isMobile ? "text-sm" : ""
-                )}>{animal.name || 'N/A'}</span>
+                )}>{animal.name || 'Not named'}</span>
               </div>
 
               <div>
@@ -324,7 +287,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick, onViewFullHistor
                 <span className={cn(
                   "font-medium capitalize",
                   isMobile ? "text-sm" : ""
-                )}>{animal.breed && animal.breed !== 'unknown' ? animal.breed : 'N/A'}</span>
+                )}>{animal.breed || 'Not specified'}</span>
               </div>
 
               <div>
@@ -336,7 +299,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick, onViewFullHistor
                   "capitalize",
                   isMobile ? "text-xs px-2 py-0.5" : ""
                 )}>
-                  {animal.gender || 'N/A'}
+                  {animal.gender}
                 </Badge>
               </div>
             </div>
@@ -379,27 +342,31 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick, onViewFullHistor
                 </Badge>
               </div>
 
-              <div className={cn(
-                "flex items-center",
-                isMobile ? "justify-between" : "justify-between"
-              )}>
-                <span className={cn(
-                  "text-gray-600",
-                  isMobile ? "text-sm" : "text-sm"
-                )}>Production:</span>
-                {animal.production_status ? getProductionStatusBadge() : <span className="text-gray-500 text-sm">N/A</span>}
-              </div>
+              {animal.production_status && (
+                <div className={cn(
+                  "flex items-center",
+                  isMobile ? "justify-between" : "justify-between"
+                )}>
+                  <span className={cn(
+                    "text-gray-600",
+                    isMobile ? "text-sm" : "text-sm"
+                  )}>Production:</span>
+                  {getProductionStatusBadge()}
+                </div>
+              )}
 
-              <div className={cn(
-                "flex items-center",
-                isMobile ? "justify-between" : "justify-between"
-              )}>
-                <span className={cn(
-                  "text-gray-600",
-                  isMobile ? "text-sm" : "text-sm"
-                )}>Health:</span>
-                {animal.health_status ? getHealthStatusBadge() : <span className="text-gray-500 text-sm">N/A</span>}
-              </div>
+              {animal.health_status && (
+                <div className={cn(
+                  "flex items-center",
+                  isMobile ? "justify-between" : "justify-between"
+                )}>
+                  <span className={cn(
+                    "text-gray-600",
+                    isMobile ? "text-sm" : "text-sm"
+                  )}>Health:</span>
+                  {getHealthStatusBadge()}
+                </div>
+              )}
             </div>
           </CollapsibleSection>
 
@@ -443,7 +410,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick, onViewFullHistor
                   "font-medium",
                   isMobile ? "text-sm" : ""
                 )}>
-                  {animal.weight ? `${animal.weight} kg` : 'N/A'}
+                  {animal.weight ? `${animal.weight} kg` : 'Not recorded'}
                 </span>
               </div>
 
@@ -453,7 +420,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick, onViewFullHistor
                   {/* Purchase Information */}
                   <CollapsibleSection id="purchase" title="Purchase Information" icon={ShoppingCart}>
                     <div className="space-y-3">
-                      {animal.purchase_date ? (
+                      {animal.purchase_date && (
                         <div>
                           <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Purchase Date</p>
                           <div className="flex items-center space-x-2">
@@ -461,77 +428,24 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick, onViewFullHistor
                             <span className={cn("font-medium", isMobile ? "text-sm" : "")}>{formatDate(animal.purchase_date)}</span>
                           </div>
                         </div>
-                      ) : (
-                        <div>
-                          <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Purchase Date</p>
-                          <span className="text-gray-500 text-sm">N/A</span>
-                        </div>
                       )}
-                      {animal.purchase_price ? (
+                      {animal.purchase_price && (
                         <div>
                           <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Purchase Price</p>
-                          <span className={cn("font-medium", isMobile ? "text-sm" : "")}>
-                            KSh {animal.purchase_price.toLocaleString()}
-                          </span>
-                        </div>
-                      ) : (
-                        <div>
-                          <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Purchase Price</p>
-                          <span className="text-gray-500 text-sm">N/A</span>
+                          <div className="flex items-center space-x-2">
+                            {/* <DollarSign className={cn("text-gray-500", isMobile ? "w-3 h-3" : "w-4 h-4")} /> */}
+                            <span className={cn("font-medium", isMobile ? "text-sm" : "")}>
+                              KSh {animal.purchase_price.toLocaleString()}
+                            </span>
+                          </div>
                         </div>
                       )}
-                      {animal.seller_info ? (
+                      {animal.seller_info && (
                         <div>
-                          <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Seller</p>
+                          <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Seller Information</p>
                           <span className={cn("font-medium", isMobile ? "text-sm" : "")}>
                             {animal.seller_info}
                           </span>
-                        </div>
-                      ) : (
-                        <div>
-                          <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Seller</p>
-                          <span className="text-gray-500 text-sm">N/A</span>
-                        </div>
-                      )}
-                      {animal.seller_contact ? (
-                        <div>
-                          <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Seller Contact</p>
-                          <span className={cn("font-medium", isMobile ? "text-sm" : "")}>
-                            {animal.seller_contact}
-                          </span>
-                        </div>
-                      ) : null}
-                      {animal.previous_farm_tag ? (
-                        <div>
-                          <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Previous Farm Tag</p>
-                          <span className={cn("font-medium", isMobile ? "text-sm" : "")}>
-                            {animal.previous_farm_tag}
-                          </span>
-                        </div>
-                      ) : null}
-
-                      {/* Origin Parentage Info */}
-                      {(animal.origin_dam_tag || animal.origin_dam_name || animal.origin_sire_tag || animal.origin_sire_name) && (
-                        <div className="pt-3 border-t border-gray-100">
-                          <p className={cn("text-gray-600 mb-2 font-medium", isMobile ? "text-xs" : "text-sm")}>Origin Parentage</p>
-                          <div className="space-y-2">
-                            {animal.origin_dam_tag ? (
-                              <div>
-                                <p className={cn("text-gray-600 text-xs", isMobile ? "text-xs" : "text-xs")}>Dam at Origin</p>
-                                <span className={cn("text-sm", isMobile ? "text-sm" : "")}>
-                                  {animal.origin_dam_name ? `${animal.origin_dam_name} (${animal.origin_dam_tag})` : animal.origin_dam_tag}
-                                </span>
-                              </div>
-                            ) : null}
-                            {animal.origin_sire_tag ? (
-                              <div>
-                                <p className={cn("text-gray-600 text-xs", isMobile ? "text-xs" : "text-xs")}>Sire at Origin</p>
-                                <span className={cn("text-sm", isMobile ? "text-sm" : "")}>
-                                  {animal.origin_sire_name ? `${animal.origin_sire_name} (${animal.origin_sire_tag})` : animal.origin_sire_tag}
-                                </span>
-                              </div>
-                            ) : null}
-                          </div>
                         </div>
                       )}
                     </div>
@@ -556,12 +470,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick, onViewFullHistor
                     "font-medium",
                     isMobile ? "text-sm" : ""
                   )}>
-                    {/* For newborn calves, use dam info from calf_records */}
-                    {animal.calf_info?.dam_name ? animal.calf_info.dam_name : 
-                     animal.calf_info?.dam_tag_number ? animal.calf_info.dam_tag_number :
-                     /* Fallback to mother FK from animals table */
-                     animal.mother?.name ? animal.mother.name :
-                     animal.mother?.tag_number ? animal.mother.tag_number : 'Unknown'}
+                    {animal.mother?.name || animal.mother?.tag_number || 'Unknown'}
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -573,39 +482,21 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick, onViewFullHistor
                     "font-medium",
                     isMobile ? "text-sm" : ""
                   )}>
-                    {/* For newborn calves, use sire info from calf_records */}
-                    {animal.calf_info?.sire_name ? animal.calf_info.sire_name :
-                     animal.calf_info?.sire_tag ? animal.calf_info.sire_tag :
-                     /* Fallback to father FK from animals table */
-                     animal.father?.name ? animal.father.name :
-                     animal.father?.tag_number ? animal.father.tag_number : 'Not recorded'}
+                    {animal.father_info || animal.father?.tag_number || 'Not recorded'}
                   </span>
                 </div>
-                
-                {/* Birth Details from Calf Record */}
-                {animal.calf_info && (
-                  <div className="pt-3 border-t border-gray-100">
-                    <p className={cn("text-gray-600 mb-2 font-medium", isMobile ? "text-xs" : "text-sm")}>Birth Details</p>
+                {animal.mother_production_info && (
+                  <div>
+                    <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Mother's Production</p>
                     <div className="text-sm text-gray-700 space-y-1">
-                      {animal.calf_info.birth_weight ? (
-                        <p>Birth Weight: {animal.calf_info.birth_weight} kg</p>
-                      ) : (
-                        <p>Birth Weight: N/A</p>
+                      {animal.mother_production_info.daily_production && (
+                        <p>Daily: {animal.mother_production_info.daily_production}L</p>
                       )}
-                      {animal.calf_info.breed ? (
-                        <p>Breed: {animal.calf_info.breed}</p>
-                      ) : (
-                        <p>Breed: N/A</p>
+                      {animal.mother_production_info.lactation_number && (
+                        <p>Lactation: {animal.mother_production_info.lactation_number}</p>
                       )}
-                      {animal.calf_info.health_status ? (
-                        <p>Health at Birth: {animal.calf_info.health_status}</p>
-                      ) : (
-                        <p>Health at Birth: N/A</p>
-                      )}
-                      {animal.calf_info.weaning_date ? (
-                        <p>Weaned: {formatDate(animal.calf_info.weaning_date)} ({animal.calf_info.weaning_weight || 'N/A'}kg)</p>
-                      ) : (
-                        <p>Weaning: Not yet weaned</p>
+                      {animal.mother_production_info.peak_production && (
+                        <p>Peak: {animal.mother_production_info.peak_production}L</p>
                       )}
                     </div>
                   </div>
@@ -615,33 +506,35 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick, onViewFullHistor
           )}
 
           {/* Production Information for Lactating Animals */}
-          {(['served', 'lactating', 'steaming_dry_cows', 'open_culling_dry_cows', 'dry'].includes(animal.production_status)) && (
+          {/* Production-Specific Information */}
+          {(['served', 'lactating', 'dry'].includes(animal.production_status)) && (
             <CollapsibleSection id="production" title="Production Information" icon={Droplets}>
               <div className="space-y-3">
-                {/* Lactation Cycle Information */}
-                <div>
-                  <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Lactation Number</p>
-                  <span className={cn("font-medium", isMobile ? "text-sm" : "")}>
-                    {animal.lactation_number ? `Lactation ${animal.lactation_number}` : 'N/A'}
-                  </span>
-                </div>
-                {animal.lactation_start_date && (
+                {animal.service_date && (
                   <div>
-                    <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Lactation Start</p>
-                    <span className={cn("font-medium", isMobile ? "text-sm" : "")}>
-                      {formatDate(animal.lactation_start_date)}
-                    </span>
+                    <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Service Date</p>
+                    <div className="flex items-center space-x-2">
+                      <Syringe className={cn("text-gray-500", isMobile ? "w-3 h-3" : "w-4 h-4")} />
+                      <span className={cn("font-medium", isMobile ? "text-sm" : "")}>{formatDate(animal.service_date)}</span>
+                    </div>
                   </div>
                 )}
-                {animal.lactation_expected_end && (
+                {animal.service_method && (
                   <div>
-                    <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Expected End</p>
-                    <span className={cn("font-medium", isMobile ? "text-sm" : "")}>
-                      {formatDate(animal.lactation_expected_end)}
-                    </span>
+                    <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Service Method</p>
+                    <Badge className="capitalize">{animal.service_method.replace('_', ' ')}</Badge>
                   </div>
                 )}
-                {animal.current_daily_production ? (
+                {animal.expected_calving_date && (
+                  <div>
+                    <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Expected Calving Date</p>
+                    <div className="flex items-center space-x-2">
+                      <Baby className={cn("text-gray-500", isMobile ? "w-3 h-3" : "w-4 h-4")} />
+                      <span className={cn("font-medium", isMobile ? "text-sm" : "")}>{formatDate(animal.expected_calving_date)}</span>
+                    </div>
+                  </div>
+                )}
+                {animal.current_daily_production && (
                   <div>
                     <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Current Daily Production</p>
                     <div className="flex items-center space-x-2">
@@ -651,56 +544,21 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick, onViewFullHistor
                       </span>
                     </div>
                   </div>
-                ) : (
-                  <div>
-                    <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Current Daily Production</p>
-                    <span className="text-gray-500 text-sm">N/A</span>
-                  </div>
                 )}
-                {animal.days_in_milk ? (
+                {animal.days_in_milk && (
                   <div>
                     <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Days in Milk</p>
                     <span className={cn("font-medium", isMobile ? "text-sm" : "")}>
                       {animal.days_in_milk} days
                     </span>
                   </div>
-                ) : (
-                  animal.production_status === 'lactating' && (
-                    <div>
-                      <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Days in Milk</p>
-                      <span className="text-gray-500 text-sm">N/A</span>
-                    </div>
-                  )
                 )}
-                
-                {/* Service Information - Hidden for lactating animals */}
-                {animal.service_date && animal.production_status !== 'lactating' ? (
-                  <div className="pt-3 border-t border-gray-100">
-                    <p className={cn("text-gray-600 mb-2 font-medium", isMobile ? "text-xs" : "text-sm")}>Service History</p>
-                    <div>
-                      <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Service Date</p>
-                      <div className="flex items-center space-x-2">
-                        <Syringe className={cn("text-gray-500", isMobile ? "w-3 h-3" : "w-4 h-4")} />
-                        <span className={cn("font-medium", isMobile ? "text-sm" : "")}>{formatDate(animal.service_date)}</span>
-                      </div>
-                    </div>
-                    {animal.service_method && (
-                      <div className="mt-2">
-                        <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Service Method</p>
-                        <Badge className="capitalize text-xs">{animal.service_method.replace('_', ' ')}</Badge>
-                      </div>
-                    )}
-                  </div>
-                ) : null}
-                
-                {/* Expected/Recent Calving - Hidden for lactating animals */}
-                {animal.expected_calving_date && animal.production_status !== 'lactating' && (
-                  <div className="pt-3 border-t border-gray-100">
-                    <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Expected Calving Date</p>
-                    <div className="flex items-center space-x-2">
-                      <Baby className={cn("text-gray-500", isMobile ? "w-3 h-3" : "w-4 h-4")} />
-                      <span className={cn("font-medium", isMobile ? "text-sm" : "")}>{formatDate(animal.expected_calving_date)}</span>
-                    </div>
+                {animal.lactation_number && (
+                  <div>
+                    <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Lactation Number</p>
+                    <span className={cn("font-medium", isMobile ? "text-sm" : "")}>
+                      Lactation {animal.lactation_number}
+                    </span>
                   </div>
                 )}
               </div>
@@ -867,151 +725,21 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick, onViewFullHistor
               </div>
             )}
 
-            {/* Calving Events (Latest) */}
-            {animal.latest_calving && (
-              <div className="flex items-start space-x-3">
-                <div className="w-3 h-3 bg-rose-500 rounded-full mt-1.5" />
-                <div className="flex-1">
-                  <p className={cn(
-                    "font-medium text-gray-900",
-                    isMobile ? "text-sm" : ""
-                  )}>Calved</p>
-                  <p className={cn(
-                    "text-gray-600",
-                    isMobile ? "text-xs" : "text-sm"
-                  )}>
-                    {animal.latest_calving.calving_date ? formatDate(animal.latest_calving.calving_date) : 'Date pending'}
-                  </p>
-                  <div className={cn(
-                    "text-gray-500 space-y-1",
-                    isMobile ? "text-xs" : "text-xs"
-                  )}>
-                    {animal.latest_calving.calving_difficulty && (
-                      <p>Difficulty: {animal.latest_calving.calving_difficulty}</p>
-                    )}
-                    {animal.latest_calving.assistance_required && (
-                      <p>Assistance: Yes</p>
-                    )}
-                    <p>
-                      {animal.latest_calving.calf_alive ? '✓ Calf alive' : animal.latest_calving.calf_alive === false ? '✗ Calf lost' : 'Calf status: N/A'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            {/* All Calving History (if more than 1) */}
-            {animal.calving_history && animal.calving_history.length > 1 && (
-              <div className="flex items-start space-x-3">
-                <div className="w-3 h-3 bg-rose-300 rounded-full mt-1.5" />
-                <div className="flex-1">
-                  <p className={cn(
-                    "font-medium text-gray-900",
-                    isMobile ? "text-sm" : ""
-                  )}>Calving History</p>
-                  <p className={cn(
-                    "text-gray-600",
-                    isMobile ? "text-xs" : "text-sm"
-                  )}>
-                    {animal.calving_history.length} total calving event{animal.calving_history.length !== 1 ? 's' : ''}
-                  </p>
-                  <p className={cn(
-                    "text-gray-500",
-                    isMobile ? "text-xs" : "text-xs"
-                  )}>
-                    Latest: {animal.latest_calving.calving_date ? formatDate(animal.latest_calving.calving_date) : 'N/A'}
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Steaming/Dry-off Event */}
-            {['steaming_dry_cows', 'open_culling_dry_cows', 'dry'].includes(animal.production_status) && animal.latest_calving?.steaming_date && (
-              <div className="flex items-start space-x-3">
-                <div className="w-3 h-3 bg-orange-500 rounded-full mt-1.5" />
-                <div className="flex-1">
-                  <p className={cn(
-                    "font-medium text-gray-900",
-                    isMobile ? "text-sm" : ""
-                  )}>Steaming/Dry-off</p>
-                  <p className={cn(
-                    "text-gray-600",
-                    isMobile ? "text-xs" : "text-sm"
-                  )}>
-                    {formatDate(animal.latest_calving.steaming_date)}
-                  </p>
-                  <div className={cn(
-                    "text-gray-500 space-y-1",
-                    isMobile ? "text-xs" : "text-xs"
-                  )}>
-                    {animal.latest_calving.colostrum_produced && (
-                      <p>Colostrum: {animal.latest_calving.colostrum_produced}L</p>
-                    )}
-                    <p>Preparation period for next lactation</p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Release/Sale Event */}
-            {animal.release_info && (
-              <div className="flex items-start space-x-3">
-                <div className="w-3 h-3 bg-red-500 rounded-full mt-1.5" />
-                <div className="flex-1">
-                  <p className={cn(
-                    "font-medium text-gray-900",
-                    isMobile ? "text-sm" : ""
-                  )}>
-                    {animal.release_info.release_reason === 'sold' ? 'Sold' : 
-                     animal.release_info.release_reason === 'died' || animal.release_info.release_reason === 'deceased' ? 'Deceased' :
-                     animal.release_info.release_reason === 'transferred' ? 'Transferred' :
-                     animal.release_info.release_reason === 'culled' ? 'Culled' : 
-                     animal.release_info.release_reason === 'retired' ? 'Retired' : 'Released'}
-                  </p>
-                  <p className={cn(
-                    "text-gray-600",
-                    isMobile ? "text-xs" : "text-sm"
-                  )}>
-                    {formatDate(animal.release_info.release_date || animal.release_info.release_date)}
-                  </p>
-                  <div className={cn(
-                    "text-gray-500 space-y-1",
-                    isMobile ? "text-xs" : "text-xs"
-                  )}>
-                    {animal.release_info.buyer_name && (
-                      <p>Buyer: {animal.release_info.buyer_name}</p>
-                    )}
-                    {animal.release_info.sale_price && (
-                      <p>Price: KSh {animal.release_info.sale_price.toLocaleString()}</p>
-                    )}
-                    {animal.release_info.death_cause && (
-                      <p>Cause: {animal.release_info.death_cause}</p>
-                    )}
-                    {animal.release_info.notes && (
-                      <p>Notes: {animal.release_info.notes}</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
             {/* Future Events Placeholder */}
-            {!animal.release_info && (
-              <div className="flex items-start space-x-3 opacity-50">
-                <div className="w-3 h-3 bg-gray-300 rounded-full mt-1.5" />
-                <div className="flex-1">
-                  <p className={cn(
-                    "text-gray-500 italic",
-                    isMobile ? "text-xs" : "text-sm"
-                  )}>
-                    {isMobile
-                      ? "More events will appear with records"
-                      : "More events will appear as you add health and production records"
-                    }
-                  </p>
-                </div>
+            <div className="flex items-start space-x-3 opacity-50">
+              <div className="w-3 h-3 bg-gray-300 rounded-full mt-1.5" />
+              <div className="flex-1">
+                <p className={cn(
+                  "text-gray-500 italic",
+                  isMobile ? "text-xs" : "text-sm"
+                )}>
+                  {isMobile
+                    ? "More events will appear with records"
+                    : "More events will appear as you add health and production records"
+                  }
+                </p>
               </div>
-            )}
+            </div>
           </div>
 
           {/* Additional Notes Section */}

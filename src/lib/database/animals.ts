@@ -1023,20 +1023,42 @@ export async function getAnimalsWithOutdatedProductionStatus(
 }
 
 // Release an animal with proper audit trail
+/**
+ * Map release reason to animal status
+ */
+function mapReleaseReasonToStatus(reason: string): 'sold' | 'deceased' {
+  switch (reason) {
+    case 'sold':
+      return 'sold'
+    case 'died':
+    case 'deceased':
+      return 'deceased'
+    case 'transferred':
+    case 'culled':
+    case 'retired':
+    case 'other':
+      // Transferred, culled, retired, and other reasons all result in 'sold' status
+      // (animal is no longer in active herd but records are kept)
+      return 'sold'
+    default:
+      return 'sold'
+  }
+}
+
 export async function releaseAnimal(
   animalId: string,
   farmId: string,
   releaseData: {
-    release_reason: 'sold' | 'died' | 'transferred' | 'culled' | 'other';
+    release_reason: 'sold' | 'deceased' | 'transferred' | 'culled' | 'retired' | 'other';
     release_date: string;
     sale_price?: number;
-    buyer_info?: string;
+    buyer_name?: string;
     death_cause?: string;
-    transfer_location?: string;
+    destination_farm?: string;
     notes: string;
   },
   userId: string
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; releaseId?: string }> {
   const supabase = await createServerSupabaseClient()
   
   try {
@@ -1066,47 +1088,49 @@ export async function releaseAnimal(
       return { success: false, error: 'Animal not found or access denied' }
     }
     
+    // Determine new status based on release reason
+    const newStatus = mapReleaseReasonToStatus(releaseData.release_reason)
+    
     // Create release record for audit trail
-    // FIXED: Cast to any
-    const { error: releaseRecordError } = await (supabase
-      .from('animal_releases') as any)
+    const { data: releaseRecord, error: releaseRecordError } = await (supabase
+      .from('animal_release_records') as any)
       .insert({
         animal_id: animalId,
         farm_id: farmId,
-        released_by: userId,
+        created_by: userId,
         release_reason: releaseData.release_reason,
         release_date: releaseData.release_date,
         sale_price: releaseData.sale_price || null,
-        buyer_info: releaseData.buyer_info || null,
+        buyer_name: releaseData.buyer_name || null,
         death_cause: releaseData.death_cause || null,
-        transfer_location: releaseData.transfer_location || null,
+        destination_farm: releaseData.destination_farm || null,
         notes: releaseData.notes,
-        animal_data: existingAnimal, // Store complete animal data for records
       })
+      .select('id')
+      .single()
     
     if (releaseRecordError) {
       console.error('Error creating release record:', releaseRecordError)
       return { success: false, error: 'Failed to create release record' }
     }
     
-    // Update animal status to released
-    // FIXED: Cast to any
+    // Update animal status
     const { error: updateError } = await (supabase
       .from('animals') as any)
       .update({
-        status: 'released',
-        release_date: releaseData.release_date,
-        release_reason: releaseData.release_reason,
+        status: newStatus,
         updated_at: new Date().toISOString(),
+        updated_by: userId,
       })
       .eq('id', animalId)
+      .eq('farm_id', farmId)
     
     if (updateError) {
       console.error('Error updating animal status:', updateError)
       return { success: false, error: 'Failed to update animal status' }
     }
     
-    return { success: true }
+    return { success: true, releaseId: releaseRecord?.id }
   } catch (error) {
     console.error('Error in releaseAnimal:', error)
     return { success: false, error: 'Failed to release animal' }
@@ -1121,13 +1145,8 @@ export async function getAnimalReleaseInfo(animalId: string, farmId: string) {
   
   try {
     const { data, error } = await supabase
-      .from('animal_releases')
-      .select(`
-        *,
-        released_by_user:released_by (
-          user_metadata
-        )
-      `)
+      .from('animal_release_records')
+      .select('*')
       .eq('animal_id', animalId)
       .eq('farm_id', farmId)
       .single()
@@ -1158,13 +1177,8 @@ export async function getReleasedAnimals(
   const supabase = await createServerSupabaseClient()
   
   let query = supabase
-    .from('animal_releases')
-    .select(`
-      *,
-      released_by_user:released_by (
-        user_metadata
-      )
-    `)
+    .from('animal_release_records')
+    .select('*')
     .eq('farm_id', farmId)
     .order('release_date', { ascending: false })
   
@@ -1233,7 +1247,7 @@ export async function getAnimalStats(farmId: string): Promise<AnimalStats> {
 
   const { data: animalsData, error } = await supabase
     .from('animals')
-    .select('gender, animal_source, production_status, health_status, birth_date, current_daily_production')
+    .select('gender, animal_source, production_status, health_status, birth_date')
     .eq('farm_id', farmId)
     .eq('status', 'active')
   
@@ -1284,8 +1298,7 @@ export async function getAnimalStats(farmId: string): Promise<AnimalStats> {
       needsAttention: animals.filter(a => a.health_status !== 'healthy').length,
     },
     
-    averageAge: calculateAverageAge(animals),
-    averageProduction: calculateAverageProduction(animals)
+    averageAge: calculateAverageAge(animals)
   }
   
   return stats

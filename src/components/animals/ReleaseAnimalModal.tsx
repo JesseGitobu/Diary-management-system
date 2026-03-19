@@ -24,6 +24,22 @@ const releaseAnimalSchema = z.object({
 
 type ReleaseAnimalFormData = z.infer<typeof releaseAnimalSchema>
 
+// Map release reason to resulting animal status
+function getResultingStatus(reason: string): string {
+  switch (reason) {
+    case 'sold':
+      return 'sold'
+    case 'died':
+      return 'deceased'
+    case 'transferred':
+    case 'culled':
+    case 'other':
+      return 'sold'
+    default:
+      return 'sold'
+  }
+}
+
 interface ReleaseAnimalModalProps {
   animal: any
   isOpen: boolean
@@ -60,12 +76,18 @@ export function ReleaseAnimalModal({
     setError(null)
     
     try {
+      // Map 'died' to 'deceased' for database schema
+      const submitData = {
+        ...data,
+        release_reason: data.release_reason === 'died' ? 'deceased' : data.release_reason
+      }
+      
       const response = await fetch(`/api/animals/${animal.id}/release`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(data),
+        body: JSON.stringify(submitData),
       })
       
       if (!response.ok) {
@@ -193,10 +215,16 @@ export function ReleaseAnimalModal({
             
             {releaseReason && (
               <div className="mt-2 p-3 bg-gray-50 rounded-md">
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-2 mb-2">
                   {getReleaseIcon(releaseReason)}
                   <span className="text-sm text-gray-700">
                     {getReleaseDescription(releaseReason)}
+                  </span>
+                </div>
+                <div className="flex items-center space-x-2 text-sm">
+                  <span className="text-gray-600">Status will change to:</span>
+                  <span className="font-medium px-2 py-1 bg-blue-100 text-blue-800 rounded capitalize">
+                    {getResultingStatus(releaseReason)}
                   </span>
                 </div>
               </div>

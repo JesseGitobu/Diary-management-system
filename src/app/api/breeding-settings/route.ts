@@ -13,7 +13,13 @@ export async function GET(request: NextRequest) {
       console.warn('⚠️ [BREEDING-SETTINGS] No authenticated user, returning defaults')
       return NextResponse.json({
         success: true,
-        default_gestation: 280
+        settings: {
+          minimumBreedingAgeMonths: 15,
+          defaultGestationPeriod: 280,
+          pregnancyCheckDays: 45,
+          autoSchedulePregnancyCheck: true,
+          postpartumBreedingDelayDays: 60
+        }
       })
     }
 
@@ -38,7 +44,13 @@ export async function GET(request: NextRequest) {
         console.warn('⚠️ [BREEDING-SETTINGS] No farm found for user, returning defaults')
         return NextResponse.json({
           success: true,
-          default_gestation: 280
+          settings: {
+            minimumBreedingAgeMonths: 15,
+            defaultGestationPeriod: 280,
+            pregnancyCheckDays: 45,
+            autoSchedulePregnancyCheck: true,
+            postpartumBreedingDelayDays: 60
+          }
         })
       }
 
@@ -67,9 +79,13 @@ export async function GET(request: NextRequest) {
       console.log('ℹ️ [BREEDING-SETTINGS] No settings found, returning defaults')
       return NextResponse.json({
         success: true,
-        default_gestation: 280,
-        pregnancy_check_days: 45,
-        postpartum_breeding_delay_days: 60
+        settings: {
+          minimumBreedingAgeMonths: 15,
+          defaultGestationPeriod: 280,
+          pregnancyCheckDays: 45,
+          autoSchedulePregnancyCheck: true,
+          postpartumBreedingDelayDays: 60
+        }
       })
     }
 
@@ -79,14 +95,16 @@ export async function GET(request: NextRequest) {
       preg_check: settings.pregnancy_check_days
     })
 
-    // Return raw database fields (camelCase conversion will be done in the component if needed)
+    // Transform database field names to camelCase for the component
     return NextResponse.json({
       success: true,
-      default_gestation: settings.default_gestation || 280,
-      pregnancy_check_days: settings.pregnancy_check_days || 45,
-      postpartum_breeding_delay_days: settings.postpartum_breeding_delay_days || 60,
-      minimum_breeding_age_months: settings.minimum_breeding_age_months || 15,
-      default_cycle_interval: settings.default_cycle_interval || 21
+      settings: {
+        minimumBreedingAgeMonths: settings.minimum_breeding_age_months || 15,
+        defaultGestationPeriod: settings.default_gestation || 280,
+        pregnancyCheckDays: settings.pregnancy_check_days || 45,
+        autoSchedulePregnancyCheck: settings.auto_schedule_pregnancy_check !== false,
+        postpartumBreedingDelayDays: settings.postpartum_breeding_delay_days || 60
+      }
     })
   } catch (error: any) {
     console.error('❌ [BREEDING-SETTINGS] Error:', error)

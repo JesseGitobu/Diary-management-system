@@ -5,7 +5,7 @@ import { releaseAnimal, getAnimalById, getAnimalReleaseInfo } from '@/lib/databa
 
 export async function POST(request: NextRequest, context: any) {
   const { params } = context
-  const animalId = params.id
+  const animalId = (await params).id
 
   try {
     const user = await getCurrentUser()
@@ -35,8 +35,10 @@ export async function POST(request: NextRequest, context: any) {
     }
 
     // Validate release reason
-    const validReasons = ['sold', 'died', 'transferred', 'culled', 'other']
-    if (!validReasons.includes(body.release_reason)) {
+    const validReasons = ['sold', 'deceased', 'transferred', 'culled', 'retired', 'other']
+    // Allow 'died' from form and map to 'deceased' for database
+    let releaseReason = body.release_reason === 'died' ? 'deceased' : body.release_reason
+    if (!validReasons.includes(releaseReason)) {
       return NextResponse.json({
         error: 'Invalid release reason. Must be one of: ' + validReasons.join(', ')
       }, { status: 400 })
@@ -57,25 +59,35 @@ export async function POST(request: NextRequest, context: any) {
       return NextResponse.json({ error: 'Animal not found or does not belong to your farm' }, { status: 404 })
     }
 
-    // Already released
-    if (existingAnimal.status === 'released') {
-      return NextResponse.json({ error: 'Animal has already been released' }, { status: 400 })
+    // Check if already released (not in 'active' status)
+    if (existingAnimal.status !== 'active') {
+      return NextResponse.json({ 
+        error: `Animal has already been released with status: ${existingAnimal.status}` 
+      }, { status: 400 })
     }
 
     // Conditional validation
-    if (body.release_reason === 'sold' && body.sale_price && (isNaN(body.sale_price) || body.sale_price < 0)) {
+    if (releaseReason === 'sold' && body.sale_price && (isNaN(body.sale_price) || body.sale_price < 0)) {
       return NextResponse.json({ error: 'Sale price must be a valid positive number' }, { status: 400 })
     }
 
-    if (body.release_reason === 'died' && !body.death_cause) {
-      return NextResponse.json({ error: 'Death cause is required when release reason is "died"' }, { status: 400 })
+    if (releaseReason === 'deceased' && !body.death_cause) {
+      return NextResponse.json({ error: 'Death cause is required when release reason is "deceased"' }, { status: 400 })
     }
 
-    if (body.release_reason === 'transferred' && !body.transfer_location) {
+    if (releaseReason === 'transferred' && !body.transfer_location) {
       return NextResponse.json({ error: 'Transfer location is required when release reason is "transferred"' }, { status: 400 })
     }
 
-    const result = await releaseAnimal(animalId, userRole.farm_id, body, user.id)
+    // Prepare release data with mapped fields
+    const releaseDataForDb = {
+      ...body,
+      release_reason: releaseReason,
+      buyer_name: body.buyer_info || null,
+      destination_farm: body.transfer_location || null
+    }
+
+    const result = await releaseAnimal(animalId, userRole.farm_id, releaseDataForDb, user.id)
 
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 })
@@ -95,7 +107,7 @@ export async function POST(request: NextRequest, context: any) {
 
 export async function GET(request: NextRequest, context: any) {
   const { params } = context
-  const animalId = params.id
+  const animalId = (await params).id
 
   try {
     const user = await getCurrentUser()

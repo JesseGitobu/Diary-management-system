@@ -41,6 +41,7 @@ interface IndividualRecordFormProps {
     production_status: string 
   }>
   session: string
+  sessionId?: string
   recordDate: string
   settings: ProductionSettings | null
   onSuccess?: () => void
@@ -54,6 +55,7 @@ export function IndividualRecordForm({
   farmId,
   animals,
   session,
+  sessionId,
   recordDate,
   settings,
   onSuccess,
@@ -96,7 +98,7 @@ export function IndividualRecordForm({
           const records = Array.isArray(result.data) ? result.data : []
           
           // Filter by session since API doesn't support that parameter
-          const sessionFilteredRecords = records.filter((r: any) => r.milking_session === session)
+          const sessionFilteredRecords = records.filter((r: any) => r.milking_session_id === session)
           console.log(`[IndividualRecordForm] Filtered to session "${session}": ${sessionFilteredRecords.length} pre-recorded animals`)
           
           const preRecordedIds = new Set<string>(sessionFilteredRecords.map((r: any) => r.animal_id))
@@ -257,6 +259,7 @@ export function IndividualRecordForm({
           farm_id: farmId,
           recording_type: recordingType,
           milking_group_id: milkingGroupId || null,
+          milking_session_id: sessionId || null,
           temperature: data.temperature === undefined ? null : data.temperature,
           mastitis_test_performed: data.mastitis_test_performed || false,
           mastitis_result: data.mastitis_result || null,

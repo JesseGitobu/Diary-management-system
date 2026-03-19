@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
       .eq('farm_id', farmId)
       .eq('animal_id', animalId)
       .eq('record_date', currentDate)
-      .neq('milking_session', currentSession)
+      .neq('milking_session_id', currentSession)
       .order('created_at', { ascending: false })
       .limit(1)
     
@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
       .eq('farm_id', farmId)
       .eq('animal_id', animalId)
       .eq('record_date', yesterdayDate)
-      .eq('milking_session', currentSession)
+      .eq('milking_session_id', currentSession)
       .limit(1)
     
     const typedSameTimeYesterdayRecords = sameTimeYesterdayRecords as any

@@ -168,7 +168,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
     if (breedingSettings && animal) {
       checkBreedingEligibility()
     }
-  }, [breedingSettings, animal, breedingRecords])
+  }, [breedingSettings, animal])
 
   const loadBreedingSettings = async () => {
     try {
@@ -260,18 +260,14 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
     const isServed = animal.production_status?.toLowerCase() === 'served'
     
     if (isDry || isServed) {
-      console.error(`✅ BREEDING RECORDS DEBUG: ${isDry ? 'DRY' : 'SERVED'} ANIMAL - EARLY RETURN WITH ELIGIBLE=TRUE`, {
-        animal_id: animalId,
-        production_status: animal.production_status,
-        breeding_records_count: breedingRecords.length,
-        breeding_records: breedingRecords.map(r => ({
-          id: r.id,
-          pregnancy_status: r.pregnancy_status,
-          actual_calving_date: r.actual_calving_date,
-          expected_calving_date: r.expected_calving_date
-        })),
-        eligibility_being_set: eligibility
-      })
+      const DEBUG_MODE = false
+      if (DEBUG_MODE) {
+        console.log(`✅ BREEDING RECORDS DEBUG: ${isDry ? 'DRY' : 'SERVED'} ANIMAL - EARLY RETURN`, {
+          animal_id: animalId,
+          production_status: animal.production_status,
+          breeding_records_count: breedingRecords.length
+        })
+      }
       setBreedingEligibility(eligibility) // Return with eligible: true
       return
     }
@@ -364,13 +360,17 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
 
     setBreedingEligibility(eligibility)
     
-    console.error(`✅ FINAL ELIGIBILITY RESULT`, {
-      animal_id: animalId,
-      production_status: animal.production_status,
-      eligible: eligibility.eligible,
-      reasons: eligibility.reasons,
-      ageInMonths: eligibility.ageInMonths
-    })
+    // Debug logging (disabled by default)
+    const DEBUG_MODE = false
+    if (DEBUG_MODE) {
+      console.log(`✅ FINAL ELIGIBILITY RESULT`, {
+        animal_id: animalId,
+        production_status: animal.production_status,
+        eligible: eligibility.eligible,
+        reasons: eligibility.reasons,
+        ageInMonths: eligibility.ageInMonths
+      })
+    }
   }
 
   const handleEventCreated = async () => {
@@ -436,19 +436,22 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
       e.pregnancy_result === 'pregnant'
     )
     
-    console.error(`✅ BREEDING RECORDS DEBUG: PREGNANCY CHECK`, {
-      animal_id: animalId,
-      production_status: animal.production_status,
-      breeding_records_count: breedingRecords.length,
-      breeding_records: breedingRecords.map(r => ({
-        pregnancy_status: r.pregnancy_status,
-        actual_calving_date: r.actual_calving_date,
-        expected_calving_date: r.expected_calving_date
-      })),
-      confirmedPregnancy_from_records: !!confirmedPregnancy,
-      pregnancyEvent_from_events: !!pregnancyEventConfirmed,
-      pregnancyEventData: pregnancyEventConfirmed ? { pregnancy_result: pregnancyEventConfirmed.pregnancy_result, estimated_due_date: pregnancyEventConfirmed.estimated_due_date } : null
-    })
+    // Debug logging (disabled by default to prevent render spam)
+    const DEBUG_MODE = false
+    if (DEBUG_MODE) {
+      console.log(`✅ BREEDING RECORDS DEBUG: PREGNANCY CHECK`, {
+        animal_id: animalId,
+        production_status: animal.production_status,
+        breeding_records_count: breedingRecords.length,
+        breeding_records: breedingRecords.map(r => ({
+          pregnancy_status: r.pregnancy_status,
+          actual_calving_date: r.actual_calving_date,
+          expected_calving_date: r.expected_calving_date
+        })),
+        confirmedPregnancy_from_records: !!confirmedPregnancy,
+        pregnancyEvent_from_events: !!pregnancyEventConfirmed
+      })
+    }
     
     // Also check for positive pregnancy check from breeding_events table (event-driven)
     const latestInsemination = inseminationEvents[0]
@@ -953,14 +956,13 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
         const isEligible = breedingEligibility?.eligible !== false
         const shouldShowNotEligible = !isEligible && !breedingWindow
         if (shouldShowNotEligible) {
-          console.error(`🔴 RENDERING NOT ELIGIBLE BANNER`, {
-            animal_id: animalId,
-            production_status: animal.production_status,
-            breedingEligibility_eligible: breedingEligibility?.eligible,
-            breedingWindow_exists: !!breedingWindow,
-            breedingWindow_content: breedingWindow,
-            isEligible: isEligible
-          })
+          const DEBUG_MODE = false
+          if (DEBUG_MODE) {
+            console.log(`🔴 RENDERING NOT ELIGIBLE BANNER`, {
+              animal_id: animalId,
+              production_status: animal.production_status
+            })
+          }
         }
         return shouldShowNotEligible
       })() && (

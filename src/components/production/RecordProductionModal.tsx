@@ -53,9 +53,15 @@ export function RecordProductionModal({
     ]
   }, [settings?.milkingSessions])
 
-  // Initialize selectedSession to first session's name (lowercase)
+  // Initialize selectedSession to first session ID
   const [selectedSession, setSelectedSession] = useState<string>(
-    sessions.length > 0 ? sessions[0].name.toLowerCase().replace(/\s+/g, '') : 'morning'
+    sessions.length > 0 ? sessions[0].id : 'morning'
+  )
+  
+  // Get the session object for selectedSession to pass sessionId to forms
+  const currentSessionObject = useMemo(
+    () => sessions.find(s => s.id === selectedSession) || sessions[0],
+    [sessions, selectedSession]
   )
   
   // Calculate min allowed date based on maxRetroactiveDays
@@ -129,14 +135,11 @@ export function RecordProductionModal({
               onChange={(e) => setSelectedSession(e.target.value)}
               className="px-3 py-1.5 border border-stone-300 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
             >
-              {sessions.map(session => {
-                const key = session.name.toLowerCase().replace(/\s+/g, '')
-                return (
-                  <option key={session.id} value={key}>
-                    {sessionLabels[key]}
-                  </option>
-                )
-              })}
+              {sessions.map(session => (
+                <option key={session.id} value={session.id}>
+                  {session.name} ({session.time})
+                </option>
+              ))}
             </select>
           </div>
         </div>
@@ -173,6 +176,7 @@ export function RecordProductionModal({
             farmId={farmId}
             animals={animals}
             session={selectedSession}
+            sessionId={selectedSession}
             recordDate={selectedDate}
             settings={settings}
             closeAfterSuccess={false}
@@ -184,6 +188,7 @@ export function RecordProductionModal({
             farmId={farmId}
             animals={animals}
             session={selectedSession}
+            sessionId={selectedSession}
             recordDate={selectedDate}
             settings={settings}
           />

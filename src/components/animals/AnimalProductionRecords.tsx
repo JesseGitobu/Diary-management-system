@@ -742,12 +742,8 @@ export function AnimalProductionRecords({
                           <span className="font-medium text-gray-900">
                             {new Date(record.record_date).toLocaleDateString('en-GB')}
                           </span>
-                          <Badge className={
-                            record.milking_session === 'morning' ? 'bg-blue-100 text-blue-800' :
-                            record.milking_session === 'afternoon' ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-purple-100 text-purple-800'
-                          }>
-                            {record.milking_session}
+                          <Badge className="bg-gray-100 text-gray-800">
+                            {record.milking_session || 'Unknown Session'}
                           </Badge>
                         </div>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">

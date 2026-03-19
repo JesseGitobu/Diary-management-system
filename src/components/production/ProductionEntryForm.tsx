@@ -16,7 +16,7 @@ import { ProductionSettings } from '@/types/production-distribution-settings'
 type ProductionFormData = {
   animal_id: string;
   record_date: string;
-  milking_session: 'morning' | 'afternoon' | 'evening';
+  milking_session_id: string;
   milk_volume: number;
   milk_safety_status: 'safe' | 'unsafe_health' | 'unsafe_colostrum';
   fat_content?: number | null;
@@ -76,7 +76,7 @@ export function ProductionEntryForm({
     return z.object({
       animal_id: z.string().min(1, 'Please select an animal'),
       record_date: z.string().min(1, 'Date is required'),
-      milking_session: z.enum(['morning', 'afternoon', 'evening']),
+      milking_session_id: z.string().min(1, 'Please select a milking session'),
       milk_volume: z.number()
         .min(0.1, 'Volume must be positive')
         .max(100, 'Volume seems too high'),
@@ -101,7 +101,7 @@ export function ProductionEntryForm({
     defaultValues: {
       animal_id: initialData?.animal_id || '',
       record_date: initialData?.record_date || new Date().toISOString().split('T')[0],
-      milking_session: initialData?.milking_session || settings?.defaultSession || 'morning',
+      milking_session_id: initialData?.milking_session_id || (settings?.milkingSessions?.[0]?.id) || 'default',
       milk_volume: initialData?.milk_volume || undefined,
       milk_safety_status: initialData?.milk_safety_status || 'safe',
       fat_content: initialData?.fat_content || null,
@@ -118,8 +118,8 @@ export function ProductionEntryForm({
   const isBasicMode = settings?.productionTrackingMode === 'basic'
   const isQualityVisible = !isBasicMode && settings?.enableQualityTracking !== false
 
-  // Determine enabled sessions
-  const enabledSessions = settings?.enabledSessions || ['morning', 'afternoon', 'evening']
+  // Determine enabled sessions from settings
+  const enabledSessions = settings?.milkingSessions || []
 
   // Function to convert empty strings to null for numeric fields
   const preprocessFormData = (data: ProductionFormData) => {
@@ -168,7 +168,7 @@ export function ProductionEntryForm({
       form.reset({
         animal_id: '',
         record_date: new Date().toISOString().split('T')[0],
-        milking_session: settings?.defaultSession || 'morning',
+        milking_session_id: settings?.milkingSessions?.[0]?.id || 'default',
         milk_volume: undefined,
         milk_safety_status: 'safe',
         fat_content: null,
@@ -252,21 +252,20 @@ export function ProductionEntryForm({
             </div>
 
             <div>
-              <Label htmlFor="milking_session">Session *</Label>
+              <Label htmlFor="milking_session_id">Session *</Label>
               <select
-                id="milking_session"
-                {...form.register('milking_session')}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent capitalize"
+                id="milking_session_id"
+                {...form.register('milking_session_id')}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
               >
+                <option value="">Select a session</option>
                 {enabledSessions.map(session => (
-                   <option key={session} value={session}>{session}</option>
+                   <option key={session.id} value={session.id}>{session.name} ({session.time})</option>
                 ))}
-                {/* Fallback if enabledSessions is empty/invalid */}
-                {enabledSessions.length === 0 && <option value="morning">Morning</option>}
               </select>
-              {form.formState.errors.milking_session && (
+              {form.formState.errors.milking_session_id && (
                 <p className="text-sm text-red-600 mt-1">
-                  {form.formState.errors.milking_session.message}
+                  {form.formState.errors.milking_session_id.message}
                 </p>
               )}
             </div>
