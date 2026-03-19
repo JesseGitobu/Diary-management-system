@@ -27,7 +27,7 @@ export async function GET(
     // Fetch all milking groups for this farm from farm_milking_groups table
     const { data: milkingGroups, error: fetchError } = await supabase
       .from('farm_milking_groups')
-      .select('category_id, category_name, animal_count, milking_schedules, selected_schedule_id')
+      .select('id, category_id, category_name, animal_count, milking_schedules, selected_schedule_id')
       .eq('farm_id', farmId)
       .order('created_at', { ascending: true })
 
@@ -37,6 +37,7 @@ export async function GET(
 
     // Format response to match expected structure
     const formattedGroups = (milkingGroups || []).map((group: any) => ({
+      id: group.id,
       category_id: group.category_id,
       category_name: group.category_name,
       animal_count: group.animal_count,

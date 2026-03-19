@@ -76,7 +76,7 @@ export default async function ProductionPage() {
             animalsMilked: summary.animals_milked || 0
           }))
         }}
-        productionRecords={productionRecords.slice(0, 10)}
+        productionRecords={productionRecords}
         productionSettings={productionSettings}
         animals={animals.map(animal => ({
           id: animal.id,
@@ -87,7 +87,7 @@ export default async function ProductionPage() {
         }))}
         // Distribution props
         distributionStats={distributionStats}
-        distributionRecords={distributionRecords.slice(0, 10).map(record => ({
+        distributionRecords={distributionRecords.map(record => ({
           ...record,
           channelType: record.channelType as "cooperative" | "processor" | "direct" | "retail",
           status: record.status as "pending" | "delivered" | "paid"

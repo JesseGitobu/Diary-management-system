@@ -557,6 +557,8 @@ export function GroupRecordForm({
             recordDate={recordDate}
             settings={settings}
             closeAfterSuccess={false}
+            recordingType="group"
+            milkingGroupId={selectedGroupId || undefined}
             onRecordSaved={(animalId) => {
               // Mark animal as recorded
               const updated = new Set([...recordedAnimalIds, animalId])

@@ -490,6 +490,7 @@ export function ProductionDistributionDashboard({
               <CardContent className={`${isMobile ? 'px-2' : ''}`}>
                 <ProductionRecordsList 
                   records={productionRecords} 
+                  farmId={farmId}
                   canEdit={canAddRecords}
                   isMobile={isMobile}
                   onView={handleViewProductionRecord}

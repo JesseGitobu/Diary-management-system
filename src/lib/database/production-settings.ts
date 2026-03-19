@@ -1,5 +1,5 @@
 // lib/database/production-settings.ts
-import { createServerSupabaseClient, createAdminClient } from '@/lib/supabase/server'
+import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { ProductionSettings, getDefaultProductionSettings } from '@/types/production-distribution-settings'
 
 export async function getProductionSettings(farmId: string): Promise<ProductionSettings | null> {
@@ -162,8 +162,8 @@ export async function updateProductionSettings(
   settings: ProductionSettings
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    // Use admin client to bypass RLS for this operation
-    const supabase = createAdminClient()
+    // Respect RLS policies for this operation
+    const supabase = await createServerSupabaseClient()
 
     const dbSettings = {
       farm_id: farmId,

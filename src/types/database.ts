@@ -268,12 +268,18 @@ export interface ProductionRecord {
   id: string
   animal_id: string
   record_date: string
+  milking_session?: string
   milk_volume?: number
   milk_safety_status?: 'safe' | 'unsafe_health' | 'unsafe_colostrum'
   fat_content?: number
   protein_content?: number
   somatic_cell_count?: number
+  lactose_content?: number
+  temperature?: number
+  ph_level?: number
   notes?: string
+  recording_type?: 'individual' | 'group'
+  milking_group_id?: string
   created_at: string
 }
 
@@ -508,12 +514,18 @@ export interface HealthRecordFormData {
 export interface ProductionRecordFormData {
   animal_id: string
   record_date: string
+  milking_session?: string
   milk_volume?: number
   milk_safety_status?: 'safe' | 'unsafe_health' | 'unsafe_colostrum'
   fat_content?: number
   protein_content?: number
   somatic_cell_count?: number
+  lactose_content?: number
+  temperature?: number
+  ph_level?: number
   notes?: string
+  recording_type?: 'individual' | 'group'
+  milking_group_id?: string
 }
 
 // Database operation types

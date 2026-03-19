@@ -2,7 +2,7 @@
 
 'use client'
 
-import { useState, useMemo } from 'react'
+import React, { useState, useMemo } from 'react'
 import { Card, CardContent } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -20,7 +20,9 @@ import {
   ChevronLeft,
   ChevronRight,
   AlertTriangle,
-  CheckCircle
+  CheckCircle,
+  ChevronDown,
+  Users
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -28,6 +30,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/DropdownMenu'
+
+type ViewTab = 'individual' | 'groups'
 
 interface ProductionRecord {
   id: string
@@ -44,6 +48,8 @@ interface ProductionRecord {
   ph_level?: number
   notes?: string
   created_at: string
+  recording_type?: 'individual' | 'group'
+  milking_group_id?: string
   animals?: {
     id: string
     tag_number: string
@@ -51,9 +57,23 @@ interface ProductionRecord {
   }
 }
 
+interface GroupData {
+  milking_group_id: string | null
+  totalMilkVolume: number
+  recordCount: number
+  mostRecentSession: ProductionRecord | null
+  animalRecords: ProductionRecord[]
+}
+
+interface MilkingGroup {
+  id: string
+  category_name: string
+}
+
 interface ProductionRecordsListProps {
   records: ProductionRecord[]
   canEdit: boolean
+  farmId?: string
   onEdit?: (record: ProductionRecord) => void
   onDelete?: (recordId: string) => void
   onView?: (record: ProductionRecord) => void
@@ -82,6 +102,7 @@ const formatDateTime = (dateString: string) => {
 export function ProductionRecordsList({ 
   records, 
   canEdit, 
+  farmId,
   onEdit,
   onDelete,
   onView,
@@ -93,8 +114,35 @@ export function ProductionRecordsList({
   const [filterSafetyStatus, setFilterSafetyStatus] = useState<string>('all')
   const [filterDateFrom, setFilterDateFrom] = useState<string>('')
   const [filterDateTo, setFilterDateTo] = useState<string>('')
+  const [viewTab, setViewTab] = useState<ViewTab>('individual')
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+  const [milkingGroups, setMilkingGroups] = useState<Map<string, string>>(new Map())
   
-  const RECORDS_PER_PAGE = 8
+  const RECORDS_PER_PAGE = 10
+
+  // Fetch milking group names on mount
+  React.useEffect(() => {
+    if (!farmId) return
+
+    const fetchMilkingGroups = async () => {
+      try {
+        const response = await fetch(`/api/farms/${farmId}/production/milking-groups`)
+        if (response.ok) {
+          const result = await response.json()
+          const groups = result.data || result
+          const groupMap = new Map<string, string>()
+          groups.forEach((group: any) => {
+            groupMap.set(group.id, group.category_name)
+          })
+          setMilkingGroups(groupMap)
+        }
+      } catch (error) {
+        console.error('Error fetching milking groups:', error)
+      }
+    }
+
+    fetchMilkingGroups()
+  }, [farmId])
 
   // Apply filters
   const filteredRecords = useMemo(() => {
@@ -121,15 +169,63 @@ export function ProductionRecordsList({
     })
   }, [records, filterSession, filterSafetyStatus, filterDateFrom, filterDateTo])
 
+  // Individual tab shows ALL records; Groups tab shows aggregated group data
+  const individualRecords = useMemo(() => {
+    return filteredRecords // Show all records regardless of recording_type
+  }, [filteredRecords])
+
+  // Group records by milking_group_id for groups view
+  const groupedRecords = useMemo(() => {
+    const groupMap = new Map<string | null, ProductionRecord[]>()
+    
+    filteredRecords
+      .filter(r => r.recording_type === 'group')
+      .forEach(record => {
+        const groupId = record.milking_group_id || 'default'
+        if (!groupMap.has(groupId)) {
+          groupMap.set(groupId, [])
+        }
+        groupMap.get(groupId)!.push(record)
+      })
+
+    const groups: GroupData[] = Array.from(groupMap.entries()).map(([groupId, records]) => {
+      const sortedByDate = [...records].sort((a, b) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      )
+      
+      return {
+        milking_group_id: groupId === 'default' ? null : groupId,
+        totalMilkVolume: records.reduce((sum, r) => sum + (r.milk_volume || 0), 0),
+        recordCount: records.length,
+        mostRecentSession: sortedByDate[0] || null,
+        animalRecords: records
+      }
+    })
+
+    // Sort by most recent session date
+    return groups.sort((a, b) => {
+      const dateA = a.mostRecentSession?.created_at || ''
+      const dateB = b.mostRecentSession?.created_at || ''
+      return new Date(dateB).getTime() - new Date(dateA).getTime()
+    })
+  }, [filteredRecords])
+
   // Pagination
-  const totalPages = Math.ceil(filteredRecords.length / RECORDS_PER_PAGE)
+  const displayData = viewTab === 'individual' ? individualRecords : groupedRecords
+  const totalPages = Math.ceil(displayData.length / RECORDS_PER_PAGE)
   const startIndex = (currentPage - 1) * RECORDS_PER_PAGE
   const endIndex = startIndex + RECORDS_PER_PAGE
-  const paginatedRecords = filteredRecords.slice(startIndex, endIndex)
+  const paginatedData = displayData.slice(startIndex, endIndex)
 
   // Reset to page 1 when filters change
   const resetPagination = () => {
     setCurrentPage(1)
+  }
+
+  const handleViewTabChange = (tab: ViewTab) => {
+    setViewTab(tab)
+    setCurrentPage(1)
+    setExpandedGroups(new Set())
   }
 
   const handleFilterSessionChange = (session: string) => {
@@ -218,6 +314,16 @@ export function ProductionRecordsList({
     if (fatGood && proteinGood) return { label: 'Excellent', color: 'bg-green-100 text-green-800' }
     if (fatGood || proteinGood) return { label: 'Good', color: 'bg-yellow-100 text-yellow-800' }
     return { label: 'Needs Attention', color: 'bg-red-100 text-red-800' }
+  }
+
+  const getRecordingTypeBadge = (recordingType?: string) => {
+    switch (recordingType) {
+      case 'group':
+        return { label: 'Group Recording', color: 'bg-purple-100 text-purple-800', icon: Users }
+      case 'individual':
+      default:
+        return { label: 'Individual Recording', color: 'bg-blue-100 text-blue-800', icon: Droplets }
+    }
   }
   
   if (records.length === 0) {
@@ -326,17 +432,45 @@ export function ProductionRecordsList({
         {/* Filter Results Summary */}
         <div className="mt-3 pt-3 border-t border-gray-200">
           <p className="text-xs text-gray-600">
-            Showing <span className="font-semibold">{paginatedRecords.length}</span> of <span className="font-semibold">{filteredRecords.length}</span> records
-            {filteredRecords.length < records.length && ` (${records.length - filteredRecords.length} filtered out)`}
+            Showing <span className="font-semibold">{paginatedData.length}</span> of <span className="font-semibold">{displayData.length}</span> {viewTab === 'individual' ? 'records' : 'groups'}
+            {displayData.length < filteredRecords.length && ` (${filteredRecords.length - displayData.length} filtered out)`}
           </p>
         </div>
       </div>
 
+      {/* View Tab Selector */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+        <div className="flex items-center p-1">
+          <button
+            onClick={() => handleViewTabChange('individual')}
+            className={`flex-1 px-4 py-3 rounded-lg font-semibold text-sm transition-all duration-200 flex items-center justify-center space-x-2 ${
+              viewTab === 'individual'
+                ? 'bg-gradient-to-r from-farm-green/20 to-farm-green/10 text-farm-green shadow-sm border border-farm-green/30'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+            }`}
+          >
+            <Droplets className={`w-4 h-4 ${viewTab === 'individual' ? 'text-farm-green' : 'text-gray-400'}`} />
+            <span>Individual Animals</span>
+          </button>
+          <button
+            onClick={() => handleViewTabChange('groups')}
+            className={`flex-1 px-4 py-3 rounded-lg font-semibold text-sm transition-all duration-200 flex items-center justify-center space-x-2 ${
+              viewTab === 'groups'
+                ? 'bg-gradient-to-r from-farm-green/20 to-farm-green/10 text-farm-green shadow-sm border border-farm-green/30'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+            }`}
+          >
+            <Users className={`w-4 h-4 ${viewTab === 'groups' ? 'text-farm-green' : 'text-gray-400'}`} />
+            <span>Milking Groups</span>
+          </button>
+        </div>
+      </div>
+
       {/* Records List */}
-      {paginatedRecords.length === 0 ? (
+      {paginatedData.length === 0 ? (
         <div className="text-center py-12 bg-gray-50 rounded-lg border border-gray-200">
           <Droplets className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-4 text-lg font-medium text-gray-900">No records match your filters</h3>
+          <h3 className="mt-4 text-lg font-medium text-gray-900">No {viewTab === 'individual' ? 'records' : 'groups'} match your filters</h3>
           <p className="mt-2 text-sm text-gray-500">
             Try adjusting your filter criteria
           </p>
@@ -349,12 +483,15 @@ export function ProductionRecordsList({
             Clear Filters
           </Button>
         </div>
-      ) : (
+      ) : viewTab === 'individual' ? (
+        // Individual records view
         <div className="space-y-4">
-          {paginatedRecords.map((record) => {
+          {(paginatedData as ProductionRecord[]).map((record) => {
             const qualityIndicator = getQualityIndicator(record.fat_content, record.protein_content)
             const safetyStatus = getSafetyStatusBadge(record.milk_safety_status)
+            const recordingTypeBadge = getRecordingTypeBadge(record.recording_type)
             const SafetyIcon = safetyStatus.icon
+            const RecordingTypeIcon = recordingTypeBadge.icon
             
             return (
               <Card key={record.id} className="hover:shadow-md transition-shadow overflow-hidden">
@@ -387,6 +524,10 @@ export function ProductionRecordsList({
                             <Badge className={safetyStatus.color}>
                               <SafetyIcon className="w-3 h-3 mr-1" />
                               {safetyStatus.label}
+                            </Badge>
+                            <Badge className={recordingTypeBadge.color}>
+                              <RecordingTypeIcon className="w-3 h-3 mr-1" />
+                              {recordingTypeBadge.label}
                             </Badge>
                             {qualityIndicator && (
                               <Badge className={qualityIndicator.color}>
@@ -491,6 +632,170 @@ export function ProductionRecordsList({
                       </div>
                     )}
                   </div>
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
+      ) : (
+        // Groups view
+        <div className="space-y-4">
+          {(paginatedData as GroupData[]).map((group, index) => {
+            const isExpanded = expandedGroups.has(group.milking_group_id || 'default')
+            const mostRecent = group.mostRecentSession
+            const recentQuality = mostRecent ? getQualityIndicator(mostRecent.fat_content, mostRecent.protein_content) : null
+            const recentSafety = mostRecent ? getSafetyStatusBadge(mostRecent.milk_safety_status) : null
+            const RecentSafetyIcon = recentSafety?.icon
+            const groupName = group.milking_group_id ? milkingGroups.get(group.milking_group_id) : null
+            
+            return (
+              <Card key={`group-${index}`} className="hover:shadow-md transition-shadow overflow-hidden">
+                <CardContent className="p-4 md:p-6">
+                  {/* Group Header */}
+                  <button
+                    onClick={() => {
+                      const newSet = new Set(expandedGroups)
+                      const groupKey = group.milking_group_id || 'default'
+                      if (newSet.has(groupKey)) {
+                        newSet.delete(groupKey)
+                      } else {
+                        newSet.add(groupKey)
+                      }
+                      setExpandedGroups(newSet)
+                    }}
+                    className="w-full text-left"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-start space-x-4 flex-1 min-w-0">
+                        <div className="flex-shrink-0">
+                          <div className="w-12 h-12 bg-farm-green/10 rounded-lg flex items-center justify-center">
+                            <Users className="w-6 h-6 text-farm-green" />
+                          </div>
+                        </div>
+                        
+                        <div className="min-w-0 flex-1">
+                          <h4 className="text-base md:text-lg font-semibold text-gray-900">
+                            {groupName || `Milking Group ${index + 1}`}
+                          </h4>
+                          <p className="text-sm text-gray-600 mt-1">
+                            {group.recordCount} animal{group.recordCount !== 1 ? 's' : ''} recorded
+                          </p>
+                          
+                          {/* Most Recent Session Info */}
+                          {mostRecent && (
+                            <div className="mt-3 space-y-2">
+                              <p className="text-xs text-gray-600">
+                                <span className="font-semibold">Most Recent Session:</span> {formatDateTime(mostRecent.created_at)}
+                              </p>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Badge className={getSessionBadgeColor(mostRecent.milking_session)}>
+                                  <Clock className="w-3 h-3 mr-1" />
+                                  {mostRecent.milking_session}
+                                </Badge>
+                                {RecentSafetyIcon && (
+                                  <Badge className={recentSafety?.color}>
+                                    <RecentSafetyIcon className="w-3 h-3 mr-1" />
+                                    {recentSafety?.label}
+                                  </Badge>
+                                )}
+                                {recentQuality && (
+                                  <Badge className={recentQuality.color}>
+                                    {recentQuality.label}
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* Group Stats */}
+                      <div className="flex-shrink-0 text-right">
+                        <div className="text-2xl font-bold text-farm-green">
+                          {group.totalMilkVolume.toFixed(1)}
+                        </div>
+                        <p className="text-xs text-gray-600 font-medium">Total Liters</p>
+                        <button className="mt-3 text-gray-500 hover:text-gray-700">
+                          <ChevronDown 
+                            className={`w-5 h-5 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                          />
+                        </button>
+                      </div>
+                    </div>
+                  </button>
+                  
+                  {/* Expanded Animals List */}
+                  {isExpanded && (
+                    <div className="mt-6 pt-6 border-t border-gray-200 space-y-3">
+                      <h5 className="font-semibold text-gray-900 mb-3">Animals in this group:</h5>
+                      {group.animalRecords.map((record) => {
+                        const recordingTypeBadge = getRecordingTypeBadge(record.recording_type)
+                        const RecordingTypeIcon = recordingTypeBadge.icon
+                        
+                        return (
+                          <div
+                            key={record.id}
+                            className="p-3 bg-gray-50 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors"
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <p className="font-medium text-gray-900">
+                                  {record.animals?.name || `Animal #${record.animals?.tag_number}`}
+                                </p>
+                                <p className="text-xs text-gray-600 mt-1">
+                                  Tag: {record.animals?.tag_number}
+                                </p>
+                                <div className="flex items-center space-x-3 mt-2 text-xs text-gray-600">
+                                  <span className="flex items-center">
+                                    <Droplets className="w-3 h-3 mr-1" />
+                                    {record.milk_volume}L
+                                  </span>
+                                  <span className="flex items-center">
+                                    <Clock className="w-3 h-3 mr-1" />
+                                    {record.milking_session}
+                                  </span>
+                                  <span>{formatDate(record.record_date)}</span>
+                                </div>
+                                <div className="mt-2">
+                                  <Badge className={recordingTypeBadge.color}>
+                                    <RecordingTypeIcon className="w-3 h-3 mr-1" />
+                                    {recordingTypeBadge.label}
+                                  </Badge>
+                                </div>
+                              </div>
+                              {canEdit && (
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                      <MoreHorizontal className="w-4 h-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => onView?.(record)} className="cursor-pointer flex items-center">
+                                      <Eye className="w-4 h-4 mr-2" />
+                                      View Details
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => onEdit?.(record)} className="cursor-pointer flex items-center">
+                                      <Edit className="w-4 h-4 mr-2" />
+                                      Edit Record
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem 
+                                      onClick={() => handleDelete(record.id)}
+                                      disabled={deletingId === record.id}
+                                      className="cursor-pointer flex items-center text-red-600 focus:text-red-600 focus:bg-red-50"
+                                    >
+                                      <Trash2 className="w-4 h-4 mr-2" />
+                                      {deletingId === record.id ? 'Deleting...' : 'Delete'}
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )

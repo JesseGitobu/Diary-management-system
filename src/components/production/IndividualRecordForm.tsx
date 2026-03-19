@@ -46,6 +46,8 @@ interface IndividualRecordFormProps {
   onSuccess?: () => void
   onRecordSaved?: (animalId: string) => void
   closeAfterSuccess?: boolean
+  recordingType?: 'individual' | 'group'
+  milkingGroupId?: string
 }
 
 export function IndividualRecordForm({
@@ -56,7 +58,9 @@ export function IndividualRecordForm({
   settings,
   onSuccess,
   onRecordSaved,
-  closeAfterSuccess = true
+  closeAfterSuccess = true,
+  recordingType = 'individual',
+  milkingGroupId
 }: IndividualRecordFormProps) {
   const [step, setStep] = useState<'select' | 'form'>('select')
   const [selectedAnimal, setSelectedAnimal] = useState<typeof animals[0] | null>(null)
@@ -251,6 +255,8 @@ export function IndividualRecordForm({
         body: JSON.stringify({
           ...data,
           farm_id: farmId,
+          recording_type: recordingType,
+          milking_group_id: milkingGroupId || null,
           temperature: data.temperature === undefined ? null : data.temperature,
           mastitis_test_performed: data.mastitis_test_performed || false,
           mastitis_result: data.mastitis_result || null,

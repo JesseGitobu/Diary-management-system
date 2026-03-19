@@ -85,6 +85,8 @@ export async function POST(request: NextRequest) {
       lactose_content: productionData.lactose_content ? Number(productionData.lactose_content) : null,
       ph_level: productionData.ph_level ? Number(productionData.ph_level) : null,
       notes: productionData.notes || null,
+      recording_type: productionData.recording_type || 'individual',
+      milking_group_id: productionData.milking_group_id || null,
       recorded_by: user.id,
     }
     
