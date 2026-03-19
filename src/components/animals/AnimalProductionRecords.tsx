@@ -70,6 +70,9 @@ export function AnimalProductionRecords({
   const [records, setRecords] = useState<ProductionRecord[]>([])
   const [stats, setStats] = useState<AnimalProductionStats | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(true)
+  const [offset, setOffset] = useState(0)
   const [showAddModal, setShowAddModal] = useState(false)
   const [selectedPeriod, setSelectedPeriod] = useState<7 | 30 | 90>(30)
   const [productionSettings, setProductionSettings] = useState<ProductionSettings | null>(null)
@@ -84,7 +87,7 @@ export function AnimalProductionRecords({
   // Determine if production records are applicable
   const isLactating = animal.production_status === 'lactating'
   const isServed = animal.production_status === 'served'
-  const isDry = animal.production_status === 'dry'
+  const isDry = animal.production_status === 'steaming_dry_cows' || animal.production_status === 'open_culling_dry_cows'
   const isHeifer = animal.production_status === 'heifer'
   const isCalf = animal.production_status === 'calf'
   const isBull = animal.gender === 'male'
@@ -153,27 +156,44 @@ export function AnimalProductionRecords({
     }
   }
   
-  const loadProductionData = async () => {
-    setLoading(true)
+  const loadProductionData = async (newOffset: number = 0) => {
     try {
+      if (newOffset === 0) setLoading(true)
+      else setLoadingMore(true)
+      
       const endDate = new Date().toISOString().split('T')[0]
       const startDate = new Date(Date.now() - selectedPeriod * 24 * 60 * 60 * 1000)
         .toISOString().split('T')[0]
       
+      const RECORDS_PER_PAGE = 15
       const response = await fetch(
-        `/api/production?animal_id=${animalId}&start_date=${startDate}&end_date=${endDate}`
+        `/api/production?animal_id=${animalId}&start_date=${startDate}&end_date=${endDate}&limit=${RECORDS_PER_PAGE}&offset=${newOffset}`
       )
       
       if (response.ok) {
         const { data } = await response.json()
-        setRecords(data || [])
-        calculateStats(data || [])
+        const newRecords = data || []
+        
+        if (newOffset === 0) {
+          setRecords(newRecords)
+          calculateStats(newRecords)
+        } else {
+          setRecords(prev => [...prev, ...newRecords])
+        }
+        
+        setHasMore(newRecords.length === RECORDS_PER_PAGE)
+        setOffset(newOffset)
       }
     } catch (error) {
       console.error('Error loading production data:', error)
     } finally {
       setLoading(false)
+      setLoadingMore(false)
     }
+  }
+  
+  const handleLoadMore = () => {
+    loadProductionData(offset + 15)
   }
   
   const calculateStats = (productionRecords: ProductionRecord[]) => {
@@ -774,6 +794,33 @@ export function AnimalProductionRecords({
               )}
             </CardContent>
           </Card>
+          
+          {/* Load More Button */}
+          {records.length > 0 && showProductionRecords && (
+            <div className="flex justify-center mt-6 mb-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleLoadMore}
+                disabled={!hasMore || loadingMore}
+                className="gap-2"
+              >
+                {loadingMore ? (
+                  <>
+                    <LoadingSpinner size="sm" />
+                    Loading...
+                  </>
+                ) : hasMore ? (
+                  <>
+                    <Plus className="w-4 h-4" />
+                    Load More Records
+                  </>
+                ) : (
+                  'No more records'
+                )}
+              </Button>
+            </div>
+          )}
         </>
       )}
       

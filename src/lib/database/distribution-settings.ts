@@ -8,7 +8,7 @@ export async function getDistributionSettings(farmId: string): Promise<Distribut
     const supabase = await createServerSupabaseClient()
 
     const { data, error } = await supabase
-      .from('farm_distribution_settings')
+      .from('distribution_settings')
       .select('*')
       .eq('farm_id', farmId)
       .single()
@@ -304,7 +304,7 @@ export async function updateDistributionSettings(
     }
 
     const { error } = await (supabase
-      .from('farm_distribution_settings') as any)
+      .from('distribution_settings') as any)
       .upsert(dbSettings, { onConflict: 'farm_id' })
 
     if (error) throw error

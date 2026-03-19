@@ -12,16 +12,13 @@ export interface ProductionSettings {
   productionUnit: 'liters' | 'gallons' | 'kg'
   
   // 2. Milking Session Configuration
-  enabledSessions: ('morning' | 'afternoon' | 'evening')[]
-  defaultSession: 'morning' | 'afternoon' | 'evening'
-  sessionTimes: {
-    morning: string
-    afternoon: string
-    evening: string
-  }
+  milkingSessions: Array<{ id: string; name: string; time: string }>
+  enabledSessions?: Array<'morning' | 'afternoon' | 'evening'>
   allowMultipleSessionsPerDay: boolean
   requireSessionTimeRecording: boolean
   sessionIntervalHours: number
+  defaultSession?: 'morning' | 'afternoon' | 'evening'
+  sessionTimes?: { [key: string]: string }
   
   // --- NEW FIELDS ---
   enableSmartSessionBanner: boolean
@@ -151,6 +148,11 @@ export interface ProductionSettings {
   includeLaborCosts: boolean
   includeFeedCosts: boolean
   includeUtilities: boolean
+  
+  // 13. Production Costs
+  laborCostPerUnit?: number
+  feedCostPerUnit?: number
+  utilitiesCostPerUnit?: number
 }
 
 // ... DistributionSettings Interface (Keep as provided in prompt) ...
@@ -332,6 +334,11 @@ export const getDefaultProductionSettings = (): ProductionSettings => ({
   productionUnit: 'liters',
   
   // Sessions
+  milkingSessions: [
+    { id: '1', name: 'Morning', time: '06:00' },
+    { id: '2', name: 'Afternoon', time: '14:00' },
+    { id: '3', name: 'Evening', time: '18:00' }
+  ],
   enabledSessions: ['morning', 'afternoon', 'evening'],
   defaultSession: 'morning',
   sessionTimes: {

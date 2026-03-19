@@ -44,19 +44,25 @@ interface ValidationResult {
 }
 
 interface ParsedAnimal {
+  tag_number?: string
   name?: string
   breed?: string
   gender: 'male' | 'female'
   date_of_birth?: string
+  birth_time?: string
+  birth_difficulty_level?: string
   animal_source: 'newborn_calf' | 'purchased_animal'
-  mother_tag?: string
-  father_tag?: string
+  previous_farm_tag_number?: string
+  mother_dam_tag?: string
+  mother_dam_name?: string
+  father_sire_semen_tag?: string
+  father_sire_name_semen_source?: string
   birth_weight_kg?: number
-  seller_name?: string
-  seller_contact?: string
+  farm_seller_name?: string
+  farm_seller_contact?: string
   purchase_date?: string
   purchase_price?: number
-  production_status?: 'calf' | 'heifer' | 'bull' | 'served' | 'lactating' | 'dry'
+  production_status?: 'calf' | 'heifer' | 'bull' | 'served' | 'lactating' | 'steaming_dry_cows' | 'open_culling_dry_cows'
   health_status?: string
   notes?: string
   row_index?: number
@@ -114,14 +120,12 @@ export function ImportAnimalsModal({
               normalizedRow[normalizedKey] = row[key]
             })
             
-            let animalSource: 'newborn_calf' | 'purchased_animal' = 'purchased_animal'
-            if (normalizedRow.mother_tag || normalizedRow.father_tag || normalizedRow.birth_weight_kg) {
-              animalSource = 'newborn_calf'
-            }
+            // Use explicit animal_source from template - NEVER infer it
+            const animalSource = normalizedRow.animal_source || 'purchased_animal'
             
             return {
               ...normalizedRow,
-              animal_source: animalSource,
+              animal_source: animalSource as 'newborn_calf' | 'purchased_animal',
               row_index: index + 2
             }
           })
@@ -140,15 +144,15 @@ export function ImportAnimalsModal({
       const workbook = new ExcelJS.Workbook()
       await workbook.xlsx.load(arrayBuffer)
       
-      // Find the Animals worksheet (skip validation and instructions sheets)
-      let animalSheet = workbook.getWorksheet('Animals')
+      // REQUIRED: Must have "Animals" worksheet - no fallback to other sheets
+      const animalSheet = workbook.getWorksheet('Animals')
+      
       if (!animalSheet) {
-        // Fallback to first sheet if Animals sheet not found
-        animalSheet = workbook.worksheets[0]
-      }
-
-      if (!animalSheet) {
-        throw new Error('No worksheet found in the Excel file.')
+        throw new Error(
+          'Invalid template: Could not find "Animals" worksheet. ' +
+          'Make sure you\'re using the correct template file and the "Animals" sheet has not been renamed or deleted. ' +
+          'Download a fresh template and use the "Animals" sheet to enter your data.'
+        )
       }
 
       const animals: ParsedAnimal[] = []
@@ -191,14 +195,13 @@ export function ImportAnimalsModal({
           })
 
           if (hasData) {
-            let animalSource: 'newborn_calf' | 'purchased_animal' = 'purchased_animal'
-            if (normalizedRow.mother_tag || normalizedRow.father_tag || normalizedRow.birth_weight_kg) {
-              animalSource = 'newborn_calf'
-            }
+            // Use explicit animal_source from template - NEVER infer it
+            // If not provided in template, default to purchased_animal
+            const animalSource = normalizedRow.animal_source || 'purchased_animal'
 
             animals.push({
               ...normalizedRow,
-              animal_source: animalSource,
+              animal_source: animalSource as 'newborn_calf' | 'purchased_animal',
               row_index: rowNumber
             })
           }
@@ -220,24 +223,71 @@ export function ImportAnimalsModal({
     animals.forEach((animal, index) => {
       const row = animal.row_index || index + 2
       
-      // Gender is required
+      // 🔴 CRITICAL: Gender is REQUIRED and must be valid
       if (!animal.gender || !['male', 'female'].includes(animal.gender)) {
         errors.push({
           row,
           field: 'gender',
           value: animal.gender || '',
-          message: 'Gender is required and must be "male" or "female"'
+          message: '🔴 REQUIRED: Gender is required and must be "male" or "female"'
         })
       }
 
-      // Animal source is required
+      // 🔴 CRITICAL: Animal source is REQUIRED and must be valid
       if (!animal.animal_source || !['newborn_calf', 'purchased_animal'].includes(animal.animal_source)) {
         errors.push({
           row,
           field: 'animal_source',
           value: animal.animal_source || '',
-          message: 'Animal source is required: "newborn_calf" or "purchased_animal"'
+          message: '🔴 REQUIRED: Animal source is required: "newborn_calf" or "purchased_animal"'
         })
+      }
+
+      // 🟡 CONDITIONAL: Validate based on animal_source
+      if (animal.animal_source === 'purchased_animal') {
+        // Purchased animals REQUIRE: farm_seller_name and purchase_date
+        if (!animal.farm_seller_name || !String(animal.farm_seller_name).trim()) {
+          errors.push({
+            row,
+            field: 'farm_seller_name',
+            value: animal.farm_seller_name || '',
+            message: '🔴 REQUIRED for purchased_animal: Farm Seller Name cannot be empty'
+          })
+        }
+        if (!animal.purchase_date) {
+          errors.push({
+            row,
+            field: 'purchase_date',
+            value: '',
+            message: '🔴 REQUIRED for purchased_animal: Purchase Date cannot be empty'
+          })
+        }
+      } else if (animal.animal_source === 'newborn_calf') {
+        // Newborn calves REQUIRE: date_of_birth, birth_weight_kg, and mother tag
+        if (!animal.date_of_birth) {
+          errors.push({
+            row,
+            field: 'date_of_birth',
+            value: '',
+            message: '🔴 REQUIRED for newborn_calf: Date of Birth cannot be empty'
+          })
+        }
+        if (!animal.birth_weight_kg || isNaN(Number(animal.birth_weight_kg)) || Number(animal.birth_weight_kg) <= 0) {
+          errors.push({
+            row,
+            field: 'birth_weight_kg',
+            value: String(animal.birth_weight_kg || ''),
+            message: '🔴 REQUIRED for newborn_calf: Birth Weight must be a positive number'
+          })
+        }
+        if (!animal.mother_dam_tag || !String(animal.mother_dam_tag).trim()) {
+          errors.push({
+            row,
+            field: 'mother_dam_tag',
+            value: animal.mother_dam_tag || '',
+            message: '🔴 REQUIRED for newborn_calf: Mother/Dam Tag cannot be empty'
+          })
+        }
       }
       
       // Validate breed if provided
@@ -250,13 +300,27 @@ export function ImportAnimalsModal({
         })
       }
       
-      if (animal.production_status && !['calf', 'heifer', 'bull', 'served', 'lactating', 'dry'].includes(animal.production_status)) {
-        warnings.push({
-          row,
-          field: 'production_status',
-          value: animal.production_status,
-          message: 'Invalid production status. Will be set to default'
-        })
+      // Normalize production_status before validation to catch issues early
+      if (animal.production_status) {
+        const normalizedStatus = (animal.production_status as string)
+          .toLowerCase()
+          .replace(/[\s()]+/g, '_')     // Replace spaces AND parentheses with underscore
+          .replace(/_+/g, '_')           // Collapse multiple underscores
+          .replace(/^_|_$/g, '')         // Trim leading/trailing underscores
+
+        const validStatuses = [
+          'calf', 'heifer', 'bull', 'served', 'lactating',
+          'steaming_dry_cows', 'open_culling_dry_cows'
+        ]
+
+        if (!validStatuses.includes(normalizedStatus)) {
+          warnings.push({
+            row,
+            field: 'production_status',
+            value: animal.production_status,
+            message: 'Invalid production status. Valid values: calf, heifer, bull, served, lactating, "steaming dry cows", "open (culling) dry cows". Will be set to default'
+          })
+        }
       }
       
       // Validate dates
@@ -282,15 +346,6 @@ export function ImportAnimalsModal({
             message: 'Invalid date format. Use YYYY-MM-DD'
           })
         }
-      }
-      
-      if (animal.birth_weight_kg && (isNaN(Number(animal.birth_weight_kg)) || Number(animal.birth_weight_kg) <= 0)) {
-        warnings.push({
-          row,
-          field: 'birth_weight_kg',
-          value: String(animal.birth_weight_kg),
-          message: 'Birth weight should be a positive number'
-        })
       }
       
       if (animal.purchase_price && (isNaN(Number(animal.purchase_price)) || Number(animal.purchase_price) <= 0)) {
@@ -354,19 +409,24 @@ export function ImportAnimalsModal({
         setImportProgress(prev => Math.min(prev + 10, 90))
       }, 200)
 
-      // Generate tag numbers (format: FARM-SOURCE-INDEX)
-      // e.g., FARM001-NEW-1, FARM001-PUR-1
-      const validatedAnimals = parsedData.map((animal, index) => {
-        const source = animal.animal_source === 'newborn_calf' ? 'NB' : 'PUR'
-        const tagNumber = `${source}-${Date.now()}-${index + 1}` // Unique tag
-        
+      // Pass animals as-is - tag_number will be validated/auto-generated by sanitizer
+      // If user provided a tag_number, it will be used; if empty or "auto", sanitizer will generate one
+      const validatedAnimals = parsedData.map((animal) => {
         return {
-          tag_number: tagNumber,
           ...animal,
+          tag_number: animal.tag_number || 'auto',  // Empty or missing → sanitizer will auto-generate
           health_status: (animal.health_status?.toLowerCase() as "healthy" | "sick" | "injured" | "quarantine" | undefined) || undefined,
           // Ensure dates are strings for the server action
           date_of_birth: animal.date_of_birth ? new Date(animal.date_of_birth).toISOString().split('T')[0] : undefined,
-          purchase_date: animal.purchase_date ? new Date(animal.purchase_date).toISOString().split('T')[0] : undefined
+          purchase_date: animal.purchase_date ? new Date(animal.purchase_date).toISOString().split('T')[0] : undefined,
+          // Normalize production status to snake_case - MUST match validation logic
+          production_status: animal.production_status
+            ? (animal.production_status as string)
+                .toLowerCase()
+                .replace(/[\s()]+/g, '_')     // Replace spaces AND parentheses with underscore
+                .replace(/_+/g, '_')           // Collapse multiple underscores
+                .replace(/^_|_$/g, '')         // Trim leading/trailing underscores
+            : undefined
         }
       })
 
@@ -538,18 +598,18 @@ export function ImportAnimalsModal({
                 <AlertTriangle className="h-4 w-4 text-red-600" />
                 <AlertDescription className="text-red-800 text-sm">
                   <div className="font-semibold mb-2">
-                    {validationResult.errors.length} error(s) found:
+                    🔴 {validationResult.errors.length} error(s) - must be fixed before importing:
                   </div>
-                  <ul className="list-disc list-inside space-y-1 text-xs">
-                    {validationResult.errors.slice(0, 3).map((error, index) => (
+                  <ul className="list-disc list-inside space-y-1 text-xs max-h-48 overflow-y-auto">
+                    {validationResult.errors.map((error, index) => (
                       <li key={index}>
-                        Row {error.row}, {error.field}: {error.message}
+                        <span className="font-medium">Row {error.row}</span> - {error.field}: {error.message}
                       </li>
                     ))}
-                    {validationResult.errors.length > 3 && (
-                      <li>... and {validationResult.errors.length - 3} more errors</li>
-                    )}
                   </ul>
+                  <div className="text-xs mt-2 text-red-700 font-semibold">
+                    Please fix these issues in your file and re-upload.
+                  </div>
                 </AlertDescription>
               </Alert>
             )}
@@ -559,18 +619,18 @@ export function ImportAnimalsModal({
                 <AlertTriangle className="h-4 w-4 text-yellow-600" />
                 <AlertDescription className="text-yellow-800 text-sm">
                   <div className="font-semibold mb-2">
-                    {validationResult.warnings.length} warning(s):
+                    🟡 {validationResult.warnings.length} warning(s) (non-blocking):
                   </div>
-                  <ul className="list-disc list-inside space-y-1 text-xs">
-                    {validationResult.warnings.slice(0, 2).map((warning, index) => (
+                  <ul className="list-disc list-inside space-y-1 text-xs max-h-40 overflow-y-auto">
+                    {validationResult.warnings.map((warning, index) => (
                       <li key={index}>
-                        Row {warning.row}, {warning.field}: {warning.message}
+                        <span className="font-medium">Row {warning.row}</span> - {warning.field}: {warning.message}
                       </li>
                     ))}
-                    {validationResult.warnings.length > 2 && (
-                      <li>... and {validationResult.warnings.length - 2} more warnings</li>
-                    )}
                   </ul>
+                  <div className="text-xs mt-2 text-yellow-700">
+                    You can continue with import - data will be converted or defaults applied.
+                  </div>
                 </AlertDescription>
               </Alert>
             )}

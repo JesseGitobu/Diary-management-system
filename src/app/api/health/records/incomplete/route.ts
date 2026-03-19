@@ -17,32 +17,23 @@ export async function GET(request: NextRequest) {
     
     const supabase = await createServerSupabaseClient()
     
-    // Query the new table structure
+    // Query the real-time animal_health_status_attention view
     const { data: incompleteRecords, error } = await supabase
-      .from('animals_requiring_health_attention')
+      .from('animal_health_status_attention')
       .select(`
-        *,
-        animals!animals_requiring_health_attention_animal_id_fkey (
-          id,
-          tag_number,
-          name,
-          breed,
-          health_status
-        ),
-        animal_health_records!animals_requiring_health_attention_health_record_id_fkey (
-          id,
-          record_type,
-          description,
-          severity,
-          completion_status,
-          requires_record_type_selection,
-          available_record_types,
-          original_health_status
-        )
+        id,
+        farm_id,
+        tag_number,
+        name,
+        health_status,
+        production_status,
+        last_health_check,
+        attention_required,
+        priority_rank
       `)
       .eq('farm_id', userRole.farm_id)
-      .eq('health_record_completed', false)
-      .order('created_at', { ascending: false })
+      .order('priority_rank', { ascending: true })
+      .order('last_health_check', { ascending: true })
     
     if (error) {
       console.error('Error fetching incomplete records:', error)
@@ -50,19 +41,27 @@ export async function GET(request: NextRequest) {
     }
     
     // Transform the data to match the expected format
-    // Cast record to any to fix "Property 'health_record_id' does not exist on type 'never'"
     const transformedRecords = (incompleteRecords || []).map((record: any) => ({
-      id: record.health_record_id || record.id,
-      animal_id: record.animal_id,
-      description: record.animal_health_records?.description || `Health attention needed for ${record.animals?.name || record.animals?.tag_number}`,
-      severity: record.animal_health_records?.severity || 'medium',
+      id: record.id,
+      animal_id: record.id,
+      description: record.attention_required || `Health attention needed for ${record.name || record.tag_number}`,
+      severity: record.priority_rank === 1 ? 'high' : record.priority_rank === 2 ? 'high' : 'medium',
       is_missing_record: true,
-      animals: record.animals,
-      animal: record.animals, // Backwards compatibility
-      record_type: record.animal_health_records?.record_type || 'checkup',
-      requires_record_type_selection: record.animal_health_records?.requires_record_type_selection || false,
-      available_record_types: record.animal_health_records?.available_record_types || [],
-      original_health_status: record.animal_health_records?.original_health_status
+      animals: {
+        id: record.id,
+        tag_number: record.tag_number,
+        name: record.name,
+        health_status: record.health_status
+      },
+      animal: {
+        id: record.id,
+        tag_number: record.tag_number,
+        name: record.name,
+        health_status: record.health_status
+      },
+      record_type: 'health_check',
+      priority_rank: record.priority_rank,
+      last_health_check: record.last_health_check
     }))
     
     return NextResponse.json({ 

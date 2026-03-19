@@ -149,3 +149,5 @@ export const getUserRole = async (userId: string) => {
     return null
   }
 }
+
+export { createServerClient }

@@ -58,6 +58,9 @@ export async function saveOnboardingStep(userId: string, stepData: any) {
         if (stepData.tracking_preferences) {
           profileUpdate.tracking_preferences = stepData.tracking_preferences
         }
+        if (stepData.feature_frequencies) {
+          profileUpdate.feature_frequencies = stepData.feature_frequencies
+        }
         if (stepData.preferred_schedule) {
           profileUpdate.preferred_schedule = stepData.preferred_schedule
         }

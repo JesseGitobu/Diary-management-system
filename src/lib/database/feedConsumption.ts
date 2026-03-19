@@ -576,25 +576,9 @@ export async function getAnimalConsumptionRecords(
     // Get unique feed type IDs from the consumption data
     const feedTypeIds = [...new Set(records.map(record => record.feed_type_id))]
 
-    // Get the most recent inventory cost for each feed type
-    const { data: inventoryData } = await supabase
-      .from('feed_inventory')
-      .select('feed_type_id, cost_per_kg, purchase_date')
-      .eq('farm_id', farmId)
-      .in('feed_type_id', feedTypeIds)
-      .not('cost_per_kg', 'is', null)
-      .order('purchase_date', { ascending: false })
-
-    // FIXED: Cast to any[]
-    const inventory = (inventoryData as any[]) || []
-
-    // Create a map of feed_type_id to most recent cost
+    // Create a map of feed_type_id to most recent cost (use typical_cost_per_kg from feed_types)
     const costMap = new Map()
-    inventory.forEach(item => {
-      if (!costMap.has(item.feed_type_id)) {
-        costMap.set(item.feed_type_id, item.cost_per_kg)
-      }
-    })
+    // Since cost_per_kg doesn't exist in feed_inventory, use typical_cost_per_kg from feed_types
 
 
     // Transform the data to match expected format

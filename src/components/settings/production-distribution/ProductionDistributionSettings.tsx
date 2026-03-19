@@ -2,7 +2,8 @@
 
 'use client'
 
-import React, { useState } from 'react'
+import React, { Suspense, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { Button } from '@/components/ui/Button'
 import {
@@ -12,8 +13,17 @@ import {
   AlertTriangle,
   Info
 } from 'lucide-react'
-import ProductionSettingsTab from './ProductionSettingsTab'
-import DistributionSettingsTab from './DistributionSettingsTab'
+
+// Lazy load tab components
+const ProductionSettingsTabLazy = dynamic(
+  () => import('./ProductionSettingsTab'),
+  { loading: () => <div className="py-8 text-center text-gray-500">Loading...</div> }
+)
+
+const DistributionSettingsTabLazy = dynamic(
+  () => import('./DistributionSettingsTab'),
+  { loading: () => <div className="py-8 text-center text-gray-500">Loading...</div> }
+)
 
 interface ProductionDistributionSettingsProps {
   farmId: string
@@ -145,23 +155,27 @@ export default function ProductionDistributionSettings({
 
       {/* Tab Content */}
       {activeTab === 'production' && (
-        <ProductionSettingsTab
-          farmId={farmId}
-          userRole={userRole}
-          initialSettings={productionSettings}
-          farmName={farmName}
-          onUnsavedChanges={setHasUnsavedChanges}
-        />
+        <Suspense fallback={<div className="py-8 text-center text-gray-500">Loading production settings...</div>}>
+          <ProductionSettingsTabLazy
+            farmId={farmId}
+            userRole={userRole}
+            initialSettings={productionSettings}
+            farmName={farmName}
+            onUnsavedChanges={setHasUnsavedChanges}
+          />
+        </Suspense>
       )}
 
       {activeTab === 'distribution' && (
-        <DistributionSettingsTab
-          farmId={farmId}
-          userRole={userRole}
-          initialSettings={distributionSettings}
-          farmName={farmName}
-          onUnsavedChanges={setHasUnsavedChanges}
-        />
+        <Suspense fallback={<div className="py-8 text-center text-gray-500">Loading distribution settings...</div>}>
+          <DistributionSettingsTabLazy
+            farmId={farmId}
+            userRole={userRole}
+            initialSettings={distributionSettings}
+            farmName={farmName}
+            onUnsavedChanges={setHasUnsavedChanges}
+          />
+        </Suspense>
       )}
     </div>
   )

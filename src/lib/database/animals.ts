@@ -47,7 +47,54 @@ export async function getFarmAnimals(
         tag_number,
         name,
         breed
+      ),
+      weights:animal_weight_records(weight_kg, weight_date, measurement_purpose)
+        .order('weight_date', { ascending: false })
+        .limit(1),
+      lactation:lactation_cycle_records(
+        lactation_number, 
+        peak_yield_litres,
+        total_yield_litres,
+        status,
+        start_date,
+        expected_end_date
       )
+        .order('created_at', { ascending: false })
+        .limit(1),
+      purchase:animal_purchases(
+        id,
+        purchase_date,
+        purchase_price,
+        farm_seller_name,
+        farm_seller_contact,
+        previous_farm_tag,
+        dam_tag_at_origin,
+        dam_name_at_origin,
+        sire_tag_or_semen_code,
+        sire_name_or_semen_source
+      )
+        .limit(1),
+      latestService:service_records(
+        id,
+        service_number,
+        service_date,
+        service_type,
+        bull_tag_or_semen_code,
+        bull_name_or_semen_source,
+        sire_id,
+        expected_calving_date,
+        service_cost
+      )
+        .order('service_date', { ascending: false })
+        .limit(1),
+      latestPregnancy:pregnancy_records(
+        id,
+        pregnancy_status,
+        confirmed_date,
+        expected_calving_date
+      )
+        .order('created_at', { ascending: false })
+        .limit(1)
     `)
     .eq('farm_id', farmId)
     .order('created_at', { ascending: false })
@@ -93,20 +140,23 @@ export async function getFarmAnimals(
   
   return (data || []).map((item: any) => ({
     ...item,
-    expected_calving_date: item.expected_calving_date ?? null,
-    days_in_milk: item.days_in_milk ?? null,
-    lactation_number: item.lactation_number ?? null,
-    purchase_price: item.purchase_price ?? null,
-    purchase_date: item.purchase_date ?? null,
-    seller_info: item.seller_info ?? null,
-    weight: item.weight ?? null,
+    expected_calving_date: item.latestPregnancy?.[0]?.expected_calving_date ?? item.latestService?.[0]?.expected_calving_date ?? item.expected_calving_date ?? null,
+    lactation_number: item.lactation?.[0]?.lactation_number ?? null,
+    purchase_price: item.purchase?.[0]?.purchase_price ?? null,
+    purchase_date: item.purchase?.[0]?.purchase_date ?? null,
+    seller_info: item.purchase?.[0]?.farm_seller_name ?? null,
+    seller_contact: item.purchase?.[0]?.farm_seller_contact ?? null,
+    previous_farm_tag: item.purchase?.[0]?.previous_farm_tag ?? null,
+    origin_dam_tag: item.purchase?.[0]?.dam_tag_at_origin ?? null,
+    origin_dam_name: item.purchase?.[0]?.dam_name_at_origin ?? null,
+    origin_sire_tag: item.purchase?.[0]?.sire_tag_or_semen_code ?? null,
+    origin_sire_name: item.purchase?.[0]?.sire_name_or_semen_source ?? null,
+    weight: item.weights?.[0]?.weight_kg ?? null,
     birth_weight: item.birth_weight ?? null,
     notes: item.notes ?? null,
-    service_date: item.service_date ?? null,
-    service_method: item.service_method ?? null,
-    mother_production_info: item.mother_production_info ?? null,
-    father_info: item.father_info ?? null,
-    updated_at: item.updated_at ?? null,
+    service_date: item.latestService?.[0]?.service_date ?? null,
+    service_method: item.latestService?.[0]?.service_type ?? null,
+    current_daily_production: item.lactation?.[0]?.peak_yield_litres ?? null,
   })) as Animal[]
 }
 
@@ -114,6 +164,7 @@ export async function getFarmAnimals(
 export async function getAnimalById(animalId: string) {
   const supabase = await createServerSupabaseClient()
   
+  // Query main animal data with FK relationships
   const { data, error } = await supabase
     .from('animals')
     .select(`
@@ -123,8 +174,7 @@ export async function getAnimalById(animalId: string) {
         tag_number,
         name,
         breed,
-        birth_date,
-        current_daily_production
+        birth_date
       ),
       father:father_id (
         id,
@@ -141,7 +191,190 @@ export async function getAnimalById(animalId: string) {
     return null
   }
   
-  return data
+  if (!data) {
+    console.warn('[getAnimalById] No data returned for animal:', animalId)
+    return null
+  }
+  
+  const typedData = data as any
+  
+  // ========== FETCH ALL RELATED DATA SEPARATELY ==========
+  // This approach is more reliable than using PostgREST relation syntax
+  
+  // Fetch weight data
+  const { data: weightData } = await supabase
+    .from('animal_weight_records')
+    .select('weight_kg, weight_date, measurement_purpose')
+    .eq('animal_id', animalId)
+    .order('weight_date', { ascending: false })
+    .limit(1)
+  
+  // Fetch purchase data
+  const { data: purchaseData } = await supabase
+    .from('animal_purchases')
+    .select('*')
+    .eq('animal_id', animalId)
+    .limit(1)
+  
+  // Fetch lactation data
+  const { data: lactationData } = await supabase
+    .from('lactation_cycle_records')
+    .select('id, lactation_number, peak_yield_litres, total_yield_litres, status, start_date, expected_end_date, actual_end_date')
+    .eq('animal_id', animalId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+  
+  // Fetch service records
+  const { data: serviceData } = await supabase
+    .from('service_records')
+    .select('id, service_number, service_date, service_type, bull_tag_or_semen_code, bull_name_or_semen_source, sire_id, expected_calving_date, service_cost')
+    .eq('animal_id', animalId)
+    .order('service_date', { ascending: false })
+    .limit(1)
+  
+  // Fetch pregnancy records
+  const { data: pregnancyData } = await supabase
+    .from('pregnancy_records')
+    .select('id, pregnancy_status, confirmed_date, expected_calving_date')
+    .eq('animal_id', animalId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+  
+  // Fetch calf records with dam info
+  const { data: calfData } = await supabase
+    .from('calf_records')
+    .select(`
+      id,
+      birth_date,
+      gender,
+      birth_weight,
+      weaning_date,
+      weaning_weight,
+      health_status,
+      breed,
+      sire_tag,
+      sire_name,
+      dam_id,
+      dam:dam_id (id, tag_number, name)
+    `)
+    .eq('animal_id', animalId)
+    .limit(1)
+  
+  // Fetch calving records
+  const { data: calvingData } = await supabase
+    .from('calving_records')
+    .select('id, calving_date, calving_time, calving_difficulty, assistance_required, calf_alive, colostrum_quality, steaming_date, colostrum_produced, complications')
+    .eq('mother_id', animalId)
+    .order('calving_date', { ascending: false })
+    .limit(1)
+  
+  // Fetch all calvings for history
+  const { data: allCalvingsData } = await supabase
+    .from('calving_records')
+    .select('id, calving_date, calving_difficulty, assistance_required, calf_alive')
+    .eq('mother_id', animalId)
+    .order('calving_date', { ascending: false })
+  
+  // Fetch release records
+  const { data: releaseData } = await supabase
+    .from('animal_release_records')
+    .select('id, release_date, release_reason, buyer_name, sale_price, death_cause, notes')
+    .eq('animal_id', animalId)
+    .order('release_date', { ascending: false })
+    .limit(1)
+  
+  // Fetch breeding events
+  const { data: breedingData } = await supabase
+    .from('breeding_events')
+    .select('id, event_type, event_date, heat_signs, heat_action_taken')
+    .eq('animal_id', animalId)
+    .order('event_date', { ascending: false })
+    .limit(5)
+  
+  // ========== DEBUG LOGGING ==========
+  console.log('[getAnimalById] === DEBUG START ===')
+  console.log('[getAnimalById] Animal ID:', animalId)
+  console.log('[getAnimalById] Tag/Name:', typedData.tag_number, typedData.name)
+  console.log('[getAnimalById] Animal Source:', typedData.animal_source)
+  console.log('[getAnimalById] Production Status:', typedData.production_status)
+  
+  console.log('[getAnimalById] --- PURCHASE DATA ---')
+  console.log('[getAnimalById] Purchase data:', purchaseData)
+  
+  console.log('[getAnimalById] --- LACTATION DATA ---')
+  console.log('[getAnimalById] Lactation data:', lactationData)
+  
+  console.log('[getAnimalById] --- WEIGHT DATA ---')
+  console.log('[getAnimalById] Weight data:', weightData)
+  
+  console.log('[getAnimalById] === DEBUG END ===')
+  // ========== END DEBUG LOGGING ==========
+  
+  // Map the data to extract weight and lactation info from joined tables
+  // Calculate days_in_milk from lactation start_date
+  const lactationStartDate = (lactationData as any)?.[0]?.start_date
+  const daysInMilk = lactationStartDate 
+    ? Math.floor((new Date().getTime() - new Date(lactationStartDate).getTime()) / (1000 * 60 * 60 * 24))
+    : null
+
+  return {
+    ...typedData,
+    // Physical measurements
+    weight: (weightData as any)?.[0]?.weight_kg ?? null,
+    
+    // Lactation cycle info
+    lactation_number: (lactationData as any)?.[0]?.lactation_number ?? null,
+    days_in_milk: daysInMilk ?? null,
+    current_daily_production: (lactationData as any)?.[0]?.peak_yield_litres ?? null,
+    lactation_start_date: (lactationData as any)?.[0]?.start_date ?? null,
+    lactation_expected_end: (lactationData as any)?.[0]?.expected_end_date ?? null,
+    
+    // Purchase info (for bought animals)
+    purchase_date: (purchaseData as any)?.[0]?.purchase_date ?? null,
+    purchase_price: (purchaseData as any)?.[0]?.purchase_price ?? null,
+    seller_info: (purchaseData as any)?.[0]?.farm_seller_name ?? null,
+    seller_contact: (purchaseData as any)?.[0]?.farm_seller_contact ?? null,
+    previous_farm_tag: (purchaseData as any)?.[0]?.previous_farm_tag ?? null,
+    // Origin dam info (for purchased animals)
+    origin_dam_tag: (purchaseData as any)?.[0]?.dam_tag_at_origin ?? null,
+    origin_dam_name: (purchaseData as any)?.[0]?.dam_name_at_origin ?? null,
+    // Origin sire info (for purchased animals - bull code/tag or semen source)
+    origin_sire_tag: (purchaseData as any)?.[0]?.sire_tag_or_semen_code ?? null,
+    origin_sire_name: (purchaseData as any)?.[0]?.sire_name_or_semen_source ?? null,
+    
+    // Latest breeding service
+    service_date: (serviceData as any)?.[0]?.service_date ?? null,
+    service_method: (serviceData as any)?.[0]?.service_type ?? null,
+    
+    // Expected calving (prioritize pregnancy record)
+    expected_calving_date: 
+      (pregnancyData as any)?.[0]?.expected_calving_date 
+      ?? (serviceData as any)?.[0]?.expected_calving_date 
+      ?? null,
+    
+    // Calf record info (for newborn calves) - extract dam and sire details
+    calf_info: (calfData as any)?.[0] ? {
+      ...(calfData as any)[0],
+      // Dam (mother) info from FK relationship
+      dam_tag_number: (calfData as any)[0]?.dam?.[0]?.tag_number ?? null,
+      dam_name: (calfData as any)[0]?.dam?.[0]?.name ?? null,
+      // Sire (father) info stored directly in calf_records
+      sire_tag: (calfData as any)[0]?.sire_tag ?? null,
+      sire_name: (calfData as any)[0]?.sire_name ?? null,
+    } : null,
+    
+    // Latest calving history
+    latest_calving: (calvingData as any)?.[0] ?? null,
+    
+    // All calvings (useful for timeline)
+    calving_history: allCalvingsData ?? [],
+    
+    // Release/sale information
+    release_info: (releaseData as any)?.[0] ?? null,
+    
+    // Timeline of breeding events
+    breeding_events: breedingData ?? [],
+  }
 }
 
 /**
@@ -191,7 +424,7 @@ export async function getAvailableMothers(farmId: string): Promise<AvailableMoth
     .eq('farm_id', farmId)
     .eq('gender', 'female')
     .eq('status', 'active')
-    .in('production_status', ['lactating', 'dry', 'served'])
+    .in('production_status', ['lactating', 'steaming_dry_cows', 'open_culling_dry_cows', 'served'])
     .order('tag_number', { ascending: true })
   
   if (error) {
@@ -216,7 +449,7 @@ export async function getAvailableMothersForEdit(
     .eq('farm_id', farmId)
     .eq('gender', 'female')
     .eq('status', 'active')
-    .in('production_status', ['lactating', 'dry', 'served'])
+    .in('production_status', ['lactating', 'steaming_dry_cows', 'open_culling_dry_cows', 'served'])
     .order('tag_number', { ascending: true })
   
   // Exclude specific animal (useful when editing to prevent circular references)
@@ -254,7 +487,7 @@ export async function getEnhancedAnimalStats(farmId: string): Promise<AnimalStat
       female: 0,
       male: 0,
       bySource: { newborn_calves: 0, purchased: 0 },
-      byProduction: { calves: 0, heifers: 0, bulls: 0, served: 0, lactating: 0, dry: 0 },
+      byProduction: { calves: 0, heifers: 0, bulls: 0, served: 0, lactating: 0, steaming_dry_cows: 0, open_culling_dry_cows: 0 },
       byHealth: { healthy: 0, needsAttention: 0 }
     }
   }
@@ -274,7 +507,8 @@ export async function getEnhancedAnimalStats(farmId: string): Promise<AnimalStat
       bulls: animals.filter(a => a.production_status === 'bull').length,
       served: animals.filter(a => a.production_status === 'served').length,
       lactating: animals.filter(a => a.production_status === 'lactating').length,
-      dry: animals.filter(a => a.production_status === 'dry').length,
+      steaming_dry_cows: animals.filter(a => a.production_status === 'steaming_dry_cows').length,
+      open_culling_dry_cows: animals.filter(a => a.production_status === 'open_culling_dry_cows').length,
     },
     byHealth: {
       healthy: animals.filter(a => a.health_status === 'healthy').length,
@@ -1018,7 +1252,8 @@ export async function getAnimalStats(farmId: string): Promise<AnimalStats> {
         bulls: 0,
         served: 0, 
         lactating: 0, 
-        dry: 0 
+        steaming_dry_cows: 0,
+        open_culling_dry_cows: 0
       },
       byHealth: { healthy: 0, needsAttention: 0 }
     }
@@ -1040,7 +1275,8 @@ export async function getAnimalStats(farmId: string): Promise<AnimalStats> {
       bulls: animals.filter(a => a.production_status === 'bull').length,
       served: animals.filter(a => a.production_status === 'served').length,
       lactating: animals.filter(a => a.production_status === 'lactating').length,
-      dry: animals.filter(a => a.production_status === 'dry').length,
+      steaming_dry_cows: animals.filter(a => a.production_status === 'steaming_dry_cows').length,
+      open_culling_dry_cows: animals.filter(a => a.production_status === 'open_culling_dry_cows').length,
     },
     
     byHealth: {
@@ -1109,7 +1345,20 @@ export async function searchAnimals(
         tag_number,
         name,
         breed
+      ),
+      weights:animal_weight_records(weight_kg, weight_date, measurement_purpose)
+        .order('weight_date', { ascending: false })
+        .limit(1),
+      lactation:lactation_cycle_records(
+        lactation_number,
+        peak_yield_litres,
+        total_yield_litres,
+        days_in_milk,
+        status
       )
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(1)
     `)
     .eq('farm_id', farmId)
     .eq('status', 'active')
@@ -1148,12 +1397,12 @@ export async function searchAnimals(
   return (data || []).map((item: any) => ({
     ...item,
     expected_calving_date: item.expected_calving_date ?? null,
-    days_in_milk: item.days_in_milk ?? null,
-    lactation_number: item.lactation_number ?? null,
+    days_in_milk: item.lactation?.[0]?.days_in_milk ?? item.days_in_milk ?? null,
+    lactation_number: item.lactation?.[0]?.lactation_number ?? null,
     purchase_price: item.purchase_price ?? null,
     purchase_date: item.purchase_date ?? null,
     seller_info: item.seller_info ?? null,
-    weight: item.weight ?? null,
+    weight: item.weights?.[0]?.weight_kg ?? null,
     birth_weight: item.birth_weight ?? null,
     notes: item.notes ?? null,
     service_date: item.service_date ?? null,
@@ -1161,6 +1410,7 @@ export async function searchAnimals(
     mother_production_info: item.mother_production_info ?? null,
     father_info: item.father_info ?? null,
     updated_at: item.updated_at ?? null,
+    current_daily_production: item.lactation?.[0]?.peak_yield_litres ?? null,
   })) as Animal[]
 }
 
@@ -1177,7 +1427,20 @@ export async function getAnimalsNeedingAttention(farmId: string): Promise<Animal
         tag_number,
         name,
         breed
+      ),
+      weights:animal_weight_records(weight_kg, weight_date, measurement_purpose)
+        .order('weight_date', { ascending: false })
+        .limit(1),
+      lactation:lactation_cycle_records(
+        lactation_number,
+        peak_yield_litres,
+        total_yield_litres,
+        days_in_milk,
+        status
       )
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(1)
     `)
     .eq('farm_id', farmId)
     .eq('status', 'active')
@@ -1192,11 +1455,20 @@ export async function getAnimalsNeedingAttention(farmId: string): Promise<Animal
   return (data || []).map((item: any) => ({
     ...item,
     expected_calving_date: item.expected_calving_date ?? null,
-    days_in_milk: item.days_in_milk ?? null,
-    lactation_number: item.lactation_number ?? null,
+    days_in_milk: item.lactation?.[0]?.days_in_milk ?? item.days_in_milk ?? null,
+    lactation_number: item.lactation?.[0]?.lactation_number ?? null,
     purchase_price: item.purchase_price ?? null,
     purchase_date: item.purchase_date ?? null,
     seller_info: item.seller_info ?? null,
+    weight: item.weights?.[0]?.weight_kg ?? null,
+    birth_weight: item.birth_weight ?? null,
+    notes: item.notes ?? null,
+    service_date: item.service_date ?? null,
+    service_method: item.service_method ?? null,
+    mother_production_info: item.mother_production_info ?? null,
+    father_info: item.father_info ?? null,
+    updated_at: item.updated_at ?? null,
+    current_daily_production: item.lactation?.[0]?.peak_yield_litres ?? null,
   })) as Animal[]
 }
 
@@ -1216,7 +1488,20 @@ export async function getAnimalsByProductionStatus(
         tag_number,
         name,
         breed
+      ),
+      weights:animal_weight_records(weight_kg, weight_date, measurement_purpose)
+        .order('weight_date', { ascending: false })
+        .limit(1),
+      lactation:lactation_cycle_records(
+        lactation_number,
+        peak_yield_litres,
+        total_yield_litres,
+        days_in_milk,
+        status
       )
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(1)
     `)
     .eq('farm_id', farmId)
     .eq('production_status', productionStatus)
@@ -1231,12 +1516,12 @@ export async function getAnimalsByProductionStatus(
   return (data || []).map((item: any) => ({
     ...item,
     expected_calving_date: item.expected_calving_date ?? null,
-    days_in_milk: item.days_in_milk ?? null,
-    lactation_number: item.lactation_number ?? null,
+    days_in_milk: item.lactation?.[0]?.days_in_milk ?? item.days_in_milk ?? null,
+    lactation_number: item.lactation?.[0]?.lactation_number ?? null,
     purchase_price: item.purchase_price ?? null,
     purchase_date: item.purchase_date ?? null,
     seller_info: item.seller_info ?? null,
-    weight: item.weight ?? null,
+    weight: item.weights?.[0]?.weight_kg ?? null,
     birth_weight: item.birth_weight ?? null,
     notes: item.notes ?? null,
     service_date: item.service_date ?? null,
@@ -1244,6 +1529,7 @@ export async function getAnimalsByProductionStatus(
     mother_production_info: item.mother_production_info ?? null,
     father_info: item.father_info ?? null,
     updated_at: item.updated_at ?? null,
+    current_daily_production: item.lactation?.[0]?.peak_yield_litres ?? null,
   })) as Animal[]
 }
 // Get top performing animals based on production
@@ -1262,13 +1548,25 @@ export async function getTopPerformingAnimals(
         tag_number,
         name,
         breed
+      ),
+      weights:animal_weight_records(weight_kg, weight_date, measurement_purpose)
+        .order('weight_date', { ascending: false })
+        .limit(1),
+      lactation:lactation_cycle_records(
+        lactation_number,
+        peak_yield_litres,
+        total_yield_litres,
+        days_in_milk,
+        status
       )
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(1)
     `)
     .eq('farm_id', farmId)
     .eq('production_status', 'lactating')
     .eq('status', 'active')
-    .not('current_daily_production', 'is', null)
-    .order('current_daily_production', { ascending: false })
+    .order('lactation', { ascending: false })
     .limit(limit)
   
   if (error) {
@@ -1279,12 +1577,12 @@ export async function getTopPerformingAnimals(
   return (data || []).map((item: any) => ({
     ...item,
     expected_calving_date: item.expected_calving_date ?? null,
-    days_in_milk: item.days_in_milk ?? null,
-    lactation_number: item.lactation_number ?? null,
+    days_in_milk: item.lactation?.[0]?.days_in_milk ?? item.days_in_milk ?? null,
+    lactation_number: item.lactation?.[0]?.lactation_number ?? null,
     purchase_price: item.purchase_price ?? null,
     purchase_date: item.purchase_date ?? null,
     seller_info: item.seller_info ?? null,
-    weight: item.weight ?? null,
+    weight: item.weights?.[0]?.weight_kg ?? null,
     birth_weight: item.birth_weight ?? null,
     notes: item.notes ?? null,
     service_date: item.service_date ?? null,
@@ -1292,6 +1590,7 @@ export async function getTopPerformingAnimals(
     mother_production_info: item.mother_production_info ?? null,
     father_info: item.father_info ?? null,
     updated_at: item.updated_at ?? null,
+    current_daily_production: item.lactation?.[0]?.peak_yield_litres ?? null,
   })) as Animal[]
 }
 
@@ -1338,12 +1637,25 @@ export async function getAnimalsDueForBreeding(farmId: string): Promise<Animal[]
         tag_number,
         name,
         breed
+      ),
+      weights:animal_weight_records(weight_kg, weight_date, measurement_purpose)
+        .order('weight_date', { ascending: false })
+        .limit(1),
+      lactation:lactation_cycle_records(
+        lactation_number,
+        peak_yield_litres,
+        total_yield_litres,
+        days_in_milk,
+        status
       )
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(1)
     `)
     .eq('farm_id', farmId)
     .eq('status', 'active')
     .eq('gender', 'female')
-    .in('production_status', ['heifer', 'dry'])
+    .in('production_status', ['heifer', 'steaming_dry_cows', 'open_culling_dry_cows'])
     .order('tag_number', { ascending: true })
   
   if (error) {
@@ -1354,12 +1666,12 @@ export async function getAnimalsDueForBreeding(farmId: string): Promise<Animal[]
   return (data || []).map((item: any) => ({
     ...item,
     expected_calving_date: item.expected_calving_date ?? null,
-    days_in_milk: item.days_in_milk ?? null,
-    lactation_number: item.lactation_number ?? null,
+    days_in_milk: item.lactation?.[0]?.days_in_milk ?? item.days_in_milk ?? null,
+    lactation_number: item.lactation?.[0]?.lactation_number ?? null,
     purchase_price: item.purchase_price ?? null,
     purchase_date: item.purchase_date ?? null,
     seller_info: item.seller_info ?? null,
-    weight: item.weight ?? null,
+    weight: item.weights?.[0]?.weight_kg ?? null,
     birth_weight: item.birth_weight ?? null,
     notes: item.notes ?? null,
     service_date: item.service_date ?? null,
@@ -1367,6 +1679,7 @@ export async function getAnimalsDueForBreeding(farmId: string): Promise<Animal[]
     mother_production_info: item.mother_production_info ?? null,
     father_info: item.father_info ?? null,
     updated_at: item.updated_at ?? null,
+    current_daily_production: item.lactation?.[0]?.peak_yield_litres ?? null,
   })) as Animal[]
 }
 
@@ -1389,7 +1702,19 @@ export async function getAnimalsApproachingCalving(
         tag_number,
         name,
         breed
+      ),
+      weights:animal_weight_records(weight_kg, weight_date, measurement_purpose)
+        .order('weight_date', { ascending: false })
+        .limit(1),
+      lactation:lactation_cycle_records(
+        lactation_number,
+        peak_yield_litres,
+        total_yield_litres,
+        days_in_milk,
+        status
       )
+        .order('created_at', { ascending: false })
+        .limit(1)
     `)
     .eq('farm_id', farmId)
     .eq('status', 'active')
@@ -1406,12 +1731,12 @@ export async function getAnimalsApproachingCalving(
   return (data || []).map((item: any) => ({
     ...item,
     expected_calving_date: item.expected_calving_date ?? null,
-    days_in_milk: item.days_in_milk ?? null,
-    lactation_number: item.lactation_number ?? null,
+    days_in_milk: item.lactation?.[0]?.days_in_milk ?? item.days_in_milk ?? null,
+    lactation_number: item.lactation?.[0]?.lactation_number ?? null,
     purchase_price: item.purchase_price ?? null,
     purchase_date: item.purchase_date ?? null,
     seller_info: item.seller_info ?? null,
-    weight: item.weight ?? null,
+    weight: item.weights?.[0]?.weight_kg ?? null,
     birth_weight: item.birth_weight ?? null,
     notes: item.notes ?? null,
     service_date: item.service_date ?? null,
@@ -1419,6 +1744,7 @@ export async function getAnimalsApproachingCalving(
     mother_production_info: item.mother_production_info ?? null,
     father_info: item.father_info ?? null,
     updated_at: item.updated_at ?? null,
+    current_daily_production: item.lactation?.[0]?.peak_yield_litres ?? null,
   })) as Animal[]
 }
 

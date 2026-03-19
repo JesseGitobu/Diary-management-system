@@ -22,19 +22,16 @@ export interface AnimalCategory {
   description: string | null
   min_age_days?: number | null
   max_age_days?: number | null
-  gender?: string | null  // Added gender field
-  characteristics: {
-    lactating?: boolean
-    pregnant?: boolean
-    breeding_male?: boolean
-    growth_phase?: boolean
-  }
+  gender?: string | null  // 'any' | 'male' | 'female'
+  characteristics?: Record<string, any>  // Flexible for ranges, checkboxes, milking_schedules
   is_default: boolean | null
   sort_order: number | null
-  production_status?: 'calf' | 'heifer' | 'bull' | 'served' | 'lactating' | 'dry'| null
+  production_status?: 'calf' | 'heifer' | 'bull' | 'served' | 'lactating' | 'dry' | 'steaming_dry_cows' | 'open_culling_dry_cows' | null
+  production_statuses?: string[] // Support for multiple production statuses
   created_at: string | null
   updated_at: string | null
-  matching_animals_count?: number  // Added for displaying count
+  matching_animals_count?: number  // Animals matching category criteria
+  assigned_animals_count?: number  // Animals actually assigned to this category
 }
 
 export interface WeightConversion {
@@ -96,6 +93,7 @@ export interface MatchingAnimal {
   status: string
   days_in_milk: number | null
   current_daily_production: number | null
+  current_average_production: number | null
   age_days: number | null
 }
 
@@ -304,28 +302,25 @@ export async function getAnimalCategories(farmId: string): Promise<AnimalCategor
     return []
   }
   
-  // Get matching animals count for each category
+  // Get matching animals count and assigned animals count for each category
   const categoriesWithCounts = await Promise.all(
     (data || []).map(async (category) => {
       const validStatus = category.production_status === null || 
-        ['calf', 'heifer', 'bull', 'served', 'lactating', 'dry'].includes(category.production_status) 
-        ? category.production_status as 'calf' | 'heifer' | 'bull' | 'served' | 'lactating' | 'dry' | null
+        ['calf', 'heifer', 'bull', 'served', 'lactating', 'dry', 'steaming_dry_cows', 'open_culling_dry_cows'].includes(category.production_status) 
+        ? category.production_status as 'calf' | 'heifer' | 'bull' | 'served' | 'lactating' | 'dry' | 'steaming_dry_cows' | 'open_culling_dry_cows' | null
         : null;
 
-      const matchingCount = await getMatchingAnimalsCount(farmId, {
-        ...category,
-        production_status: validStatus,
-        characteristics: category.characteristics as {
-          lactating?: boolean;
-          pregnant?: boolean;
-          breeding_male?: boolean;
-          growth_phase?: boolean;
-        }
-      })
+      // Get matching animals count based on category criteria
+      const matchingCount = await getMatchingAnimalsCount(farmId, category as AnimalCategory)
+      
+      // Get assigned animals count (actual assignments)
+      const assignedCount = await getAssignedAnimalsCount(farmId, category.id)
+
       return {
         ...category,
         production_status: validStatus,
-        matching_animals_count: matchingCount
+        matching_animals_count: matchingCount,
+        assigned_animals_count: assignedCount
       }
     })
   )
@@ -338,15 +333,6 @@ export async function createAnimalCategory(
   data: Omit<AnimalCategory, 'id' | 'farm_id' | 'created_at' | 'updated_at' | 'matching_animals_count'>
 ) {
   const supabase = await createServerSupabaseClient()
-  
-  // Validate production_status if provided
-  const validStatuses = ['calf', 'heifer', 'served', 'lactating', 'dry']
-  if (data.production_status && !validStatuses.includes(data.production_status)) {
-    return { 
-      success: false, 
-      error: 'Invalid production status. Must be one of: calf, heifer, served, lactating, dry' 
-    }
-  }
   
   const { data: maxOrder } = await (supabase
     .from('animal_categories') as any)
@@ -363,7 +349,8 @@ export async function createAnimalCategory(
       ...data,
       farm_id: farmId,
       sort_order: nextOrder,
-      production_status: data.production_status || null  // ← Save production status
+      production_status: data.production_status || null,
+      characteristics: data.characteristics || {}
     })
     .select()
     .single()
@@ -426,83 +413,57 @@ export async function getMatchingAnimalsCount(
   farmId: string, 
   category: AnimalCategory
 ): Promise<number> {
-  const supabase = await createServerSupabaseClient()
-  
-  let query = supabase
-    .from('animals')
-    .select('id', { count: 'exact', head: true })
-    .eq('farm_id', farmId)
-    .eq('status', 'active')
-  
-  // Apply gender filter (skip 'any' gender)
-  if (category.gender && category.gender !== 'any') {
-    query = query.eq('gender', category.gender)
-  }
-  
-  // Apply age filters
-  if (category.min_age_days || category.max_age_days) {
-    const today = new Date()
-    
-    if (category.min_age_days) {
-      const maxBirthDate = new Date(today.getTime() - category.min_age_days * 24 * 60 * 60 * 1000)
-      query = query.lte('birth_date', maxBirthDate.toISOString().split('T')[0])
-    }
-    
-    if (category.max_age_days) {
-      const minBirthDate = new Date(today.getTime() - category.max_age_days * 24 * 60 * 60 * 1000)
-      query = query.gte('birth_date', minBirthDate.toISOString().split('T')[0])
-    }
-  }
-  
-  // Apply production status filter if specified
-  if (category.production_status) {
-    query = query.eq('production_status', category.production_status)
-  } else if (category.characteristics) {
-    // If no production_status, apply characteristic-based filters
-    const hasCharacteristics = 
-      category.characteristics.lactating ||
-      category.characteristics.pregnant ||
-      category.characteristics.breeding_male ||
-      category.characteristics.growth_phase
-
-    if (hasCharacteristics) {
-      // Build list of applicable production statuses from characteristics
-      const applicableStatuses: string[] = []
-      
-      if (category.characteristics.lactating) {
-        applicableStatuses.push('lactating')
-      }
-      
-      if (category.characteristics.pregnant) {
-        applicableStatuses.push('served')
-      }
-      
-      if (category.characteristics.growth_phase) {
-        applicableStatuses.push('calf', 'heifer')
-      }
-      
-      // Filter by applicable statuses (OR condition)
-      if (applicableStatuses.length > 0) {
-        query = query.in('production_status', applicableStatuses)
-      }
-    }
-  }
-  
-  // Handle breeding male constraint separately (overrides gender if both specified)
-  if (category.characteristics?.breeding_male) {
-    query = query.eq('gender', 'male')
-  }
-  
-  const { count, error } = await query
-  
-  if (error) {
+  try {
+    // Use the full matching animals function and just count results
+    const matchingAnimals = await getMatchingAnimals(farmId, category, 1000)
+    return matchingAnimals.length
+  } catch (error) {
     console.error('Error counting matching animals:', error)
     return 0
   }
-  
-  return count || 0
 }
 
+/**
+ * Get count of animals actually assigned to a category
+ * (from animal_category_assignments table, where removed_at IS NULL)
+ */
+export async function getAssignedAnimalsCount(
+  farmId: string,
+  categoryId: string
+): Promise<number> {
+  try {
+    const supabase = await createServerSupabaseClient()
+    
+    const { count, error } = await supabase
+      .from('animal_category_assignments')
+      .select('*', { count: 'exact', head: true })
+      .eq('farm_id', farmId)
+      .eq('category_id', categoryId)
+      .is('removed_at', null)  // Only active assignments
+    
+    if (error) {
+      console.error('Error counting assigned animals:', error)
+      return 0
+    }
+    
+    return count || 0
+  } catch (error) {
+    console.error('Error in getAssignedAnimalsCount:', error)
+    return 0
+  }
+}
+
+/**
+ * Enhanced function to filter animals based on detailed characteristics.
+ * This function retrieves animals and filters them based on:
+ * - Basic attributes (gender, age, production_status)
+ * - Lactation metrics (DIM, milk yield, lactation number)
+ * - Pregnancy metrics (days pregnant, days to calving)
+ * - Health characteristics (mastitis risk, treatment status, etc.)
+ * - Body metrics (weight, body condition score)
+ * - Breeding characteristics (services per conception, heat timing)
+ * - Growth metrics (daily gain, age ranges)
+ */
 export async function getMatchingAnimals(
   farmId: string, 
   category: AnimalCategory,
@@ -510,6 +471,7 @@ export async function getMatchingAnimals(
 ): Promise<MatchingAnimal[]> {
   const supabase = await createServerSupabaseClient()
   
+  // Step 1: Get base animals matching basic filters
   let query = supabase
     .from('animals')
     .select(`
@@ -519,14 +481,12 @@ export async function getMatchingAnimals(
       gender,
       birth_date,
       production_status,
-      status,
-      days_in_milk,
-      current_daily_production
+      status
     `)
     .eq('farm_id', farmId)
     .eq('status', 'active')
     .order('tag_number', { ascending: true })
-    .limit(limit)
+    .limit(limit * 3) // Get more to filter later
   
   // Apply gender filter (skip 'any' gender)
   if (category.gender && category.gender !== 'any') {
@@ -548,9 +508,15 @@ export async function getMatchingAnimals(
     }
   }
   
-  // Apply production status filter if specified
-  if (category.production_status) {
-    query = query.eq('production_status', category.production_status)
+  // Apply production status filter if specified (support both single and multiple)
+  const targetStatuses = (category as any).production_statuses && (category as any).production_statuses.length > 0
+    ? (category as any).production_statuses
+    : category.production_status 
+      ? [category.production_status]
+      : []
+  
+  if (targetStatuses.length > 0) {
+    query = query.in('production_status', targetStatuses)
   } else if (category.characteristics) {
     // If no production_status, apply characteristic-based filters
     const hasCharacteristics = 
@@ -587,23 +553,234 @@ export async function getMatchingAnimals(
     query = query.eq('gender', 'male')
   }
   
-  const { data, error } = await query
+  const { data: baseAnimals, error } = await query
   
   if (error) {
     console.error('Error fetching matching animals:', error)
     return []
   }
   
-  // Calculate age in days for each animal
+  // Step 2: Fetch detailed data for characteristic filtering
+  const animalIds = (baseAnimals as any[] || []).map(a => a.id)
+  if (animalIds.length === 0) return []
+  
+  let filteredAnimals = baseAnimals as any[] || []
   const today = new Date()
-  // FIXED: Cast data to any[]
-  return (data as any[] || []).map(animal => ({
-    ...animal,
-    status: animal.status || 'unknown',
-    age_days: animal.birth_date 
-      ? Math.floor((today.getTime() - new Date(animal.birth_date).getTime()) / (1000 * 60 * 60 * 24))
-      : null
-  }))
+  
+  // Fetch lactation data upfront for all animals (needed for filtering and enrichment)
+  let lactationMap = new Map()
+  const { data: allLactationData } = await supabase
+    .from('lactation_cycle_records')
+    .select('animal_id, days_in_milk, peak_yield_litres, current_average_production, lactation_number')
+    .in('animal_id', animalIds)
+    .order('created_at', { ascending: false })
+  
+  ;(allLactationData as any[] || []).forEach(rec => {
+    if (!lactationMap.has(rec.animal_id)) {
+      lactationMap.set(rec.animal_id, rec)
+    }
+  })
+  
+  // Apply advanced characteristic filters
+  if (category.characteristics) {
+    const chars = category.characteristics
+    
+    // Filter by lactation characteristics (DIM, milk yield, lactation number)
+    // Handle both flat (dim_range_min) and nested (dim_range: { min, max }) structures
+    const dimRangeMin = chars.dim_range_min || chars.dim_range?.min
+    const dimRangeMax = chars.dim_range_max || chars.dim_range?.max
+    const yieldRangeMin = chars.milk_yield_range_min || chars.milk_yield_range?.min
+    const yieldRangeMax = chars.milk_yield_range_max || chars.milk_yield_range?.max
+    const lactNumMin = chars.lactation_number_range_min || chars.lactation_number_range?.min
+    const lactNumMax = chars.lactation_number_range_max || chars.lactation_number_range?.max
+    
+    if (dimRangeMin || dimRangeMax || yieldRangeMin || yieldRangeMax || lactNumMin || lactNumMax) {
+      
+      filteredAnimals = filteredAnimals.filter(animal => {
+        const lactRec = lactationMap.get(animal.id)
+        if (!lactRec) return false
+        
+        if (dimRangeMin && (lactRec.days_in_milk || 0) < dimRangeMin) return false
+        if (dimRangeMax && (lactRec.days_in_milk || 0) > dimRangeMax) return false
+        
+        // Use current_average_production for milk_yield_range (current daily production)
+        // Falls back to peak_yield_litres if current_average_production not yet populated
+        const yieldToCheck = lactRec.current_average_production || lactRec.peak_yield_litres || 0
+        if (yieldRangeMin && yieldToCheck < yieldRangeMin) return false
+        if (yieldRangeMax && yieldToCheck > yieldRangeMax) return false
+        
+        if (lactNumMin && (lactRec.lactation_number || 0) < lactNumMin) return false
+        if (lactNumMax && (lactRec.lactation_number || 0) > lactNumMax) return false
+        
+        return true
+      })
+    }
+    
+    // Filter by pregnancy characteristics (days pregnant, days to calving)
+    if (chars.days_pregnant_range_min || chars.days_pregnant_range_max ||
+        chars.days_to_calving_range_min || chars.days_to_calving_range_max) {
+      
+      const { data: pregnancyData } = await supabase
+        .from('pregnancy_records')
+        .select('animal_id, expected_calving_date')
+        .in('animal_id', animalIds)
+        .is('expected_calving_date', false) // Get active pregnancies
+      
+      const pregnancyMap = new Map()
+      ;(pregnancyData as any[] || []).forEach(rec => {
+        if (!pregnancyMap.has(rec.animal_id)) {
+          pregnancyMap.set(rec.animal_id, rec)
+        }
+      })
+      
+      filteredAnimals = filteredAnimals.filter(animal => {
+        const pregRec = pregnancyMap.get(animal.id)
+        if (!pregRec) return false
+        
+        if (pregRec.expected_calving_date) {
+          const calvingDate = new Date(pregRec.expected_calving_date)
+          const daysToCalving = Math.floor((calvingDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+          
+          if (chars.days_to_calving_range_min && daysToCalving < chars.days_to_calving_range_min) return false
+          if (chars.days_to_calving_range_max && daysToCalving > chars.days_to_calving_range_max) return false
+        }
+        
+        return true
+      })
+    }
+    
+    // Filter by body metrics (weight, body condition score)
+    if (chars.weight_kg_range_min || chars.weight_kg_range_max ||
+        chars.body_condition_score_range_min || chars.body_condition_score_range_max) {
+      
+      const { data: weightData } = await supabase
+        .from('animal_weight_records')
+        .select('animal_id, weight_kg, body_condition_score')
+        .in('animal_id', animalIds)
+        .order('record_date', { ascending: false })
+      
+      const weightMap = new Map()
+      ;(weightData as any[] || []).forEach(rec => {
+        if (!weightMap.has(rec.animal_id)) {
+          weightMap.set(rec.animal_id, rec)
+        }
+      })
+      
+      filteredAnimals = filteredAnimals.filter(animal => {
+        const weightRec = weightMap.get(animal.id)
+        if (!weightRec) return false
+        
+        if (chars.weight_kg_range_min && (weightRec.weight_kg || 0) < chars.weight_kg_range_min) return false
+        if (chars.weight_kg_range_max && (weightRec.weight_kg || 0) > chars.weight_kg_range_max) return false
+        
+        if (chars.body_condition_score_range_min && (weightRec.body_condition_score || 0) < chars.body_condition_score_range_min) return false
+        if (chars.body_condition_score_range_max && (weightRec.body_condition_score || 0) > chars.body_condition_score_range_max) return false
+        
+        return true
+      })
+    }
+  }
+  
+  // Step 3: Calculate age in days and limit results, enriched with lactation data
+  return filteredAnimals.slice(0, limit).map(animal => {
+    const lactRec = lactationMap.get(animal.id)
+    return {
+      ...animal,
+      status: animal.status || 'unknown',
+      days_in_milk: lactRec?.days_in_milk || null,
+      current_average_production: lactRec?.current_average_production || null,
+      age_days: animal.birth_date 
+        ? Math.floor((today.getTime() - new Date(animal.birth_date).getTime()) / (1000 * 60 * 60 * 24))
+        : null
+    }
+  })
+}
+
+/**
+ * Get animals that are explicitly assigned to a category in the animal_category_assignments table
+ * This is used for retrieving actual assigned animals (e.g., for milking groups)
+ * Returns animals with enriched lactation data matching the MatchingAnimal interface
+ */
+export async function getAssignedAnimals(
+  farmId: string,
+  categoryId: string,
+  limit: number = 100
+): Promise<MatchingAnimal[]> {
+  const supabase = await createServerSupabaseClient()
+  
+  // Step 1: Get all animals assigned to this category (active assignments only)
+  const { data: assignments, error: assignmentError } = await supabase
+    .from('animal_category_assignments')
+    .select('animal_id')
+    .eq('farm_id', farmId)
+    .eq('category_id', categoryId)
+    .is('removed_at', null)  // Only active assignments
+    .order('assigned_at', { ascending: true })
+    .limit(limit)
+  
+  if (assignmentError) {
+    console.error('Error fetching category assignments:', assignmentError)
+    return []
+  }
+  
+  const animalIds = (assignments as any[]).map(a => a.animal_id)
+  if (animalIds.length === 0) return []
+  
+  // Step 2: Get animal details from animals table
+  const { data: animals, error: animalError } = await supabase
+    .from('animals')
+    .select(`
+      id,
+      tag_number,
+      name,
+      gender,
+      birth_date,
+      production_status,
+      status
+    `)
+    .in('id', animalIds)
+    .eq('status', 'active')
+    .order('tag_number', { ascending: true })
+  
+  if (animalError) {
+    console.error('Error fetching animal details:', animalError)
+    return []
+  }
+  
+  // Step 3: Enrich with lactation data
+  let lactationMap = new Map()
+  const { data: lactationData } = await supabase
+    .from('lactation_cycle_records')
+    .select('animal_id, days_in_milk, current_average_production, peak_yield_litres')
+    .in('animal_id', animalIds)
+    .order('created_at', { ascending: false })
+  
+  ;(lactationData as any[] || []).forEach(rec => {
+    if (!lactationMap.has(rec.animal_id)) {
+      lactationMap.set(rec.animal_id, rec)
+    }
+  })
+  
+  // Step 4: Format and return with enriched data
+  const today = new Date()
+  return ((animals as any[]) || []).map(animal => {
+    const lactRec = lactationMap.get(animal.id)
+    return {
+      id: animal.id,
+      tag_number: animal.tag_number,
+      name: animal.name || null,
+      gender: animal.gender || null,
+      birth_date: animal.birth_date || null,
+      production_status: animal.production_status || null,
+      status: animal.status || 'unknown',
+      days_in_milk: lactRec?.days_in_milk || null,
+      current_daily_production: lactRec?.peak_yield_litres || null,
+      current_average_production: lactRec?.current_average_production || null,
+      age_days: animal.birth_date 
+        ? Math.floor((today.getTime() - new Date(animal.birth_date).getTime()) / (1000 * 60 * 60 * 24))
+        : null
+    }
+  })
 }
 
 // ============ WEIGHT CONVERSIONS ============
@@ -699,37 +876,41 @@ export async function deleteWeightConversion(conversionId: string, farmId: strin
 export async function getConsumptionBatches(farmId: string): Promise<ConsumptionBatch[]> {
   const supabase = await createServerSupabaseClient()
   
-  const { data, error } = await supabase
-    .from('consumption_batches')
-    .select('*')
-    .eq('farm_id', farmId)
-    .eq('is_active', true)
-    .order('is_preset', { ascending: false })
-    .order('batch_name', { ascending: true })
-  
-  if (error) {
-    console.error('Error fetching consumption batches:', error)
+  try {
+    const { data, error } = await supabase
+      .from('consumption_batches')
+      .select('*')
+      .eq('farm_id', farmId)
+      .eq('is_active', true)
+      .order('batch_name', { ascending: true })
+    
+    if (error) {
+      console.error('❌ Error fetching consumption batches:', error)
+      return []
+    }
+
+    // Get animal counts for each batch
+    const batchesWithCounts = await Promise.all(
+      // FIXED: Cast data to any[]
+      (data as any[] || []).map(async (batch) => {
+        const animalCounts = await getBatchAnimalCounts(farmId, batch.id)
+        return {
+          ...batch,
+          feed_type_categories: batch.feed_type_categories || [],
+          feeding_times: batch.feeding_times || [],
+          animal_category_ids: batch.animal_category_ids || [],
+          targeted_animals_count: animalCounts.total,
+          category_animals_count: animalCounts.fromCategories,
+          specific_animals_count: animalCounts.fromSpecific
+        }
+      })
+    )
+    
+    return batchesWithCounts
+  } catch (err) {
+    console.error('⚠️ Error in getConsumptionBatches:', err)
     return []
   }
-
-  // Get animal counts for each batch
-  const batchesWithCounts = await Promise.all(
-    // FIXED: Cast data to any[]
-    (data as any[] || []).map(async (batch) => {
-      const animalCounts = await getBatchAnimalCounts(farmId, batch.id)
-      return {
-        ...batch,
-        feed_type_categories: batch.feed_type_categories || [],
-        feeding_times: batch.feeding_times || [],
-        animal_category_ids: batch.animal_category_ids || [],
-        targeted_animals_count: animalCounts.total,
-        category_animals_count: animalCounts.fromCategories,
-        specific_animals_count: animalCounts.fromSpecific
-      }
-    })
-  )
-  
-  return batchesWithCounts
 }
 
 export async function getBatchAnimalCounts(farmId: string, batchId: string) {

@@ -25,6 +25,7 @@ const trackingConfigurations = {
     description: 'Track daily milk production per animal or total farm production',
     defaultFrequency: 'daily',
     frequencyOptions: [
+      { value: 'thrice_daily', label: 'Thrice Daily', description: 'Three times daily milking with dynamic timing (every 8 hours or custom intervals)' },
       { value: 'twice_daily', label: 'Twice Daily', description: 'Morning and evening milking' },
       { value: 'daily', label: 'Daily', description: 'Once per day total' },
       { value: 'weekly', label: 'Weekly', description: 'Weekly summaries' }

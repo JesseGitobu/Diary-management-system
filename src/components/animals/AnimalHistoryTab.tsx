@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import AnimalTimeline from '@/components/animals/AnimalTimeline'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { cn } from '@/lib/utils/cn'
 import { AlertCircle, Download } from 'lucide-react'
@@ -28,42 +29,61 @@ export function AnimalHistoryTab({
 }: AnimalHistoryTabProps) {
   const [timelineData, setTimelineData] = useState<TimelineGroup[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(true)
+  const [offset, setOffset] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const { isMobile } = useDeviceInfo()
+  const RECORDS_PER_PAGE = 20
 
   useEffect(() => {
-    const fetchTimeline = async () => {
-      try {
-        setIsLoading(true)
-        setError(null)
-
-        const url = `/api/audit-logs/animal/${animalId}?farmId=${farmId}&format=timeline`
-        console.log('Fetching timeline from:', url)
-        
-        const response = await fetch(url)
-
-        console.log('Response status:', response.status)
-        const data = await response.json()
-        console.log('Response data:', data)
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to fetch timeline data')
-        }
-
-        setTimelineData(data.data || [])
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : 'An error occurred'
-        console.error('Error fetching timeline:', err)
-        setError(errorMsg)
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
     if (animalId && farmId) {
-      fetchTimeline()
+      fetchTimeline(0)
     }
   }, [animalId, farmId])
+
+  const fetchTimeline = async (newOffset: number = 0) => {
+    try {
+      if (newOffset === 0) setIsLoading(true)
+      else setIsLoadingMore(true)
+      setError(null)
+
+      const url = `/api/audit-logs/animal/${animalId}?farmId=${farmId}&format=timeline&limit=${RECORDS_PER_PAGE}&offset=${newOffset}`
+      console.log('Fetching timeline from:', url)
+        
+      const response = await fetch(url)
+
+      console.log('Response status:', response.status)
+      const data = await response.json()
+      console.log('Response data:', data)
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to fetch timeline data')
+      }
+
+      const newData = data.data || []
+      
+      if (newOffset === 0) {
+        setTimelineData(newData)
+      } else {
+        setTimelineData(prev => [...prev, ...newData])
+      }
+      
+      setHasMore(newData.length === RECORDS_PER_PAGE)
+      setOffset(newOffset)
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'An error occurred'
+      console.error('Error fetching timeline:', err)
+      setError(errorMsg)
+    } finally {
+      setIsLoading(false)
+      setIsLoadingMore(false)
+    }
+  }
+  
+  const handleLoadMore = () => {
+    fetchTimeline(offset + RECORDS_PER_PAGE)
+  }
 
   const handleExport = async (format: 'json' | 'csv') => {
     try {
@@ -179,6 +199,7 @@ export function AnimalHistoryTab({
 
       {/* Timeline Component */}
       {timelineData.length > 0 ? (
+        <>
         <AnimalTimeline
           animalId={animalId}
           animalName={animalName}
@@ -186,6 +207,32 @@ export function AnimalHistoryTab({
           isLoading={isLoading}
           onExport={handleExport}
         />
+        
+        {/* Load More Button */}
+        <div className="flex justify-center mt-6 mb-4">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleLoadMore}
+            disabled={!hasMore || isLoadingMore}
+            className="gap-2"
+          >
+            {isLoadingMore ? (
+              <>
+                <LoadingSpinner size="sm" />
+                Loading...
+              </>
+            ) : hasMore ? (
+              <>
+                <Download className="w-4 h-4" />
+                Load More Events
+              </>
+            ) : (
+              'No more events'
+            )}
+          </Button>
+        </div>
+        </>
       ) : (
         <Card>
           <CardContent className="pt-12 pb-12">

@@ -31,7 +31,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 const DEV_MODE = process.env.NODE_ENV === 'development' // ← This will be true in dev server
 
 const SESSION_CONFIG = {
-  IDLE_TIMEOUT: DEV_MODE ? 1 * 60 * 1000 : 30 * 60 * 1000, // 1 min in dev, 30 min in prod
+  IDLE_TIMEOUT: DEV_MODE ? 5 * 60 * 1000 : 30 * 60 * 1000, // 5 min in dev, 30 min in prod
   REFRESH_BUFFER: 5 * 60 * 1000,
   ACTIVITY_THROTTLE: 1000,
   PERMISSION_CACHE_TTL: 5 * 60 * 1000,

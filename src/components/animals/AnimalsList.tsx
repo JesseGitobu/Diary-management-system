@@ -32,6 +32,7 @@ interface AnimalsListProps {
   onAnimalUpdated?: (updatedAnimal: Animal) => void
   onExportAnimals?: () => Promise<void>
   loading?: boolean
+  enrichedDataMap?: Record<string, any>  // ✅ Add enriched data map
 }
 
 type ViewMode = 'grid' | 'list'
@@ -42,7 +43,8 @@ export function AnimalsList({
   userRole, 
   onAnimalUpdated,
   onExportAnimals,
-  loading = false
+  loading = false,
+  enrichedDataMap = {}  // ✅ Accept enriched data with default
 }: AnimalsListProps) {
   const { isMobile } = useDeviceInfo()
   
@@ -152,7 +154,8 @@ export function AnimalsList({
         heifer: 'Heifer', 
         served: 'Served',
         lactating: 'Lactating',
-        dry: 'Dry'
+        steaming_dry_cows: 'Steaming Dry',
+        open_culling_dry_cows: 'Open Culling'
       },
       healthStatus: {
         healthy: 'Healthy',
@@ -326,7 +329,8 @@ export function AnimalsList({
                     <SelectItem value="heifer">Heifer</SelectItem>
                     <SelectItem value="served">Served</SelectItem>
                     <SelectItem value="lactating">Lactating</SelectItem>
-                    <SelectItem value="dry">Dry</SelectItem>
+                    <SelectItem value="steaming_dry_cows">Steaming Dry</SelectItem>
+                    <SelectItem value="open_culling_dry_cows">Open Culling</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -465,6 +469,7 @@ export function AnimalsList({
                   userRole={userRole}
                   onAnimalUpdated={handleAnimalUpdated}
                   isMobile={isMobile}
+                  enrichedData={enrichedDataMap[animal.id]}  // ✅ Pass enriched data
                 />
               ))}
             </div>
@@ -484,6 +489,7 @@ export function AnimalsList({
                   userRole={userRole}
                   onAnimalUpdated={handleAnimalUpdated}
                   isMobile={isMobile}
+                  enrichedData={enrichedDataMap[animal.id]}  // ✅ Pass enriched data from batch
                 />
               ))}
             </div>

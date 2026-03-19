@@ -28,26 +28,26 @@ export async function GET(request: NextRequest) {
         *,
         distribution_channels (
           id,
-          name,
-          type,
-          contact
+          channel_name,
+          channel_type,
+          contact_person
         )
       `)
       .eq('farm_id', userRole.farm_id)
-      .order('delivery_date', { ascending: false })
+      .order('distribution_date', { ascending: false })
       .order('created_at', { ascending: false })
 
     // Apply filters
     if (status) {
-      query = query.eq('status', status)
+      query = query.eq('distribution_status', status)
     }
     
     if (dateFrom) {
-      query = query.gte('delivery_date', dateFrom)
+      query = query.gte('distribution_date', dateFrom)
     }
     
     if (dateTo) {
-      query = query.lte('delivery_date', dateTo)
+      query = query.lte('distribution_date', dateTo)
     }
 
     query = query.range(offset, offset + limit - 1)
@@ -123,26 +123,20 @@ export async function POST(request: NextRequest) {
       .insert({
         farm_id: userRole.farm_id,
         channel_id: channelId,
-        volume: parseFloat(volume),
-        price_per_liter: parseFloat(pricePerLiter),
+        quantity_distributed: parseFloat(volume),
+        unit_price: parseFloat(pricePerLiter),
         total_amount: parseFloat(totalAmount),
-        delivery_date: deliveryDate,
-        delivery_time: deliveryTime || null,
-        driver_name: driverName.trim(),
-        vehicle_number: vehicleNumber?.trim() || null,
-        payment_method: paymentMethod || 'mpesa',
-        expected_payment_date: expectedPaymentDate || null,
-        notes: notes?.trim() || null,
-        status: status || 'pending',
-        created_by: user.id
+        distribution_date: deliveryDate,
+        distribution_status: status || 'pending',
+        notes: notes?.trim() || null
       })
       .select(`
         *,
         distribution_channels (
           id,
-          name,
-          type,
-          contact
+          channel_name,
+          channel_type,
+          contact_person
         )
       `)
       .single()

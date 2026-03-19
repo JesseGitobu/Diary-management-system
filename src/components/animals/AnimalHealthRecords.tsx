@@ -108,6 +108,9 @@ interface AnimalHealthRecordsProps {
 export function AnimalHealthRecords({ animalId, farmId, animals, canAddRecords }: AnimalHealthRecordsProps) {
   const [healthRecords, setHealthRecords] = useState<HealthRecord[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(true)
+  const [offset, setOffset] = useState(0)
   const [showAddModal, setShowAddModal] = useState(false)
   const [showFollowUpModal, setShowFollowUpModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
@@ -118,23 +121,43 @@ export function AnimalHealthRecords({ animalId, farmId, animals, canAddRecords }
   const [expandedRecords, setExpandedRecords] = useState<Set<string>>(new Set())
   
   const { isMobile } = useDeviceInfo()
+  const RECORDS_PER_PAGE = 15
   
   useEffect(() => {
-    loadHealthRecords()
+    loadHealthRecords(0)
   }, [animalId])
   
-  const loadHealthRecords = async () => {
+  const loadHealthRecords = async (newOffset: number = 0) => {
     try {
-      const response = await fetch(`/api/animals/${animalId}/health-records?includeFollowUps=true`)
+      if (newOffset === 0) setLoading(true)
+      else setLoadingMore(true)
+      
+      const response = await fetch(
+        `/api/animals/${animalId}/health-records?includeFollowUps=true&limit=${RECORDS_PER_PAGE}&offset=${newOffset}`
+      )
       if (response.ok) {
         const data = await response.json()
-        setHealthRecords(data.records || [])
+        const records = data.records || []
+        
+        if (newOffset === 0) {
+          setHealthRecords(records)
+        } else {
+          setHealthRecords(prev => [...prev, ...records])
+        }
+        
+        setHasMore(records.length === RECORDS_PER_PAGE)
+        setOffset(newOffset)
       }
     } catch (error) {
       console.error('Error loading health records:', error)
     } finally {
       setLoading(false)
+      setLoadingMore(false)
     }
+  }
+  
+  const handleLoadMore = () => {
+    loadHealthRecords(offset + RECORDS_PER_PAGE)
   }
   
   const handleRecordAdded = (newRecord: HealthRecord) => {
@@ -343,6 +366,36 @@ export function AnimalHealthRecords({ animalId, farmId, animals, canAddRecords }
   )
   
   const recordTypes = ['all', 'vaccination', 'treatment', 'checkup', 'injury', 'illness', 'reproductive', 'deworming']
+  
+  // Render Load More button
+  const renderLoadMoreButton = () => {
+    if (filteredRecords.length === 0) return null
+    return (
+      <div className="flex justify-center mt-6 mb-4">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleLoadMore}
+          disabled={!hasMore || loadingMore}
+          className="gap-2"
+        >
+          {loadingMore ? (
+            <>
+              <LoadingSpinner size="sm" />
+              Loading...
+            </>
+          ) : hasMore ? (
+            <>
+              <Plus className="w-4 h-4" />
+              Load More Records
+            </>
+          ) : (
+            'No more records'
+          )}
+        </Button>
+      </div>
+    )
+  }
   
   const summaryStats = {
     vaccinations: healthRecords.filter(r => r.record_type === 'vaccination').length,
@@ -1038,6 +1091,9 @@ export function AnimalHealthRecords({ animalId, farmId, animals, canAddRecords }
           })
         )}
       </div>
+      
+      {/* Load More Button */}
+      {filteredRecords.length > 0 && renderLoadMoreButton()}
       
       {/* Modals */}
       {showAddModal && (

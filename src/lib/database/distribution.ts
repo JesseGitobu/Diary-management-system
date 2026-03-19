@@ -39,20 +39,20 @@ export async function getDistributionStats(farmId: string, days: number = 30): P
         *,
         distribution_channels (
           id,
-          name,
-          type
+          channel_name,
+          channel_type
         )
       `)
       .eq('farm_id', farmId)
-      .gte('delivery_date', startDate.toISOString().split('T')[0])
-      .lte('delivery_date', endDate.toISOString().split('T')[0])
-      .order('delivery_date', { ascending: true })
+      .gte('distribution_date', startDate.toISOString().split('T')[0])
+      .lte('distribution_date', endDate.toISOString().split('T')[0])
+      .order('distribution_date', { ascending: true })
 
     if (error) throw error
     const records = (recordsdata as any[]) || []
 
     // Calculate totals
-    const totalDistributed = records?.reduce((sum, record) => sum + record.volume, 0) || 0
+    const totalDistributed = records?.reduce((sum, record) => sum + (record.quantity_distributed || record.volume || 0), 0) || 0
     const totalRevenue = records?.reduce((sum, record) => sum + record.total_amount, 0) || 0
     const avgPricePerLiter = totalDistributed > 0 ? totalRevenue / totalDistributed : 0
 
@@ -71,10 +71,10 @@ export async function getDistributionStats(farmId: string, days: number = 30): P
 
     // Populate with actual data
     records?.forEach(record => {
-      const dateKey = record.delivery_date
+      const dateKey = record.distribution_date
       const existing = dailyMap.get(dateKey)
       if (existing) {
-        existing.volume += record.volume
+        existing.volume += (record.quantity_distributed || record.volume || 0)
         existing.revenue += record.total_amount
         existing.channels.add(record.channel_id)
       }
@@ -95,16 +95,16 @@ export async function getDistributionStats(farmId: string, days: number = 30): P
       const existing = channelStats.get(channelId)
       
       if (existing) {
-        existing.volume += record.volume
+        existing.volume += (record.quantity_distributed || record.volume || 0)
         existing.revenue += record.total_amount
-        if (record.delivery_date > existing.lastDelivery) {
-          existing.lastDelivery = record.delivery_date
+        if (record.distribution_date > existing.lastDelivery) {
+          existing.lastDelivery = record.distribution_date
         }
       } else {
         channelStats.set(channelId, {
-          volume: record.volume,
+          volume: (record.quantity_distributed || record.volume || 0),
           revenue: record.total_amount,
-          lastDelivery: record.delivery_date,
+          lastDelivery: record.distribution_date,
           channelData: record.distribution_channels
         })
       }
@@ -113,8 +113,8 @@ export async function getDistributionStats(farmId: string, days: number = 30): P
     const topChannels = Array.from(channelStats.entries())
       .map(([id, stats]) => ({
         id,
-        name: stats.channelData?.name || 'Unknown Channel',
-        type: stats.channelData?.type || 'direct',
+        name: stats.channelData?.channel_name || 'Unknown Channel',
+        type: stats.channelData?.channel_type || 'direct',
         volume: stats.volume,
         revenue: stats.revenue,
         lastDelivery: stats.lastDelivery
@@ -157,26 +157,26 @@ export async function getDistributionRecords(
         *,
         distribution_channels (
           id,
-          name,
-          type,
-          contact
+          channel_name,
+          channel_type,
+          contact_person
         )
       `)
       .eq('farm_id', farmId)
-      .order('delivery_date', { ascending: false })
+      .order('distribution_date', { ascending: false })
       .order('created_at', { ascending: false })
 
     // Apply filters
     if (filters?.status) {
-      query = query.eq('status', filters.status)
+      query = query.eq('distribution_status', filters.status)
     }
     
     if (filters?.dateFrom) {
-      query = query.gte('delivery_date', filters.dateFrom)
+      query = query.gte('distribution_date', filters.dateFrom)
     }
     
     if (filters?.dateTo) {
-      query = query.lte('delivery_date', filters.dateTo)
+      query = query.lte('distribution_date', filters.dateTo)
     }
 
     if (limit) {
@@ -194,18 +194,14 @@ export async function getDistributionRecords(
     // Transform data to match component interface
     return  (records as any[]).map(record => ({
       id: record.id,
-      date: record.delivery_date,
-      channelName: record.distribution_channels?.name || 'Unknown Channel',
-      channelType: record.distribution_channels?.type || 'direct',
-      volume: record.volume,
-      pricePerLiter: record.price_per_liter,
+      date: record.distribution_date,
+      channelName: record.distribution_channels?.channel_name || 'Unknown Channel',
+      channelType: record.distribution_channels?.channel_type || 'direct',
+      volume: record.quantity_distributed || record.volume,
+      pricePerLiter: record.unit_price,
       totalAmount: record.total_amount,
-      status: record.status,
-      paymentMethod: record.payment_method,
-      driverName: record.driver_name,
-      deliveryTime: record.delivery_time,
-      notes: record.notes,
-      vehicleNumber: record.vehicle_number
+      status: record.distribution_status,
+      notes: record.notes
     })) || []
   } catch (error) {
     console.error('Error fetching distribution records:', error)

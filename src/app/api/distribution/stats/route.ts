@@ -30,20 +30,20 @@ export async function GET(request: NextRequest) {
         *,
         distribution_channels (
           id,
-          name,
-          type
+          channel_name,
+          channel_type
         )
       `)
       .eq('farm_id', userRole.farm_id)
-      .gte('delivery_date', startDate.toISOString().split('T')[0])
-      .lte('delivery_date', endDate.toISOString().split('T')[0])
-      .order('delivery_date', { ascending: true })
+      .gte('distribution_date', startDate.toISOString().split('T')[0])
+      .lte('distribution_date', endDate.toISOString().split('T')[0])
+      .order('distribution_date', { ascending: true })
 
     if (error) throw error
 
     // Calculate statistics
     // Cast record to any to fix "Property 'volume' does not exist on type 'never'"
-    const totalDistributed = records?.reduce((sum, record: any) => sum + record.volume, 0) || 0
+    const totalDistributed = records?.reduce((sum, record: any) => sum + (record.quantity_distributed || record.volume || 0), 0) || 0
     const totalRevenue = records?.reduce((sum, record: any) => sum + record.total_amount, 0) || 0
     const avgPricePerLiter = totalDistributed > 0 ? totalRevenue / totalDistributed : 0
     const uniqueChannels = new Set(records?.map((r: any) => r.channel_id))
@@ -60,10 +60,10 @@ export async function GET(request: NextRequest) {
 
     // Populate with actual data
     records?.forEach((record: any) => {
-      const dateKey = record.delivery_date
+      const dateKey = record.distribution_date
       const existing = dailyMap.get(dateKey)
       if (existing) {
-        existing.volume += record.volume
+        existing.volume += (record.quantity_distributed || record.volume || 0)
         existing.revenue += record.total_amount
         existing.channels.add(record.channel_id)
       }
@@ -84,16 +84,16 @@ export async function GET(request: NextRequest) {
       const existing = channelStats.get(channelId)
       
       if (existing) {
-        existing.volume += record.volume
+        existing.volume += (record.quantity_distributed || record.volume || 0)
         existing.revenue += record.total_amount
-        if (record.delivery_date > existing.lastDelivery) {
-          existing.lastDelivery = record.delivery_date
+        if (record.distribution_date > existing.lastDelivery) {
+          existing.lastDelivery = record.distribution_date
         }
       } else {
         channelStats.set(channelId, {
-          volume: record.volume,
+          volume: (record.quantity_distributed || record.volume || 0),
           revenue: record.total_amount,
-          lastDelivery: record.delivery_date,
+          lastDelivery: record.distribution_date,
           channelData: record.distribution_channels
         })
       }
@@ -102,7 +102,7 @@ export async function GET(request: NextRequest) {
     const topChannels = Array.from(channelStats.entries())
       .map(([id, stats]) => ({
         id,
-        name: stats.channelData?.name || 'Unknown Channel',
+        name: stats.channelData?.channel_name || 'Unknown Channel',
         type: stats.channelData?.type || 'direct',
         volume: stats.volume,
         revenue: stats.revenue,

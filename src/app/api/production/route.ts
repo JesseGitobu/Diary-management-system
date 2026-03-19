@@ -31,13 +31,64 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
     
-    // Add recorded_by field
-    const dataWithRecorder = {
-      ...productionData,
+    // Validate required fields
+    if (!productionData.animal_id) {
+      return NextResponse.json({ error: 'animal_id is required' }, { status: 400 })
+    }
+    if (!productionData.record_date) {
+      return NextResponse.json({ error: 'record_date is required' }, { status: 400 })
+    }
+    if (productionData.milk_volume === undefined || productionData.milk_volume === null) {
+      return NextResponse.json({ error: 'milk_volume is required' }, { status: 400 })
+    }
+    if (!productionData.milking_session) {
+      return NextResponse.json({ error: 'milking_session is required' }, { status: 400 })
+    }
+    if (!productionData.milk_safety_status) {
+      return NextResponse.json({ error: 'milk_safety_status is required' }, { status: 400 })
+    }
+    
+    // Validate milk_safety_status enum
+    const validSafetyStatuses = ['safe', 'unsafe_health', 'unsafe_colostrum']
+    if (!validSafetyStatuses.includes(productionData.milk_safety_status)) {
+      return NextResponse.json({ 
+        error: `milk_safety_status must be one of: ${validSafetyStatuses.join(', ')}` 
+      }, { status: 400 })
+    }
+    
+    // Validate mastitis_result if provided
+    if (productionData.mastitis_result) {
+      const validMastitisResults = ['negative', 'mild', 'severe']
+      if (!validMastitisResults.includes(productionData.mastitis_result)) {
+        return NextResponse.json({ 
+          error: `mastitis_result must be one of: ${validMastitisResults.join(', ')}` 
+        }, { status: 400 })
+      }
+    }
+    
+    // Build the data object with only valid fields
+    const recordData = {
+      animal_id: productionData.animal_id,
+      record_date: productionData.record_date,
+      milk_volume: Number(productionData.milk_volume),
+      milking_session: productionData.milking_session,
+      milk_safety_status: productionData.milk_safety_status,
+      temperature: productionData.temperature ? Number(productionData.temperature) : null,
+      mastitis_test_performed: productionData.mastitis_test_performed ?? false,
+      mastitis_result: productionData.mastitis_result || null,
+      affected_quarters: Array.isArray(productionData.affected_quarters) 
+        ? productionData.affected_quarters 
+        : null,
+      fat_content: productionData.fat_content ? Number(productionData.fat_content) : null,
+      protein_content: productionData.protein_content ? Number(productionData.protein_content) : null,
+      somatic_cell_count: productionData.somatic_cell_count ? Number(productionData.somatic_cell_count) : null,
+      lactose_content: productionData.lactose_content ? Number(productionData.lactose_content) : null,
+      ph_level: productionData.ph_level ? Number(productionData.ph_level) : null,
+      notes: productionData.notes || null,
       recorded_by: user.id,
     }
     
-    const result = await createProductionRecord(userRole.farm_id, dataWithRecorder)
+    const result = await createProductionRecord(userRole.farm_id, recordData)
     
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 })

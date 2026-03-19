@@ -28,6 +28,12 @@ export async function PATCH(
     if (body.status === 'paid' && !body.payment_date) {
       updates.payment_date = new Date().toISOString().split('T')[0]
     }
+    
+    // Map status to distribution_status column
+    if (updates.status) {
+      updates.distribution_status = updates.status
+      delete updates.status
+    }
 
     const supabase = await createServerSupabaseClient()
     
@@ -41,9 +47,9 @@ export async function PATCH(
         *,
         distribution_channels (
           id,
-          name,
-          type,
-          contact
+          channel_name,
+          channel_type,
+          contact_person
         )
       `)
       .single()

@@ -7,6 +7,10 @@ import {
   createAnimalCategory,
   AnimalCategory 
 } from '@/lib/database/feedManagementSettings'
+import {
+  validateAnimalCategoryData,
+  processCharacteristicsForStorage
+} from '@/lib/database/animal-category-validation'
 
 export async function GET(request: NextRequest) {
   try {
@@ -56,10 +60,26 @@ export async function POST(request: NextRequest) {
     
     const body = await request.json()
     
-    // Validate required fields
-    if (!body.name?.trim()) {
+    // Comprehensive data validation
+    const validation = validateAnimalCategoryData(body)
+    
+    if (!validation.valid) {
       return NextResponse.json(
-        { error: 'Category name is required' }, 
+        {
+          success: false,
+          error: 'Validation failed',
+          details: validation.errors
+        },
+        { status: 400 }
+      )
+    }
+
+    // Process characteristics (replace temp IDs, cleanup empty values)
+    const characteristicsResult = processCharacteristicsForStorage(body.characteristics)
+    
+    if (!characteristicsResult.success) {
+      return NextResponse.json(
+        { error: 'Failed to process characteristics' },
         { status: 400 }
       )
     }
@@ -71,7 +91,11 @@ export async function POST(request: NextRequest) {
       min_age_days: body.min_age_days || null,
       max_age_days: body.max_age_days || null,
       gender: body.gender || null,
-      characteristics: body.characteristics || {},
+      production_status: body.production_status || null,
+      production_statuses: body.production_statuses && Array.isArray(body.production_statuses) && body.production_statuses.length > 0 
+        ? body.production_statuses 
+        : null,
+      characteristics: characteristicsResult.data || {},
       is_default: body.is_default || false,
       sort_order: body.sort_order || null
     }

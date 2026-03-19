@@ -4,7 +4,7 @@ export type InvitationStatus = 'pending' | 'accepted' | 'declined' | 'expired'
 export type AnimalStatus = 'active' | 'sold' | 'deceased' | 'dry'
 export type AnimalGender = 'male' | 'female'
 export type AnimalSource = 'newborn_calf' | 'purchased_animal'
-export type ProductionStatus = 'calf' | 'heifer' | 'bull' | 'served' | 'lactating' | 'dry'
+export type ProductionStatus = 'calf' | 'heifer' | 'bull' | 'served' | 'lactating' | 'steaming_dry_cows' | 'open_culling_dry_cows'
 export type HealthStatus = 'healthy' | 'sick' | 'requires_attention' | 'quarantined'
 export type ServiceMethod = 'artificial_insemination' | 'natural_breeding'
 
@@ -61,6 +61,53 @@ export interface Animal {
     name: string | null // Changed from string | undefined to string | null
     breed: string | null // Added breed field
   }
+  weights?: Array<{
+    weight_kg: number | null
+    weight_date: string
+    measurement_purpose?: string
+  }>
+  lactation?: Array<{
+    lactation_number: number
+    peak_yield_litres: number | null
+    total_yield_litres: number | null
+    days_in_milk: number | null
+    status: string
+  }>
+  purchase?: {
+    id: string
+    purchase_date: string
+    purchase_price: number | null
+    farm_seller_name: string
+    farm_seller_contact: string | null
+    previous_farm_tag: string | null
+    dam_name_at_origin: string | null
+    sire_name_or_semen_source: string | null
+  } | null
+  latestService?: {
+    id: string
+    service_number: number
+    service_date: string
+    service_type: string
+    bull_tag_or_semen_code: string | null
+    bull_name_or_semen_source: string | null
+    sire_id: string | null
+    expected_calving_date: string | null
+    service_cost: number | null
+  } | null
+  latestPregnancy?: {
+    id: string
+    pregnancy_status: string
+    confirmed_date: string | null
+    expected_calving_date: string | null
+  } | null
+  latestCalving?: {
+    id: string
+    calving_date: string
+    steaming_date: string | null
+    calving_difficulty: string
+    colostrum_quality: string | null
+    colostrum_produced: number | null
+  } | null
   requires_health_record?: boolean
   health_record_created?: boolean
   auto_health_record_id?: string | null
@@ -496,7 +543,8 @@ export interface AnimalStats {
     bulls: number
     served: number
     lactating: number
-    dry: number
+    steaming_dry_cows: number
+    open_culling_dry_cows: number
   }
   byHealth: {
     healthy: number

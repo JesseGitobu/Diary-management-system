@@ -26,7 +26,7 @@ const optionalNumber = z.preprocess(
 );
 
 const goalsSchema = z.object({
-  primary_goal: z.string().min(1, 'Please select a primary goal'),
+  primary_goal: z.array(z.string()).min(1, 'Please select at least one goal'),
   // 2. Use the helper here
   milk_production_target: optionalNumber,
   herd_growth_target: optionalNumber,
@@ -97,7 +97,7 @@ const successMetrics = [
 export function GoalsSetupForm({ userId, initialData }: GoalsSetupFormProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [selectedGoal, setSelectedGoal] = useState('')
+  const [selectedGoals, setSelectedGoals] = useState<string[]>([])
   const [selectedChallenges, setSelectedChallenges] = useState<string[]>([])
   const [selectedMetrics, setSelectedMetrics] = useState<string[]>(['Milk production per animal'])
   const router = useRouter()
@@ -105,7 +105,7 @@ export function GoalsSetupForm({ userId, initialData }: GoalsSetupFormProps) {
   const form = useForm<GoalsFormData>({
     resolver: zodResolver(goalsSchema) as any,
     defaultValues: {
-      primary_goal: '',
+      primary_goal: [],
       // Default to undefined so inputs start empty
       milk_production_target: undefined,
       herd_growth_target: undefined,
@@ -116,10 +116,10 @@ export function GoalsSetupForm({ userId, initialData }: GoalsSetupFormProps) {
     },
   })
 
-  // Sync selectedGoal with form state
+  // Sync selectedGoals with form state
   useEffect(() => {
-    form.setValue('primary_goal', selectedGoal)
-  }, [selectedGoal, form])
+    form.setValue('primary_goal', selectedGoals)
+  }, [selectedGoals, form])
 
   // Sync selectedChallenges with form state
   useEffect(() => {
@@ -148,7 +148,11 @@ export function GoalsSetupForm({ userId, initialData }: GoalsSetupFormProps) {
   }
 
   const handleGoalSelect = (goalId: string) => {
-    setSelectedGoal(goalId)
+    setSelectedGoals(prev =>
+      prev.includes(goalId)
+        ? prev.filter(g => g !== goalId)
+        : [...prev, goalId]
+    )
     // Clear any previous validation errors
     if (form.formState.errors.primary_goal) {
       form.clearErrors('primary_goal')
@@ -231,7 +235,7 @@ export function GoalsSetupForm({ userId, initialData }: GoalsSetupFormProps) {
               <div className="space-y-3">
                 {primaryGoals.map((goal) => {
                   const Icon = goal.icon
-                  const isSelected = selectedGoal === goal.id
+                  const isSelected = selectedGoals.includes(goal.id)
 
                   return (
                     <div
@@ -389,7 +393,7 @@ export function GoalsSetupForm({ userId, initialData }: GoalsSetupFormProps) {
                 </Button>
                 <Button
                   type="submit"
-                  disabled={loading || !selectedGoal}
+                  disabled={loading || selectedGoals.length === 0}
                 >
                   {loading ? <LoadingSpinner size="sm" /> : 'Continue'}
                 </Button>

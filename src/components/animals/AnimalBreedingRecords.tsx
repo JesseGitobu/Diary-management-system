@@ -148,8 +148,12 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
   const [currentTime, setCurrentTime] = useState(new Date()) // For live timer updates
   
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(true)
+  const [offset, setOffset] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const { isMobile } = useDeviceInfo()
+  const RECORDS_PER_PAGE = 15
 
   useEffect(() => {
     loadBreedingSettings()
@@ -178,23 +182,25 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
     }
   }
 
-  const loadBreedingRecords = async () => {
+  const loadBreedingRecords = async (newOffset: number = 0) => {
     try {
-      setLoading(true)
-      const response = await fetch(`/api/animals/${animalId}/breeding-records`)
+      if (newOffset === 0) setLoading(true)
+      else setLoadingMore(true)
+      
+      const response = await fetch(`/api/animals/${animalId}/breeding-records?limit=${RECORDS_PER_PAGE}&offset=${newOffset}`)
       const data = await response.json()
       if (data.success) {
-        // --- UPDATED SORTING LOGIC ---
-        // Sorts by breeding_date (most recent first). When multiple records have same created_at (batch import),
-        // use breeding_date to identify current cycle correctly.
-        // This ensures the banners react to the most recent breeding event.
-
         const sortedRecords = (data.breedingRecords || []).sort((a: BreedingRecord, b: BreedingRecord) => {
           const dateA = new Date(a.breeding_date).getTime();
           const dateB = new Date(b.breeding_date).getTime();
-          return dateB - dateA; // Most recent breeding date first
+          return dateB - dateA;
         })
-        setBreedingRecords(sortedRecords)
+        
+        if (newOffset === 0) {
+          setBreedingRecords(sortedRecords)
+        } else {
+          setBreedingRecords(prev => [...prev, ...sortedRecords])
+        }
         
         setPregnancyChecks(data.pregnancyChecks || [])
         setAllEvents(data.allEvents || [])
@@ -202,29 +208,37 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
         const sortedHeat = (data.heatEvents || []).sort((a: HeatEvent, b: HeatEvent) => {
           const timeA = a.created_at ? new Date(a.created_at).getTime() : new Date(a.event_date).getTime();
           const timeB = b.created_at ? new Date(b.created_at).getTime() : new Date(b.event_date).getTime();
-          return timeB - timeA; // Newest entry first
+          return timeB - timeA;
         })
         setHeatEvents(sortedHeat)
 
         const sortedInsemination = (data.inseminationEvents || []).sort((a: InseminationEvent, b: InseminationEvent) => {
           const timeA = a.created_at ? new Date(a.created_at).getTime() : new Date(a.event_date).getTime();
           const timeB = b.created_at ? new Date(b.created_at).getTime() : new Date(b.event_date).getTime();
-          return timeB - timeA; // Newest entry first
+          return timeB - timeA;
         })
         setInseminationEvents(sortedInsemination)
 
         const sortedCalving = (data.calvingEvents || []).sort((a: CalvingEvent, b: CalvingEvent) => {
           const timeA = new Date(a.event_date).getTime();
           const timeB = new Date(b.event_date).getTime();
-          return timeB - timeA; // Newest event date first
+          return timeB - timeA;
         })
         setCalvingEvents(sortedCalving)
+        
+        setHasMore(sortedRecords.length === RECORDS_PER_PAGE)
+        setOffset(newOffset)
       }
     } catch (err) {
       setError('Failed to load records')
     } finally {
       setLoading(false)
+      setLoadingMore(false)
     }
+  }
+  
+  const handleLoadMore = () => {
+    loadBreedingRecords(offset + RECORDS_PER_PAGE)
   }
 
   const checkBreedingEligibility = () => {

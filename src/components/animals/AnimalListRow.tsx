@@ -29,12 +29,22 @@ interface AnimalListRowProps {
   userRole: string
   onAnimalUpdated?: (updatedAnimal: Animal) => void
   isMobile?: boolean
+  enrichedData?: {  // ✅ Add enriched data prop
+    breedingRecords?: { hasRecords: boolean; count: number }
+    weightRequirement?: { required_weight: number; updated_at: string } | null
+    latestHealthStatus?: { status: string; recorded_at: string } | null
+    needsHealthRecord?: boolean
+    calculatedProductionStatus?: string
+  }
 }
 
-export function AnimalListRow({ animal, farmId, userRole, onAnimalUpdated, isMobile }: AnimalListRowProps) {
+export function AnimalListRow({ animal, farmId, userRole, onAnimalUpdated, isMobile, enrichedData }: AnimalListRowProps) {
   const [showEditModal, setShowEditModal] = useState(false)
   const [animalData, setAnimalData] = useState(animal)
 
+  // ✅ OPTIMIZATION: No weight checks on list rows
+  // Weight requirement checks disabled to avoid N+1 queries (50+ animals = 50+ 1-second calls)
+  // Will be enabled on detail page only
   const canEdit = ['farm_owner', 'farm_manager'].includes(userRole)
   
   const handleAnimalUpdated = (updatedAnimal: Animal) => {
@@ -70,7 +80,8 @@ export function AnimalListRow({ animal, farmId, userRole, onAnimalUpdated, isMob
       heifer: 'bg-blue-100 text-blue-800',
       served: 'bg-purple-100 text-purple-800',
       lactating: 'bg-green-100 text-green-800',
-      dry: 'bg-gray-100 text-gray-800',
+      steaming_dry_cows: 'bg-orange-100 text-orange-800',
+      open_culling_dry_cows: 'bg-gray-100 text-gray-800',
       bull: 'bg-gray-100 text-gray-800',
     }
     
@@ -79,7 +90,8 @@ export function AnimalListRow({ animal, farmId, userRole, onAnimalUpdated, isMob
       heifer: 'Heifer',
       served: 'Served',
       lactating: 'Lactating',
-      dry: 'Dry',
+      steaming_dry_cows: 'Steaming Dry',
+      open_culling_dry_cows: 'Open Culling',
       bull: 'Bull'
     }
     

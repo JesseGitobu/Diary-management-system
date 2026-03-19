@@ -34,12 +34,20 @@ interface AnimalCardProps {
   onAnimalUpdated?: (updatedAnimal: Animal) => void
   onHealthStatusChange?: (animalId: string, healthStatus: string) => void
   isMobile?: boolean
+  enableWeightCheck?: boolean // ✅ Allow weight checks on detail page only
+  enrichedData?: {  // ✅ NEW: Pre-fetched enriched data from batch endpoint
+    breedingRecords?: { hasRecords: boolean; count: number }
+    weightRequirement?: { required_weight: number; updated_at: string } | null
+    latestHealthStatus?: { status: string; recorded_at: string } | null
+    needsHealthRecord?: boolean
+    calculatedProductionStatus?: string
+  }
 }
 
-export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealthStatusChange, isMobile }: AnimalCardProps) {
+export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealthStatusChange, isMobile, enableWeightCheck = false, enrichedData }: AnimalCardProps) {
   const [showEditModal, setShowEditModal] = useState(false)
   const [animalData, setAnimalData] = useState(animal)
-  const [healthStatusHistory, setHealthStatusHistory] = useState([])
+  const [healthStatusHistory, setHealthStatusHistory] = useState<Array<{ status: string; recorded_at: string }>>([])
   const [requiresWeightUpdate, setRequiresWeightUpdate] = useState(false)
   const [weightUpdateDue, setWeightUpdateDue] = useState<Date | null>(null)
   const [showAllInfo, setShowAllInfo] = useState(false)
@@ -88,128 +96,136 @@ useEffect(() => {
     }
 
     // ✅ SKIP status check for breeding-related statuses
-    const breedingStatuses = ['served', 'lactating', 'dry']
+    const breedingStatuses = ['served', 'lactating', 'steaming_dry_cows', 'open_culling_dry_cows']
     if (animalData.production_status && breedingStatuses.includes(animalData.production_status)) {
       console.log('⏭️ [AnimalCard] Skipping status check - breeding-related status:', animalData.production_status)
       setStatusMismatch(null)
       return
     }
 
-    // ✅ Check if animal has breeding records
-    try {
-      const breedingResponse = await fetch(`/api/animals/${animalData.id}/breeding-records`)
-      
-      if (breedingResponse.ok) {
-        const breedingData = await breedingResponse.json()
-        
-        if (breedingData.success && breedingData.breedingRecords.length > 0) {
-          console.log('⏭️ [AnimalCard] Skipping status check - has breeding records')
-          setStatusMismatch(null)
-          return
-        }
-      }
-    } catch (error) {
-      console.error('❌ [AnimalCard] Error checking breeding records:', error)
+    // ✅ Use enriched data if available (from batch endpoint) - NO API CALL NEEDED
+    if (enrichedData?.breedingRecords?.hasRecords) {
+      console.log('📊 [AnimalCard] Using enriched data - has breeding records (no API call)')
+      setStatusMismatch(null)
+      return
     }
 
-    // ✅ Only check status for age-based transitions (calf -> heifer, calf -> bull)
-    try {
-      const response = await fetch(
-        `/api/animals/calculate-production-status?animalId=${animalData.id}&farmId=${farmId}`
-      )
+    // ✅ Only check status for age-based transitions if enriched data available
+    if (enrichedData?.calculatedProductionStatus) {
+      console.log('📊 [AnimalCard] Using enriched calculated status (no API call):', enrichedData.calculatedProductionStatus)
+      
+      if (enrichedData.calculatedProductionStatus !== animalData.production_status) {
+        const validTransitions = [
+          { from: 'calf', to: 'heifer' },
+          { from: 'calf', to: 'bull' },
+          { from: 'heifer', to: 'heifer' },
+        ]
 
-      if (response.ok) {
-        const data = await response.json()
+        const isValidTransition = validTransitions.some(
+          t => t.from === animalData.production_status && 
+               t.to === enrichedData.calculatedProductionStatus
+        )
 
-        // Only show mismatch for meaningful age-based transitions
-        if (data.should_update && !data.has_breeding_context) {
-          // Valid age-based transitions worth notifying about
-          const validTransitions = [
-            { from: 'calf', to: 'heifer' },
-            { from: 'calf', to: 'bull' },
-            { from: 'heifer', to: 'heifer' }, // Only if not bred
-          ]
-
-          const isValidTransition = validTransitions.some(
-            t => t.from === data.current_production_status && 
-                 t.to === data.calculated_production_status
-          )
-
-          if (isValidTransition) {
-            setStatusMismatch({
-              current: data.current_production_status,
-              calculated: data.calculated_production_status,
-              age_days: data.age_days
-            })
-          } else {
-            setStatusMismatch(null)
-          }
-        } else {
-          setStatusMismatch(null)
+        if (isValidTransition && animalData.production_status) {
+          setStatusMismatch({
+            current: animalData.production_status,
+            calculated: enrichedData.calculatedProductionStatus,
+            age_days: 0 // Not calculated on client
+          })
         }
       }
-    } catch (error) {
-      console.error('❌ [AnimalCard] Error checking production status:', error)
+      return
+    }
+
+    // ✅ FALLBACK: Only if enriched data NOT available - make API calls (detail page scenario)
+    if (!enrichedData) {
+      console.log('⏭️ [AnimalCard] No enriched data provided - skipping status check on list view')
+      setStatusMismatch(null)
+      return
     }
   }
 
   checkProductionStatus()
-}, [animalData.id, animalData.birth_date, animalData.production_status, animalData.animal_source, animalData.current_daily_production, farmId])
+}, [animalData, enrichedData, farmId])
+
   // 🆕 Extract weight requirement check into a callback function
   const checkWeightRequirement = useCallback(async () => {
-    if (!animalData.id || !farmId) {
-      console.log('⚠️ [AnimalCard] Skipping weight check - missing id or farmId')
-      return
-    }
-
-    console.log('🔍 [AnimalCard] Checking weight requirement for:', animalData.tag_number)
-    
     try {
       const response = await fetch(
-        `/api/animals/${animalData.id}/weight-requirement?farmId=${farmId}`,
-        {
-          method: 'GET',
-          credentials: 'include', // ✅ Ensure cookies are sent with the request
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
+        `/api/animals/${animalData.id}/weight-requirement?farmId=${farmId}`
       )
       
-      if (response.ok) {
-        const data = await response.json()
-        console.log('📊 [AnimalCard] Weight requirement result:', {
-          animalId: animalData.id,
-          tagNumber: animalData.tag_number,
-          requiresUpdate: data.requires_update,
-          dueDate: data.due_date
+      if (!response.ok) {
+        console.warn('⚠️ [AnimalCard] Failed to check weight requirement:', response.status)
+        setRequiresWeightUpdate(false)
+        return
+      }
+
+      const data = await response.json()
+      setRequiresWeightUpdate(data.requires_update || false)
+      
+      if (data.due_date) {
+        setWeightUpdateDue(new Date(data.due_date))
+      }
+
+      if (data.requires_update) {
+        console.log('⚠️ [AnimalCard] Weight update required:', {
+          animal: animalData.tag_number,
+          reason: data.reason,
+          priority: data.priority
         })
-        
-        setRequiresWeightUpdate(data.requires_update)
-        setWeightUpdateDue(data.due_date ? new Date(data.due_date) : null)
-      } else {
-        console.error('❌ [AnimalCard] Weight requirement check failed:', response.status)
       }
     } catch (error) {
       console.error('❌ [AnimalCard] Error checking weight requirement:', error)
+      setRequiresWeightUpdate(false)
     }
   }, [animalData.id, animalData.tag_number, farmId])
 
-  // Check weight requirement on mount and when animal data changes
+  // ✅ OPTIMIZATION: Weight checks only on detail page (enableWeightCheck=true)
+  // Disabled on list/card views to avoid N+1 queries
   useEffect(() => {
+    if (!enableWeightCheck) {
+      console.log('⏭️ [AnimalCard] Weight check disabled for list view:', animalData.tag_number)
+      return
+    }
+    
     console.log('🔄 [AnimalCard] Weight check triggered for:', animalData.tag_number, 'Weight:', animalData.weight)
     checkWeightRequirement()
-  }, [animalData.id, animalData.weight, checkWeightRequirement])
+  }, [animalData.id, animalData.weight, checkWeightRequirement, enableWeightCheck])
 
   const fetchHealthStatusHistory = async () => {
+    // ✅ Use enriched data if available (from batch endpoint) - NO API CALL
+    if (enrichedData?.latestHealthStatus) {
+      console.log('📊 [AnimalCard] Using enriched health status data (no API call)')
+      setHealthStatusHistory([enrichedData.latestHealthStatus])
+      return
+    }
+
+    // ✅ FALLBACK: Only fetch if enriched data not available (detail page scenario)
+    if (!enrichedData) {
+      console.log('⏭️ [AnimalCard] No enriched data - skipping health history fetch on list view')
+      return
+    }
+
     try {
-      const response = await fetch(`/api/health/animals/${animalData.id}/status-history`)
-      if (response.ok) {
-        const data = await response.json()
-        setHealthStatusHistory(data.history || [])
+      const response = await fetch(
+        `/api/health/animals/${animalData.id}/status-history?limit=10`
+      )
+      
+      if (!response.ok) {
+        console.warn('⚠️ [AnimalCard] Failed to fetch health status history:', response.status)
+        setHealthStatusHistory([])
+        return
+      }
+
+      const data = await response.json()
+      if (data.success && data.history) {
+        setHealthStatusHistory(data.history)
+        console.log('✅ [AnimalCard] Health status history loaded:', data.history.length, 'records')
       }
     } catch (error) {
       console.error('❌ [AnimalCard] Error fetching health status history:', error)
+      setHealthStatusHistory([])
     }
   }
 
@@ -275,7 +291,8 @@ useEffect(() => {
     heifer: 'bg-blue-100 text-blue-800',
     served: 'bg-purple-100 text-purple-800',
     lactating: 'bg-green-100 text-green-800',
-    dry: 'bg-gray-100 text-gray-800',
+    steaming_dry_cows: 'bg-orange-100 text-orange-800',
+    open_culling_dry_cows: 'bg-gray-100 text-gray-800',
     bull: 'bg-blue-100 text-blue-800',
   }
   
@@ -284,7 +301,8 @@ useEffect(() => {
     heifer: 'Heifer',
     served: 'Served',
     lactating: isMobile ? 'Lactating' : 'Lactating',
-    dry: 'Dry',
+    steaming_dry_cows: 'Steaming Dry',
+    open_culling_dry_cows: 'Open Culling',
     bull: 'Bull'
   }
   

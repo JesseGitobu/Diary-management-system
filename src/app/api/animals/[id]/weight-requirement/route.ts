@@ -64,13 +64,20 @@ export async function GET(
       farm_id: farmId
     })
 
-    // Cast supabase to 'any' to bypass strict type checking for this table
-    const { data, error } = await (supabase as any)
-      .from('animals_requiring_weight_update')
-      .select('*')
-      .eq('animal_id', id)
+    // Query the new animal_weight_status view
+    const { data, error } = await supabase
+      .from('animal_weight_status')
+      .select(`
+        id,
+        tag_number,
+        weight,
+        last_weight_date,
+        days_since_weight,
+        requires_weight_update,
+        next_due_date
+      `)
+      .eq('id', id)
       .eq('farm_id', farmId)
-      .eq('is_resolved', false)
       .maybeSingle()
 
     if (error) {
@@ -83,11 +90,15 @@ export async function GET(
 
     console.log('✅ [Weight Check] Query result:', data)
 
+    const typedData = data as any
+    
     return NextResponse.json({
-      requires_update: !!data,
-      due_date: data?.due_date || null,
-      reason: data?.reason || null,
-      priority: data?.priority || 'normal'
+      requires_update: !!typedData?.requires_weight_update,
+      due_date: typedData?.next_due_date || null,
+      reason: typedData?.days_since_weight 
+        ? `${typedData.days_since_weight} days since last weight`
+        : (typedData?.weight === null ? 'No weight recorded' : null),
+      priority: typedData?.days_since_weight && typedData.days_since_weight > 45 ? 'high' : 'normal'
     })
   } catch (error) {
     console.error('❌ [Weight Check] Unexpected error:', error)

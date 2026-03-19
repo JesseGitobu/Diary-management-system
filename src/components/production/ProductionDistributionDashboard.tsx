@@ -12,9 +12,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
 // Production components
 import { ProductionChart } from '@/components/production/ProductionChart'
 import { ProductionRecordsList } from '@/components/production/ProductionRecordsList'
-import { ProductionEntryForm } from '@/components/production/ProductionEntryForm'
+import { RecordProductionModal } from '@/components/production/RecordProductionModal'
 import { ProductionSessionBanner } from '@/components/production/ProductionSessionBanner' // Import the new banner
 import { ProductionStatsCards } from '@/components/production/ProductionStatsCards'
+import { MilkingGroupsManager } from '@/components/production/MilkingGroupsManager'
 
 // Distribution components
 import { DistributionChart } from '@/components/distribution/DistributionChart'
@@ -92,6 +93,7 @@ export function ProductionDistributionDashboard({
   const [selectedProductionRecord, setSelectedProductionRecord] = useState<any>(null)
   const [showProductionDetailModal, setShowProductionDetailModal] = useState(false)
   const [showProductionEditModal, setShowProductionEditModal] = useState(false)
+  const [showMilkingGroupsModal, setShowMilkingGroupsModal] = useState(false)
 
   useEffect(() => {
     const handleMobileNavAction = (event: Event) => {
@@ -133,7 +135,11 @@ export function ProductionDistributionDashboard({
   }
   
   const handleProductionRecordAdded = () => {
-    setShowProductionEntryModal(false)
+    // Don't close modal or reload - handled by modal
+  }
+
+  const handleProductionModalClosed = () => {
+    // Reload page when modal closes (after user has recorded data)
     window.location.reload()
   }
 
@@ -167,17 +173,17 @@ export function ProductionDistributionDashboard({
       return h * 60 + m;
     };
 
-    let activeSession = null;
+    let activeSession: { name: string; displayName: string; timeStr: string; minutes: number } | null = null;
     
-    const enabledSessions = productionSettings.enabledSessions || [];
-    const sessionTimes = productionSettings.sessionTimes || {};
+    const milkingSessions = productionSettings.milkingSessions || [];
 
-    // Map sessions to times and sort
-    const sortedSessions = enabledSessions.map(session => ({
-      name: session,
-      timeStr: sessionTimes[session] || "06:00",
-      minutes: parseTime(sessionTimes[session] || "06:00")
-    })).sort((a, b) => a.minutes - b.minutes);
+    // Map sessions from milkingSessions array and sort by time
+    const sortedSessions = milkingSessions.map((session: any) => ({
+      name: session.name.toLowerCase().replace(/\s+/g, ''),
+      displayName: session.name,
+      timeStr: session.time || "06:00",
+      minutes: parseTime(session.time || "06:00")
+    })).sort((a: any, b: any) => a.minutes - b.minutes);
 
     // Find the session that has started most recently
     for (const session of sortedSessions) {
@@ -208,14 +214,13 @@ export function ProductionDistributionDashboard({
     if (remaining === 0) return null;
 
     return {
-      name: activeSession.name,
+      name: activeSession.displayName,
       timeStr: activeSession.timeStr,
       isLate,
       remaining,
       total: totalEligible
     };
   }, [productionSettings, animals, productionRecords]);
-  // ----------------------------------------
 
   // Basic stats calculations...
   const { animalsMilkedToday, avgYieldPerAnimal } = useMemo(() => {
@@ -397,6 +402,12 @@ export function ProductionDistributionDashboard({
                   Record Production
                </Button>
             )}
+            {!isMobile && activeTab === 'production' && (
+               <Button onClick={() => setShowMilkingGroupsModal(true)} variant="outline">
+                  <Settings className="mr-2 h-4 w-4" />
+                  Manage Milking Groups
+               </Button>
+            )}
              {!isMobile && activeTab === 'distribution' && canAddRecords && (
                <>
                   <Button onClick={() => setShowDistributionEntryModal(true)}>
@@ -529,21 +540,18 @@ export function ProductionDistributionDashboard({
       )}
       
       {showProductionEntryModal && (
-        <Modal 
-          isOpen={showProductionEntryModal} 
-          onClose={() => setShowProductionEntryModal(false)}
-          className={`${isMobile ? 'max-w-full mx-4 my-4 h-[90vh] overflow-y-auto' : 'max-w-4xl'}`}
-        >
-          <div className={`${isMobile ? 'p-4' : 'p-6'}`}>
-            <ProductionEntryForm
-              farmId={farmId}
-              animals={animals}
-              onSuccess={handleProductionRecordAdded}
-              isMobile={isMobile}
-              settings={productionSettings}
-            />
-          </div>
-        </Modal>
+        <RecordProductionModal
+          isOpen={showProductionEntryModal}
+          onClose={() => {
+            setShowProductionEntryModal(false)
+            // Reload page after modal closes (so new records appear)
+            window.location.reload()
+          }}
+          farmId={farmId}
+          animals={animals}
+          settings={productionSettings}
+          onSuccess={handleProductionRecordAdded}
+        />
       )}
 
       {showDistributionEntryModal && (
@@ -721,26 +729,25 @@ export function ProductionDistributionDashboard({
       )}
 
       {/* Production Record Edit Modal */}
-      {showProductionEditModal && selectedProductionRecord && (
+      {/* Edit functionality will be added through a dedicated edit component */}
+
+      {/* Milking Groups Manager Modal */}
+      {showMilkingGroupsModal && (
         <Modal 
-          isOpen={showProductionEditModal} 
-          onClose={() => {
-            setShowProductionEditModal(false)
-            setSelectedProductionRecord(null)
-          }}
+          isOpen={showMilkingGroupsModal} 
+          onClose={() => setShowMilkingGroupsModal(false)}
           className={`${isMobile ? 'max-w-full mx-4 my-4 h-[90vh] overflow-y-auto' : 'max-w-4xl'}`}
         >
           <div className={`${isMobile ? 'p-4' : 'p-6'}`}>
-            <ProductionEntryForm
+            <MilkingGroupsManager
               farmId={farmId}
               animals={animals}
-              initialData={selectedProductionRecord}
-              onSuccess={handleProductionRecordEdited}
+              onClose={() => setShowMilkingGroupsModal(false)}
               isMobile={isMobile}
-              settings={productionSettings}
             />
           </div>
         </Modal>
-      )}    </div>
+      )}
+    </div>
   )
 }

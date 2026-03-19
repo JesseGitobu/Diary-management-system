@@ -393,40 +393,50 @@ export function AuthForm({ mode = 'signin' }: AuthFormProps) {
             {authMode === 'signin' ? (
               <>
                 {!invitationToken && (
+                  <div className="text-sm text-dairy-gray">
+                    Don't have an account?{' '}
+                    <button
+                      type="button"
+                      onClick={toggleMode}
+                      className="text-blue-600 hover:text-blue-700 font-medium cursor-pointer underline hover:no-underline"
+                    >
+                      Sign up
+                    </button>
+                  </div>
+                )}
+                <div className="text-sm text-dairy-gray">
                   <button
                     type="button"
-                    onClick={toggleMode}
-                    className="block w-full text-sm text-dairy-gray hover:text-dairy-primary"
+                    onClick={goToForgotPassword}
+                    className="text-blue-600 hover:text-blue-700 font-medium cursor-pointer underline hover:no-underline"
                   >
-                    Don't have an account? Sign up
+                    Forgot your password?
                   </button>
-                )}
-                <button
-                  type="button"
-                  onClick={goToForgotPassword}
-                  className="block w-full text-sm text-dairy-gray hover:text-dairy-primary"
-                >
-                  Forgot your password?
-                </button>
+                </div>
               </>
             ) : authMode === 'signup' ? (
               !invitationToken && (
-                <button
-                  type="button"
-                  onClick={toggleMode}
-                  className="text-sm text-dairy-gray hover:text-dairy-primary"
-                >
-                  Already have an account? Sign in
-                </button>
+                <div className="text-sm text-dairy-gray">
+                  Already have an account?{' '}
+                  <button
+                    type="button"
+                    onClick={toggleMode}
+                    className="text-blue-600 hover:text-blue-700 font-medium cursor-pointer underline hover:no-underline"
+                  >
+                    Sign in
+                  </button>
+                </div>
               )
             ) : (
-              <button
-                type="button"
-                onClick={backToSignIn}
-                className="text-sm text-dairy-gray hover:text-dairy-primary"
-              >
-                Back to Sign In
-              </button>
+              <div className="text-sm text-dairy-gray">
+                <button
+                  type="button"
+                  onClick={backToSignIn}
+                  className="text-blue-600 hover:text-blue-700 font-medium cursor-pointer underline hover:no-underline"
+                >
+                  Back to Sign In
+                </button>
+              </div>
             )}
           </div>
 

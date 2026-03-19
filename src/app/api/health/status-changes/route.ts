@@ -32,18 +32,15 @@ export async function GET(request: NextRequest) {
       .select(`
         id,
         animal_id,
-        old_status,
-        new_status,
+        old_health_status,
+        new_health_status,
         changed_at,
         notes,
-        animals!inner (
-          id,
-          name,
-          tag_number,
-          farm_id
-        )
+        animal_tag_number,
+        animal_name,
+        farm_id
       `)
-      .eq('animals.farm_id', userRole.farm_id)
+      .eq('farm_id', userRole.farm_id)
       .gte('changed_at', new Date(Date.now() - hours * 60 * 60 * 1000).toISOString())
       .order('changed_at', { ascending: false })
       .limit(limit)
@@ -69,10 +66,10 @@ export async function GET(request: NextRequest) {
     const changes: HealthStatusChange[] = (statusChanges || []).map((change: any) => ({
       id: change.id,
       animalId: change.animal_id,
-      animalName: change.animals.name || `Animal ${change.animals.tag_number}`,
-      animalTagNumber: change.animals.tag_number,
-      oldStatus: change.old_status,
-      newStatus: change.new_status,
+      animalName: change.animal_name || `Animal ${change.animal_tag_number}`,
+      animalTagNumber: change.animal_tag_number,
+      oldStatus: change.old_health_status,
+      newStatus: change.new_health_status,
       changedAt: change.changed_at,
       notes: change.notes
     }));

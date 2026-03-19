@@ -5,9 +5,10 @@ import { Button } from '@/components/ui/Button'
 import { Label } from '@/components/ui/Label'
 import { NewbornCalfForm } from './NewbornCalfForm'
 import { PurchasedAnimalForm } from './PurchasedAnimalForm'
+import { ImportAnimalsModal } from './ImportAnimalsModal'
 import CompleteHealthRecordModal from '@/components/health/CompleteHealthRecordModal'
 import { WeightUpdateModal } from '@/components/animals/WeightUpdateModal'
-import { Baby, ShoppingCart, ArrowLeft, AlertTriangle } from 'lucide-react'
+import { Baby, ShoppingCart, Upload, ArrowLeft, AlertTriangle } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import { TagGenerationSection } from './TagGenerationSection'
 import { Animal } from '@/types/database'
@@ -31,6 +32,7 @@ export default function AddAnimalModal({
 }: AddAnimalModalProps) {
   const [animalSource, setAnimalSource] = useState<'newborn_calf' | 'purchased_animal' | null>(null)
   const [showSourceSelection, setShowSourceSelection] = useState(true)
+  const [showImportModal, setShowImportModal] = useState(false)
 
   // Health record completion states
   const [showHealthRecordModal, setShowHealthRecordModal] = useState(false)
@@ -120,7 +122,15 @@ export default function AddAnimalModal({
     setPendingHealthRecord(null)
     setCreatedAnimal(null)
     setShowHealthRecordModal(false)
+    setShowImportModal(false)
     onClose()
+  }
+
+  const handleAnimalsImported = (animals: Animal[]) => {
+    toast.success(`Successfully imported ${animals.length} animal(s)!`)
+    animals.forEach(animal => onAnimalAdded(animal))
+    setShowImportModal(false)
+    handleModalClose()
   }
 
   const handleHealthRecordUpdated = (updatedRecord: any) => {
@@ -225,6 +235,17 @@ export default function AddAnimalModal({
                     or other sources
                   </div>
                 </button>
+              </div>
+
+              {/* Bulk Import Button */}
+              <div className="max-w-4xl mx-auto flex justify-center mt-4">
+                <Button
+                  onClick={() => setShowImportModal(true)}
+                  className="bg-dairy-primary hover:bg-dairy-primary/90 text-white px-6 py-2 rounded-lg flex items-center space-x-2"
+                >
+                  <Upload className="w-4 h-4" />
+                  <span>Bulk Import Animals</span>
+                </Button>
               </div>
 
               {/* Health Status Notice */}
@@ -335,6 +356,14 @@ export default function AddAnimalModal({
     onRefreshData={onRefreshWeightsList}  // ✅ NEW: Pass refresh callback
   />
 )}
+
+      {/* Import Animals Modal */}
+      <ImportAnimalsModal
+        farmId={farmId}
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onAnimalsImported={handleAnimalsImported}
+      />
     </>
   )
 }

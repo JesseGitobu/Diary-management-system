@@ -299,26 +299,32 @@ export async function getAvailableVolume(farmId: string): Promise<number> {
 
     const totalProduced = production.reduce((sum, record) => sum + record.milk_volume, 0) || 0
 
-    // Get distributed volume for the same period
-    const { data: distributedData, error: distributionError } = await supabase
-      .from('distribution_records')
-      .select('volume')
-      .eq('farm_id', farmId)
-      .in('delivery_date', [todayStr, yesterdayStr])
+    // Get distributed volume for the same period - FIXED: Use proper date query
+    try {
+      const { data: distributedData, error: distributionError } = await supabase
+        .from('distribution_records')
+        .select('quantity_distributed, volume')
+        .eq('farm_id', farmId)
+        .or(`distribution_date.eq."${todayStr}",distribution_date.eq."${yesterdayStr}"`)
 
-    if (distributionError) throw distributionError
+      if (distributionError) throw distributionError
 
-    // FIXED: Cast to any[]
-    const distributed = (distributedData as any[]) || []
+      // FIXED: Cast to any[]
+      const distributed = (distributedData as any[]) || []
 
-    const totalDistributed = distributed.reduce((sum, record) => sum + record.volume, 0) || 0
+      const totalDistributed = distributed.reduce((sum, record) => sum + (record.quantity_distributed || record.volume || 0), 0) || 0
 
-    // Calculate available volume (produced but not yet distributed)
-    const availableVolume = Math.max(0, totalProduced - totalDistributed)
+      // Calculate available volume (produced but not yet distributed)
+      const availableVolume = Math.max(0, totalProduced - totalDistributed)
 
-    return availableVolume
+      return availableVolume
+    } catch (innerError) {
+      // If distribution query fails, just use production count
+      console.warn('⚠️ Distribution query failed:', (innerError as any).message)
+      return Math.max(0, totalProduced)
+    }
   } catch (fallbackError) {
-    console.error('Fallback calculation failed:', fallbackError)
+    console.error('⚠️ Fallback calculation failed:', fallbackError)
     return 0
   }
 }
@@ -348,17 +354,12 @@ export async function createDistributionRecord(data: {
       .insert({
         farm_id: data.farmId,
         channel_id: data.channelId,
-        volume: data.volume,
-        price_per_liter: data.pricePerLiter,
+        quantity_distributed: data.volume,
+        unit_price: data.pricePerLiter,
         total_amount: data.totalAmount,
-        delivery_date: data.deliveryDate,
-        delivery_time: data.deliveryTime,
-        driver_name: data.driverName,
-        vehicle_number: data.vehicleNumber,
-        payment_method: data.paymentMethod,
-        expected_payment_date: data.expectedPaymentDate,
-        notes: data.notes,
-        status: data.status
+        distribution_date: data.deliveryDate,
+        distribution_status: data.status,
+        notes: data.notes
       })
       .select()
       .single()

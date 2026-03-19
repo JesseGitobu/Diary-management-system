@@ -50,14 +50,14 @@ export async function GET(request: NextRequest) {
       // Get distributed volume for the date
       const { data: distributed, error: distributionError } = await supabase
         .from('distribution_records')
-        .select('volume')
+        .select('quantity_distributed, volume')
         .eq('farm_id', userRole.farm_id)
-        .eq('delivery_date', checkDate)
+        .eq('distribution_date', checkDate)
 
       if (distributionError) throw distributionError
 
       // Cast record to any here as well
-      const totalDistributed = distributed?.reduce((sum, record: any) => sum + record.volume, 0) || 0
+      const totalDistributed = distributed?.reduce((sum, record: any) => sum + (record.quantity_distributed || record.volume || 0), 0) || 0
 
       const availableVolume = Math.max(0, totalProduced - totalDistributed)
 

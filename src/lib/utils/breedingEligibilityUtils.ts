@@ -112,7 +112,7 @@ export function checkBreedingEligibility(
   // 8. Production Status Specific Recommendations
   if (animal.production_status === 'heifer') {
     recommendations.push('First time breeding - consider using proven sire with good ease of calving')
-  } else if (animal.production_status === 'dry') {
+  } else if (animal.production_status === 'steaming_dry_cows' || animal.production_status === 'open_culling_dry_cows') {
     recommendations.push('Dry cow ready for breeding')
   } else if (animal.production_status === 'lactating') {
     recommendations.push('Currently lactating - breeding will start next lactation cycle')

@@ -31,7 +31,7 @@ export function useProductionStatusUpdate(
   return {
     canProduceNow: animal.production_status === 'lactating',
     willProduceSoon: animal.production_status === 'served',
-    isPaused: animal.production_status === 'dry',
+    isPaused: animal.production_status === 'steaming_dry_cows' || animal.production_status === 'open_culling_dry_cows',
     notYetProducing: ['heifer', 'calf'].includes(animal.production_status || ''),
     neverWillProduce: animal.gender === 'male'
   }
@@ -63,6 +63,16 @@ export function getProductionStatusInfo(animal: Animal) {
     }
   }
   
+  // Check for dry statuses first
+  if (status === 'steaming_dry_cows' || status === 'open_culling_dry_cows') {
+    return {
+      canRecord: false,
+      message: 'Dry period - Not currently producing',
+      badge: 'Dry',
+      color: 'yellow'
+    }
+  }
+  
   switch (status) {
     case 'lactating':
       return {
@@ -77,13 +87,6 @@ export function getProductionStatusInfo(animal: Animal) {
         message: 'Pregnant - Production will resume after calving',
         badge: 'Pregnant',
         color: 'blue'
-      }
-    case 'dry':
-      return {
-        canRecord: false,
-        message: 'Dry period - Not currently producing',
-        badge: 'Dry',
-        color: 'yellow'
       }
     case 'heifer':
       return {

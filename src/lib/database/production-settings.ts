@@ -33,9 +33,7 @@ function transformDbToProductionSettings(data: any): ProductionSettings {
     defaultRecordingMethod: data.default_recording_method,
     productionUnit: data.production_unit,
     
-    enabledSessions: data.enabled_sessions,
-    defaultSession: data.default_session,
-    sessionTimes: data.session_times,
+    milkingSessions: data.milking_sessions || [],
     allowMultipleSessionsPerDay: data.allow_multiple_sessions_per_day,
     requireSessionTimeRecording: data.require_session_time_recording,
     sessionIntervalHours: data.session_interval_hours,
@@ -147,6 +145,11 @@ function transformDbToProductionSettings(data: any): ProductionSettings {
     includeLaborCosts: data.include_labor_costs,
     includeFeedCosts: data.include_feed_costs,
     includeUtilities: data.include_utilities,
+    
+    // New Production Tab fields
+    laborCostPerUnit: data.labor_cost_per_unit || 0,
+    feedCostPerUnit: data.feed_cost_per_unit || 0,
+    utilitiesCostPerUnit: data.utilities_cost_per_unit || 0,
 
     // Add missing properties
     enableSmartSessionBanner: data.enable_smart_session_banner,
@@ -169,9 +172,7 @@ export async function updateProductionSettings(
       default_recording_method: settings.defaultRecordingMethod,
       production_unit: settings.productionUnit,
       
-      enabled_sessions: settings.enabledSessions,
-      default_session: settings.defaultSession,
-      session_times: settings.sessionTimes,
+      milking_sessions: settings.milkingSessions || [],
       allow_multiple_sessions_per_day: settings.allowMultipleSessionsPerDay,
       require_session_time_recording: settings.requireSessionTimeRecording,
       session_interval_hours: settings.sessionIntervalHours,
@@ -283,6 +284,11 @@ export async function updateProductionSettings(
       include_labor_costs: settings.includeLaborCosts,
       include_feed_costs: settings.includeFeedCosts,
       include_utilities: settings.includeUtilities,
+      
+      // New Production Tab fields
+      labor_cost_per_unit: settings.laborCostPerUnit || 0,
+      feed_cost_per_unit: settings.feedCostPerUnit || 0,
+      utilities_cost_per_unit: settings.utilitiesCostPerUnit || 0,
       
       updated_at: new Date().toISOString()
     }

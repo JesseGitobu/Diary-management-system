@@ -532,53 +532,6 @@ export function FarmProfileSettings({
           </CardContent>
         </Card>
 
-        {/* Preferences */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Unit Preferences</CardTitle>
-            <CardDescription>
-              Choose your preferred units for measurements and currency
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="preferred_currency">Preferred Currency</Label>
-                <Select
-                  value={formData.preferred_currency}
-                  onValueChange={(value) => handleInputChange('preferred_currency', value)}
-                  disabled={!canEdit && !isNewFarm}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="KSH">Kenyan Shilling (KSh)</SelectItem>
-                    <SelectItem value="USD">US Dollar ($)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div>
-                <Label htmlFor="preferred_volume_unit">Volume Unit</Label>
-                <Select
-                  value={formData.preferred_volume_unit}
-                  onValueChange={(value) => handleInputChange('preferred_volume_unit', value)}
-                  disabled={!canEdit && !isNewFarm}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="liters">Liters</SelectItem>
-                    <SelectItem value="gallons">Gallons</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
         {/* Save Button */}
         {(canEdit || isNewFarm) && (
           <div className={`${isMobile ? 'flex flex-col space-y-2' : 'flex justify-end space-x-3'}`}>

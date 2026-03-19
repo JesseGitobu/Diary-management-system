@@ -375,7 +375,7 @@ export async function getFeedStats(farmId: string, days: number = 30) {
     // Get enhanced stock levels with consumption data
     const { data: feedTypesData, error: feedTypesError } = await supabase
       .from('feed_types')
-      .select('id, name, description, low_stock_threshold, typical_cost_per_kg')
+      .select('id, name, description, typical_cost_per_kg')
       .eq('farm_id', farmId)
 
     if (feedTypesError) {
@@ -389,7 +389,7 @@ export async function getFeedStats(farmId: string, days: number = 30) {
       // Get total inventory for this feed type
       const { data: inventoryData } = await supabase
         .from('feed_inventory')
-        .select('quantity_kg, cost_per_kg')
+        .select('quantity_in_stock, minimum_threshold')
         .eq('farm_id', farmId)
         .eq('feed_type_id', feedType.id)
 
@@ -418,9 +418,9 @@ export async function getFeedStats(farmId: string, days: number = 30) {
       // FIXED: Cast to any[]
       const allTimeConsumption = (allTimeConsumptionData as any[]) || []
 
-      const totalPurchased = inventory.reduce((sum, item) => sum + (item.quantity_kg || 0), 0) || 0
+      const totalPurchased = inventory.reduce((sum, item) => sum + (item.quantity_in_stock || 0), 0) || 0
       const totalAllTimeConsumed = allTimeConsumption.reduce((sum, item) => sum + (item.quantity_kg || 0), 0) || 0
-      const currentStock = totalPurchased - totalAllTimeConsumed
+      const currentStock = totalPurchased // quantity_in_stock is already the current stock
 
       // Calculate period consumption stats
       const periodConsumption = consumption.reduce((sum, item) => sum + (item.quantity_kg || 0), 0) || 0
@@ -442,9 +442,7 @@ export async function getFeedStats(farmId: string, days: number = 30) {
         }
       }
 
-      const avgCostPerKg = inventory.length ? 
-        inventory.reduce((sum, item) => sum + (item.cost_per_kg || 0), 0) / inventory.length : 
-        feedType.typical_cost_per_kg || 0
+      const avgCostPerKg = feedType.typical_cost_per_kg || 0
 
       // Only include feeds that have been consumed or have current stock
       if (periodConsumption > 0 || currentStock > 0) {
@@ -464,11 +462,11 @@ export async function getFeedStats(farmId: string, days: number = 30) {
           periodAnimalsFed,
           avgPerSession: periodSessions > 0 ? periodConsumption / periodSessions : 0,
           avgAnimalsPerSession: periodSessions > 0 ? periodAnimalsFed / periodSessions : 0,
-          // Threshold info
-          threshold: feedType.low_stock_threshold || 50,
-          percentageOfThreshold: ((currentStock / (feedType.low_stock_threshold || 50)) * 100),
-          status: currentStock <= (feedType.low_stock_threshold || 50) * 0.2 ? 'critical' :
-                  currentStock < (feedType.low_stock_threshold || 50) ? 'low' : 'good'
+          // Threshold info - use minimum_threshold from inventory
+          threshold: (inventory[0]?.minimum_threshold || 50),
+          percentageOfThreshold: ((currentStock / (inventory[0]?.minimum_threshold || 50)) * 100),
+          status: currentStock <= (inventory[0]?.minimum_threshold || 50) * 0.2 ? 'critical' :
+                  currentStock < (inventory[0]?.minimum_threshold || 50) ? 'low' : 'good'
         })
       }
     }

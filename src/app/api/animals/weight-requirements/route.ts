@@ -18,24 +18,22 @@ export async function GET(request: NextRequest) {
     }
 
     const supabase = await createServerSupabaseClient()
+    // Query the new animal_weight_status view that consolidates weight tracking data
     const { data, error } = await supabase
-      .from('animals_requiring_weight_update')
+      .from('animal_weight_status')
       .select(`
-        *,
-        animals (
-          id,
-          tag_number,
-          name,
-          gender,
-          birth_date,
-          production_status,
-          weight
-        )
+        id,
+        farm_id,
+        tag_number,
+        weight,
+        last_weight_date,
+        days_since_weight,
+        requires_weight_update,
+        next_due_date
       `)
       .eq('farm_id', farmId)
-      .eq('is_resolved', false)
-      .order('priority', { ascending: false })
-      .order('due_date', { ascending: true })
+      .eq('requires_weight_update', true)
+      .order('next_due_date', { ascending: true })
 
     if (error) {
       console.error('❌ [Weight Requirements] Database error:', error)

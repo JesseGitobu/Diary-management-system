@@ -42,7 +42,8 @@ interface AnimalsClientPageProps {
       heifers: number
       served: number
       lactating: number
-      dry: number
+      steaming_dry_cows: number
+      open_culling_dry_cows: number
     }
     byHealth?: {
       healthy: number
@@ -51,13 +52,25 @@ interface AnimalsClientPageProps {
   }
   farmId: string
   userRole: string
+  enrichedDataMap?: Record<string, any>  // ✅ Enriched data from batch endpoint
+  weightRequirementsData?: Array<{  // ✅ NEW: Weight requirements from batch endpoint
+    animal_id: string
+    tag_number: string
+    name?: string
+    current_weight?: number
+    required_weight?: number
+    updated_at?: string
+    needs_update?: boolean
+  }>
 }
 
 export function AnimalsClientPage({
   initialAnimals,
   initialStats,
   farmId,
-  userRole
+  userRole,
+  enrichedDataMap = {},  // ✅ Accept enriched data with default empty object
+  weightRequirementsData = []  // ✅ Accept weight data from server
 }: AnimalsClientPageProps) {
   const [animals, setAnimals] = useState(initialAnimals)
   const [stats, setStats] = useState(initialStats)
@@ -77,8 +90,11 @@ export function AnimalsClientPage({
   const [healthRecordsNeedingCompletion, setHealthRecordsNeedingCompletion] = useState<any[]>([])
   const [loadingIncompleteRecords, setLoadingIncompleteRecords] = useState(true)
 
-  const [animalsNeedingWeight, setAnimalsNeedingWeight] = useState<any[]>([])
-  const [loadingWeightRequirements, setLoadingWeightRequirements] = useState(true)
+  // ✅ Initialize weight requirements from server-passed data (animals_requiring_weight_update table)
+  const [animalsNeedingWeight, setAnimalsNeedingWeight] = useState<any[]>(
+    weightRequirementsData  // ✅ Use data directly - comes from animals_requiring_weight_update table with id, reason, due_date
+  )
+  const [loadingWeightRequirements, setLoadingWeightRequirements] = useState(false)  // ✅ Set to false since data is already server-side
 
 
   useEffect(() => {
@@ -100,10 +116,6 @@ export function AnimalsClientPage({
     loadMissingRecords();
   }, [farmId]);
 
-  useEffect(() => {
-  loadWeightRequirements()
-}, [farmId])
-
 useEffect(() => {
   const handleMobileNavAction = (event: Event) => {
     const customEvent = event as CustomEvent
@@ -123,20 +135,7 @@ useEffect(() => {
   }
 }, [])
 
-const loadWeightRequirements = async () => {
-  setLoadingWeightRequirements(true)
-  try {
-    const response = await fetch(`/api/animals/weight-requirements?farmId=${farmId}`)
-    if (response.ok) {
-      const data = await response.json()
-      setAnimalsNeedingWeight(data.requirements || [])
-    }
-  } catch (error) {
-    console.error('Error loading weight requirements:', error)
-  } finally {
-    setLoadingWeightRequirements(false)
-  }
-}
+// ✅ REMOVED: loadWeightRequirements() - data now fetched server-side in batch endpoint
 
 // Add handler for weight update
 const [selectedAnimalForWeight, setSelectedAnimalForWeight] = useState<any>(null)
@@ -170,10 +169,9 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
   setShowWeightUpdateModal(false)
   setSelectedAnimalForWeight(null)
   
-  // Reload to ensure sync
-  loadWeightRequirements()
+  // ✅ REMOVED: loadWeightRequirements() - no longer needed as data comes from server
 
-  console.log('✅ [AnimalsPage] Weight requirements reloaded')
+  console.log('✅ [AnimalsPage] Weight updated successfully')
 }
 
 
@@ -184,9 +182,6 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
   setAnimals(prev => [newAnimal, ...prev])
   updateStatsForNewAnimal(newAnimal)
   setShowAddModal(false)
-  
-
-  loadWeightRequirements()
 }
 
   const handleHealthRecordCreated = (healthRecord: any, updatedAnimal?: any) => {
@@ -329,9 +324,12 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
         lactating: newAnimal.production_status === 'lactating'
           ? prev.byProduction.lactating + 1
           : prev.byProduction.lactating,
-        dry: newAnimal.production_status === 'dry'
-          ? prev.byProduction.dry + 1
-          : prev.byProduction.dry,
+        steaming_dry_cows: newAnimal.production_status === 'steaming_dry_cows'
+          ? prev.byProduction.steaming_dry_cows + 1
+          : prev.byProduction.steaming_dry_cows,
+        open_culling_dry_cows: newAnimal.production_status === 'open_culling_dry_cows'
+          ? prev.byProduction.open_culling_dry_cows + 1
+          : prev.byProduction.open_culling_dry_cows,
       } : undefined,
       byHealth: prev.byHealth ? {
         healthy: newAnimal.health_status === 'healthy'
@@ -361,7 +359,8 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
         heifers: allAnimals.filter(a => a.production_status === 'heifer').length,
         served: allAnimals.filter(a => a.production_status === 'served').length,
         lactating: allAnimals.filter(a => a.production_status === 'lactating').length,
-        dry: allAnimals.filter(a => a.production_status === 'dry').length,
+        steaming_dry_cows: allAnimals.filter(a => a.production_status === 'steaming_dry_cows').length,
+        open_culling_dry_cows: allAnimals.filter(a => a.production_status === 'open_culling_dry_cows').length,
       },
       byHealth: {
         healthy: allAnimals.filter(a => a.health_status === 'healthy').length,
@@ -421,9 +420,9 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
       return newStats
     })
 
-    loadWeightRequirements()
+    // ✅ REMOVED: loadWeightRequirements() - no longer needed as data comes from server
   
-  console.log('✅ [AnimalsPage] Weight requirements reloaded after animal update')
+  console.log('✅ [AnimalsPage] Animal updated successfully')
 
   }
 
@@ -761,7 +760,7 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
                   </div>
                   <div className="text-center">
                     <div className="text-2xl font-bold text-gray-600">
-                      {stats.byProduction.dry}
+                      {(stats.byProduction.steaming_dry_cows || 0) + (stats.byProduction.open_culling_dry_cows || 0)}
                     </div>
                     <div className="text-sm text-gray-600">Dry</div>
                   </div>
@@ -780,7 +779,7 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
                 </div>
                 <div className="text-center">
                   <div className="text-xl font-bold text-gray-600">
-                    {stats.byProduction.dry}
+                    {(stats.byProduction.steaming_dry_cows || 0) + (stats.byProduction.open_culling_dry_cows || 0)}
                   </div>
                   <div className="text-xs text-gray-600">Dry</div>
                 </div>
@@ -798,6 +797,7 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
         onAnimalUpdated={handleAnimalUpdated}
         onExportAnimals={handleExportAnimals}
         loading={loading}
+        enrichedDataMap={enrichedDataMap}
       />
 
       {/* Add Animal Modal */}
@@ -837,7 +837,6 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
           setSelectedAnimalForWeight(null)
         }}
         onAnimalUpdated={handleWeightUpdated}
-        onRefreshData={loadWeightRequirements}  // ✅ NEW: Pass refresh callback
         highlightWeight={true}
         weightUpdateReason={selectedAnimalForWeight.weightUpdateReason}
       />
