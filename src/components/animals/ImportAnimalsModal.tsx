@@ -8,10 +8,10 @@ import { Alert, AlertDescription } from '@/components/ui/Alert'
 import { Progress } from '@/components/ui/Progress'
 import { importAnimalsActionWithAuth } from '@/app/actions/import-animals'
 import { downloadUniversalTemplate } from '@/lib/enhanced-template-generator'
-import { 
-  Upload, 
-  Download, 
-  FileSpreadsheet, 
+import {
+  Upload,
+  Download,
+  FileSpreadsheet,
   AlertTriangle,
   CheckCircle,
   X,
@@ -88,14 +88,14 @@ export function ImportAnimalsModal({
   // Custom validation options
   const customValidationOptions = {
     breeds: [
-      'Holstein-Friesian', 'Jersey', 'Guernsey', 'Ayrshire', 'Brown Swiss', 
+      'Holstein-Friesian', 'Jersey', 'Guernsey', 'Ayrshire', 'Brown Swiss',
       'Friesian', 'Simmental', 'Angus', 'Hereford', 'Charolais',
       'Limousin', 'Brahman', 'Zebu', 'Sahiwal', 'Gir', 'Red Sindhi',
       'Crossbred', 'Other'
     ],
     healthStatuses: [
       'healthy', 'sick', 'injured', 'quarantine', 'vaccinated',
-      'treatment', 'recovering', 'pregnant', 'lactating', 'good', 'fair', 'poor'
+      'treatment', 'recovering', 'deceased', 'released'
     ]
   }
 
@@ -112,24 +112,24 @@ export function ImportAnimalsModal({
             reject(new Error(`CSV parsing error: ${result.errors[0].message}`))
             return
           }
-          
+
           const animals = result.data.map((row: any, index: number) => {
             const normalizedRow: any = {}
             Object.keys(row).forEach(key => {
               const normalizedKey = key.replace('*', '').toLowerCase().replace(/\s+/g, '_')
               normalizedRow[normalizedKey] = row[key]
             })
-            
+
             // Use explicit animal_source from template - NEVER infer it
             const animalSource = normalizedRow.animal_source || 'purchased_animal'
-            
+
             return {
               ...normalizedRow,
               animal_source: animalSource as 'newborn_calf' | 'purchased_animal',
               row_index: index + 2
             }
           })
-          
+
           resolve(animals)
         },
         error: (error) => reject(error)
@@ -143,10 +143,10 @@ export function ImportAnimalsModal({
       const arrayBuffer = await file.arrayBuffer()
       const workbook = new ExcelJS.Workbook()
       await workbook.xlsx.load(arrayBuffer)
-      
+
       // REQUIRED: Must have "Animals" worksheet - no fallback to other sheets
       const animalSheet = workbook.getWorksheet('Animals')
-      
+
       if (!animalSheet) {
         throw new Error(
           'Invalid template: Could not find "Animals" worksheet. ' +
@@ -207,7 +207,7 @@ export function ImportAnimalsModal({
           }
         }
       })
-      
+
       return animals
     } catch (error) {
       console.error('Excel parsing error:', error)
@@ -219,10 +219,10 @@ export function ImportAnimalsModal({
   const validateData = (animals: ParsedAnimal[]): ValidationResult => {
     const errors: ImportError[] = []
     const warnings: ImportError[] = []
-    
+
     animals.forEach((animal, index) => {
       const row = animal.row_index || index + 2
-      
+
       // 🔴 CRITICAL: Gender is REQUIRED and must be valid
       if (!animal.gender || !['male', 'female'].includes(animal.gender)) {
         errors.push({
@@ -289,7 +289,7 @@ export function ImportAnimalsModal({
           })
         }
       }
-      
+
       // Validate breed if provided
       if (animal.breed && !customValidationOptions.breeds.includes(animal.breed)) {
         warnings.push({
@@ -299,7 +299,7 @@ export function ImportAnimalsModal({
           message: `Breed "${animal.breed}" is not in the standard list`
         })
       }
-      
+
       // Normalize production_status before validation to catch issues early
       if (animal.production_status) {
         const normalizedStatus = (animal.production_status as string)
@@ -322,7 +322,7 @@ export function ImportAnimalsModal({
           })
         }
       }
-      
+
       // Validate dates
       if (animal.date_of_birth) {
         const dateVal = new Date(animal.date_of_birth)
@@ -335,7 +335,7 @@ export function ImportAnimalsModal({
           })
         }
       }
-      
+
       if (animal.purchase_date) {
         const dateVal = new Date(animal.purchase_date)
         if (isNaN(dateVal.getTime())) {
@@ -347,7 +347,7 @@ export function ImportAnimalsModal({
           })
         }
       }
-      
+
       if (animal.purchase_price && (isNaN(Number(animal.purchase_price)) || Number(animal.purchase_price) <= 0)) {
         warnings.push({
           row,
@@ -357,7 +357,7 @@ export function ImportAnimalsModal({
         })
       }
     })
-    
+
     return {
       valid: errors.length === 0,
       errors,
@@ -371,10 +371,10 @@ export function ImportAnimalsModal({
     if (!file) return
 
     setSelectedFile(file)
-    
+
     try {
       let animals: ParsedAnimal[]
-      
+
       if (file.name.endsWith('.csv')) {
         animals = await parseCSV(file)
       } else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
@@ -382,7 +382,7 @@ export function ImportAnimalsModal({
       } else {
         throw new Error('Unsupported file format. Please use CSV or Excel files.')
       }
-      
+
       setParsedData(animals)
       const validation = validateData(animals)
       setValidationResult(validation)
@@ -422,16 +422,16 @@ export function ImportAnimalsModal({
           // Normalize production status to snake_case - MUST match validation logic
           production_status: animal.production_status
             ? (animal.production_status as string)
-                .toLowerCase()
-                .replace(/[\s()]+/g, '_')     // Replace spaces AND parentheses with underscore
-                .replace(/_+/g, '_')           // Collapse multiple underscores
-                .replace(/^_|_$/g, '')         // Trim leading/trailing underscores
+              .toLowerCase()
+              .replace(/[\s()]+/g, '_')     // Replace spaces AND parentheses with underscore
+              .replace(/_+/g, '_')           // Collapse multiple underscores
+              .replace(/^_|_$/g, '')         // Trim leading/trailing underscores
             : undefined
         }
       })
 
       const result = await importAnimalsActionWithAuth(farmId, validatedAnimals as any)
-      
+
       clearInterval(progressInterval)
       setImportProgress(100)
 
@@ -439,11 +439,11 @@ export function ImportAnimalsModal({
         setImportedCount(result.imported)
         setSkippedCount(result.skipped)
         setImportErrors(result.errors)
-        
+
         if (result.animals && result.animals.length > 0) {
           onAnimalsImported(result.animals)
         }
-        
+
         setStep('complete')
       } else {
         throw new Error(result.message || 'Import failed')
@@ -656,11 +656,10 @@ export function ImportAnimalsModal({
                       <tr key={index} className="border-b border-gray-100 hover:bg-white">
                         <td className="py-2 px-2">{animal.name || '-'}</td>
                         <td className="py-2 px-2">
-                          <span className={`${
-                            ['male', 'female'].includes(animal.gender)
+                          <span className={`${['male', 'female'].includes(animal.gender)
                               ? 'text-green-600 font-medium'
                               : 'text-red-600'
-                          }`}>
+                            }`}>
                             {animal.gender}
                           </span>
                         </td>
@@ -684,8 +683,8 @@ export function ImportAnimalsModal({
 
             {/* Action Buttons */}
             <div className="flex flex-col md:flex-row gap-3 pt-4 border-t">
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={() => setStep('upload')}
                 className="flex-1 md:flex-0"
               >
@@ -710,7 +709,7 @@ export function ImportAnimalsModal({
             </div>
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Importing Animals</h2>
             <p className="text-gray-600 text-sm mb-8">Processing your data...</p>
-            
+
             <div className="max-w-xs mx-auto">
               <Progress value={importProgress} className="mb-4" />
               <p className="text-sm font-medium text-gray-600">
@@ -730,7 +729,7 @@ export function ImportAnimalsModal({
               {importedCount} animal{importedCount !== 1 ? 's' : ''} imported successfully
               {skippedCount > 0 && ` (${skippedCount} skipped)`}
             </p>
-            
+
             {/* Show import errors if any */}
             {importErrors.length > 0 && (
               <div className="mb-6 text-left">
@@ -752,9 +751,9 @@ export function ImportAnimalsModal({
                 </Alert>
               </div>
             )}
-            
-            <Button 
-              onClick={handleClose} 
+
+            <Button
+              onClick={handleClose}
               disabled={isImporting}
               className="bg-dairy-primary hover:bg-dairy-primary/90"
             >
