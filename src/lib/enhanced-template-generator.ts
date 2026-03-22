@@ -20,7 +20,7 @@ const defaultValidationOptions: Required<ValidationOptions> = {
   genders: ['male', 'female'],
   healthStatuses: [
     'healthy', 'sick', 'injured', 'quarantine', 'vaccinated',
-    'treatment', 'recovering', 'pregnant', 'lactating', 'good', 'fair', 'poor', 'deceased', 'released'
+    'treatment', 'recovering', 'deceased', 'released'
   ],
   productionStatuses: ['calf', 'heifer', 'bull', 'served', 'lactating', 'steaming dry cows', 'open (culling) dry cows']  // Note: These will be normalized to steaming_dry_cows and open_culling_dry_cows during import
 }
@@ -194,21 +194,28 @@ export async function createUniversalExcelTemplate(
   const listSheet = workbook.addWorksheet('Lists')
   listSheet.state = 'hidden'
 
-  const maxRows = Math.max(
-    validationOptions.breeds.length,
-    validationOptions.genders.length,
-    validationOptions.healthStatuses.length,
-    validationOptions.productionStatuses.length
-  )
-
-  for (let i = 0; i < maxRows; i++) {
-    listSheet.addRow([
-      validationOptions.breeds[i] || null,
-      validationOptions.genders[i] || null,
-      validationOptions.healthStatuses[i] || null,
-      validationOptions.productionStatuses[i] || null,
-    ])
-  }
+  // Write each list to its own section (A, B, C, D) starting at row 1
+  // This ensures clean, deterministic data with no stale values
+  
+  // Column A: Breeds
+  validationOptions.breeds.forEach((breed, idx) => {
+    listSheet.getCell(`A${idx + 1}`).value = breed
+  })
+  
+  // Column B: Genders  
+  validationOptions.genders.forEach((gender, idx) => {
+    listSheet.getCell(`B${idx + 1}`).value = gender
+  })
+  
+  // Column C: Health Statuses
+  validationOptions.healthStatuses.forEach((status, idx) => {
+    listSheet.getCell(`C${idx + 1}`).value = status
+  })
+  
+  // Column D: Production Statuses
+  validationOptions.productionStatuses.forEach((status, idx) => {
+    listSheet.getCell(`D${idx + 1}`).value = status
+  })
 
   // 4. Apply Data Validation to Animals Sheet
   const tagNumberColIndex = headers.indexOf('tag_number') + 1
@@ -247,24 +254,24 @@ export async function createUniversalExcelTemplate(
       }
     }
 
-    // Gender Validation (Required)
+    // Gender Validation (Required) - Reference Lists sheet column B
     if (genderColIndex > 0) {
       row.getCell(genderColIndex).dataValidation = {
         type: 'list',
         allowBlank: false,
-        formulae: [`"${validationOptions.genders.join(',')}"`],
+        formulae: [`Lists!$B$1:$B$${validationOptions.genders.length}`],
         showErrorMessage: true,
         errorTitle: 'Gender Required',
         error: 'Please select: male or female'
       }
     }
 
-    // Breed Validation
+    // Breed Validation - Reference Lists sheet column A
     if (breedColIndex > 0) {
       row.getCell(breedColIndex).dataValidation = {
         type: 'list',
         allowBlank: true,
-        formulae: [`"${validationOptions.breeds.join(',')}"`],
+        formulae: [`Lists!$A$1:$A$${validationOptions.breeds.length}`],
         showErrorMessage: true,
         errorTitle: 'Invalid Breed',
         error: 'Please choose a breed from the dropdown'
@@ -285,24 +292,24 @@ export async function createUniversalExcelTemplate(
       }
     }
 
-    // Health Status Validation
+    // Health Status Validation - Reference Lists sheet column C
     if (healthColIndex > 0) {
       row.getCell(healthColIndex).dataValidation = {
         type: 'list',
         allowBlank: true,
-        formulae: [`"${validationOptions.healthStatuses.join(',')}"`],
+        formulae: [`Lists!$C$1:$C$${validationOptions.healthStatuses.length}`],
         showErrorMessage: true,
         errorTitle: 'Invalid Health Status',
         error: 'Please select from the health status list'
       }
     }
 
-    // Production Status Validation
+    // Production Status Validation - Reference Lists sheet column D
     if (productionColIndex > 0) {
       row.getCell(productionColIndex).dataValidation = {
         type: 'list',
         allowBlank: true,
-        formulae: [`"${validationOptions.productionStatuses.join(',')}"`],
+        formulae: [`Lists!$D$1:$D$${validationOptions.productionStatuses.length}`],
         showErrorMessage: true,
         errorTitle: 'Invalid Production Status',
         error: 'Please select from the production status list'
@@ -904,6 +911,7 @@ export async function downloadUniversalTemplate(
 ) {
   try {
     console.log('Creating universal animal import template...')
+    console.log('🟢 Health Status Options Being Used:', defaultValidationOptions.healthStatuses)
     
     const buffer = await createUniversalExcelTemplate(customOptions)
     

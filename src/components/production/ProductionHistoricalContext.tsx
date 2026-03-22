@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
 
@@ -9,6 +9,15 @@ interface HistoricalData {
   previousSessionVolume?: number | null
   sameTimeYesterdayVolume?: number | null
 }
+
+interface CacheEntry {
+  data: HistoricalData
+  timestamp: number
+}
+
+// Global cache for historical data (5-minute TTL)
+const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+const historyCache = new Map<string, CacheEntry>()
 
 interface ProductionHistoricalContextProps {
   farmId: string
@@ -25,20 +34,53 @@ export function ProductionHistoricalContext({
 }: ProductionHistoricalContextProps) {
   const [historicalData, setHistoricalData] = useState<HistoricalData | null>(null)
   const [loading, setLoading] = useState(true)
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     const fetchHistoricalData = async () => {
       try {
+        // Create cache key from query parameters
+        const cacheKey = `${farmId}:${animalId}:${currentDate}:${currentSession}`
+        
+        // Check cache first
+        const cachedEntry = historyCache.get(cacheKey)
+        const now = Date.now()
+        
+        if (cachedEntry && (now - cachedEntry.timestamp) < CACHE_TTL) {
+          console.log('[ProductionHistoricalContext] Using cached data for:', cacheKey)
+          setHistoricalData(cachedEntry.data)
+          setLoading(false)
+          return
+        }
+
+        // Cancel any previous request
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort()
+        }
+        
+        abortControllerRef.current = new AbortController()
+
         const response = await fetch(
-          `/api/production/history?farmId=${farmId}&animalId=${animalId}&date=${currentDate}&session=${currentSession}`
+          `/api/production/history?farmId=${farmId}&animalId=${animalId}&date=${currentDate}&session=${currentSession}`,
+          { signal: abortControllerRef.current.signal }
         )
 
         if (response.ok) {
           const data = await response.json()
+          
+          // Store in cache
+          historyCache.set(cacheKey, {
+            data,
+            timestamp: now
+          })
+          
+          console.log('[ProductionHistoricalContext] Cached new data for:', cacheKey)
           setHistoricalData(data)
         }
       } catch (error) {
-        console.error('Failed to fetch historical data:', error)
+        if (error instanceof Error && error.name !== 'AbortError') {
+          console.error('Failed to fetch historical data:', error)
+        }
       } finally {
         setLoading(false)
       }
@@ -46,6 +88,13 @@ export function ProductionHistoricalContext({
 
     if (animalId) {
       fetchHistoricalData()
+    }
+
+    // Cleanup: cancel request on unmount
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+      }
     }
   }, [farmId, animalId, currentDate, currentSession])
 

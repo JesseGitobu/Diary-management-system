@@ -34,18 +34,19 @@ export async function GET(request: NextRequest) {
 
     console.log('📋 [PREGNANT-ANIMALS] Fetching for farm:', farmId)
 
-    // Get all pregnancy records with confirmed status and no calving date
+    // Get all pregnancy records with confirmed status
     const { data: pregnancyRecords, error } = await supabase
       .from('pregnancy_records')
       .select(`
         id,
         animal_id,
-        breeding_record_id,
+        service_record_id,
         expected_calving_date,
         pregnancy_status,
-        breeding_records!pregnancy_records_breeding_record_id_fkey (
-          breeding_date,
-          breeding_type
+        confirmed_date,
+        service_records!pregnancy_records_service_record_id_fkey (
+          service_date,
+          service_type
         ),
         animals!pregnancy_records_animal_id_fkey (
           id,
@@ -55,7 +56,6 @@ export async function GET(request: NextRequest) {
       `)
       .eq('farm_id', farmId)
       .eq('pregnancy_status', 'confirmed')
-      .is('actual_calving_date', null)
       .order('expected_calving_date', { ascending: true })
 
     if (error) {
@@ -68,14 +68,14 @@ export async function GET(request: NextRequest) {
     // Transform data for the component
     const today = new Date()
     
-    // Cast record to any to fix "Property 'breeding_records' does not exist on type 'never'"
+    // Cast record to any to fix "Property 'service_records' does not exist on type 'never'"
     const pregnantAnimals = pregnancyRecords?.map((record: any) => {
-      const breedingDate = record.breeding_records?.breeding_date
+      const serviceDate = record.service_records?.service_date
       const expectedDueDate = record.expected_calving_date
       
-      // Calculate days pregnant
-      const daysPregnant = breedingDate 
-        ? differenceInDays(today, new Date(breedingDate))
+      // Calculate days pregnant (from service date)
+      const daysPregnant = serviceDate 
+        ? differenceInDays(today, new Date(serviceDate))
         : 0
       
       // Calculate days until due
@@ -98,7 +98,7 @@ export async function GET(request: NextRequest) {
         name: record.animals?.name,
         estimated_due_date: expectedDueDate || '',
         days_pregnant: daysPregnant,
-        conception_date: breedingDate || '',
+        conception_date: serviceDate || '',
         status,
         pregnancy_status: record.pregnancy_status
       }

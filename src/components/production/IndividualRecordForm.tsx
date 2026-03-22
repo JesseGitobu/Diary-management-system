@@ -117,6 +117,16 @@ export function IndividualRecordForm({
     fetchPreRecordedAnimals()
   }, [recordDate, session])
 
+  // Auto-select animal when in group recording mode with single animal
+  useEffect(() => {
+    if (recordingType === 'group' && animals.length === 1 && step === 'select' && !selectedAnimal) {
+      console.log('[IndividualRecordForm] Auto-selecting animal in group mode:', animals[0])
+      setSelectedAnimal(animals[0])
+      setStep('form')
+      setSearchQuery('')
+    }
+  }, [recordingType, animals, step, selectedAnimal])
+
   // Schema with dynamic validation
   const productionSchema = useMemo(() => {
     const isQualityFocused = settings?.productionTrackingMode === 'quality_focused'
@@ -177,6 +187,14 @@ export function IndividualRecordForm({
       notes: '',
     },
   })
+
+  // Update form when animal is selected
+  useEffect(() => {
+    if (selectedAnimal) {
+      console.log('[IndividualRecordForm] Setting form animal_id to:', selectedAnimal.id)
+      form.setValue('animal_id', selectedAnimal.id)
+    }
+  }, [selectedAnimal])
 
   // Filter eligible animals based on production settings
   const eligibleAnimals = useMemo(() => {
@@ -247,6 +265,7 @@ export function IndividualRecordForm({
   }
 
   const handleSubmit = async (data: ProductionFormData) => {
+    console.log('[IndividualRecordForm] Form submitted with data:', data)
     setLoading(true)
     setError(null)
 
@@ -413,6 +432,18 @@ export function IndividualRecordForm({
         <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start space-x-2 text-red-700 text-sm">
           <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
           <p>{error}</p>
+        </div>
+      )}
+
+      {/* Show all form validation errors for debugging */}
+      {Object.keys(form.formState.errors).length > 0 && (
+        <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <p className="text-sm font-semibold text-yellow-800 mb-2">Validation Errors:</p>
+          <ul className="text-sm text-yellow-700 space-y-1">
+            {Object.entries(form.formState.errors).map(([field, error]: any) => (
+              <li key={field}>• {field}: {error?.message || 'Invalid'}</li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -608,7 +639,7 @@ export function IndividualRecordForm({
           </Button>
           <Button
             type="submit"
-            disabled={loading || !form.getValues('milk_volume')}
+            disabled={loading || !form.formState.isValid}
           >
             {loading ? <LoadingSpinner size="sm" /> : 'Save Record'}
           </Button>

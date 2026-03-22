@@ -18,6 +18,7 @@ interface AnimalRecord {
 }
 
 interface MilkingGroup {
+  id: string
   category_id: string
   category_name: string
   animal_count: number
@@ -177,7 +178,7 @@ export function GroupRecordForm({
   const groups = useMemo(() => {
     if (milkingGroups.length > 0) {
       return milkingGroups.map(g => ({
-        id: g.category_id,
+        id: g.id,
         name: g.category_name,
         description: `${g.animals?.length || 0} animals in this group`,
         animals: g.animals || []
@@ -567,16 +568,19 @@ export function GroupRecordForm({
               const updated = new Set([...recordedAnimalIds, animalId])
               setRecordedAnimalIds(updated)
               
-              // Check if there are more animals to record
-              const stillPending = selectedGroup.animals.filter(a => !updated.has(a.id))
+              // Check if there are more animals to record (excluding pre-recorded)
+              const stillPending = selectedGroup.animals.filter(a => 
+                !updated.has(a.id) && !preRecordedAnimalIds.has(a.id)
+              )
+              
               if (stillPending.length === 0) {
-                // All animals recorded - stay on success screen
+                // All animals recorded - trigger success screen
                 setSelectedAnimalId(null)
                 setSearchQuery('')
-              } else if (stillPending.length > 0) {
-                // Auto-advance to next animal
-                setSelectedAnimalId(null)
-                setSearchQuery('')
+              } else {
+                // Auto-advance to next pending animal
+                console.log('[GroupRecordForm] Auto-advancing to next animal:', stillPending[0])
+                setSelectedAnimalId(stillPending[0].id)
               }
             }}
           />
