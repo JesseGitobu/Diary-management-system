@@ -35,9 +35,14 @@ interface AnimalBasicInfoProps {
   canEdit: boolean
   onEditClick: () => void
   onViewFullHistory?: () => void
+  lactationCycleRecord?: {
+    lactation_number: number
+    days_in_milk?: number
+    status?: string
+  } | null
 }
 
-export function AnimalBasicInfo({ animal, canEdit, onEditClick, onViewFullHistory }: AnimalBasicInfoProps) {
+export function AnimalBasicInfo({ animal, canEdit, onEditClick, onViewFullHistory, lactationCycleRecord }: AnimalBasicInfoProps) {
   const [showAllSections, setShowAllSections] = useState(false)
   const [expandedSections, setExpandedSections] = useState<string[]>(['identification'])
   const [animalData, setAnimalData] = useState(animal)
@@ -155,7 +160,7 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick, onViewFullHistor
     }
   }
 
-  // Mobile: Collapsible section component
+  // Collapsible section component - works on all screen sizes
   const CollapsibleSection = ({
     id,
     title,
@@ -171,36 +176,32 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick, onViewFullHistor
   }) => {
     const isExpanded = expandedSections.includes(id)
 
-    if (!isMobile) {
-      return (
-        <div>
-          <h4 className="font-medium text-gray-900 mb-3 flex items-center">
-            <Icon className="w-4 h-4 mr-2" />
-            {title}
-          </h4>
-          {children}
-        </div>
-      )
-    }
-
     return (
-      <div className="border-b border-gray-100 last:border-0">
+      <div className={cn(
+        isMobile ? "border-b border-gray-100 last:border-0" : "border-b border-gray-200 last:border-0"
+      )}>
         <button
           onClick={() => toggleSection(id)}
-          className="w-full flex items-center justify-between py-3 text-left focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded-sm"
+          className={cn(
+            "w-full flex items-center justify-between text-left focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded-sm",
+            isMobile ? "py-3" : "py-3"
+          )}
         >
           <h4 className="font-medium text-gray-900 flex items-center">
-            <Icon className="w-4 h-4 mr-2" />
+            <Icon className={cn("mr-2", isMobile ? "w-4 h-4" : "w-4 h-4")} />
             {title}
           </h4>
           {isExpanded ? (
-            <ChevronUp className="w-4 h-4 text-gray-500" />
+            <ChevronUp className="w-4 h-4 text-gray-500 flex-shrink-0" />
           ) : (
-            <ChevronDown className="w-4 h-4 text-gray-500" />
+            <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0" />
           )}
         </button>
         {isExpanded && (
-          <div className="pb-4">
+          <div className={cn(
+            "pb-4",
+            isMobile ? "" : "px-1"
+          )}>
             {children}
           </div>
         )}
@@ -553,14 +554,15 @@ export function AnimalBasicInfo({ animal, canEdit, onEditClick, onViewFullHistor
                     </span>
                   </div>
                 )}
-                {animal.lactation_number && (
+                {lactationCycleRecord && (
                   <div>
                     <p className={cn("text-gray-600 mb-1", isMobile ? "text-xs" : "text-sm")}>Lactation Number</p>
                     <span className={cn("font-medium", isMobile ? "text-sm" : "")}>
-                      Lactation {animal.lactation_number}
+                      Lactation {lactationCycleRecord.lactation_number}
                     </span>
                   </div>
                 )}
+
               </div>
             </CollapsibleSection>
           )}

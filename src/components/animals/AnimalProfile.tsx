@@ -40,6 +40,11 @@ interface AnimalProfileProps {
   animal: any
   userRole: string
   farmId: string
+  lactationCycleRecord?: {
+    lactation_number: number
+    days_in_milk?: number
+    status?: string
+  } | null
 }
 
 // Breeding age thresholds (in days)
@@ -58,7 +63,7 @@ const BREEDING_AGE_THRESHOLDS = {
   }
 }
 
-export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) {
+export function AnimalProfile({ animal, userRole, farmId, lactationCycleRecord }: AnimalProfileProps) {
   const [activeTab, setActiveTab] = useState('overview')
   const [showEditModal, setShowEditModal] = useState(false)
   const [showReleaseModal, setShowReleaseModal] = useState(false)
@@ -552,6 +557,7 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
               canEdit={canEdit}
               onEditClick={() => setShowEditModal(true)}
               onViewFullHistory={() => setActiveTab('history')}
+              lactationCycleRecord={lactationCycleRecord}
             />
           </TabsContent>
           
@@ -589,6 +595,7 @@ export function AnimalProfile({ animal, userRole, farmId }: AnimalProfileProps) 
               animal={animalData}
               canAddRecords={canAddRecords}
               onProductionStatusChanged={handleProductionStatusChanged}
+              lactationCycleRecord={lactationCycleRecord}
             />
           </TabsContent>
           

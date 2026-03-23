@@ -99,7 +99,6 @@ export function EditAnimalModal({
       expected_calving_date: animal.expected_calving_date ? animal.expected_calving_date.split('T')[0] : '',
       current_daily_production: animal.current_daily_production || undefined,
       days_in_milk: animal.days_in_milk || undefined,
-      lactation_number: animal.lactation_number || undefined,
     },
   })
   

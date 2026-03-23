@@ -112,13 +112,16 @@ export function ProductionRecordsList({
   const [currentPage, setCurrentPage] = useState(1)
   const [filterSession, setFilterSession] = useState<string>('all')
   const [filterSafetyStatus, setFilterSafetyStatus] = useState<string>('all')
-  const [filterDateFrom, setFilterDateFrom] = useState<string>('')
+  const [filterDateFrom, setFilterDateFrom] = useState<string>(() => {
+    const today = new Date()
+    return today.toISOString().split('T')[0]
+  })
   const [filterDateTo, setFilterDateTo] = useState<string>('')
   const [viewTab, setViewTab] = useState<ViewTab>('individual')
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [milkingGroups, setMilkingGroups] = useState<Map<string, string>>(new Map())
   const [availableSessions, setAvailableSessions] = useState<Array<{ id: string; name: string }>>([])
-  
+  const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set())
   const RECORDS_PER_PAGE = 10
 
   // Fetch milking sessions on mount
@@ -715,44 +718,44 @@ export function ProductionRecordsList({
         </div>
       ) : filterSession === 'all' && viewTab === 'individual' && dailySummaryRecords ? (
         // Daily totals view for individual animals
-        <div className="space-y-4">
+        <div className="space-y-4 max-h-[600px] overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-100 [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded pr-2">
           {dailySummaryRecords.map((summary, idx) => {
             const qualityIndicator = getQualityIndicator(summary.avgFatContent || undefined, summary.avgProteinContent || undefined)
             
             return (
               <Card key={`summary-${summary.cycleDate}-${summary.animal_id}`} className="hover:shadow-md transition-shadow overflow-hidden">
-                <CardContent className="p-4 md:p-6">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex items-start space-x-4 flex-1 min-w-0">
+                <CardContent className="p-2 md:p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start space-x-2 flex-1 min-w-0">
                       <div className="flex-shrink-0">
-                        <div className="w-12 h-12 bg-farm-green/10 rounded-lg flex items-center justify-center">
-                          <Droplets className="w-6 h-6 text-farm-green" />
+                        <div className="w-10 h-10 bg-farm-green/10 rounded-lg flex items-center justify-center">
+                          <Droplets className="w-5 h-5 text-farm-green" />
                         </div>
                       </div>
                       
                       <div className="min-w-0 flex-1">
                         {/* Header Row */}
-                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-3">
+                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-1 mb-2">
                           <div>
-                            <h4 className="text-base md:text-lg font-semibold text-gray-900 truncate">
+                            <h4 className="text-sm md:text-base font-semibold text-gray-900 truncate">
                               {summary.animalName}
                             </h4>
-                            <p className="text-xs md:text-sm text-gray-600">
+                            <p className="text-xs text-gray-600">
                               Tag: {summary.animalTag}
                             </p>
                           </div>
 
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge className="bg-blue-100 text-blue-800">
-                              <Calendar className="w-3 h-3 mr-1" />
+                          <div className="flex flex-wrap items-center gap-1">
+                            <Badge className="bg-blue-100 text-blue-800 text-xs">
+                              <Calendar className="w-2 h-2 mr-0.5" />
                               {formatDate(summary.cycleDate)}
                             </Badge>
-                            <Badge className="bg-indigo-100 text-indigo-800">
-                              <Clock className="w-3 h-3 mr-1" />
+                            <Badge className="bg-indigo-100 text-indigo-800 text-xs">
+                              <Clock className="w-2 h-2 mr-0.5" />
                               {summary.recordCount} session{summary.recordCount !== 1 ? 's' : ''}
                             </Badge>
                             {qualityIndicator && (
-                              <Badge className={qualityIndicator.color}>
+                              <Badge className={`${qualityIndicator.color} text-xs`}>
                                 {qualityIndicator.label}
                               </Badge>
                             )}
@@ -760,39 +763,58 @@ export function ProductionRecordsList({
                         </div>
                         
                         {/* Production Metrics Grid */}
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
-                          <div className="text-center p-2 md:p-3 bg-blue-50 rounded">
-                            <p className="text-lg md:text-2xl font-bold text-blue-600">{summary.totalMilkVolume.toFixed(1)}</p>
-                            <p className="text-xs text-blue-600 font-medium">Total Liters</p>
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-1 mb-1">
+                          <div className="text-center p-1 md:p-2 bg-blue-50 rounded">
+                            <p className="text-base md:text-lg font-bold text-blue-600">{summary.totalMilkVolume.toFixed(1)}</p>
+                            <p className="text-xs text-blue-600 font-medium">Total L</p>
                           </div>
                           {summary.avgFatContent !== null && (
-                            <div className="text-center p-2 md:p-3 bg-orange-50 rounded">
-                              <p className="text-base md:text-xl font-bold text-orange-600">{summary.avgFatContent.toFixed(2)}%</p>
-                              <p className="text-xs text-orange-600 font-medium">Avg Fat</p>
+                            <div className="text-center p-1 md:p-2 bg-orange-50 rounded">
+                              <p className="text-sm md:text-base font-bold text-orange-600">{summary.avgFatContent.toFixed(2)}%</p>
+                              <p className="text-xs text-orange-600 font-medium">Fat</p>
                             </div>
                           )}
                           {summary.avgProteinContent !== null && (
-                            <div className="text-center p-2 md:p-3 bg-green-50 rounded">
-                              <p className="text-base md:text-xl font-bold text-green-600">{summary.avgProteinContent.toFixed(2)}%</p>
-                              <p className="text-xs text-green-600 font-medium">Avg Protein</p>
+                            <div className="text-center p-1 md:p-2 bg-green-50 rounded">
+                              <p className="text-sm md:text-base font-bold text-green-600">{summary.avgProteinContent.toFixed(2)}%</p>
+                              <p className="text-xs text-green-600 font-medium">Protein</p>
                             </div>
                           )}
-                          <div className="text-center p-2 md:p-3 bg-purple-50 rounded">
-                            <p className="text-base md:text-lg font-bold text-purple-600">{summary.recordCount}</p>
+                          <div className="text-center p-1 md:p-2 bg-purple-50 rounded">
+                            <p className="text-sm md:text-base font-bold text-purple-600">{summary.recordCount}</p>
                             <p className="text-xs text-purple-600 font-medium">Records</p>
                           </div>
                         </div>
 
                         {/* Sessions in this cycle */}
-                        <div className="mt-4 pt-4 border-t border-gray-200">
-                          <p className="text-xs font-semibold text-gray-600 mb-2">Sessions in cycle:</p>
-                          <div className="flex flex-wrap gap-2">
-                            {summary.sessions.map(sessionId => (
-                              <Badge key={sessionId} className={getSessionBadgeColor(sessionId)}>
-                                {getSessionName(sessionId)}
-                              </Badge>
-                            ))}
-                          </div>
+                        <div className="mt-1 pt-1 border-t border-gray-200">
+                          <button
+                            onClick={() => {
+                              const key = `${summary.cycleDate}-${summary.animal_id}`
+                              const newSet = new Set(expandedSessions)
+                              if (newSet.has(key)) {
+                                newSet.delete(key)
+                              } else {
+                                newSet.add(key)
+                              }
+                              setExpandedSessions(newSet)
+                            }}
+                            className="flex items-center gap-1 text-xs font-semibold text-gray-600 hover:text-gray-900 transition-colors cursor-pointer"
+                          >
+                            <ChevronDown 
+                              className={`w-3 h-3 transition-transform ${expandedSessions.has(`${summary.cycleDate}-${summary.animal_id}`) ? 'rotate-180' : ''}`}
+                            />
+                            Sessions in cycle ({summary.sessions.length})
+                          </button>
+                          {expandedSessions.has(`${summary.cycleDate}-${summary.animal_id}`) && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {summary.sessions.map(sessionId => (
+                                <Badge key={sessionId} className={getSessionBadgeColor(sessionId)}>
+                                  {getSessionName(sessionId)}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -804,7 +826,7 @@ export function ProductionRecordsList({
         </div>
       ) : filterSession === 'all' && viewTab === 'groups' && dailySummaryGroups ? (
         // Daily totals view for milking groups
-        <div className="space-y-4">
+        <div className="space-y-4 max-h-[600px] overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-100 [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded pr-2">
           {dailySummaryGroups.map((summary) => {
             const qualityIndicator = getQualityIndicator(summary.avgFatContent || undefined, summary.avgProteinContent || undefined)
             
@@ -877,7 +899,7 @@ export function ProductionRecordsList({
         </div>
       ) : viewTab === 'individual' ? (
         // Individual records view
-        <div className="space-y-4">
+        <div className="space-y-4 max-h-[600px] overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-100 [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded pr-2">
           {(paginatedData as any[]).map((record) => {
             const qualityIndicator = getQualityIndicator(record.avgFatContent || undefined, record.avgProteinContent || undefined)
             const safetyStatus = getSafetyStatusBadge(record.milk_safety_status)
@@ -887,42 +909,42 @@ export function ProductionRecordsList({
             
             return (
               <Card key={record.id} className="hover:shadow-md transition-shadow overflow-hidden">
-                <CardContent className="p-4 md:p-6">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex items-start space-x-4 flex-1 min-w-0">
+                <CardContent className="p-2 md:p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start space-x-2 flex-1 min-w-0">
                       <div className="flex-shrink-0">
-                        <div className="w-12 h-12 bg-farm-green/10 rounded-lg flex items-center justify-center">
-                          <Droplets className="w-6 h-6 text-farm-green" />
+                        <div className="w-10 h-10 bg-farm-green/10 rounded-lg flex items-center justify-center">
+                          <Droplets className="w-5 h-5 text-farm-green" />
                         </div>
                       </div>
                       
                       <div className="min-w-0 flex-1">
                         {/* Header Row */}
-                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-3">
+                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-1 mb-1">
                           <div>
-                            <h4 className="text-base md:text-lg font-semibold text-gray-900 truncate">
+                            <h4 className="text-sm md:text-base font-semibold text-gray-900 truncate">
                               {record.animals?.name || `Animal ${record.animals?.tag_number}`}
                             </h4>
-                            <p className="text-xs md:text-sm text-gray-600">
+                            <p className="text-xs text-gray-600">
                               Tag: {record.animals?.tag_number}
                             </p>
                           </div>
 
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge className={getSessionBadgeColor(record.milking_session_id)}>
-                              <Clock className="w-3 h-3 mr-1" />
+                          <div className="flex flex-wrap items-center gap-1">
+                            <Badge className={`${getSessionBadgeColor(record.milking_session_id)} text-xs`}>
+                              <Clock className="w-2 h-2 mr-0.5" />
                               {getSessionName(record.milking_session_id)}
                             </Badge>
-                            <Badge className={safetyStatus.color}>
-                              <SafetyIcon className="w-3 h-3 mr-1" />
+                            <Badge className={`${safetyStatus.color} text-xs`}>
+                              <SafetyIcon className="w-2 h-2 mr-0.5" />
                               {safetyStatus.label}
                             </Badge>
-                            <Badge className={recordingTypeBadge.color}>
-                              <RecordingTypeIcon className="w-3 h-3 mr-1" />
+                            <Badge className={`${recordingTypeBadge.color} text-xs`}>
+                              <RecordingTypeIcon className="w-2 h-2 mr-0.5" />
                               {recordingTypeBadge.label}
                             </Badge>
                             {qualityIndicator && (
-                              <Badge className={qualityIndicator.color}>
+                              <Badge className={`${qualityIndicator.color} text-xs`}>
                                 {qualityIndicator.label}
                               </Badge>
                             )}
@@ -930,52 +952,52 @@ export function ProductionRecordsList({
                         </div>
                         
                         {/* Date Info */}
-                        <div className="flex items-center space-x-4 text-xs md:text-sm text-gray-600 mb-4">
+                        <div className="flex items-center space-x-2 text-xs text-gray-600 mb-2">
                           <span className="flex items-center">
-                            <Calendar className="w-4 h-4 mr-1" />
+                            <Calendar className="w-3 h-3 mr-0.5" />
                             {formatDate(record.record_date)}
                           </span>
                           <span className="text-gray-400">•</span>
-                          <span className="text-gray-500">
-                            Recorded: {formatDateTime(record.created_at)}
+                          <span className="text-gray-500 truncate">
+                            {formatDateTime(record.created_at)}
                           </span>
                         </div>
                         
                         {/* Production Metrics Grid */}
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
-                          <div className="text-center p-2 md:p-3 bg-blue-50 rounded">
-                            <p className="text-lg md:text-2xl font-bold text-blue-600">{record.milk_volume}</p>
-                            <p className="text-xs text-blue-600 font-medium">Liters</p>
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-1 mb-2">
+                          <div className="text-center p-1 md:p-2 bg-blue-50 rounded">
+                            <p className="text-base md:text-lg font-bold text-blue-600">{record.milk_volume}</p>
+                            <p className="text-xs text-blue-600 font-medium">L</p>
                           </div>
                           {record.fat_content && (
-                            <div className="text-center p-2 md:p-3 bg-orange-50 rounded">
-                              <p className="text-base md:text-xl font-bold text-orange-600">{record.fat_content}%</p>
+                            <div className="text-center p-1 md:p-2 bg-orange-50 rounded">
+                              <p className="text-sm md:text-base font-bold text-orange-600">{record.fat_content}%</p>
                               <p className="text-xs text-orange-600 font-medium">Fat</p>
                             </div>
                           )}
                           {record.protein_content && (
-                            <div className="text-center p-2 md:p-3 bg-green-50 rounded">
-                              <p className="text-base md:text-xl font-bold text-green-600">{record.protein_content}%</p>
+                            <div className="text-center p-1 md:p-2 bg-green-50 rounded">
+                              <p className="text-sm md:text-base font-bold text-green-600">{record.protein_content}%</p>
                               <p className="text-xs text-green-600 font-medium">Protein</p>
                             </div>
                           )}
                           {record.somatic_cell_count && (
-                            <div className="text-center p-2 md:p-3 bg-purple-50 rounded">
-                              <p className="text-sm md:text-base font-bold text-purple-600">
+                            <div className="text-center p-1 md:p-2 bg-purple-50 rounded">
+                              <p className="text-xs md:text-sm font-bold text-purple-600">
                                 {(record.somatic_cell_count / 1000).toFixed(0)}k
                               </p>
                               <p className="text-xs text-purple-600 font-medium">SCC</p>
                             </div>
                           )}
                           {record.temperature && (
-                            <div className="text-center p-2 md:p-3 bg-red-50 rounded">
-                              <p className="text-base md:text-xl font-bold text-red-600">{record.temperature}°C</p>
-                              <p className="text-xs text-red-600 font-medium">Temp</p>
+                            <div className="text-center p-1 md:p-2 bg-red-50 rounded">
+                              <p className="text-sm md:text-base font-bold text-red-600">{record.temperature}°C</p>
+                              <p className="text-xs text-red-600 font-medium">T</p>
                             </div>
                           )}
                           {record.ph_level && (
-                            <div className="text-center p-2 md:p-3 bg-indigo-50 rounded">
-                              <p className="text-base md:text-xl font-bold text-indigo-600">{record.ph_level}</p>
+                            <div className="text-center p-1 md:p-2 bg-indigo-50 rounded">
+                              <p className="text-sm md:text-base font-bold text-indigo-600">{record.ph_level}</p>
                               <p className="text-xs text-indigo-600 font-medium">pH</p>
                             </div>
                           )}
@@ -983,9 +1005,9 @@ export function ProductionRecordsList({
                         
                         {/* Notes Section */}
                         {record.notes && (
-                          <div className="mb-3 p-3 bg-gray-50 rounded border border-gray-200">
-                            <p className="text-xs md:text-sm text-gray-700">
-                              <span className="font-semibold block mb-1">Notes:</span> 
+                          <div className="mb-1 p-2 bg-gray-50 rounded border border-gray-200">
+                            <p className="text-xs text-gray-700">
+                              <span className="font-semibold block mb-0.5">Notes:</span> 
                               <span className="text-gray-600">{record.notes}</span>
                             </p>
                           </div>
@@ -995,10 +1017,10 @@ export function ProductionRecordsList({
                     
                     {/* Action Buttons */}
                     {canEdit && (
-                      <div className="flex-shrink-0 flex items-center gap-2">
+                      <div className="flex-shrink-0 flex items-center gap-1">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
                               <MoreHorizontal className="w-4 h-4" />
                             </Button>
                           </DropdownMenuTrigger>
@@ -1031,7 +1053,7 @@ export function ProductionRecordsList({
         </div>
       ) : (
         // Groups view
-        <div className="space-y-4">
+        <div className="space-y-4 max-h-[600px] overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-100 [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded pr-2">
           {(paginatedData as any[]).map((summary: any, index) => {
             const isExpanded = expandedGroups.has(summary.milking_group_id || 'default')
             const recentQuality = getQualityIndicator(summary.avgFatContent || undefined, summary.avgProteinContent || undefined)

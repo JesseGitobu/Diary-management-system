@@ -106,6 +106,11 @@ export function RecordProductionModal({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} className="max-w-4xl">
+      {/* Header with Title */}
+      <div className="bg-stone-50 border-b border-stone-200 px-6 py-3 flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-stone-900">Record Production</h2>
+      </div>
+
       {/* Header Bar */}
       <div className="bg-stone-50 border-b border-stone-200 px-6 py-4 flex items-center justify-between">
         {/* Left Side — Context Info */}

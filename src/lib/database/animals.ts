@@ -598,7 +598,6 @@ export async function createAnimal(
       // Production fields (for lactating animals)
       current_daily_production: animalData.current_daily_production || null,
       days_in_milk: animalData.days_in_milk || null,
-      lactation_number: animalData.lactation_number || null,
 
       // Mother production info (for heifers)
       mother_production_info: animalData.mother_production_info || null,

@@ -1,6 +1,7 @@
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { getAnimalById } from '@/lib/database/animals'
+import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import { AnimalProfile } from '@/components/animals/AnimalProfile'
 
@@ -37,12 +38,29 @@ export default async function AnimalPage({ params }: AnimalPageProps) {
     redirect('/dashboard/animals')
   }
   
+  // Fetch active lactation cycle record for the animal
+  const supabase = await createServerSupabaseClient()
+  const { data: lactationCycleRecord, error: lactationError } = await supabase
+    .from('lactation_cycle_records')
+    .select('lactation_number, days_in_milk, status')
+    .eq('animal_id', id)
+    .eq('status', 'active')
+    .maybeSingle() as any
+  
+  // Log for debugging
+  if (lactationError) {
+    console.error(`[AnimalPage] Error fetching lactation record for animal ${id}:`, lactationError)
+  } else {
+    console.log(`[AnimalPage] Lactation record for animal ${id}:`, lactationCycleRecord)
+  }
+  
   return (
     <div className="dashboard-container">
       <AnimalProfile 
         animal={animal}
         userRole={userRole.role_type}
         farmId={userRole.farm_id}
+        lactationCycleRecord={lactationCycleRecord}
       />
     </div>
   )

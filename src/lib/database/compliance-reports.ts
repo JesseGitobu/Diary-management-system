@@ -176,7 +176,7 @@ export async function generateComplianceReport(
       productionHistory: {
         currentDailyProduction: animal.current_daily_production || 0,
         daysInMilk: animal.days_in_milk || 0,
-        lactationNumber: animal.lactation_number || 0,
+        lactationNumber: 0,
         recordsCount: 0,
       },
       breedingHistory: {

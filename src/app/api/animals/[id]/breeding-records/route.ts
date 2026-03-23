@@ -126,44 +126,80 @@ export async function GET(
 
     // 3. Filter & Extract Pregnancy Checks from Both Sources
     // PRIMARY: From breeding_events table (standalone pregnancy checks)
+    // These are linked to pregnancy_records via pregnancy_record_id
     const pregnancyCheckEventsFromEvents = history.events
       .filter((e: any) => e.event_type === 'pregnancy_check')
-      .map((e: any) => ({
-        id: e.id,
-        breeding_record_id: null,
-        check_date: e.event_date,
-        check_method: e.examination_method || 'Unknown',
-        result: e.pregnancy_result === 'pregnant' ? 'positive' : 
-                e.pregnancy_result === 'not_pregnant' ? 'negative' : 'inconclusive',
-        checked_by: e.veterinarian_name || 'System',
-        notes: e.notes,
-        created_at: e.created_at
-      }))
+      .map((e: any) => {
+        // Look up the pregnancy_record to get service_record_id AND actual pregnancy status
+        const pregnancyRecord = history.pregnancyRecords.find(
+          (p: any) => p.id === e.pregnancy_record_id
+        )
+        
+        // Map pregnancy_result to result display value
+        // Priority: use pregnancy_record status if available (completed/aborted takes precedence)
+        let resultValue = 'inconclusive'
+        
+        // First check if pregnancy_record has a definitive status
+        if (pregnancyRecord?.pregnancy_status === 'completed') {
+          resultValue = 'completed'
+        } else if (pregnancyRecord?.pregnancy_status === 'aborted') {
+          resultValue = 'aborted'
+        } else if (e.pregnancy_result === 'pregnant') {
+          resultValue = 'positive'
+        } else if (e.pregnancy_result === 'not_pregnant') {
+          resultValue = 'negative'
+        }
+        
+        return {
+          id: e.id,
+          breeding_record_id: null,
+          service_record_id: pregnancyRecord?.service_record_id || null,  // Track which service cycle
+          pregnancy_record_id: e.pregnancy_record_id,  // Also track pregnancy record
+          check_date: e.event_date,
+          check_method: e.examination_method || 'Unknown',
+          result: resultValue,
+          checked_by: e.veterinarian_name || 'System',
+          notes: e.notes,
+          created_at: e.created_at
+        }
+      })
 
     // SECONDARY: From pregnancy_records table (linked to breeding records)
-    const pregnancyChecksFromRecords = history.pregnancyRecords.map((p: any) => ({
-      id: p.id,
-      breeding_record_id: p.breeding_record_id,
-      check_date: p.confirmed_date || p.created_at,
-      check_method: p.check_method || 'Unknown',
-      result: p.pregnancy_status === 'confirmed' ? 'positive' : 
-              p.pregnancy_status === 'false' ? 'negative' : 'inconclusive',
-      checked_by: p.checked_by || 'System',
-      notes: p.notes,
-      created_at: p.created_at
-    }))
+    const pregnancyChecksFromRecords = history.pregnancyRecords.map((p: any) => {
+      // Map pregnancy_status database value to result display value
+      let resultValue = 'inconclusive'
+      if (p.pregnancy_status === 'confirmed') resultValue = 'positive'
+      else if (p.pregnancy_status === 'false') resultValue = 'negative'
+      else if (p.pregnancy_status === 'completed') resultValue = 'completed'
+      else if (p.pregnancy_status === 'aborted') resultValue = 'aborted'
+      else if (p.pregnancy_status === 'suspected') resultValue = 'inconclusive'
+      
+      return {
+        id: p.id,
+        breeding_record_id: p.breeding_record_id,
+        service_record_id: p.service_record_id,  // Track which service cycle
+        pregnancy_record_id: p.id,  // Also track pregnancy record
+        check_date: p.confirmed_date || p.created_at,
+        check_method: p.check_method || 'Unknown',
+        result: resultValue,
+        checked_by: p.checked_by || 'System',
+        notes: p.notes,
+        created_at: p.created_at
+      }
+    })
 
     // Combine both sources, avoiding duplicates
-    // Filter out pregnancy_records that have corresponding pregnancy_check events (auto-generated records)
+    // Filter out pregnancy_records that have corresponding pregnancy_check events for the same service cycle
     const formattedPregnancyChecks = [
       ...pregnancyCheckEventsFromEvents,
       ...pregnancyChecksFromRecords.filter(check => 
-        // Keep pregnancy_record only if there's NO pregnancy_check event with same/similar date
+        // Keep pregnancy_record only if there's NO pregnancy_check event for the SAME SERVICE RECORD
         !pregnancyCheckEventsFromEvents.some(e => {
-          const checkDate = new Date(check.check_date).getTime()
-          const eventDate = new Date(e.check_date).getTime()
-          // Consider them duplicates if within 1 day of each other (auto-generated records)
-          return Math.abs(checkDate - eventDate) < 86400000 // 24 hours in milliseconds
+          // Duplicates: Same service_record_id means same breeding cycle
+          // Even if dates differ by ~220 days (day 60 check vs day 280 calving), 
+          // they represent the same pregnancy
+          return e.service_record_id && 
+                 e.service_record_id === check.service_record_id
         })
       )
     ]

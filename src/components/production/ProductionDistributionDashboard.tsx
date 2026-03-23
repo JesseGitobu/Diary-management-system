@@ -47,7 +47,8 @@ import {
   Download,
   FileText,
   MapPin,
-  Activity
+  Activity,
+  CheckCircle2
 } from 'lucide-react'
 import Link from 'next/link'
 import { ProductionSettings, DistributionSettings } from '@/types/production-distribution-settings'
@@ -81,6 +82,96 @@ export function ProductionDistributionDashboard({
 }: ProductionDistributionDashboardProps) {
   const { isMobile } = useDeviceInfo()
 
+  // Helper function to calculate stats (moved before state initialization)
+  const calculateProductionStats = (records: any[]) => {
+    const today = new Date().toISOString().split('T')[0]
+    const todayRecords = records.filter(r => r.record_date === today)
+    
+    // 1. RECORDS METRICS (Today only)
+    const totalRecords = todayRecords.length
+    const recordsPerSession: Record<string, number> = {}
+    productionSettings?.milkingSessions?.forEach(session => {
+      const sessionKey = session.name.toLowerCase().replace(/\s+/g, '')
+      recordsPerSession[sessionKey] = todayRecords.filter(r => r.milking_session_id === sessionKey).length
+    })
+    const avgRecordsPerSession = productionSettings?.milkingSessions?.length 
+      ? Math.round(totalRecords / productionSettings.milkingSessions.length)
+      : 0
+
+    // 2. YIELD METRICS (Today only)
+    const totalVolume = todayRecords.reduce((sum, r) => sum + (r.milk_volume || 0), 0)
+    const avgVolumePerAnimal = todayRecords.length > 0 
+      ? totalVolume / new Set(todayRecords.map(r => r.animal_id)).size
+      : 0
+    
+    // Get groups info (if available in records)
+    const uniqueGroups = new Set(todayRecords.filter(r => r.milking_group_id).map(r => r.milking_group_id))
+    const avgVolumePerGroup = uniqueGroups.size > 0 
+      ? totalVolume / uniqueGroups.size
+      : 0
+
+    // 3. ANIMALS MILKED (Today only)
+    const uniqueAnimalsMilked = new Set(todayRecords.map(r => r.animal_id)).size
+    const uniqueGroupsMilked = new Set(todayRecords.filter(r => r.milking_group_id).map(r => r.milking_group_id)).size
+
+    // 4. MILK SAFETY RATE (Today only)
+    const safeRecords = todayRecords.filter(r => r.milk_safety_status === 'safe').length
+    const milkSafetyRate = todayRecords.length > 0 ? Math.round((safeRecords / todayRecords.length) * 100) : 0
+
+    // 5. QUALITY METRICS (Today only)
+    const avgFatContent = todayRecords.length > 0
+      ? todayRecords.reduce((sum, r) => sum + (r.fat_content || 0), 0) / todayRecords.length
+      : 0
+    const avgProteinContent = todayRecords.length > 0
+      ? todayRecords.reduce((sum, r) => sum + (r.protein_content || 0), 0) / todayRecords.length
+      : 0
+
+    // 6. DAILY SUMMARIES for charts (Keep last 30 days for comparison)
+    const dailySummaries = createDailySummaries(records)
+
+    return {
+      totalRecords,
+      recordsPerSession,
+      avgRecordsPerSession,
+      totalVolume,
+      avgVolumePerAnimal,
+      avgVolumePerGroup,
+      uniqueAnimalsMilked,
+      uniqueGroupsMilked,
+      milkSafetyRate,
+      avgFatContent,
+      avgProteinContent,
+      avgDailyVolume: todayRecords.length > 0 ? totalVolume : 0,
+      dailySummaries,
+      periodDays: 1,
+      safeRecords
+    }
+  }
+
+  // Create daily summaries from records
+  const createDailySummaries = (records: any[]) => {
+    const byDate: Record<string, any[]> = {}
+    records.forEach(r => {
+      if (!byDate[r.record_date]) byDate[r.record_date] = []
+      byDate[r.record_date].push(r)
+    })
+
+    return Object.entries(byDate)
+      .sort(([dateA], [dateB]) => dateB.localeCompare(dateA))
+      .slice(0, 30)
+      .map(([date, dayRecords]) => ({
+        date,
+        volume: dayRecords.reduce((sum, r) => sum + (r.milk_volume || 0), 0),
+        animalsMilked: new Set(dayRecords.map(r => r.animal_id)).size,
+        fat: dayRecords.length > 0 
+          ? dayRecords.reduce((sum, r) => sum + (r.fat_content || 0), 0) / dayRecords.length 
+          : 0,
+        protein: dayRecords.length > 0 
+          ? dayRecords.reduce((sum, r) => sum + (r.protein_content || 0), 0) / dayRecords.length 
+          : 0
+      }))
+  }
+
   const [activeTab, setActiveTab] = useState('production')
   const [showProductionEntryModal, setShowProductionEntryModal] = useState(false)
   const [showDistributionEntryModal, setShowDistributionEntryModal] = useState(false)
@@ -88,6 +179,10 @@ export function ProductionDistributionDashboard({
   const [showActionSheet, setShowActionSheet] = useState(false)
   const [productionRecords, setProductionRecords] = useState(initialProductionRecords)
   const [distributionRecords, setDistributionRecords] = useState(initialDistributionRecords)
+  
+  // Lift production stats to component state for real-time updates
+  // Initialize with calculated stats from initial records
+  const [stats, setStats] = useState(() => calculateProductionStats(initialProductionRecords))
   
   // State for viewing/editing production records
   const [selectedProductionRecord, setSelectedProductionRecord] = useState<any>(null)
@@ -143,13 +238,27 @@ export function ProductionDistributionDashboard({
     setProductionRecords(prev => prev.filter(r => r.id !== recordId))
   }
   
-  const handleProductionRecordAdded = () => {
-    // Don't close modal or reload - handled by modal
+  const handleProductionRecordAdded = async () => {
+    // Fetch fresh production records and recalculate stats without reloading the page
+    try {
+      const response = await fetch('/api/production')
+      if (response.ok) {
+        const result = await response.json()
+        const records = result.data || []
+        setProductionRecords(records)
+        
+        // Recalculate comprehensive stats from records
+        const updatedStats = calculateProductionStats(records)
+        setStats(updatedStats)
+      }
+    } catch (error) {
+      console.error('Failed to refresh production data:', error)
+    }
   }
 
   const handleProductionModalClosed = () => {
-    // Reload page when modal closes (after user has recorded data)
-    window.location.reload()
+    // Modal will trigger onSuccess which handles the refresh
+    setShowProductionEntryModal(false)
   }
 
   const handleProductionRecordEdited = () => {
@@ -232,20 +341,7 @@ export function ProductionDistributionDashboard({
   }, [productionSettings, animals, productionRecords]);
 
   // Basic stats calculations...
-  const { animalsMilkedToday, avgYieldPerAnimal } = useMemo(() => {
-    const sortedSummaries = [...productionStats.dailySummaries].sort((a, b) => 
-      new Date(b.date).getTime() - new Date(a.date).getTime()
-    )
-    const latestSummary = sortedSummaries[0]
-    const animalsMilkedToday = latestSummary?.animalsMilked || 0
-    
-    const totalAnimalsMilked = productionStats.dailySummaries.reduce((sum: number, day: any) => sum + (day.animalsMilked || 0), 0)
-    const daysWithRecords = productionStats.dailySummaries.filter((day: any) => (day.animalsMilked || 0) > 0).length
-    const avgAnimals = daysWithRecords > 0 ? totalAnimalsMilked / daysWithRecords : 0
-    const avgYieldPerAnimal = avgAnimals > 0 ? productionStats.avgDailyVolume / avgAnimals : 0
-    
-    return { animalsMilkedToday, avgYieldPerAnimal }
-  }, [productionStats])
+  // Stats calculations are now done in calculateProductionStats()
 
   // Determine if quality tracking is enabled
   const isQualityTracked = useMemo(() => {
@@ -253,69 +349,101 @@ export function ProductionDistributionDashboard({
     return productionSettings.productionTrackingMode !== 'basic' && productionSettings.enableQualityTracking !== false
   }, [productionSettings])
 
-  // Define stats config...
+  // Define stats config for new 4-card layout
   const productionStatsConfig = useMemo(() => {
-    const baseStats = [
+    // Ensure stats has all required properties with fallbacks
+    const safeStats = {
+      totalRecords: stats?.totalRecords || 0,
+      avgRecordsPerSession: stats?.avgRecordsPerSession || 0,
+      totalVolume: stats?.totalVolume || 0,
+      avgVolumePerAnimal: stats?.avgVolumePerAnimal || 0,
+      avgVolumePerGroup: stats?.avgVolumePerGroup || 0,
+      uniqueAnimalsMilked: stats?.uniqueAnimalsMilked || 0,
+      uniqueGroupsMilked: stats?.uniqueGroupsMilked || 0,
+      milkSafetyRate: stats?.milkSafetyRate || 0,
+      safeRecords: stats?.safeRecords || 0
+    }
+
+    return [
       {
         title: 'Records',
-        value: productionStats.totalRecords,
         icon: Calendar,
         color: 'bg-blue-500',
         bgColor: 'bg-blue-100',
-        description: `Last ${productionStats.periodDays} days`
+        items: [
+          {
+            label: 'Total Records',
+            value: safeStats.totalRecords,
+            description: 'Today'
+          },
+          {
+            label: 'Per Session',
+            value: safeStats.avgRecordsPerSession,
+            description: 'Average'
+          }
+        ]
       },
       {
-        title: 'Total Volume',
-        value: `${productionStats.totalVolume.toFixed(1)}${productionSettings?.productionUnit === 'kg' ? 'kg' : 'L'}`,
+        title: 'Yield',
         icon: Droplets,
         color: 'bg-cyan-500',
         bgColor: 'bg-cyan-100',
-        description: `${productionStats.avgDailyVolume.toFixed(1)}${productionSettings?.productionUnit === 'kg' ? 'kg' : 'L'} daily avg`
+        items: [
+          {
+            label: 'Total Yield',
+            value: `${safeStats.totalVolume.toFixed(1)}${productionSettings?.productionUnit === 'kg' ? 'kg' : 'L'}`,
+            description: 'Today'
+          },
+          {
+            label: 'Per Animal',
+            value: `${safeStats.avgVolumePerAnimal.toFixed(1)}${productionSettings?.productionUnit === 'kg' ? 'kg' : 'L'}`,
+            description: 'Average'
+          },
+          {
+            label: 'Per Group',
+            value: `${safeStats.avgVolumePerGroup.toFixed(1)}${productionSettings?.productionUnit === 'kg' ? 'kg' : 'L'}`,
+            description: 'Average'
+          }
+        ]
+      },
+      {
+        title: 'Animals & Groups',
+        icon: Activity,
+        color: 'bg-purple-500',
+        bgColor: 'bg-purple-100',
+        items: [
+          {
+            label: 'Milked Today',
+            value: safeStats.uniqueAnimalsMilked,
+            description: 'Animals'
+          },
+          {
+            label: 'Groups Milked',
+            value: safeStats.uniqueGroupsMilked,
+            description: 'Today'
+          }
+        ]
+      },
+      {
+        title: 'Safety',
+        icon: CheckCircle2,
+        color: 'bg-green-500',
+        bgColor: 'bg-green-100',
+        items: [
+          {
+            label: 'Safe Rate',
+            value: `${safeStats.milkSafetyRate}%`,
+            description: 'Of Today\'s Records'
+          },
+          {
+            label: 'Safe Records',
+            value: `${safeStats.safeRecords}/${safeStats.totalRecords}`,
+            description: 'Count'
+          }
+        ]
       }
     ]
-
-    if (isQualityTracked) {
-      return [
-        ...baseStats,
-        {
-          title: 'Avg Fat',
-          value: `${productionStats.avgFatContent.toFixed(2)}%`,
-          icon: Target,
-          color: 'bg-orange-500',
-          bgColor: 'bg-orange-100',
-          description: 'Quality indicator'
-        },
-        {
-          title: 'Avg Protein',
-          value: `${productionStats.avgProteinContent.toFixed(2)}%`,
-          icon: TrendingUp,
-          color: 'bg-green-500',
-          bgColor: 'bg-green-100',
-          description: 'Nutritional value'
-        }
-      ]
-    } else {
-      return [
-        ...baseStats,
-        {
-          title: 'Animals Milked',
-          value: animalsMilkedToday,
-          icon: Activity,
-          color: 'bg-purple-500',
-          bgColor: 'bg-purple-100',
-          description: 'Recorded in last session'
-        },
-        {
-          title: 'Avg Yield',
-          value: `${avgYieldPerAnimal.toFixed(1)} ${productionSettings?.productionUnit === 'kg' ? 'kg' : 'L'}`,
-          icon: BarChart3,
-          color: 'bg-emerald-500',
-          bgColor: 'bg-emerald-100',
-          description: 'Per animal daily'
-        }
-      ]
-    }
-  }, [productionStats, isQualityTracked, animalsMilkedToday, avgYieldPerAnimal, productionSettings])
+  }, [stats, productionSettings])
 
   const distributionStatsConfig = [
     {
@@ -462,10 +590,7 @@ export function ProductionDistributionDashboard({
             {/* Production Stats Cards */}
             <div className={`${isMobile ? 'px-0' : ''}`}>
               <ProductionStatsCards 
-                stats={productionStatsConfig} 
-                avgDailyVolume={productionStats.avgDailyVolume}
-                totalRecords={productionStats.totalRecords}
-                isQualityTracked={isQualityTracked}
+                stats={productionStatsConfig}
               />
             </div>
 
@@ -477,7 +602,7 @@ export function ProductionDistributionDashboard({
                 <div className={`${isMobile ? 'overflow-x-auto' : ''}`}>
                   <div className={`${isMobile ? 'min-w-[600px]' : ''}`}>
                     <ProductionChart 
-                      data={productionStats.dailySummaries.map((summary: any) => ({
+                      data={stats.dailySummaries.map((summary: any) => ({
                         record_date: summary.date,
                         total_milk_volume: summary.volume,
                         average_fat_content: summary.fat,
@@ -553,9 +678,7 @@ export function ProductionDistributionDashboard({
         <RecordProductionModal
           isOpen={showProductionEntryModal}
           onClose={() => {
-            setShowProductionEntryModal(false)
-            // Reload page after modal closes (so new records appear)
-            window.location.reload()
+            handleProductionModalClosed()
           }}
           farmId={farmId}
           animals={animals}

@@ -61,7 +61,7 @@ interface PregnancyCheck {
   check_date: string
   check_method?: string
   examination_method?: string
-  result: 'positive' | 'negative' | 'inconclusive'
+  result: 'positive' | 'negative' | 'inconclusive' | 'completed' | 'aborted'
   checked_by?: string
   veterinarian_name?: string
   notes?: string
@@ -152,6 +152,12 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
   const [hasMore, setHasMore] = useState(true)
   const [offset, setOffset] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  
+  // Recent Activity Filters
+  const [filterEventType, setFilterEventType] = useState<string>('all')
+  const [filterActivityDateFrom, setFilterActivityDateFrom] = useState<string>('')
+  const [filterActivityDateTo, setFilterActivityDateTo] = useState<string>('')
+  
   const { isMobile } = useDeviceInfo()
   const RECORDS_PER_PAGE = 15
 
@@ -1130,7 +1136,71 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
             <CardHeader className="pb-2">
               <CardTitle className="text-lg">Recent Activity</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
+              {/* Filter Section */}
+              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-semibold text-gray-900">Filters</h3>
+                  {(filterEventType !== 'all' || filterActivityDateFrom || filterActivityDateTo) && (
+                    <button
+                      onClick={() => {
+                        setFilterEventType('all')
+                        setFilterActivityDateFrom('')
+                        setFilterActivityDateTo('')
+                      }}
+                      className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                    >
+                      Clear Filters
+                    </button>
+                  )}
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {/* Event Type Dropdown */}
+                  <div>
+                    <label htmlFor="event-type" className="block text-xs font-medium text-gray-700 mb-2">Event Type</label>
+                    <select
+                      id="event-type"
+                      value={filterEventType}
+                      onChange={(e) => setFilterEventType(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="all">All Events</option>
+                      <option value="heat">Heat Detection</option>
+                      <option value="insemination">Insemination</option>
+                      <option value="pregnancy_check">Pregnancy Check</option>
+                      <option value="calving">Calving</option>
+                    </select>
+                  </div>
+                  
+                  {/* Date From Filter */}
+                  <div>
+                    <label htmlFor="activity-date-from" className="block text-xs font-medium text-gray-700 mb-2">From Date</label>
+                    <input
+                      id="activity-date-from"
+                      type="date"
+                      value={filterActivityDateFrom}
+                      onChange={(e) => setFilterActivityDateFrom(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  
+                  {/* Date To Filter */}
+                  <div>
+                    <label htmlFor="activity-date-to" className="block text-xs font-medium text-gray-700 mb-2">To Date</label>
+                    <input
+                      id="activity-date-to"
+                      type="date"
+                      value={filterActivityDateTo}
+                      onChange={(e) => setFilterActivityDateTo(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
+              
+              {/* Recent Activity List */}
+              <div>
               {breedingRecords.length === 0 && heatEvents.length === 0 && inseminationEvents.length === 0 && pregnancyChecks.length === 0 ? (
                 <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-lg border border-dashed">
                   <Heart className="w-12 h-12 mx-auto mb-4 text-gray-300" />
@@ -1151,6 +1221,21 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                     ...breedingRecords.map(e => ({ type: 'breeding', date: e.breeding_date, created: e.created_at, data: e })),
                     ...calvingEvents.map(e => ({ type: 'calving', date: e.event_date, created: e.created_at, data: e }))
                   ]
+                    .filter(item => {
+                      // Filter by event type
+                      if (filterEventType !== 'all' && item.type !== filterEventType) return false
+                      
+                      // Filter by date range
+                      const itemDate = new Date(item.date)
+                      if (filterActivityDateFrom && itemDate < new Date(filterActivityDateFrom)) return false
+                      if (filterActivityDateTo) {
+                        const endDate = new Date(filterActivityDateTo)
+                        endDate.setHours(23, 59, 59, 999) // Include entire day
+                        if (itemDate > endDate) return false
+                      }
+                      
+                      return true
+                    })
                     .sort((a, b) => {
                       const timeA = new Date(a.date).getTime()
                       const timeB = new Date(b.date).getTime()
@@ -1217,7 +1302,24 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                       if (item.type === 'pregnancy_check') {
                         const check = item.data as PregnancyCheck
                         const createdTime = check.created_at ? parseISO(check.created_at) : parseISO(check.check_date)
-                        const resultColor = check.result === 'positive' ? 'bg-green-100 text-green-800' : check.result === 'negative' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'
+                        
+                        // Determine result color and display text
+                        let resultColor = 'bg-yellow-100 text-yellow-800'
+                        let resultText = 'Inconclusive'
+                        if (check.result === 'positive') {
+                          resultColor = 'bg-green-100 text-green-800'
+                          resultText = '✓ Positive'
+                        } else if (check.result === 'negative') {
+                          resultColor = 'bg-red-100 text-red-800'
+                          resultText = '✗ Negative'
+                        } else if (check.result === 'completed') {
+                          resultColor = 'bg-blue-100 text-blue-800'
+                          resultText = '✓ Completed'
+                        } else if (check.result === 'aborted') {
+                          resultColor = 'bg-orange-100 text-orange-800'
+                          resultText = '✗ Aborted'
+                        }
+                        
                         return (
                           <div key={`check-${check.id}`} className="border rounded-lg p-4 bg-blue-50 border-blue-100">
                             <div className="flex items-start justify-between">
@@ -1228,7 +1330,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                                     {format(parseISO(check.check_date), 'MMMM dd, yyyy • h:mm a')}
                                   </span>
                                   <Badge className={resultColor}>
-                                    {check.result === 'positive' ? '✓ Positive' : check.result === 'negative' ? '✗ Negative' : 'Inconclusive'}
+                                    {resultText}
                                   </Badge>
                                 </div>
                                 <p className="text-sm text-gray-600 ml-6 mb-2">
@@ -1329,6 +1431,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                     })}
                 </div>
               )}
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -1409,7 +1512,24 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                        // Pregnancy Check Event
                        if (item.type === 'pregnancy_check') {
                          const check = item.data as PregnancyCheck
-                         const resultColor = check.result === 'positive' ? 'bg-green-100 text-green-800' : check.result === 'negative' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'
+                         
+                         // Determine result color and display text
+                         let resultColor = 'bg-yellow-100 text-yellow-800'
+                         let resultText = 'Inconclusive'
+                         if (check.result === 'positive') {
+                           resultColor = 'bg-green-100 text-green-800'
+                           resultText = '✓ Positive'
+                         } else if (check.result === 'negative') {
+                           resultColor = 'bg-red-100 text-red-800'
+                           resultText = '✗ Negative'
+                         } else if (check.result === 'completed') {
+                           resultColor = 'bg-blue-100 text-blue-800'
+                           resultText = '✓ Completed'
+                         } else if (check.result === 'aborted') {
+                           resultColor = 'bg-orange-100 text-orange-800'
+                           resultText = '✗ Aborted'
+                         }
+                         
                          return (
                            <div key={`check-${check.id}`} className="border rounded-lg p-4 bg-blue-50 border-blue-100 hover:shadow-md transition-shadow">
                              <div className="flex items-start justify-between">
@@ -1418,7 +1538,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                                    <Stethoscope className="w-5 h-5 text-blue-600 flex-shrink-0" />
                                    <span className="font-semibold text-gray-900">Pregnancy Check</span>
                                    <Badge className={resultColor}>
-                                     {check.result === 'positive' ? '✓ Positive' : check.result === 'negative' ? '✗ Negative' : 'Inconclusive'}
+                                     {resultText}
                                    </Badge>
                                  </div>
                                  <div className="ml-7 space-y-2 text-sm">
@@ -1518,14 +1638,21 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                                  <p className="text-sm text-gray-600 mt-1">Pregnancy Check</p>
                                </div>
                              </div>
-                             <Badge className={
-                               check.result === 'positive' 
-                                 ? 'bg-green-100 text-green-800 border-green-300' 
-                                 : check.result === 'negative'
-                                 ? 'bg-red-100 text-red-800 border-red-300'
-                                 : 'bg-yellow-100 text-yellow-800 border-yellow-300'
-                             }>
-                               {check.result === 'positive' ? '✓ Positive' : check.result === 'negative' ? '✗ Negative' : 'Inconclusive'}
+                             <Badge className={(() => {
+                               let color = 'bg-yellow-100 text-yellow-800 border-yellow-300'
+                               if (check.result === 'positive') color = 'bg-green-100 text-green-800 border-green-300'
+                               else if (check.result === 'negative') color = 'bg-red-100 text-red-800 border-red-300'
+                               else if (check.result === 'completed') color = 'bg-blue-100 text-blue-800 border-blue-300'
+                               else if (check.result === 'aborted') color = 'bg-orange-100 text-orange-800 border-orange-300'
+                               return color
+                             })()}>
+                               {(() => {
+                                 if (check.result === 'positive') return '✓ Positive'
+                                 if (check.result === 'negative') return '✗ Negative'
+                                 if (check.result === 'completed') return '✓ Completed'
+                                 if (check.result === 'aborted') return '✗ Aborted'
+                                 return 'Inconclusive'
+                               })()}
                              </Badge>
                            </div>
 

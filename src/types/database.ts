@@ -33,7 +33,6 @@ export interface Animal {
   expected_calving_date: string | null // Changed from string | undefined to string | null
   current_daily_production: number | null // Changed from number | undefined to number | null
   days_in_milk: number | null // Changed from number | undefined to number | null
-  lactation_number: number | null // Changed from number | undefined to number | null
   mother_production_info: {
     daily_production?: number
     lactation_number?: number

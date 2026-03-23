@@ -31,7 +31,7 @@ import { toast } from 'react-hot-toast'
 interface ProductionRecord {
   id: string
   record_date: string
-  milking_session: 'morning' | 'afternoon' | 'evening'
+  milking_session_id: string
   milk_volume: number
   fat_content?: number
   protein_content?: number
@@ -41,6 +41,7 @@ interface ProductionRecord {
   ph_level?: number
   notes?: string
   created_at: string
+  milk_safety_status?: 'safe' | 'unsafe_health' | 'unsafe_colostrum'
 }
 
 interface AnimalProductionStats {
@@ -59,30 +60,42 @@ interface AnimalProductionRecordsProps {
   animal: Animal
   canAddRecords: boolean
   onProductionStatusChanged?: (newStatus: string) => void
+  lactationCycleRecord?: {
+    lactation_number: number
+    days_in_milk?: number
+    status?: string
+  } | null
 }
 
 export function AnimalProductionRecords({ 
   animalId, 
   animal,
   canAddRecords,
-  onProductionStatusChanged
+  onProductionStatusChanged,
+  lactationCycleRecord: initialLactationCycleRecord
 }: AnimalProductionRecordsProps) {
   const [records, setRecords] = useState<ProductionRecord[]>([])
   const [stats, setStats] = useState<AnimalProductionStats | null>(null)
   const [loading, setLoading] = useState(true)
-  const [loadingMore, setLoadingMore] = useState(false)
-  const [hasMore, setHasMore] = useState(true)
-  const [offset, setOffset] = useState(0)
   const [showAddModal, setShowAddModal] = useState(false)
   const [selectedPeriod, setSelectedPeriod] = useState<7 | 30 | 90>(30)
   const [productionSettings, setProductionSettings] = useState<ProductionSettings | null>(null)
   const [dryingOff, setDryingOff] = useState(false)
   const [daysInMilk, setDaysInMilk] = useState(0)
   const [lactationNumber, setLactationNumber] = useState<number | null>(null)
+  const [lactationCycleRecord, setLactationCycleRecord] = useState<any>(initialLactationCycleRecord || null)
   const [shouldShowDryOffSuggestion, setShouldShowDryOffSuggestion] = useState(false)
   const [showDryOffButton, setShowDryOffButton] = useState(false)  // ✅ ENHANCED: Button visibility flag
   const [daysUntilDryOff, setDaysUntilDryOff] = useState(0)
   const [daysPregnant, setDaysPregnant] = useState(0)
+  
+  // ✅ ENHANCED: Recent Production Records Filters & Pagination
+  const [filterRecordsDateFrom, setFilterRecordsDateFrom] = useState<string>('')
+  const [filterRecordsDateTo, setFilterRecordsDateTo] = useState<string>('')
+  const [filterRecordsSession, setFilterRecordsSession] = useState<string>('all')
+  const [filterRecordsMilkSafety, setFilterRecordsMilkSafety] = useState<string>('all')
+  const [recordsPageNumber, setRecordsPageNumber] = useState(1)
+  const RECORDS_PER_PAGE = 10
   
   // Determine if production records are applicable
   const isLactating = animal.production_status === 'lactating'
@@ -92,9 +105,9 @@ export function AnimalProductionRecords({
   const isCalf = animal.production_status === 'calf'
   const isBull = animal.gender === 'male'
   
-  // ✅ ENHANCED: Check lactation number - animals with lactation_number = 0 cannot have production records
-  // This excludes first-time pregnant heifers from production tracking until after first calving
-  const hasNoLactationHistory = animal.lactation_number === 0 || animal.lactation_number === null
+  // ✅ ENHANCED: Check lactation cycle record - animals without active lactation cannot have production records
+  // Lactation number is now stored in lactation_cycle_records table, not animals table
+  const hasNoLactationHistory = !lactationCycleRecord || !lactationCycleRecord.lactation_number
   const isProducingMilk = (isLactating || isServed) && !hasNoLactationHistory
   
   const showProductionRecords = isProducingMilk
@@ -120,7 +133,29 @@ export function AnimalProductionRecords({
 
   useEffect(() => {
     if (showProductionRecords) {
-      loadProductionData()
+      const fetchData = async () => {
+        try {
+          setLoading(true)
+          const endDate = new Date().toISOString().split('T')[0]
+          const startDate = new Date(Date.now() - selectedPeriod * 24 * 60 * 60 * 1000)
+            .toISOString().split('T')[0]
+          
+          const response = await fetch(
+            `/api/production?animal_id=${animalId}&start_date=${startDate}&end_date=${endDate}`
+          )
+          
+          if (response.ok) {
+            const { data } = await response.json()
+            setRecords(data || [])
+            calculateStats(data || [])
+          }
+        } catch (error) {
+          console.error('Error loading production data:', error)
+        } finally {
+          setLoading(false)
+        }
+      }
+      fetchData()
     }
   }, [animalId, selectedPeriod, showProductionRecords])
   
@@ -129,13 +164,18 @@ export function AnimalProductionRecords({
     if (isLactating || isServed) {
       loadLactationMetrics()
     }
-  }, [animalId, animal.production_status, animal.days_in_milk, animal.lactation_number])
+  }, [animalId, animal.production_status, animal.days_in_milk, animal.farm_id, initialLactationCycleRecord])
   
   const loadLactationMetrics = async () => {
     try {
       // Update days_in_milk from animal data
       setDaysInMilk(animal.days_in_milk || 0)
-      setLactationNumber(animal.lactation_number)
+      
+      // Use lactationCycleRecord passed from server (page.tsx)
+      if (initialLactationCycleRecord) {
+        setLactationCycleRecord(initialLactationCycleRecord)
+        setLactationNumber(initialLactationCycleRecord.lactation_number)
+      }
       
       // For served animals, check if they should be dried off
       if (isServed && animal.farm_id) {
@@ -154,46 +194,6 @@ export function AnimalProductionRecords({
     } catch (error) {
       console.error('Error loading lactation metrics:', error)
     }
-  }
-  
-  const loadProductionData = async (newOffset: number = 0) => {
-    try {
-      if (newOffset === 0) setLoading(true)
-      else setLoadingMore(true)
-      
-      const endDate = new Date().toISOString().split('T')[0]
-      const startDate = new Date(Date.now() - selectedPeriod * 24 * 60 * 60 * 1000)
-        .toISOString().split('T')[0]
-      
-      const RECORDS_PER_PAGE = 15
-      const response = await fetch(
-        `/api/production?animal_id=${animalId}&start_date=${startDate}&end_date=${endDate}&limit=${RECORDS_PER_PAGE}&offset=${newOffset}`
-      )
-      
-      if (response.ok) {
-        const { data } = await response.json()
-        const newRecords = data || []
-        
-        if (newOffset === 0) {
-          setRecords(newRecords)
-          calculateStats(newRecords)
-        } else {
-          setRecords(prev => [...prev, ...newRecords])
-        }
-        
-        setHasMore(newRecords.length === RECORDS_PER_PAGE)
-        setOffset(newOffset)
-      }
-    } catch (error) {
-      console.error('Error loading production data:', error)
-    } finally {
-      setLoading(false)
-      setLoadingMore(false)
-    }
-  }
-  
-  const handleLoadMore = () => {
-    loadProductionData(offset + 15)
   }
   
   const calculateStats = (productionRecords: ProductionRecord[]) => {
@@ -243,7 +243,19 @@ export function AnimalProductionRecords({
   
   const handleRecordAdded = () => {
     setShowAddModal(false)
-    loadProductionData()
+    // Reload records after a new production record is added
+    setRecordsPageNumber(1)
+    const endDate = new Date().toISOString().split('T')[0]
+    const startDate = new Date(Date.now() - selectedPeriod * 24 * 60 * 60 * 1000)
+      .toISOString().split('T')[0]
+    
+    fetch(`/api/production?animal_id=${animalId}&start_date=${startDate}&end_date=${endDate}`)
+      .then(res => res.ok ? res.json() : Promise.reject(new Error('Failed to fetch')))
+      .then(({ data }) => {
+        setRecords(data || [])
+        calculateStats(data || [])
+      })
+      .catch(error => console.error('Error reloading production data:', error))
   }
   
   const handleStartDryOff = async () => {
@@ -287,6 +299,21 @@ export function AnimalProductionRecords({
   }
   
   const getInactiveMessage = () => {
+    // Debug logging
+    console.log('[AnimalProductionRecords] Debug Info:', {
+      isLactating,
+      isServed,
+      isDry,
+      isHeifer,
+      isCalf,
+      isBull,
+      production_status: animal.production_status,
+      lactationCycleRecord,
+      lactation_number: lactationNumber,
+      hasNoLactationHistory,
+      isProducingMilk
+    })
+    
     if (isBull) {
       return {
         title: "Production Not Applicable",
@@ -300,6 +327,15 @@ export function AnimalProductionRecords({
         title: "Production Not Started",
         message: "This calf is too young for production tracking. Production records will become available after first calving.",
         icon: <Calendar className="w-12 h-12 text-gray-400" />
+      }
+    }
+    
+    // Handle lactating animals with no lactation history
+    if (isLactating && hasNoLactationHistory) {
+      return {
+        title: "Lactating - No Lactation History",
+        message: "This animal is lactating but has no recorded lactation history. Please update the animal's lactation number to begin tracking production.",
+        icon: <AlertCircle className="w-12 h-12 text-orange-400" />
       }
     }
     
@@ -342,7 +378,7 @@ export function AnimalProductionRecords({
     
     return {
       title: "Production Status Unknown",
-      message: "Unable to determine production status for this animal.",
+      message: `Unable to determine production status for this animal. Status: ${animal.production_status || 'not set'}. Lactation record: ${lactationCycleRecord ? `#${lactationCycleRecord.lactation_number}` : 'not found'}. Please check the animal's status and try again.`,
       icon: <AlertCircle className="w-12 h-12 text-gray-400" />
     }
   }
@@ -371,6 +407,28 @@ export function AnimalProductionRecords({
     if (trend === 'increasing') return 'text-green-600 bg-green-50'
     if (trend === 'decreasing') return 'text-red-600 bg-red-50'
     return 'text-gray-600 bg-gray-50'
+  }
+  
+  // Helper function to calculate today's yield
+  const getTodaysYield = (): number => {
+    const today = new Date().toISOString().split('T')[0]
+    return records
+      .filter(record => record.record_date === today)
+      .reduce((sum, record) => sum + record.milk_volume, 0)
+  }
+  
+  // Helper function to get readable session name from session ID
+  const getSessionName = (sessionId?: string): string => {
+    if (!sessionId) return 'Unknown Session'
+    
+    // Try to find the session in productionSettings
+    if (productionSettings?.milkingSessions && Array.isArray(productionSettings.milkingSessions)) {
+      const session = productionSettings.milkingSessions.find((s: any) => s.id === sessionId)
+      if (session?.name) return session.name
+    }
+    
+    // Fallback: return the session ID as-is
+    return sessionId
   }
 
   return (
@@ -453,9 +511,9 @@ export function AnimalProductionRecords({
         )}
       </div>
       
-      {/* ✅ NEW: Lactation Metrics Display */}
-      {isLactating && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
+      {/* ✅ COMBINED: All Production Metrics in One Row */}
+      {isLactating && stats && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
           {/* Days in Milk */}
           <Card className="h-full">
             <CardContent className="p-4">
@@ -493,6 +551,38 @@ export function AnimalProductionRecords({
               </CardContent>
             </Card>
           )}
+          
+          {/* Total Volume */}
+          <Card className="h-full">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-gray-600">Total Volume</p>
+                  <p className="text-2xl md:text-3xl font-bold text-blue-600 mt-2">
+                    {stats.totalVolume.toFixed(1)}L
+                  </p>
+                  <p className="text-xs text-gray-500">Last {selectedPeriod} days</p>
+                </div>
+                <Droplets className="w-6 h-6 md:w-8 md:h-8 text-blue-400 flex-shrink-0" />
+              </div>
+            </CardContent>
+          </Card>
+          
+          {/* Today's Yield */}
+          <Card className="h-full">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-gray-600">Today's Yield</p>
+                  <p className="text-2xl md:text-3xl font-bold text-green-600 mt-2">
+                    {getTodaysYield().toFixed(1)}L
+                  </p>
+                  <p className="text-xs text-gray-500">Current day total</p>
+                </div>
+                <BarChart3 className="w-6 h-6 md:w-8 md:h-8 text-green-400 flex-shrink-0" />
+              </div>
+            </CardContent>
+          </Card>
         </div>
       )}
       
@@ -587,9 +677,9 @@ export function AnimalProductionRecords({
       {/* Active Production Section */}
       {showProductionRecords && !loading && (
         <>
-          {/* Production Statistics */}
-          {stats && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+          {/* Production Statistics - Only show if NOT lactating (lactating animals have combined metrics above) */}
+          {!isLactating && stats && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-3 md:gap-4">
               <Card className="h-full">
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between gap-3">
@@ -609,48 +699,13 @@ export function AnimalProductionRecords({
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-600">Avg Daily</p>
+                      <p className="text-sm text-gray-600">Today's Yield</p>
                       <p className="text-2xl md:text-3xl font-bold text-green-600 mt-2">
-                        {stats.avgDailyVolume.toFixed(1)}L
+                        {getTodaysYield().toFixed(1)}L
                       </p>
-                      <div className={`flex items-center space-x-1 mt-1 px-2 py-0.5 rounded fit-content ${getTrendColor(stats.currentTrend)}`}>
-                        {getTrendIcon(stats.currentTrend)}
-                        <span className="text-xs font-medium capitalize">
-                          {stats.currentTrend}
-                        </span>
-                      </div>
+                      <p className="text-xs text-gray-500">Current day total</p>
                     </div>
                     <BarChart3 className="w-6 h-6 md:w-8 md:h-8 text-green-400 flex-shrink-0" />
-                  </div>
-                </CardContent>
-              </Card>
-              
-              <Card className="h-full">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-600">Avg Fat</p>
-                      <p className="text-2xl md:text-3xl font-bold text-orange-600 mt-2">
-                        {stats.avgFatContent.toFixed(2)}%
-                      </p>
-                      <p className="text-xs text-gray-500">Quality metric</p>
-                    </div>
-                    <Target className="w-6 h-6 md:w-8 md:h-8 text-orange-400 flex-shrink-0" />
-                  </div>
-                </CardContent>
-              </Card>
-              
-              <Card className="h-full">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-600">Avg Protein</p>
-                      <p className="text-2xl md:text-3xl font-bold text-purple-600 mt-2">
-                        {stats.avgProteinContent.toFixed(2)}%
-                      </p>
-                      <p className="text-xs text-gray-500">Quality metric</p>
-                    </div>
-                    <Activity className="w-6 h-6 md:w-8 md:h-8 text-purple-400 flex-shrink-0" />
                   </div>
                 </CardContent>
               </Card>
@@ -702,22 +757,25 @@ export function AnimalProductionRecords({
             </Card>
           )}
           
-          {/* Recent Production Records */}
+          {/* ✅ ENHANCED: Recent Production Records with Filters & Pagination */}
           <Card>
             <CardHeader>
-              <CardTitle>Recent Production Records</CardTitle>
+              <CardTitle className="flex items-center space-x-2">
+                <Milk className="w-5 h-5" />
+                <span>Recent Production Records</span>
+              </CardTitle>
               <CardDescription>
-                Latest milk production entries for this animal
+                Latest milk production entries for this animal ({records.length} total)
               </CardDescription>
             </CardHeader>
             <CardContent>
               {records.length === 0 ? (
-                <div className="text-center py-8">
+                <div className="text-center py-12">
                   <Milk className="mx-auto h-12 w-12 text-gray-400" />
-                  <h3 className="mt-2 text-sm font-medium text-gray-900">
+                  <h3 className="mt-4 text-sm font-medium text-gray-900">
                     No production records yet
                   </h3>
-                  <p className="mt-1 text-sm text-gray-500">
+                  <p className="mt-2 text-sm text-gray-500">
                     Start tracking milk production for this animal
                   </p>
                   {canAddProductionRecords && (
@@ -732,91 +790,258 @@ export function AnimalProductionRecords({
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {records.slice(0, 10).map((record) => (
-                    <div 
-                      key={record.id}
-                      className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50"
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-3 mb-2">
-                          <span className="font-medium text-gray-900">
-                            {new Date(record.record_date).toLocaleDateString('en-GB')}
-                          </span>
-                          <Badge className="bg-gray-100 text-gray-800">
-                            {record.milking_session || 'Unknown Session'}
-                          </Badge>
-                        </div>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                          <div>
-                            <span className="text-gray-600">Volume:</span>
-                            <span className="ml-2 font-medium text-blue-600">
-                              {record.milk_volume}L
-                            </span>
-                          </div>
-                          {record.fat_content && (
-                            <div>
-                              <span className="text-gray-600">Fat:</span>
-                              <span className="ml-2 font-medium text-orange-600">
-                                {record.fat_content}%
-                              </span>
-                            </div>
-                          )}
-                          {record.protein_content && (
-                            <div>
-                              <span className="text-gray-600">Protein:</span>
-                              <span className="ml-2 font-medium text-purple-600">
-                                {record.protein_content}%
-                              </span>
-                            </div>
-                          )}
-                          {record.temperature && (
-                            <div>
-                              <span className="text-gray-600">Temp:</span>
-                              <span className="ml-2 font-medium text-red-600">
-                                {record.temperature}°C
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                        {record.notes && (
-                          <p className="mt-2 text-sm text-gray-600 italic">
-                            {record.notes}
-                          </p>
-                        )}
+                  {/* Filter Controls */}
+                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                      {/* Date From Filter */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">From Date</label>
+                        <input
+                          type="date"
+                          value={filterRecordsDateFrom}
+                          onChange={(e) => {
+                            setFilterRecordsDateFrom(e.target.value)
+                            setRecordsPageNumber(1)
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      
+                      {/* Date To Filter */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">To Date</label>
+                        <input
+                          type="date"
+                          value={filterRecordsDateTo}
+                          onChange={(e) => {
+                            setFilterRecordsDateTo(e.target.value)
+                            setRecordsPageNumber(1)
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      
+                      {/* Session Filter */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Session</label>
+                        <select
+                          value={filterRecordsSession}
+                          onChange={(e) => {
+                            setFilterRecordsSession(e.target.value)
+                            setRecordsPageNumber(1)
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="all">All Sessions</option>
+                          {productionSettings?.milkingSessions?.map((session: any) => (
+                            <option key={session.id} value={session.id}>{session.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      
+                      {/* Milk Safety Filter */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Milk Safety</label>
+                        <select
+                          value={filterRecordsMilkSafety}
+                          onChange={(e) => {
+                            setFilterRecordsMilkSafety(e.target.value)
+                            setRecordsPageNumber(1)
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="all">All Status</option>
+                          <option value="safe">Safe</option>
+                          <option value="unsafe_health">Unsafe - Health</option>
+                          <option value="unsafe_colostrum">Colostrum</option>
+                        </select>
                       </div>
                     </div>
-                  ))}
+                    
+                    {/* Clear Filters Button */}
+                    {(filterRecordsDateFrom || filterRecordsDateTo || filterRecordsSession !== 'all' || filterRecordsMilkSafety !== 'all') && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setFilterRecordsDateFrom('')
+                          setFilterRecordsDateTo('')
+                          setFilterRecordsSession('all')
+                          setFilterRecordsMilkSafety('all')
+                          setRecordsPageNumber(1)
+                        }}
+                        className="mt-3"
+                      >
+                        Clear Filters
+                      </Button>
+                    )}
+                  </div>
+                  
+                  {/* Filtered & Paginated Records */}
+                  {(() => {
+                    // Apply filters
+                    const filteredRecords = records.filter((record) => {
+                      // Date range filter
+                      if (filterRecordsDateFrom && new Date(record.record_date) < new Date(filterRecordsDateFrom)) return false
+                      if (filterRecordsDateTo && new Date(record.record_date) > new Date(filterRecordsDateTo)) return false
+                      
+                      // Session filter
+                      if (filterRecordsSession !== 'all' && record.milking_session_id !== filterRecordsSession) return false
+                      
+                      // Milk Safety filter
+                      if (filterRecordsMilkSafety !== 'all' && record.milk_safety_status !== filterRecordsMilkSafety) return false
+                      
+                      return true
+                    })
+                    
+                    // Pagination
+                    const totalPages = Math.ceil(filteredRecords.length / RECORDS_PER_PAGE)
+                    const startIdx = (recordsPageNumber - 1) * RECORDS_PER_PAGE
+                    const paginatedRecords = filteredRecords.slice(startIdx, startIdx + RECORDS_PER_PAGE)
+                    
+                    return (
+                      <>
+                        {filteredRecords.length === 0 ? (
+                          <div className="text-center py-8">
+                            <AlertCircle className="mx-auto h-8 w-8 text-gray-400" />
+                            <p className="mt-2 text-sm text-gray-500">No records match the selected filters</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+                            {paginatedRecords.map((record) => {
+                              const fatGood = record.fat_content && record.fat_content >= 3.5 && record.fat_content <= 4.5
+                              const proteinGood = record.protein_content && record.protein_content >= 3.0 && record.protein_content <= 3.5
+                              const isHighQuality = fatGood && proteinGood
+                              
+                              return (
+                    <div 
+                      key={record.id}
+                      className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow bg-white"
+                    >
+                      {/* Record Header */}
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center space-x-3">
+                          <span className="font-semibold text-gray-900">
+                            {new Date(record.record_date).toLocaleDateString('en-GB')}
+                          </span>
+                          <Badge className="bg-blue-100 text-blue-800 text-xs">
+                            {getSessionName(record.milking_session_id)}
+                          </Badge>
+                          {isHighQuality && (
+                            <Badge className="bg-green-100 text-green-800 text-xs flex items-center gap-1">
+                              ✓ Good Quality
+                            </Badge>
+                          )}
+                        </div>
+                        <span className="text-lg font-bold text-blue-600">{record.milk_volume}L</span>
+                      </div>
+                      
+                      {/* Record Details Grid */}
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 text-xs">
+                        {/* Fat Content */}
+                        {record.fat_content && (
+                          <div className="bg-orange-50 p-2 rounded">
+                            <p className="text-gray-600 text-xs font-medium">Fat</p>
+                            <p className={`font-semibold ${fatGood ? 'text-orange-600' : 'text-red-600'}`}>
+                              {record.fat_content}%
+                            </p>
+                            <p className="text-gray-500 text-xs">{fatGood ? 'Good' : 'Check'}</p>
+                          </div>
+                        )}
+                        
+                        {/* Protein Content */}
+                        {record.protein_content && (
+                          <div className="bg-purple-50 p-2 rounded">
+                            <p className="text-gray-600 text-xs font-medium">Protein</p>
+                            <p className={`font-semibold ${proteinGood ? 'text-purple-600' : 'text-red-600'}`}>
+                              {record.protein_content}%
+                            </p>
+                            <p className="text-gray-500 text-xs">{proteinGood ? 'Good' : 'Check'}</p>
+                          </div>
+                        )}
+                        
+                        {/* Somatic Cell Count */}
+                        {record.somatic_cell_count && (
+                          <div className="bg-cyan-50 p-2 rounded">
+                            <p className="text-gray-600 text-xs font-medium">SCC</p>
+                            <p className="font-semibold text-cyan-600">{record.somatic_cell_count}</p>
+                            <p className="text-gray-500 text-xs">cells/mL</p>
+                          </div>
+                        )}
+                        
+                        {/* Temperature */}
+                        {record.temperature && (
+                          <div className="bg-red-50 p-2 rounded">
+                            <p className="text-gray-600 text-xs font-medium">Temp</p>
+                            <p className="font-semibold text-red-600">{record.temperature}°C</p>
+                            <p className="text-gray-500 text-xs">Milk</p>
+                          </div>
+                        )}
+                        
+                        {/* pH Level */}
+                        {record.ph_level && (
+                          <div className="bg-yellow-50 p-2 rounded">
+                            <p className="text-gray-600 text-xs font-medium">pH</p>
+                            <p className="font-semibold text-yellow-600">{record.ph_level}</p>
+                            <p className="text-gray-500 text-xs">Level</p>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {/* Notes */}
+                      {record.notes && (
+                        <div className="mt-3 pt-3 border-t border-gray-100">
+                          <p className="text-xs text-gray-600"><span className="font-medium">Notes:</span> {record.notes}</p>
+                        </div>
+                      )}
+                    </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                        
+                        {/* Pagination Controls */}
+                        <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
+                          <div className="text-sm text-gray-600">
+                            Showing <span className="font-medium">{startIdx + 1}</span> to <span className="font-medium">{Math.min(startIdx + RECORDS_PER_PAGE, filteredRecords.length)}</span> of <span className="font-medium">{filteredRecords.length}</span> records
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={recordsPageNumber === 1}
+                              onClick={() => setRecordsPageNumber(recordsPageNumber - 1)}
+                            >
+                              Previous
+                            </Button>
+                            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                              <Button
+                                key={page}
+                                variant={recordsPageNumber === page ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => setRecordsPageNumber(page)}
+                                className="min-w-10"
+                              >
+                                {page}
+                              </Button>
+                            ))}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={recordsPageNumber === totalPages}
+                              onClick={() => setRecordsPageNumber(recordsPageNumber + 1)}
+                            >
+                              Next
+                            </Button>
+                          </div>
+                        </div>
+                      </>
+                    )
+                  })()}
                 </div>
               )}
             </CardContent>
           </Card>
-          
-          {/* Load More Button */}
-          {records.length > 0 && showProductionRecords && (
-            <div className="flex justify-center mt-6 mb-4">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleLoadMore}
-                disabled={!hasMore || loadingMore}
-                className="gap-2"
-              >
-                {loadingMore ? (
-                  <>
-                    <LoadingSpinner size="sm" />
-                    Loading...
-                  </>
-                ) : hasMore ? (
-                  <>
-                    <Plus className="w-4 h-4" />
-                    Load More Records
-                  </>
-                ) : (
-                  'No more records'
-                )}
-              </Button>
-            </div>
-          )}
         </>
       )}
       
@@ -851,7 +1076,6 @@ export function AnimalProductionRecords({
                     variant="outline"
                     onClick={() => {
                       setSelectedPeriod(90)
-                      loadProductionData()
                     }}
                   >
                     <Calendar className="mr-2 h-4 w-4" />

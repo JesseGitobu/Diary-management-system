@@ -201,6 +201,14 @@ export async function getAnimalFeedingProfile(
     if (animalError) throw animalError
     if (!animal) return { success: false, error: 'Animal not found' }
 
+    // Fetch lactation cycle record for actual lactation number
+    const { data: lactationCycleRecord } = await supabase
+      .from('lactation_cycle_records')
+      .select('lactation_number')
+      .eq('animal_id', animalId)
+      .eq('status', 'active')
+      .single() as any
+
     // Get last breeding event to determine pregnancy
     const { data: lastEvent } = await (supabase
       .from('breeding_events')
@@ -239,7 +247,7 @@ export async function getAnimalFeedingProfile(
         animal_id: animalId,
         farm_id: farmId,
         production_status: animal.production_status || 'unknown',
-        lactation_number: animal.lactation_number || 0,
+        lactation_number: lactationCycleRecord?.lactation_number || 0,
         days_in_milk: animal.days_in_milk || 0,
         breeding_status: determineBreedingStatus(animal.production_status),
         pregnancy_stage: pregnancyStage,
