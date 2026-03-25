@@ -210,7 +210,7 @@ export async function PUT(request: NextRequest) {
         : 60,
       heatCycleDays: settings.default_cycle_interval,
       enableHeatDetection: settings.detection_method === 'sensor',
-      enableBreedingAlerts: (settings.smart_alerts as { breedingReminders?: boolean })?.breedingReminders ?? true
+      enableBreedingAlerts: settings.breeding_reminders ?? true
     }
 
     return NextResponse.json({

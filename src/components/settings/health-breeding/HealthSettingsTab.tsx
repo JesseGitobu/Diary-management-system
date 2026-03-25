@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select'
 import { Switch } from '@/components/ui/Switch'
+import { VaccinationDiseasesManager } from './VaccinationDiseasesManager'
 import {
     Stethoscope,
     Syringe,
@@ -76,6 +77,10 @@ export default function HealthSettingsTab({
         overdueVaccinationDays: 7
     })
 
+    // 3.1 Vaccination Diseases
+    const [vaccinationDiseases, setVaccinationDiseases] = useState<any[]>([])
+    const [isLoadingDiseases, setIsLoadingDiseases] = useState(true)
+    
     // 4. Disease & Outbreak Management
     const [outbreakSettings, setOutbreakSettings] = useState({
         enableOutbreakTracking: true,
@@ -228,6 +233,11 @@ export default function HealthSettingsTab({
                 overdueVaccinationDays: initialSettings.overdueVaccinationDays || 7
             })
 
+            // Load vaccination diseases
+            if (initialSettings.vaccinationDiseases) {
+                setVaccinationDiseases(initialSettings.vaccinationDiseases)
+            }
+
             setOutbreakSettings({
                 enableOutbreakTracking: initialSettings.enableOutbreakTracking ?? true,
                 autoQuarantineOnOutbreak: initialSettings.autoQuarantineOnOutbreak ?? true,
@@ -330,11 +340,51 @@ export default function HealthSettingsTab({
         }
     }, [initialSettings])
 
+    // Fetch vaccination diseases from API
+    useEffect(() => {
+        const fetchVaccinationDiseases = async () => {
+            try {
+                setIsLoadingDiseases(true)
+                const response = await fetch(`/api/settings/vaccination-diseases?farmId=${farmId}`)
+                const result = await response.json()
+                
+                if (result.success && result.data) {
+                    // Transform API response from snake_case to camelCase
+                    const transformedDiseases = result.data.map((disease: any) => ({
+                        id: disease.id,
+                        name: disease.name,
+                        scientificName: disease.scientific_name,
+                        vaccineName: disease.vaccine_name,
+                        ageAtFirstVaccinationMonths: disease.age_at_first_vaccination_months,
+                        vaccinationIntervalMonths: disease.vaccination_interval_months,
+                        boosterRequired: disease.booster_required,
+                        boosterIntervalMonths: disease.booster_interval_months,
+                        administeredVia: disease.administered_via,
+                        cost: disease.cost_kes,
+                        active: disease.is_active,
+                        notes: disease.notes,
+                        createdAt: disease.created_at,
+                        updatedAt: disease.updated_at
+                    }))
+                    setVaccinationDiseases(transformedDiseases)
+                }
+            } catch (error) {
+                console.error('Error fetching vaccination diseases:', error)
+            } finally {
+                setIsLoadingDiseases(false)
+            }
+        }
+
+        if (farmId) {
+            fetchVaccinationDiseases()
+        }
+    }, [farmId])
+
     // Track changes
     useEffect(() => {
         setHasUnsavedChanges(true)
     }, [
-        generalSettings, monitoringSettings, vaccinationSettings, outbreakSettings,
+        generalSettings, monitoringSettings, vaccinationSettings, vaccinationDiseases, outbreakSettings,
         treatmentSettings, followUpSettings, visitSettings, protocolSettings,
         dewormingSettings, documentationSettings, costSettings, alertSettings,
         animalSettings, privacySettings, integrationSettings
@@ -355,6 +405,7 @@ export default function HealthSettingsTab({
                 ...generalSettings,
                 ...monitoringSettings,
                 ...vaccinationSettings,
+                vaccinationDiseases, // Add vaccination diseases
                 ...outbreakSettings,
                 ...treatmentSettings,
                 ...followUpSettings,
@@ -784,6 +835,25 @@ export default function HealthSettingsTab({
                             </InfoBox>
                         </>
                     )}
+                </CardContent>
+            </Card>
+
+            {/* 3.1 VACCINATION DISEASES MANAGEMENT */}
+            <Card>
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                        <Shield className="w-5 h-5 text-blue-600" />
+                        Vaccination Diseases
+                    </CardTitle>
+                    <CardDescription>Define and manage diseases your farm vaccinates against</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <VaccinationDiseasesManager
+                        farmId={farmId}
+                        diseases={vaccinationDiseases}
+                        onDiseasesChange={setVaccinationDiseases}
+                        isLoading={isLoading || isLoadingDiseases}
+                    />
                 </CardContent>
             </Card>
 

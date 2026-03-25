@@ -126,6 +126,8 @@ export function HealthRecordCard({
   const [showModal, setShowModal] = useState(false)
   const [followUps, setFollowUps] = useState<FollowUpRecord[]>(record.follow_ups || [])
   const [loadingFollowUps, setLoadingFollowUps] = useState(false)
+  const [healthIssues, setHealthIssues] = useState<any[]>([])
+  const [loadingHealthIssues, setLoadingHealthIssues] = useState(false)
 
   const { isMobile, isTablet } = useDeviceInfo()
   const useModalView = isMobile || isTablet
@@ -142,6 +144,13 @@ export function HealthRecordCard({
     }
   }, [expanded, showModal, record.id, record.follow_ups]) // Add record.follow_ups to dependencies
 
+  // Load health issues when card is expanded
+  useEffect(() => {
+    if ((expanded || showModal)) {
+      loadHealthIssues()
+    }
+  }, [expanded, showModal, record.id])
+
   const loadFollowUps = async () => {
     setLoadingFollowUps(true)
     try {
@@ -154,6 +163,25 @@ export function HealthRecordCard({
       console.error('Error loading follow-ups:', error)
     } finally {
       setLoadingFollowUps(false)
+    }
+  }
+
+  const loadHealthIssues = async () => {
+    setLoadingHealthIssues(true)
+    try {
+      const response = await fetch(`/api/health/issues?animal_id=${record.animals.id}`)
+      if (response.ok) {
+        const data = await response.json()
+        // Sort by most recent first (reported_at descending)
+        const issues = (data.issues || []).sort((a: any, b: any) => 
+          new Date(b.reported_at).getTime() - new Date(a.reported_at).getTime()
+        )
+        setHealthIssues(issues)
+      }
+    } catch (error) {
+      console.error('Error loading health issues:', error)
+    } finally {
+      setLoadingHealthIssues(false)
     }
   }
 
@@ -280,6 +308,110 @@ export function HealthRecordCard({
   // Render timeline content for expanded view
   const renderTimelineContent = () => (
     <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
+      {/* Display Health Issues FIRST in the timeline */}
+      {healthIssues.map((issue, index) => {
+        const isLast = index === healthIssues.length - 1
+        const severityColors = {
+          'critical': 'border-l-red-600 bg-red-50',
+          'high': 'border-l-red-500 bg-red-50',
+          'medium': 'border-l-yellow-500 bg-yellow-50',
+          'low': 'border-l-green-500 bg-green-50'
+        }
+        const severityBgColor = {
+          'critical': 'bg-red-100 text-red-800',
+          'high': 'bg-red-100 text-red-800',
+          'medium': 'bg-yellow-100 text-yellow-800',
+          'low': 'bg-green-100 text-green-800'
+        }
+
+        return (
+          <div key={issue.id} className="relative">
+            {!isLast && (
+              <div className="absolute left-4 top-12 bottom-0 w-0.5 bg-gray-200" />
+            )}
+
+            <div className="flex items-start space-x-3">
+              <div className="flex-shrink-0 mt-1">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center z-10 relative ${
+                  issue.status === 'resolved' ? 'bg-green-500' : 
+                  issue.severity === 'critical' ? 'bg-red-600' :
+                  issue.severity === 'high' ? 'bg-red-500' :
+                  issue.severity === 'medium' ? 'bg-yellow-500' :
+                  'bg-green-500'
+                }`}>
+                  {issue.status === 'resolved' ? (
+                    <CheckCircle className="w-4 h-4 text-white" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 text-white" />
+                  )}
+                </div>
+              </div>
+
+              <div className={`flex-1 rounded-lg p-4 border-l-4 ${
+                severityColors[issue.severity as keyof typeof severityColors] || 'border-l-blue-400 bg-blue-50'
+              }`}>
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex-1 min-w-0">
+                    <h5 className="font-semibold text-gray-900 text-sm">
+                      {issue.issue_type === 'other' ? (issue.issue_type_custom || 'Health Issue') : (issue.issue_type.charAt(0).toUpperCase() + issue.issue_type.slice(1).replace('_', ' '))}
+                    </h5>
+                    <p className="text-xs text-gray-600">{formatDate(issue.reported_at)}</p>
+                  </div>
+                  <div className="flex flex-col items-end space-y-1 ml-2">
+                    <Badge className={`text-xs border ${severityBgColor[issue.severity as keyof typeof severityBgColor] || 'bg-blue-100 text-blue-800'}`}>
+                      {issue.severity.charAt(0).toUpperCase() + issue.severity.slice(1)}
+                    </Badge>
+                    {issue.status === 'resolved' && (
+                      <Badge className="text-xs bg-green-100 text-green-800">
+                        <CheckCircle className="w-3 h-3 mr-1" />
+                        Resolved
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  {issue.description && (
+                    <div>
+                      <p className="text-xs font-medium text-gray-700 mb-1">Description:</p>
+                      <p className="text-sm text-gray-800">{issue.description}</p>
+                    </div>
+                  )}
+
+                  {issue.symptoms && issue.symptoms.length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-gray-700 mb-1">Symptoms:</p>
+                      <div className="flex flex-wrap gap-1">
+                        {issue.symptoms.map((symptom: string, i: number) => (
+                          <Badge key={i} variant="outline" className="text-xs">
+                            {symptom}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {issue.resolution_notes && issue.status === 'resolved' && (
+                    <div className="bg-white rounded p-2 border border-green-200">
+                      <p className="text-xs font-medium text-green-800 mb-1">Resolution:</p>
+                      <p className="text-xs text-green-700">{issue.resolution_notes}</p>
+                    </div>
+                  )}
+
+                  {issue.notes && (
+                    <div className="pt-1 border-t border-gray-200">
+                      <p className="text-xs font-medium text-gray-600 mb-1">Additional Notes:</p>
+                      <p className="text-xs text-gray-600">{issue.notes}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })}
+
+      {/* Then display the initial Health Record */}
       {isTimelineRecord && (
         <div className="relative">
           {followUps.length > 0 && (
@@ -689,6 +821,7 @@ export function HealthRecordCard({
         </div>
       )}
 
+      {/* Display Follow-ups AFTER health issues */}
       {followUps.map((followUp, index) => {
         const isLast = index === followUps.length - 1
 
@@ -811,9 +944,9 @@ export function HealthRecordCard({
         )
       })}
 
-      {isTimelineRecord && followUps.length === 0 && !loadingFollowUps && (
+      {isTimelineRecord && followUps.length === 0 && healthIssues.length === 0 && !loadingFollowUps && !loadingHealthIssues && (
         <div className="text-center py-4 text-gray-500 bg-gray-50 rounded-lg border border-gray-200">
-          <p className="text-sm">No follow-ups recorded yet</p>
+          <p className="text-sm">No health issues or follow-ups recorded yet</p>
           {canEdit && shouldShowFollowUp && onFollowUp && !isResolved && (
             <Button
               variant="ghost"
@@ -1064,7 +1197,7 @@ export function HealthRecordCard({
               <h4 className="font-semibold text-gray-900 flex items-center space-x-2">
                 <Activity className="w-4 h-4 text-farm-green" />
                 <span>{isTimelineRecord ? 'Medical Timeline' : 'Record Details'}</span>
-                {loadingFollowUps && <LoadingSpinner size="sm" />}
+                {(loadingFollowUps || loadingHealthIssues) && <LoadingSpinner size="sm" />}
               </h4>
 
               {canEdit && shouldShowFollowUp && !isResolved && onFollowUp && (
@@ -1080,7 +1213,7 @@ export function HealthRecordCard({
               )}
             </div>
 
-            {loadingFollowUps ? (
+            {loadingFollowUps || loadingHealthIssues ? (
               <div className="flex justify-center py-8">
                 <LoadingSpinner size="lg" />
               </div>
@@ -1406,10 +1539,10 @@ export function HealthRecordCard({
               <h5 className="text-sm font-semibold text-gray-700 mb-4 flex items-center space-x-2">
                 <Activity className="w-4 h-4 text-farm-green" />
                 <span>{isTimelineRecord ? 'Medical Timeline' : 'Record Details'}</span>
-                {loadingFollowUps && <LoadingSpinner size="sm" />}
+                {(loadingFollowUps || loadingHealthIssues) && <LoadingSpinner size="sm" />}
               </h5>
 
-              {loadingFollowUps ? (
+              {loadingFollowUps || loadingHealthIssues ? (
                 <div className="flex justify-center py-8">
                   <LoadingSpinner size="lg" />
                 </div>

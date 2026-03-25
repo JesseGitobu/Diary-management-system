@@ -5,43 +5,83 @@ import {
   createFollowUpRecordWithStatusUpdate,
   getFollowUpRecords
 } from '@/lib/database/health'
+import {
+  generateOperationId,
+  logApiRequest,
+  logValidation,
+  logCascadingUpdate,
+  logFinalResponse,
+  isDebugEnabled,
+  debugInstructions,
+} from '@/lib/debug/health-records-logger'
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  // Generate unique operation ID for tracking
+  const operationId = generateOperationId()
+
+  // Print debug instructions on first request if enabled
+  if (isDebugEnabled()) {
+    console.log(debugInstructions())
+  }
+
   try {
     const user = await getCurrentUser()
     
     if (!user) {
+      logFinalResponse(operationId, false, null, 'Unauthorized')
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
     const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id || !['farm_owner', 'farm_manager', 'worker'].includes(userRole.role_type)) {
+      logFinalResponse(operationId, false, null, 'Insufficient permissions')
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
     
     const body = await request.json()
     const { id: originalRecordId } = await params
     
+    // Log incoming request
+    logApiRequest(operationId, { ...body, originalRecordId }, user.id, userRole.farm_id)
+    
     const {
       record_date,
+      follow_up_status,
       status,
       description,
       veterinarian,
       cost,
       notes,
+      next_due_date,
       next_followup_date,
       medication_changes,
       treatment_effectiveness,
+      is_resolved,
       resolved = false
     } = body
     
-    if (!record_date || !status || !description) {
+    // Handle both old and new parameter names for backwards compatibility
+    const followUpStatus = follow_up_status || status
+    const isResolved = is_resolved !== undefined ? is_resolved : resolved
+    const nextDueDate = next_due_date || next_followup_date
+    
+    // Validate required fields
+    const validationErrors: string[] = []
+    if (!record_date) validationErrors.push('record_date is required')
+    if (!followUpStatus) validationErrors.push('follow_up_status (or status) is required')
+    if (!description) validationErrors.push('description is required')
+    
+    // Log validation
+    logValidation(operationId, { record_date, followUpStatus, description }, validationErrors.length === 0, validationErrors)
+    
+    if (validationErrors.length > 0) {
+      logFinalResponse(operationId, false, null, validationErrors.join('; '))
       return NextResponse.json({ 
-        error: 'Missing required fields: record_date, status, description' 
+        error: 'Missing required fields: record_date, follow_up_status (or status), description' 
       }, { status: 400 })
     }
     
@@ -50,21 +90,32 @@ export async function POST(
       userRole.farm_id,
       {
         record_date,
-        status,
+        status: followUpStatus,
         description,
         veterinarian: veterinarian || null,
         cost: cost || 0,
         notes: notes || null,
-        next_followup_date: next_followup_date || null,
+        next_followup_date: nextDueDate || null,
         medication_changes: medication_changes || null,
         treatment_effectiveness: treatment_effectiveness || null,
-        resolved
+        resolved: isResolved
       },
-      user.id
+      user.id,
+      operationId
     )
     
     if (!result.success || !('data' in result) || !result.data) {
+      logFinalResponse(operationId, false, null, result.error || 'No data returned')
       return NextResponse.json({ error: result.error || 'No data returned' }, { status: 400 })
+    }
+    
+    // Log cascading resolution if applicable
+    if (isResolved && 'resolvedRecords' in result && result.resolvedRecords) {
+      logCascadingUpdate(operationId, {
+        originalRecordId,
+        allResolvedIds: result.resolvedRecords,
+        statusFields: { is_resolved: true, resolved_date: new Date().toISOString() }
+      })
     }
     
     const followUpData = {
@@ -105,15 +156,19 @@ export async function POST(
     }
     
     // NEW: Include cascade information
-    if (resolved && 'cascadedResolution' in result) {
+    if (isResolved && 'cascadedResolution' in result) {
       response.cascadedResolution = true
       response.resolvedRecords = result.resolvedRecords
     }
+    
+    // Log final response
+    logFinalResponse(operationId, true, response.followUp)
     
     return NextResponse.json(response)
     
   } catch (error) {
     console.error('Follow-up POST API error:', error)
+    logFinalResponse(operationId, false, null, error instanceof Error ? error.message : 'Unknown error')
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

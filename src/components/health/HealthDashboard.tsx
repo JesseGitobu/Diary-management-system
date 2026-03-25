@@ -26,6 +26,7 @@ import { CreateOutbreakModal } from '@/components/health/CreateOutbreakModal'
 import { VaccinationModal } from '@/components/health/VaccinationModal'
 import { ScheduleVisitModal } from '@/components/health/ScheduleVisitModal'
 import { AddVeterinarianModal } from '@/components/health/AddVeterinarianModal'
+import { ReportHealthIssueModal } from '@/components/health/ReportHealthIssueModal'
 
 // New tab-specific components
 import { VeterinarianCard } from '@/components/health/VeterinarianCard'
@@ -136,10 +137,12 @@ export function HealthRecordsContent({
     Array.isArray(initialVetVisits) ? initialVetVisits : []
   )
 
+  const [healthIssues, setHealthIssues] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
 
   // Modal states
   const [showAddModal, setShowAddModal] = useState(false)
+  const [showReportIssueModal, setShowReportIssueModal] = useState(false)
   const [showProtocolModal, setShowProtocolModal] = useState(false)
   const [showOutbreakModal, setShowOutbreakModal] = useState(false)
   const [showVaccinationModal, setShowVaccinationModal] = useState(false)
@@ -461,6 +464,13 @@ export function HealthRecordsContent({
   const actionSheetItems = [
     ...(canAddRecords ? [
       {
+        id: 'report-health-issue',
+        label: 'Report Health Issue',
+        icon: AlertTriangle,
+        color: 'text-orange-600',
+        onClick: () => setShowReportIssueModal(true)
+      },
+      {
         id: 'add-health-record',
         label: 'Add Health Record',
         icon: ClipboardList,
@@ -513,6 +523,15 @@ export function HealthRecordsContent({
     }
     setShowAddModal(false)
     toast.success('Health record added successfully!')
+    await refreshHealthData()
+  }
+
+  const handleIssueReported = async (newIssue: any) => {
+    if (newIssue) {
+      setHealthIssues(prev => [newIssue, ...prev])
+    }
+    setShowReportIssueModal(false)
+    toast.success('Health issue reported successfully!')
     await refreshHealthData()
   }
 
@@ -1309,6 +1328,22 @@ export function HealthRecordsContent({
                       {!loading && canAddRecords && (
                         <>
                           <button
+                            onClick={() => setShowReportIssueModal(true)}
+                            className="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center space-x-3"
+                          >
+                            <AlertTriangle className="w-4 h-4 text-orange-600" />
+                            <span>Report Health Issue</span>
+                          </button>
+
+                          <button
+                            onClick={() => setShowAddModal(true)}
+                            className="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center space-x-3"
+                          >
+                            <Plus className="w-4 h-4 text-blue-600" />
+                            <span>Add Health Record</span>
+                          </button>
+
+                          <button
                             onClick={() => setShowVaccinationModal(true)}
                             className="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center space-x-3"
                           >
@@ -1356,13 +1391,6 @@ export function HealthRecordsContent({
                     </div>
                   </div>
                 </div>
-
-                {!loading && canAddRecords && (
-                  <Button onClick={() => setShowAddModal(true)} size="lg">
-                    <Plus className="mr-2 h-5 w-5" />
-                    Add Health Record
-                  </Button>
-                )}
               </div>
             )}
           </div>
@@ -2074,6 +2102,20 @@ export function HealthRecordsContent({
           }}
           onVeterinarianUpdated={handleVeterinarianUpdated}
           existingVeterinarians={veterinarians}
+        />
+      )}
+
+      {showReportIssueModal && (
+        <ReportHealthIssueModal
+          farmId={userRole?.farm_id}
+          animals={animals}
+          isOpen={showReportIssueModal}
+          onClose={() => setShowReportIssueModal(false)}
+          onIssueReported={(newIssue) => {
+            setHealthIssues(prev => [newIssue, ...prev])
+            toast.success('Health issue reported successfully!')
+            setShowReportIssueModal(false)
+          }}
         />
       )}
 

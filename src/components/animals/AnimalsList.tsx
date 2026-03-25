@@ -1,7 +1,7 @@
 // src/components/animals/AnimalsList.tsx
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Animal } from '@/types/database'
 import { Card, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -37,6 +37,14 @@ interface AnimalsListProps {
 
 type ViewMode = 'grid' | 'list'
 
+interface FiltersState {
+  search: string
+  animalSource: string
+  productionStatus: string
+  healthStatus: string
+  gender: string
+}
+
 export function AnimalsList({ 
   animals, 
   farmId, 
@@ -48,19 +56,62 @@ export function AnimalsList({
 }: AnimalsListProps) {
   const { isMobile } = useDeviceInfo()
   
-  const [filters, setFilters] = useState({
-    search: '',
-    animalSource: 'all',
-    productionStatus: 'all',
-    healthStatus: 'all',
-    gender: 'all',
+  // ✅ Initialize filters directly from localStorage to avoid race condition
+  const [filters, setFilters] = useState<FiltersState>(() => {
+    try {
+      const savedFilters = localStorage.getItem('animalListFilters')
+      return savedFilters ? JSON.parse(savedFilters) : {
+        search: '',
+        animalSource: 'all',
+        productionStatus: 'all',
+        healthStatus: 'all',
+        gender: 'all',
+      }
+    } catch (error) {
+      console.error('Error loading filters from localStorage:', error)
+      return {
+        search: '',
+        animalSource: 'all',
+        productionStatus: 'all',
+        healthStatus: 'all',
+        gender: 'all',
+      }
+    }
+  })
+  
+  // ✅ Initialize view mode directly from localStorage
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    try {
+      const saved = localStorage.getItem('animalListViewMode')
+      return (saved as ViewMode) || 'grid'
+    } catch (error) {
+      console.error('Error loading view mode from localStorage:', error)
+      return 'grid'
+    }
   })
   
   const [animalsList, setAnimalsList] = useState(animals)
   const [showFilters, setShowFilters] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
   const [activeFiltersCount, setActiveFiltersCount] = useState(0)
-  const [viewMode, setViewMode] = useState<ViewMode>('grid')
+  
+  // ✅ Save filters to localStorage whenever they change
+  useEffect(() => {
+    try {
+      localStorage.setItem('animalListFilters', JSON.stringify(filters))
+    } catch (error) {
+      console.error('Error saving filters to localStorage:', error)
+    }
+  }, [filters])
+  
+  // ✅ Save view mode to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('animalListViewMode', viewMode)
+    } catch (error) {
+      console.error('Error saving view mode to localStorage:', error)
+    }
+  }, [viewMode])
   
   const canExportData = ['farm_owner', 'farm_manager'].includes(userRole)
   
@@ -194,7 +245,7 @@ export function AnimalsList({
   )
 
   return (
-    <div className="flex flex-col h-full space-y-4">
+    <div className="flex flex-col h-full space-y-4 overflow-hidden">
       {/* Mobile Quick Actions Bar */}
       {isMobile && (
         <div className="flex space-x-2 overflow-x-auto pb-2 scrollbar-hide">
@@ -259,10 +310,11 @@ export function AnimalsList({
           )}
           
           {Object.entries(filters).map(([key, value]) => {
-            if (key === 'search' || value === 'all') return null
+            const stringValue = value as string
+            if (key === 'search' || stringValue === 'all') return null
             return (
               <div key={key} className="flex items-center bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm">
-                {getFilterLabel(key, value)}
+                {getFilterLabel(key, stringValue)}
                 <button
                   onClick={() => setFilters(prev => ({ ...prev, [key]: 'all' }))}
                   className="ml-2 hover:text-blue-500"

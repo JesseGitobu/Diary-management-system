@@ -12,12 +12,12 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Badge } from '@/components/ui/Badge'
 import { 
   getAnimalsForCalving, 
-  processCalving, 
   generateCalfTag,
   incrementCalfTagNumber,
   fetchLatestSemenBullCode,
   type CalvingEvent 
 } from '@/lib/database/breeding'
+import { processCalvingAction } from '@/app/actions/breeding-actions' // ✅ Import Server Action
 import { AlertCircle, CheckCircle, Baby, Heart, Clock } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client' // Import supabase client
 
@@ -131,7 +131,7 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
     if (preSelectedAnimalId) {
       form.setValue('animal_id', preSelectedAnimalId)
     }
-  }, [preSelectedAnimalId, form])
+  }, [preSelectedAnimalId]) // ✅ FIX: Remove 'form' from dependencies
   
   const loadEligibleAnimals = async () => {
     setLoadingAnimals(true)
@@ -198,7 +198,7 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
       }
       
       console.log('🐄 CalvingEventForm: Submitting calving event:', eventData)
-      const result = await processCalving(eventData, farmId)
+      const result = await processCalvingAction(eventData, farmId) // ✅ Call Server Action instead
       
       if (result.success) {
         // Increment the calf tag number for next calf
@@ -240,7 +240,7 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
           })
       }
     }
-  }, [selectedAnimal, calvingDate, animals, form, farmId])
+  }, [selectedAnimal, calvingDate, farmId]) // ✅ FIX: Remove 'animals' and 'form' from dependencies
 
   // Auto-populate sire information from latest insemination
   useEffect(() => {
@@ -258,7 +258,7 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
           // Silently fail - field remains empty if no insemination found
         })
     }
-  }, [selectedAnimal, form])
+  }, [selectedAnimal]) // ✅ FIX: Remove 'form' from dependencies
   
   if (loadingAnimals) {
     return (
@@ -307,14 +307,11 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
             <option value="">Choose an animal...</option>
             {animals.map((animal) => (
               <option key={animal.id} value={animal.id}>
-                {animal.tag_number} - {animal.name || 'Unnamed'} 
-                {animal.breeding_events?.[0]?.estimated_due_date && 
-                  ` (Due: ${new Date(animal.breeding_events[0].estimated_due_date).toLocaleDateString()})`
-                }
+                {animal.tag_number} - {animal.name || 'Unnamed'}
               </option>
             ))}
             {preSelectedAnimalId && !animals.find(a => a.id === preSelectedAnimalId) && (
-               <option value={preSelectedAnimalId}>Current Animal</option>
+               <option key="preselected-fallback" value={preSelectedAnimalId}>Current Animal</option>
             )}
           </select>
           {form.formState.errors.animal_id && (

@@ -97,7 +97,12 @@ export async function getBreedingSettings(farmId: string): Promise<BreedingSetti
       autoCreateLactation: data.auto_create_lactation,
       postpartumBreedingDelayDays: data.postpartum_breeding_delay_days,
       
-      smartAlerts: data.smart_alerts as { heatReminders: boolean; breedingReminders: boolean; pregnancyCheckReminders: boolean; calvingReminders: boolean; } || getDefaultBreedingSettings().smartAlerts
+      smartAlerts: {
+        heatReminders: data.heat_reminders ?? true,
+        breedingReminders: data.breeding_reminders ?? true,
+        pregnancyCheckReminders: data.pregnancy_check_reminders ?? true,
+        calvingReminders: data.calving_reminders ?? true
+      }
     }
   } catch (error) {
     console.error('Error fetching breeding settings:', error)
@@ -200,7 +205,10 @@ export async function updateBreedingSettings(
       postpartum_breeding_delay_days: settings.postpartumBreedingDelayDays,
       
       // Smart Alerts
-      smart_alerts: settings.smartAlerts,
+      heat_reminders: settings.smartAlerts.heatReminders,
+      breeding_reminders: settings.smartAlerts.breedingReminders,
+      pregnancy_check_reminders: settings.smartAlerts.pregnancyCheckReminders,
+      calving_reminders: settings.smartAlerts.calvingReminders,
       
       updated_at: new Date().toISOString()
     }

@@ -438,9 +438,11 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
       color: "bg-blue-500"
     },
     {
-      title: "Lactating Cows",
-      value: stats.byProduction?.lactating || 0,
-      subtitle: "Currently producing milk",
+      title: "Total Lactating Cows",
+      value: (stats.byProduction?.lactating || 0) + (stats.byProduction?.served || 0),
+      subtitle: stats.byProduction
+        ? `${stats.byProduction.lactating || 0} lactating, ${stats.byProduction.served || 0} served`
+        : 'Lactating and served',
       icon: <Users className="h-5 w-5" />,
       color: "bg-green-500"
     },
@@ -469,6 +471,7 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
 
   return (
     <div className={`
+      flex flex-col h-screen
       ${isMobile ? 'px-4 py-4' : 'dashboard-container'} 
       pb-20 lg:pb-6
     `}>
@@ -643,15 +646,18 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Lactating Cows</CardTitle>
+              <CardTitle className="text-sm font-medium">Total Lactating Cows</CardTitle>
               <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {stats.byProduction?.lactating || 0}
+                {(stats.byProduction?.lactating || 0) + (stats.byProduction?.served || 0)}
               </div>
               <p className="text-xs text-muted-foreground">
-                Currently producing milk
+                {stats.byProduction
+                  ? `${stats.byProduction.lactating || 0} lactating, ${stats.byProduction.served || 0} served`
+                  : 'Lactating and served'
+                }
               </p>
             </CardContent>
           </Card>
@@ -717,7 +723,7 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
               grid gap-4
               ${isMobile
                 ? 'grid-cols-3'
-                : 'grid-cols-2 md:grid-cols-5'
+                : 'grid-cols-3 lg:grid-cols-6'
               }
             `}>
               <div className="text-center">
@@ -759,10 +765,16 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
                     <div className="text-sm text-gray-600">Lactating</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-2xl font-bold text-gray-600">
-                      {(stats.byProduction.steaming_dry_cows || 0) + (stats.byProduction.open_culling_dry_cows || 0)}
+                    <div className="text-2xl font-bold text-orange-600">
+                      {stats.byProduction.steaming_dry_cows || 0}
                     </div>
-                    <div className="text-sm text-gray-600">Dry</div>
+                    <div className="text-sm text-gray-600">Steaming Dry</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-gray-600">
+                      {stats.byProduction.open_culling_dry_cows || 0}
+                    </div>
+                    <div className="text-sm text-gray-600">Open Culling</div>
                   </div>
                 </>
               )}
@@ -770,7 +782,7 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
 
             {/* Mobile: Show remaining stats in second row */}
             {isMobile && (
-              <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-gray-200">
+              <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t border-gray-200">
                 <div className="text-center">
                   <div className="text-xl font-bold text-green-600">
                     {stats.byProduction.lactating}
@@ -778,10 +790,16 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
                   <div className="text-xs text-gray-600">Lactating</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-xl font-bold text-gray-600">
-                    {(stats.byProduction.steaming_dry_cows || 0) + (stats.byProduction.open_culling_dry_cows || 0)}
+                  <div className="text-xl font-bold text-orange-600">
+                    {stats.byProduction.steaming_dry_cows || 0}
                   </div>
-                  <div className="text-xs text-gray-600">Dry</div>
+                  <div className="text-xs text-gray-600">Steaming Dry</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xl font-bold text-gray-600">
+                    {stats.byProduction.open_culling_dry_cows || 0}
+                  </div>
+                  <div className="text-xs text-gray-600">Open Culling</div>
                 </div>
               </div>
             )}
@@ -790,15 +808,17 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
       )}
 
       {/* Animals List */}
-      <AnimalsList
-        animals={animals}
-        farmId={farmId}
-        userRole={userRole}
-        onAnimalUpdated={handleAnimalUpdated}
-        onExportAnimals={handleExportAnimals}
-        loading={loading}
-        enrichedDataMap={enrichedDataMap}
-      />
+      <div className="flex-1 overflow-hidden">
+        <AnimalsList
+          animals={animals}
+          farmId={farmId}
+          userRole={userRole}
+          onAnimalUpdated={handleAnimalUpdated}
+          onExportAnimals={handleExportAnimals}
+          loading={loading}
+          enrichedDataMap={enrichedDataMap}
+        />
+      </div>
 
       {/* Add Animal Modal */}
       <AddAnimalModal

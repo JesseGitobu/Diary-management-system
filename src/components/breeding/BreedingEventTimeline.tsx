@@ -105,9 +105,6 @@ export function BreedingEventTimeline({
 
   const filteredEvents = useMemo(() => {
     let filtered = [...events] as BreedingEvent[]
-    
-    // Sort by date descending (ensure latest is first)
-    filtered.sort((a, b) => new Date(b.event_date).getTime() - new Date(a.event_date).getTime())
 
     // Filter by event type
     if (selectedEventTypes.length > 0) {
@@ -130,6 +127,10 @@ export function BreedingEventTimeline({
         new Date(event.event_date) >= cutoffDate
       )
     }
+    
+    // ✅ IMPORTANT: Sort by event_date AFTER filtering (not created_at)
+    // This ensures breeding history is displayed in chronological order by when events occurred
+    filtered.sort((a, b) => new Date(b.event_date).getTime() - new Date(a.event_date).getTime())
     
     return filtered
   }, [events, selectedEventTypes, dateFilter])

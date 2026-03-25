@@ -1,5 +1,5 @@
 // src/lib/services/breeding-sync.ts
-// This service ensures breeding_records and breeding_events stay in sync
+// This service ensures service_records and breeding_events stay in sync
 
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { createClient } from '@/lib/supabase/client'
@@ -153,20 +153,32 @@ export async function createUnifiedBreedingRecord(
     : createClient()
   
   try {
-    // 1. Create the breeding record (source of truth)
-    const { data: breedingRecord, error: recordError } = await (supabase
-      .from('breeding_records') as any)
+    // 1. Create the service record (stores breeding/service information)
+    // First, get the next service_number for this animal
+    const { data: existingServices } = await (supabase as any)
+      .from('service_records')
+      .select('service_number')
+      .eq('animal_id', data.animal_id)
+      .eq('farm_id', data.farm_id)
+      .order('service_number', { ascending: false })
+      .limit(1)
+    
+    const lastServiceNumber = (existingServices as any[])?.[0]?.service_number || 0
+    const serviceNumber = lastServiceNumber + 1
+    
+    const { data: serviceRecord, error: recordError } = await (supabase
+      .from('service_records') as any)
       .insert({
         animal_id: data.animal_id,
         farm_id: data.farm_id,
-        breeding_type: data.breeding_method,
-        breeding_date: data.breeding_date,
-        sire_name: data.sire_tag,
-        sire_breed: data.sire_breed,
+        service_number: serviceNumber,
+        service_type: data.breeding_method,
+        service_date: data.breeding_date,
+        bull_tag_or_semen_code: data.sire_tag,
+        bull_name_or_semen_source: data.sire_breed,
         technician_name: data.veterinarian,
-        cost: data.breeding_cost,
-        notes: data.breeding_notes,
-        auto_generated: data.auto_generated || false
+        service_cost: data.breeding_cost,
+        notes: data.breeding_notes
       })
       .select()
       .single()
@@ -181,9 +193,7 @@ export async function createUnifiedBreedingRecord(
         animal_id: data.animal_id,
         event_type: 'insemination',
         event_date: data.breeding_date,
-        insemination_method: data.breeding_method,
-        semen_bull_code: data.sire_tag,
-        technician_name: data.veterinarian,
+        service_record_id: serviceRecord.id,
         notes: data.breeding_notes,
         created_by: userId
       })
@@ -201,19 +211,18 @@ export async function createUnifiedBreedingRecord(
     const { error: pregnancyError } = await (supabase
       .from('pregnancy_records') as any)
       .insert({
-        breeding_record_id: breedingRecord.id,
         animal_id: data.animal_id,
         farm_id: data.farm_id,
         pregnancy_status: 'suspected',
         expected_calving_date: expectedDate.toISOString().split('T')[0],
-        gestation_length: gestationDays
+        confirmed_date: data.breeding_date
       })
     
     if (pregnancyError) {
       console.error('Failed to create pregnancy record:', pregnancyError)
     }
     
-    return { success: true, data: breedingRecord }
+    return { success: true, data: serviceRecord }
     
   } catch (error: any) {
     console.error('Error creating unified breeding record:', error)
@@ -550,10 +559,10 @@ export async function getUnifiedBreedingHistory(
   
   const [recordsResult, eventsResult, pregnancyResult] = await Promise.all([
     supabase
-      .from('breeding_records')
+      .from('service_records')
       .select('*')
       .eq('animal_id', animalId)
-      .order('breeding_date', { ascending: false }),
+      .order('service_date', { ascending: false }),
     
     supabase
       .from('breeding_events')
@@ -576,7 +585,7 @@ export async function getUnifiedBreedingHistory(
 }
 
 /**
- * Syncs existing breeding_events to breeding_records
+ * Syncs existing breeding_events to service_records
  * Use this for migration/data cleanup
  */
 export async function syncEventsToRecords(
@@ -603,12 +612,12 @@ export async function syncEventsToRecords(
     }
     
     for (const event of events) {
-      // Check if breeding record exists
+      // Check if service record exists for this event
       const { data: existing } = await supabase
-        .from('breeding_records')
+        .from('service_records')
         .select('id')
         .eq('animal_id', event.animal_id)
-        .eq('breeding_date', event.event_date)
+        .eq('service_date', event.event_date.split('T')[0])
         .single()
       
       if (!existing) {

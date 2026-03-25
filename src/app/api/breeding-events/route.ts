@@ -46,29 +46,29 @@ export async function POST(request: NextRequest) {
 
     // Handle different event types
     if (eventData.event_type === 'calving') {
-      // Find the breeding record for this animal
-      const { data: breedingRecordResult } = await supabase
-        .from('breeding_records')
+      // Find the latest service record for this animal
+      const { data: serviceRecordResult } = await supabase
+        .from('service_records')
         .select('id')
         .eq('animal_id', eventData.animal_id)
         .eq('farm_id', eventData.farm_id)
-        .order('breeding_date', { ascending: false })
+        .order('service_date', { ascending: false })
         .limit(1)
         .single()
 
       // Cast to any to fix "Property 'id' does not exist on type 'never'"
-      const breedingRecord = breedingRecordResult as any
+      const serviceRecord = serviceRecordResult as any
 
-      if (!breedingRecord) {
+      if (!serviceRecord) {
         return NextResponse.json(
-          { error: 'No breeding record found for this animal' },
+          { error: 'No service record found for this animal' },
           { status: 400 }
         )
       }
 
       // Record calving using unified service
       const result = await recordCalvingUnified(
-        breedingRecord.id,
+        serviceRecord.id,
         eventData.animal_id,
         eventData.farm_id,
         {
@@ -128,52 +128,61 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
 
-    // ===== SAVE INSEMINATION TO breeding_records TABLE =====
+    // ===== SAVE INSEMINATION TO service_records TABLE =====
     if (eventData.event_type === 'insemination') {
-      console.log('💾 [API] Recording insemination to breeding_records table...')
+      console.log('💾 [API] Recording insemination to service_records table...')
       
       try {
-        // Determine breeding type based on insemination method
-        const breedingType = eventData.insemination_method === 'artificial_insemination' 
+        // Determine service type based on insemination method
+        const serviceType = eventData.insemination_method === 'artificial_insemination' 
           ? 'artificial_insemination' 
           : 'natural'
         
         // Extract date only from the event_date (which is datetime format)
-        const breedingDate = eventData.event_date.split('T')[0]
+        const serviceDate = eventData.event_date.split('T')[0]
         
-        // Insert into breeding_records
-        const breedingRecordData = {
+        // Calculate service_number as the next sequence for this animal
+        const { data: existingServices } = await (supabase as any)
+          .from('service_records')
+          .select('service_number')
+          .eq('animal_id', eventData.animal_id)
+          .eq('farm_id', eventData.farm_id)
+          .order('service_number', { ascending: false })
+          .limit(1)
+        
+        const lastServiceNumber = (existingServices as any[])?.[0]?.service_number || 0
+        const serviceNumber = lastServiceNumber + 1
+        
+        // Insert into service_records
+        const serviceRecordData = {
           animal_id: eventData.animal_id,
           farm_id: eventData.farm_id,
-          breeding_type: breedingType,
-          breeding_date: breedingDate,
-          sire_id: null, // Cannot determine actual bull ID from semen_bull_code
-          sire_name: eventData.semen_bull_code || null, // Use semen code as sire identifier
-          sire_breed: null,
-          sire_registration_number: null,
+          service_number: serviceNumber,
+          service_type: serviceType,
+          service_date: serviceDate,
+          sire_id: null, // Cannot determine actual bull ID from semen code
+          bull_tag_or_semen_code: eventData.semen_bull_code || null,
+          bull_name_or_semen_source: null,
           technician_name: eventData.technician_name || null,
           notes: eventData.notes || null,
-          cost: null,
-          success_rate: null,
-          auto_generated: false,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+          service_cost: null,
+          outcome: null
         }
         
-        const { data: breedingRecord, error: breedingError } = await (supabase as any)
-          .from('breeding_records')
-          .insert(breedingRecordData)
+        const { data: serviceRecord, error: serviceError } = await (supabase as any)
+          .from('service_records')
+          .insert(serviceRecordData)
           .select()
           .single()
         
-        if (breedingError) {
-          console.error('⚠️ [API] Failed to insert into breeding_records:', breedingError.message)
+        if (serviceError) {
+          console.error('⚠️ [API] Failed to insert into service_records:', serviceError.message)
           // Don't fail the whole request - breeding_event is already saved
         } else {
-          console.log('✅ [API] Breeding record created successfully:', breedingRecord.id)
+          console.log('✅ [API] Service record created successfully:', serviceRecord.id)
         }
       } catch (err: any) {
-        console.error('❌ [API] Error processing breeding record:', err.message)
+        console.error('❌ [API] Error processing service record:', err.message)
         // Continue - don't fail the overall request
       }
     }

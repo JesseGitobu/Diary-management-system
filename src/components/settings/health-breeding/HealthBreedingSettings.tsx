@@ -71,7 +71,6 @@ export default function HealthBreedingSettings({
         semenProvider: '',
         costPerAI: 500,
         defaultBull: '',
-        autoSchedulePregnancyCheck: true,
         pregnancyCheckDays: 45
     })
 
@@ -128,7 +127,6 @@ export default function HealthBreedingSettings({
                 semenProvider: initialSettings.semenProvider || '',
                 costPerAI: initialSettings.costPerAI || 500,
                 defaultBull: initialSettings.defaultBull || '',
-                autoSchedulePregnancyCheck: initialSettings.autoSchedulePregnancyCheck ?? true,
                 pregnancyCheckDays: initialSettings.pregnancyCheckDays || 45
             })
 
@@ -234,7 +232,7 @@ export default function HealthBreedingSettings({
 
         setCycleSettings({ minimumBreedingAgeMonths: 15, defaultCycleInterval: 21, autoCreateNextEvent: true, alertType: ['app', 'sms'] })
         setHeatSettings({ detectionMethod: 'manual', responsibleUser: 'worker', missedHeatAlert: 25, reminderFrequency: 'daily' })
-        setInseminationSettings({ breedingMethod: 'ai', defaultAITechnician: '', semenProvider: '', costPerAI: 500, defaultBull: '', autoSchedulePregnancyCheck: true, pregnancyCheckDays: 45 })
+        setInseminationSettings({ breedingMethod: 'ai', defaultAITechnician: '', semenProvider: '', costPerAI: 500, defaultBull: '', pregnancyCheckDays: 45 })
         setPregnancySettings({ entryMethod: 'vet_only', diagnosisInterval: 45, autoCreateHeatOnFailed: true, heatRetryDays: 21 })
         setCalvingSettings({ defaultGestation: 280, daysPregnantAtDryoff: 220, autoRegisterCalf: true, calfIdFormat: 'farm_year_number', autoCreateDryOff: true, autoCreateLactation: true, postpartumBreedingDelayDays: 60 })
         setSmartAlerts({ heatReminders: true, breedingReminders: true, pregnancyCheckReminders: true, calvingReminders: true })
@@ -529,19 +527,6 @@ export default function HealthBreedingSettings({
                                             <div className="text-xs text-gray-500 mt-1">{method.desc}</div>
                                         </label>
                                     ))}
-                                </div>
-                            </div>
-
-                            <div className="border-t pt-4">
-                                <div className="flex items-center justify-between p-3 border rounded-lg">
-                                    <div>
-                                        <Label>Auto-Schedule Pregnancy Check</Label>
-                                        <p className="text-xs text-gray-500">After {inseminationSettings.pregnancyCheckDays} days</p>
-                                    </div>
-                                    <Switch
-                                        checked={inseminationSettings.autoSchedulePregnancyCheck}
-                                        onCheckedChange={(checked) => setInseminationSettings({ ...inseminationSettings, autoSchedulePregnancyCheck: checked })}
-                                    />
                                 </div>
                             </div>
                         </CardContent>

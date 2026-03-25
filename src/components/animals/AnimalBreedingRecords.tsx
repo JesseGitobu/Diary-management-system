@@ -41,18 +41,20 @@ import { CalvingEventForm } from '@/components/breeding/CalvingEventForm'
 interface BreedingRecord {
   id: string
   animal_id: string
-  breeding_date: string
-  breeding_method: 'natural' | 'artificial_insemination'
-  sire_tag?: string
+  service_date: string
+  service_type: 'natural' | 'artificial_insemination' | 'embryo_transfer'
+  bull_tag_or_semen_code?: string
+  bull_name_or_semen_source?: string
+  sire_id?: string
   expected_calving_date?: string
-  actual_calving_date?: string
-  pregnancy_confirmed: boolean
-  pregnancy_status: 'pending' | 'confirmed' | 'negative' | 'aborted' | 'completed'
-  breeding_notes?: string
-  veterinarian?: string
-  breeding_cost?: number
-  auto_generated?: boolean
-  created_at?: string // Added to support sorting by entry time
+  service_number: number
+  pregnancy_status?: 'suspected' | 'confirmed' | 'false' | 'aborted' | 'completed'
+  notes?: string
+  technician_name?: string
+  service_cost?: number
+  outcome?: string
+  created_at?: string
+  updated_at?: string
 }
 
 interface PregnancyCheck {
@@ -127,7 +129,7 @@ interface InseminationEvent {
 
 export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords }: AnimalBreedingRecordsProps) {
   const [activeTab, setActiveTab] = useState('overview')
-  const [breedingRecords, setBreedingRecords] = useState<BreedingRecord[]>([])
+  const [serviceRecords, setServiceRecords] = useState<BreedingRecord[]>([])
   const [pregnancyChecks, setPregnancyChecks] = useState<PregnancyCheck[]>([])
   const [heatEvents, setHeatEvents] = useState<HeatEvent[]>([])
   const [inseminationEvents, setInseminationEvents] = useState<InseminationEvent[]>([])
@@ -174,7 +176,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
     if (breedingSettings && animal) {
       checkBreedingEligibility()
     }
-  }, [breedingSettings, animal])
+  }, [breedingSettings, animal, serviceRecords])
 
   const loadBreedingSettings = async () => {
     try {
@@ -196,16 +198,16 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
       const response = await fetch(`/api/animals/${animalId}/breeding-records?limit=${RECORDS_PER_PAGE}&offset=${newOffset}`)
       const data = await response.json()
       if (data.success) {
-        const sortedRecords = (data.breedingRecords || []).sort((a: BreedingRecord, b: BreedingRecord) => {
-          const dateA = new Date(a.breeding_date).getTime();
-          const dateB = new Date(b.breeding_date).getTime();
+        const sortedRecords = (data.serviceRecords || []).sort((a: BreedingRecord, b: BreedingRecord) => {
+          const dateA = new Date(a.service_date).getTime();
+          const dateB = new Date(b.service_date).getTime();
           return dateB - dateA;
         })
         
         if (newOffset === 0) {
-          setBreedingRecords(sortedRecords)
+          setServiceRecords(sortedRecords)
         } else {
-          setBreedingRecords(prev => [...prev, ...sortedRecords])
+          setServiceRecords(prev => [...prev, ...sortedRecords])
         }
         
         setPregnancyChecks(data.pregnancyChecks || [])
@@ -271,7 +273,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
         console.log(`✅ BREEDING RECORDS DEBUG: ${isDry ? 'DRY' : 'SERVED'} ANIMAL - EARLY RETURN`, {
           animal_id: animalId,
           production_status: animal.production_status,
-          breeding_records_count: breedingRecords.length
+          service_records_count: serviceRecords.length
         })
       }
       setBreedingEligibility(eligibility) // Return with eligible: true
@@ -303,12 +305,12 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
     // Check for active pregnancy based on current records state
     // Note: Active pregnancies are a valid state (shown via pregnancy banner)
     // so we don't mark the animal as ineligible - just track that pregnancy exists
-    const activePregnancy = breedingRecords.find(r => r.pregnancy_status === 'confirmed' && !r.actual_calving_date)
+    const activePregnancy = serviceRecords.find(r => r.pregnancy_status === 'confirmed')
 
-    // Check for calving events - from both legacy records AND breeding_events table
-    let lastCalving = breedingRecords
-      .filter(record => record.actual_calving_date)
-      .sort((a, b) => new Date(b.actual_calving_date!).getTime() - new Date(a.actual_calving_date!).getTime())[0]
+    // Check for calving events - from both service records AND breeding_events table
+    let lastCalving = serviceRecords
+      .filter(record => record.pregnancy_status === 'completed')
+      .sort((a, b) => new Date(b.created_at || '').getTime() - new Date(a.created_at || '').getTime())[0]
 
     // Also check breeding_events calvings (newer system)
     if (calvingEvents.length > 0) {
@@ -319,24 +321,31 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
         lastCalving = {
           id: lastBreedingEventCalving.id,
           animal_id: animalId,
-          breeding_date: '',
-          breeding_method: 'natural',
-          actual_calving_date: lastBreedingEventCalving.event_date,
-          pregnancy_confirmed: true,
+          service_date: lastBreedingEventCalving.event_date,
+          service_type: 'natural',
+          service_number: 0,
           pregnancy_status: 'completed'
         }
       } else {
-        // Compare and use the more recent one
-        const legacyCalvingDate = parseISO(lastCalving.actual_calving_date!)
+        // Compare and use the more recent one from calving events
+        const legacyCalvingDate = parseISO(lastCalving.created_at || '')
         if (calvingDate > legacyCalvingDate) {
-          lastCalving.actual_calving_date = lastBreedingEventCalving.event_date
+          // Calving event is more recent, use that instead
+          lastCalving = {
+            id: lastBreedingEventCalving.id,
+            animal_id: animalId,
+            service_date: lastBreedingEventCalving.event_date,
+            service_type: 'natural',
+            service_number: 0,
+            pregnancy_status: 'completed'
+          }
         }
       }
     }
 
     // ⚠️ Only check post-calving waiting period for non-lactating animals
-    if (lastCalving?.actual_calving_date && !isLactatStatus) {
-      const daysSinceCalving = differenceInDays(new Date(), parseISO(lastCalving.actual_calving_date))
+    if (lastCalving?.created_at && !isLactatStatus) {
+      const daysSinceCalving = differenceInDays(new Date(), parseISO(lastCalving.created_at))
       eligibility.daysSinceCalving = daysSinceCalving
       // Only enforce post-calving waiting period for animals NOT currently in a breeding cycle
       // - SERVED animals are in active breeding cycle (pending/pending pregnancy confirmation)
@@ -350,12 +359,12 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
     }
 
     if (eligibility.eligible) {
-      if (animal.production_status?.toLowerCase() === 'heifer' && breedingRecords.length === 0) {
+      if (animal.production_status?.toLowerCase() === 'heifer' && serviceRecords.length === 0) {
         eligibility.isReadyForFirstService = true
       }
       
-      const latest = breedingRecords[0]
-      const isPending = latest?.pregnancy_status === 'pending'
+      const latest = serviceRecords[0]
+      const isPending = latest?.pregnancy_status === 'suspected'
       
       if (['lactating', 'dry'].includes(animal.production_status?.toLowerCase()) && !activePregnancy && !isPending) {
          if (!lastCalving || (eligibility.daysSinceCalving && eligibility.daysSinceCalving >= breedingSettings.postpartumBreedingDelayDays)) {
@@ -434,7 +443,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
 
     // 1. Check for Confirmed Pregnancy + Calving Window (SECOND PRIORITY)
     // Check both legacy breedingRecords AND event-driven pregnancy checks
-    const confirmedPregnancy = breedingRecords.find(r => r.pregnancy_status === 'confirmed' && !r.actual_calving_date)
+    const confirmedPregnancy = serviceRecords.find(r => r.pregnancy_status === 'confirmed')
     
     // FALLBACK: If no breeding records, check allEvents for pregnancy confirmation
     const pregnancyEventConfirmed = confirmedPregnancy ? null : allEvents.find((e: any) => 
@@ -448,10 +457,10 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
       console.log(`✅ BREEDING RECORDS DEBUG: PREGNANCY CHECK`, {
         animal_id: animalId,
         production_status: animal.production_status,
-        breeding_records_count: breedingRecords.length,
-        breeding_records: breedingRecords.map(r => ({
+        service_records_count: serviceRecords.length,
+        service_records: serviceRecords.map(r => ({
           pregnancy_status: r.pregnancy_status,
-          actual_calving_date: r.actual_calving_date,
+          service_date: r.service_date,
           expected_calving_date: r.expected_calving_date
         })),
         confirmedPregnancy_from_records: !!confirmedPregnancy,
@@ -600,11 +609,11 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
 
       if (inseminationAfterHeat) return null // Heat cycle completed
 
-      // Check if breeding happened after heat
-      const breedingAfterHeat = breedingRecords.find(record => {
-        const breedingDateTime = parseISO(record.breeding_date)
-        const breedingDateStart = startOfDay(breedingDateTime)
-        return isSameDay(breedingDateStart, heatDateStart) || isAfter(breedingDateStart, heatDateStart)
+      // Check if service happened after heat
+      const breedingAfterHeat = serviceRecords.find(record => {
+        const serviceDateTime = parseISO(record.service_date)
+        const serviceDateStart = startOfDay(serviceDateTime)
+        return isSameDay(serviceDateStart, heatDateStart) || isAfter(serviceDateStart, heatDateStart)
       })
 
       if (breedingAfterHeat) return null // Heat cycle completed
@@ -654,10 +663,12 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
   }
 
   const getPregnancyStatusBadge = (status: string, isAutoGenerated?: boolean) => {
-    const badges = {
+    const badges: Record<string, any> = {
       confirmed: <Badge className="bg-green-100 text-green-800">Confirmed Pregnant</Badge>,
-      pending: <Badge className="bg-yellow-100 text-yellow-800">Served (Pending)</Badge>,
+      suspected: <Badge className="bg-yellow-100 text-yellow-800">Served (Pending)</Badge>,
+      false: <Badge className="bg-red-100 text-red-800">Not Pregnant</Badge>,
       negative: <Badge className="bg-red-100 text-red-800">Not Pregnant</Badge>,
+      pending: <Badge className="bg-yellow-100 text-yellow-800">Served (Pending)</Badge>,
       aborted: <Badge className="bg-red-100 text-red-800">Pregnancy Lost</Badge>,
       completed: <Badge className="bg-blue-100 text-blue-800">Calved</Badge>,
     }
@@ -673,9 +684,9 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
     )
   }
 
-  const latestRecord = breedingRecords[0]
-  const isPendingCheck = latestRecord?.pregnancy_status === 'pending'
-  const currentPregnancy = breedingRecords.find(r => r.pregnancy_status === 'confirmed' && !r.actual_calving_date)
+  const latestRecord = serviceRecords[0]
+  const isPendingCheck = latestRecord?.pregnancy_status === 'suspected'
+  const currentPregnancy = serviceRecords.find(r => r.pregnancy_status === 'confirmed')
   
   // Also check for positive pregnancy check from event-driven pregnancy checks
   const latestInsemination = inseminationEvents[0]
@@ -686,10 +697,10 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
   })
 
   const breedingStats = {
-    totalBreedings: breedingRecords.length ,
-    confirmedPregnancies: breedingRecords.filter(r => r.pregnancy_status === 'confirmed').length ,
-    successRate: (breedingRecords.length + calvingEvents.length) > 0
-      ? Math.round(((breedingRecords.filter(r => r.pregnancy_confirmed).length + calvingEvents.length) / (breedingRecords.length + calvingEvents.length)) * 100)
+    totalBreedings: serviceRecords.length,
+    confirmedPregnancies: serviceRecords.filter(r => r.pregnancy_status === 'confirmed').length,
+    successRate: (serviceRecords.length + calvingEvents.length) > 0
+      ? Math.round(((serviceRecords.filter(r => r.pregnancy_status === 'confirmed').length + calvingEvents.length) / (serviceRecords.length + calvingEvents.length)) * 100)
       : 0,
     currentStatus: (() => {
       // Check post-calving recovery first
@@ -1092,7 +1103,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
               <div>
                 <p className="text-sm text-blue-800">Breeding Date</p>
                 <p className="font-semibold text-blue-900">
-                  {format(parseISO(currentPregnancy.breeding_date), 'MMM dd, yyyy')}
+                  {format(parseISO(currentPregnancy.service_date), 'MMM dd, yyyy')}
                 </p>
               </div>
               <div>
@@ -1201,7 +1212,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
               
               {/* Recent Activity List */}
               <div>
-              {breedingRecords.length === 0 && heatEvents.length === 0 && inseminationEvents.length === 0 && pregnancyChecks.length === 0 ? (
+              {serviceRecords.length === 0 && heatEvents.length === 0 && inseminationEvents.length === 0 && pregnancyChecks.length === 0 ? (
                 <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-lg border border-dashed">
                   <Heart className="w-12 h-12 mx-auto mb-4 text-gray-300" />
                   <p>No breeding records found.</p>
@@ -1218,7 +1229,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                     ...heatEvents.map(e => ({ type: 'heat', date: e.event_date, created: e.created_at, data: e })),
                     ...inseminationEvents.map(e => ({ type: 'insemination', date: e.event_date, created: e.created_at, data: e })),
                     ...pregnancyChecks.map(e => ({ type: 'pregnancy_check', date: e.check_date, created: e.created_at, data: e })),
-                    ...breedingRecords.map(e => ({ type: 'breeding', date: e.breeding_date, created: e.created_at, data: e })),
+                    ...serviceRecords.map(e => ({ type: 'breeding', date: e.service_date, created: e.created_at, data: e })),
                     ...calvingEvents.map(e => ({ type: 'calving', date: e.event_date, created: e.created_at, data: e }))
                   ]
                     .filter(item => {
@@ -1246,7 +1257,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                       // Heat Event
                       if (item.type === 'heat') {
                         const heat = item.data as HeatEvent
-                        const createdTime = heat.created_at ? parseISO(heat.created_at) : parseISO(heat.event_date)
+                        const createdTime = heat.created_at ? parseISO(heat.created_at) : (heat.event_date ? parseISO(heat.event_date) : new Date())
                         return (
                           <div key={`heat-${heat.id}`} className="border rounded-lg p-4 bg-pink-50 border-pink-100">
                             <div className="flex items-start justify-between">
@@ -1273,7 +1284,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                       // Insemination Event
                       if (item.type === 'insemination') {
                         const insem = item.data as InseminationEvent
-                        const createdTime = insem.created_at ? parseISO(insem.created_at) : parseISO(insem.event_date)
+                        const createdTime = insem.created_at ? parseISO(insem.created_at) : (insem.event_date ? parseISO(insem.event_date) : new Date())
                         return (
                           <div key={`insem-${insem.id}`} className="border rounded-lg p-4 bg-green-50 border-green-100">
                             <div className="flex items-start justify-between">
@@ -1301,7 +1312,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                       // Pregnancy Check Event
                       if (item.type === 'pregnancy_check') {
                         const check = item.data as PregnancyCheck
-                        const createdTime = check.created_at ? parseISO(check.created_at) : parseISO(check.check_date)
+                        const createdTime = check.created_at ? parseISO(check.created_at) : (check.check_date ? parseISO(check.check_date) : new Date())
                         
                         // Determine result color and display text
                         let resultColor = 'bg-yellow-100 text-yellow-800'
@@ -1350,7 +1361,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                       // Breeding Record
                       if (item.type === 'breeding') {
                         const record = item.data as BreedingRecord
-                        const createdTime = record.created_at ? parseISO(record.created_at) : parseISO(record.breeding_date)
+                        const createdTime = record.created_at ? parseISO(record.created_at) : (record.service_date ? parseISO(record.service_date) : new Date())
                         return (
                           <div key={record.id} className="border rounded-lg p-4 hover:bg-gray-50 transition-colors">
                             <div className="flex items-start justify-between">
@@ -1358,21 +1369,21 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                                 <div className="flex items-center gap-2 mb-1">
                                   <Calendar className="w-4 h-4 text-gray-500 flex-shrink-0"/>
                                   <span className="font-semibold text-gray-900">
-                                    {format(parseISO(record.breeding_date), 'MMMM dd, yyyy')}
+                                    {record.service_date ? format(parseISO(record.service_date), 'MMMM dd, yyyy') : 'Date not set'}
                                   </span>
-                                  {getPregnancyStatusBadge(record.pregnancy_status, record.auto_generated)}
+                                  {getPregnancyStatusBadge(record.pregnancy_status || 'suspected', false)}
                                 </div>
                                 <p className="text-sm text-gray-600 ml-6 mb-2">
-                                  {record.breeding_method === 'artificial_insemination' ? 'Artificial Insemination' : 'Natural Service'}
-                                  {record.sire_tag && ` • Sire: ${record.sire_tag}`}
-                                  {record.veterinarian && ` • Veterinarian: ${record.veterinarian}`}
+                                  {record.service_type === 'artificial_insemination' ? 'Artificial Insemination' : record.service_type === 'embryo_transfer' ? 'Embryo Transfer' : 'Natural Service'}
+                                  {(record.bull_tag_or_semen_code || record.bull_name_or_semen_source) && ` • Sire: ${record.bull_name_or_semen_source || record.bull_tag_or_semen_code}`}
+                                  {record.technician_name && ` • Technician: ${record.technician_name}`}
                                 </p>
-                                {(record.expected_calving_date || record.breeding_notes) && (
+                                {(record.expected_calving_date || record.notes) && (
                                   <div className="ml-6 pt-2 border-t border-gray-100 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-gray-500 mb-2">
                                     {record.expected_calving_date && (
-                                      <span>Expected Calving: {format(parseISO(record.expected_calving_date), 'MMM dd, yyyy')}</span>
+                                      <span>Expected Calving: {record.expected_calving_date ? format(parseISO(record.expected_calving_date), 'MMM dd, yyyy') : 'Date not set'}</span>
                                     )}
-                                    {record.breeding_notes && <span className="italic truncate">{record.breeding_notes}</span>}
+                                    {record.notes && <span className="italic truncate">{record.notes}</span>}
                                   </div>
                                 )}
                                 <p className="text-xs text-gray-500 ml-6">
@@ -1380,7 +1391,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                                 </p>
                               </div>
                               
-                              {canAddRecords && record.pregnancy_status === 'pending' && (
+                              {canAddRecords && record.pregnancy_status === 'suspected' && (
                                 <Button 
                                   size="sm" 
                                   variant="outline" 
@@ -1398,7 +1409,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                       // Calving Event
                       if (item.type === 'calving') {
                         const calving = item.data as CalvingEvent
-                        const createdTime = calving.created_at ? parseISO(calving.created_at) : parseISO(calving.event_date)
+                        const createdTime = calving.created_at ? parseISO(calving.created_at) : (calving.event_date ? parseISO(calving.event_date) : new Date())
                         return (
                           <div key={`calving-${calving.id}`} className="border rounded-lg p-4 bg-purple-50 border-purple-100">
                             <div className="flex items-start justify-between">
@@ -1413,7 +1424,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                                 {(calving.estimated_due_date || calving.calving_outcome) && (
                                   <div className="ml-6 pt-2 border-t border-purple-100 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-gray-600 mb-2">
                                     {calving.estimated_due_date && (
-                                      <span>Expected Due: {format(parseISO(calving.estimated_due_date), 'MMM dd, yyyy')}</span>
+                                      <span>Expected Due: {calving.estimated_due_date ? format(parseISO(calving.estimated_due_date), 'MMM dd, yyyy') : 'Date not set'}</span>
                                     )}
                                     {calving.calving_outcome && (
                                       <span>Outcome: <span className="font-semibold">{calving.calving_outcome}</span></span>
@@ -1443,7 +1454,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                <CardDescription>Complete record of all breeding events and history</CardDescription>
              </CardHeader>
              <CardContent>
-               {breedingRecords.length === 0 && heatEvents.length === 0 && inseminationEvents.length === 0 && pregnancyChecks.length === 0 && calvingEvents.length === 0 ? (
+               {serviceRecords.length === 0 && heatEvents.length === 0 && inseminationEvents.length === 0 && pregnancyChecks.length === 0 && calvingEvents.length === 0 ? (
                  <div className="text-center py-12 text-gray-500">
                    <Heart className="w-12 h-12 mx-auto mb-4 text-gray-300" />
                    <p>No breeding history recorded.</p>
@@ -1452,11 +1463,11 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                  <div className="space-y-4">
                    {/* Combine and sort all events by date (chronological order) */}
                    {[
-                     ...heatEvents.map(e => ({ type: 'heat', date: parseISO(e.event_date), created: e.created_at, data: e })),
-                     ...inseminationEvents.map(e => ({ type: 'insemination', date: parseISO(e.event_date), created: e.created_at, data: e })),
-                     ...pregnancyChecks.map(e => ({ type: 'pregnancy_check', date: parseISO(e.check_date), created: e.created_at, data: e })),
-                     ...breedingRecords.map(e => ({ type: 'breeding', date: parseISO(e.breeding_date), created: e.created_at, data: e })),
-                     ...calvingEvents.map(e => ({ type: 'calving', date: parseISO(e.event_date), created: e.created_at, data: e }))
+                     ...heatEvents.filter(e => e.event_date).map(e => ({ type: 'heat', date: parseISO(e.event_date), created: e.created_at, data: e })),
+                     ...inseminationEvents.filter(e => e.event_date).map(e => ({ type: 'insemination', date: parseISO(e.event_date), created: e.created_at, data: e })),
+                     ...pregnancyChecks.filter(e => e.check_date).map(e => ({ type: 'pregnancy_check', date: parseISO(e.check_date), created: e.created_at, data: e })),
+                     ...serviceRecords.filter(e => e.service_date).map(e => ({ type: 'breeding', date: parseISO(e.service_date), created: e.created_at, data: e })),
+                     ...calvingEvents.filter(e => e.event_date).map(e => ({ type: 'calving', date: parseISO(e.event_date), created: e.created_at, data: e }))
                    ]
                      .sort((a, b) => b.date.getTime() - a.date.getTime()) // Newest first
                      .map((item, index) => {
@@ -1563,19 +1574,20 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                                <div className="flex-1">
                                  <div className="flex items-center gap-2 mb-2">
                                    <Calendar className="w-5 h-5 text-gray-600 flex-shrink-0" />
-                                   <span className="font-semibold text-gray-900">Breeding Record</span>
-                                   {getPregnancyStatusBadge(record.pregnancy_status, record.auto_generated)}
+                                   <span className="font-semibold text-gray-900">Service Record</span>
+                                   {getPregnancyStatusBadge(record.pregnancy_status || 'suspected', false)}
                                  </div>
                                  <div className="ml-7 space-y-2 text-sm">
-                                   <p><span className="font-medium text-gray-700">Breeding Date:</span> {format(parseISO(record.breeding_date), 'MMMM dd, yyyy')}</p>
-                                   <p><span className="font-medium text-gray-700">Method:</span> {record.breeding_method === 'artificial_insemination' ? 'Artificial Insemination' : 'Natural Service'}</p>
-                                   {record.sire_tag && <p><span className="font-medium text-gray-700">Sire Tag:</span> {record.sire_tag}</p>}
-                                   {record.veterinarian && <p><span className="font-medium text-gray-700">Veterinarian:</span> {record.veterinarian}</p>}
+                                   <p><span className="font-medium text-gray-700">Service Date:</span> {record.service_date ? format(parseISO(record.service_date), 'MMMM dd, yyyy') : 'Date not set'}</p>
+                                   <p><span className="font-medium text-gray-700">Service #:</span> {record.service_number}</p>
+                                   <p><span className="font-medium text-gray-700">Method:</span> {record.service_type === 'artificial_insemination' ? 'Artificial Insemination' : record.service_type === 'embryo_transfer' ? 'Embryo Transfer' : 'Natural Service'}</p>
+                                   {(record.bull_tag_or_semen_code || record.bull_name_or_semen_source) && <p><span className="font-medium text-gray-700">Sire/Semen Source:</span> {record.bull_name_or_semen_source || record.bull_tag_or_semen_code}</p>}
+                                   {record.technician_name && <p><span className="font-medium text-gray-700">Technician:</span> {record.technician_name}</p>}
                                    {record.expected_calving_date && <p><span className="font-medium text-gray-700">Expected Calving:</span> {format(parseISO(record.expected_calving_date), 'MMMM dd, yyyy')}</p>}
-                                   {record.actual_calving_date && <p><span className="font-medium text-gray-700">Actual Calving:</span> {format(parseISO(record.actual_calving_date), 'MMMM dd, yyyy')}</p>}
-                                   {record.breeding_notes && <p><span className="font-medium text-gray-700">Notes:</span> {record.breeding_notes}</p>}
-                                   {record.breeding_cost && <p><span className="font-medium text-gray-700">Cost:</span> ${record.breeding_cost.toFixed(2)}</p>}
-                                   <p className="text-xs text-gray-500 pt-1">Recorded: {format(record.created_at ? parseISO(record.created_at) : parseISO(record.breeding_date), 'MMM dd, yyyy • h:mm a')}</p>
+                                   {record.notes && <p><span className="font-medium text-gray-700">Notes:</span> {record.notes}</p>}
+                                   {record.service_cost && <p><span className="font-medium text-gray-700">Cost:</span> ${record.service_cost.toFixed(2)}</p>}
+                                   {record.outcome && <p><span className="font-medium text-gray-700">Outcome:</span> {record.outcome}</p>}
+                                   <p className="text-xs text-gray-500 pt-1">Recorded: {format(record.created_at ? parseISO(record.created_at) : parseISO(record.service_date), 'MMM dd, yyyy • h:mm a')}</p>
                                  </div>
                                </div>
                              </div>
@@ -1596,7 +1608,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                                    <Badge className="bg-purple-100 text-purple-800">Calving</Badge>
                                  </div>
                                  <div className="ml-7 space-y-2 text-sm">
-                                   <p><span className="font-medium text-gray-700">Calving Date:</span> {format(parseISO(calving.event_date), 'MMMM dd, yyyy • h:mm a')}</p>
+                                   <p><span className="font-medium text-gray-700">Calving Date:</span> {calving.event_date ? format(parseISO(calving.event_date), 'MMMM dd, yyyy • h:mm a') : 'Date not set'}</p>
                                    {calving.estimated_due_date && <p><span className="font-medium text-gray-700">Estimated Due Date:</span> {format(parseISO(calving.estimated_due_date), 'MMMM dd, yyyy')}</p>}
                                    {calving.calving_outcome && <p><span className="font-medium text-gray-700">Outcome:</span> {calving.calving_outcome}</p>}
                                    <p className="text-xs text-gray-500 pt-1">Recorded: {format(calving.created_at ? parseISO(calving.created_at) : parseISO(calving.event_date), 'MMM dd, yyyy • h:mm a')}</p>
@@ -1681,7 +1693,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                                <div>
                                  <p className="text-xs font-semibold text-gray-600 uppercase">Estimated Due Date</p>
                                  <p className="text-sm text-gray-900 mt-1">
-                                   {format(parseISO(check.estimated_due_date), 'MMMM dd, yyyy')}
+                                   {check.estimated_due_date ? format(parseISO(check.estimated_due_date), 'MMMM dd, yyyy') : 'Date not set'}
                                  </p>
                                </div>
                              )}

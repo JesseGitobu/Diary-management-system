@@ -103,9 +103,18 @@ const handleSubmit = async (data: FollowUpFormData) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        ...data,
-        farm_id: farmId,
+        // Map form fields to database columns
+        record_date: data.record_date,
+        follow_up_status: data.status,  // Maps status → follow_up_status
+        description: data.description,
+        is_resolved: data.resolved,      // Maps resolved → is_resolved
+        treatment_effectiveness: data.treatment_effectiveness,
+        medication_changes: data.medication_changes,
+        veterinarian: data.veterinarian || null,
         cost: data.cost || 0,
+        notes: data.notes,
+        next_due_date: data.next_followup_date || null,
+        farm_id: farmId,
       }),
     })
     
@@ -128,7 +137,7 @@ const handleSubmit = async (data: FollowUpFormData) => {
       updatedAnimal: result.updatedAnimal,
       original_record_id: originalRecord.id,
       animal_id: originalRecord.animal_id,
-      requires_new_record: watchedStatus === 'requires_attention' && originalRecord.record_type === 'checkup',
+      requires_new_record: data.status === 'requires_attention' && originalRecord.record_type === 'checkup',
       root_checkup_id: rootCheckupId // ADD THIS
     }
     

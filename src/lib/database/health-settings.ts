@@ -386,7 +386,7 @@ export async function updateHealthSettings(
 
     const dbSettings = {
       farm_id: farmId,
-      default_veterinarian_id: settings.defaultVeterinarianId,
+      default_veterinarian_id: settings.defaultVeterinarianId || null,
       require_vet_approval_for_critical: settings.requireVetApprovalForCritical,
       auto_assign_health_status: settings.autoAssignHealthStatus,
       health_status_update_method: settings.healthStatusUpdateMethod,

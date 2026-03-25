@@ -8,22 +8,47 @@ import { getUserRole } from '@/lib/database/auth'
 import { getAnimalHealthRecords, createHealthRecordWithStatusUpdate, getFollowUpRecords,
   getHealthRecordsWithFollowUps,
   updateAnimalHealthStatus, createHealthRecord } from '@/lib/database/health'
+import {
+  generateOperationId,
+  logApiRequest,
+  logValidation,
+  logDataPreparation,
+  logDatabaseInsert,
+  logRelationshipCreation,
+  logFinalResponse,
+  isDebugEnabled,
+  debugInstructions,
+} from '@/lib/debug/health-records-logger'
 
 export async function POST(request: NextRequest) {
+  // Generate unique operation ID for tracking this request
+  const operationId = generateOperationId()
+
+  // Print debug instructions on first request if enabled
+  if (isDebugEnabled()) {
+    console.log(debugInstructions())
+  }
+
   try {
     const user = await getCurrentUser()
     
     if (!user) {
+      logFinalResponse(operationId, false, null, 'Unauthorized')
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
     const userRole = await getUserRole(user.id) as any
     
     if (!userRole?.farm_id || !['farm_owner', 'farm_manager', 'worker'].includes(userRole.role_type)) {
+      logFinalResponse(operationId, false, null, 'Insufficient permissions')
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
     
     const body = await request.json()
+    
+    // Log incoming request
+    logApiRequest(operationId, body, user.id, userRole.farm_id)
+    
     const { 
       // Basic fields
       animal_id, 
@@ -95,11 +120,24 @@ export async function POST(request: NextRequest) {
       deworming_dose,
       next_deworming_date,
       deworming_administered_by,
-      root_checkup_id
+      root_checkup_id,
+      linked_health_issue_id
     } = body
     
     // Validate required fields
-    if (!animal_id || !record_date || !record_type || !description) {
+    const requiredFields = { animal_id, record_date, record_type, description }
+    const validationErrors: string[] = []
+    
+    if (!animal_id) validationErrors.push('animal_id is required')
+    if (!record_date) validationErrors.push('record_date is required')
+    if (!record_type) validationErrors.push('record_type is required')
+    if (!description) validationErrors.push('description is required')
+    
+    // Log validation
+    logValidation(operationId, requiredFields, validationErrors.length === 0, validationErrors)
+    
+    if (validationErrors.length > 0) {
+      logFinalResponse(operationId, false, null, validationErrors.join('; '))
       return NextResponse.json({ 
         error: 'Missing required fields: animal_id, record_date, record_type, description' 
       }, { status: 400 })
@@ -108,6 +146,7 @@ export async function POST(request: NextRequest) {
     // Validate record type
     const validRecordTypes = ['vaccination', 'treatment', 'checkup', 'injury', 'illness', 'reproductive', 'deworming']
     if (!validRecordTypes.includes(record_type)) {
+      logFinalResponse(operationId, false, null, `Invalid record type: ${record_type}`)
       return NextResponse.json({ 
         error: `Invalid record type. Must be one of: ${validRecordTypes.join(', ')}` 
       }, { status: 400 })
@@ -115,6 +154,7 @@ export async function POST(request: NextRequest) {
     
     // Validate follow-up relationship
     if (is_follow_up && !original_record_id) {
+      logFinalResponse(operationId, false, null, 'original_record_id required for follow-ups')
       return NextResponse.json({ 
         error: 'original_record_id is required when is_follow_up is true' 
       }, { status: 400 })
@@ -193,23 +233,31 @@ export async function POST(request: NextRequest) {
       deworming_dose: deworming_dose || null,
       next_deworming_date: next_deworming_date || null,
       deworming_administered_by: deworming_administered_by || null,
-      root_checkup_id: root_checkup_id || null
+      root_checkup_id: root_checkup_id || null,
+      linked_health_issue_id: linked_health_issue_id || null
     }
+    
+    // Log data preparation
+    logDataPreparation(operationId, 'animal_health_records', recordData)
     
     // Create the supabase client for additional operations
     const supabase = await createServerSupabaseClient()
     
     // Use enhanced function that updates health status
-    const result = await createHealthRecordWithStatusUpdate(recordData) as any
+    const result = await createHealthRecordWithStatusUpdate(recordData, operationId) as any
     
     if (!result.success) {
+      logFinalResponse(operationId, false, null, result.error)
       return NextResponse.json({ error: result.error }, { status: 400 })
     }
+    
+    // Log successful insert
+    logDatabaseInsert(operationId, 'animal_health_records', result.data.id, recordData)
     
     // If this is a follow-up record, create the relationship in health_record_follow_ups table
     if (is_follow_up && original_record_id && result.data) {
       // Cast supabase to any to fix "Argument of type ... is not assignable to parameter of type 'never'"
-      const { error: relationError } = await (supabase as any)
+      const { data: relationData, error: relationError } = await (supabase as any)
         .from('health_record_follow_ups')
         .insert({
           original_record_id: original_record_id,
@@ -218,11 +266,38 @@ export async function POST(request: NextRequest) {
           is_resolved: false,
           created_at: new Date().toISOString()
         })
+        .select()
+        .single()
       
       if (relationError) {
         console.error('Error creating follow-up relationship:', relationError)
+        logRelationshipCreation(operationId, 'health_record_follow_ups', 
+          { original_record_id, follow_up_record_id: result.data.id }, 
+          'N/A', relationError.message)
         // Don't fail the entire operation, but log the error
         // The record is still created, just not linked properly
+      } else {
+        logRelationshipCreation(operationId, 'health_record_follow_ups', 
+          { original_record_id, follow_up_record_id: result.data.id }, 
+          relationData.id)
+      }
+    }
+
+    // If linked_health_issue_id is provided, update the health issue to link back to this record
+    if (linked_health_issue_id && result.data) {
+      const { error: linkError } = await (supabase as any)
+        .from('health_issues')
+        .update({
+          linked_health_record_id: result.data.id,
+          status: 'in_progress'
+        })
+        .eq('id', linked_health_issue_id)
+        .eq('farm_id', userRole.farm_id)
+      
+      if (linkError) {
+        console.error('Error linking health issue to record:', linkError)
+      } else {
+        console.log('✅ Health issue linked to record:', linked_health_issue_id, '<->', result.data.id)
       }
     }
     
@@ -248,10 +323,14 @@ export async function POST(request: NextRequest) {
       response.updatedAnimal = result.updatedAnimal
     }
     
+    // Log final response
+    logFinalResponse(operationId, true, response.record)
+    
     return NextResponse.json(response)
     
   } catch (error) {
     console.error('Health record POST API error:', error)
+    logFinalResponse(operationId, false, null, error instanceof Error ? error.message : 'Unknown error')
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

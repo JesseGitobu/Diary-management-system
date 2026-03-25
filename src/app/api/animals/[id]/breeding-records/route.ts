@@ -144,9 +144,15 @@ export async function GET(
           resultValue = 'completed'
         } else if (pregnancyRecord?.pregnancy_status === 'aborted') {
           resultValue = 'aborted'
+        } else if (pregnancyRecord?.pregnancy_status === 'confirmed') {
+          // ✅ Map 'confirmed' pregnancy status to 'positive' result
+          resultValue = 'positive'
         } else if (e.pregnancy_result === 'pregnant') {
           resultValue = 'positive'
         } else if (e.pregnancy_result === 'not_pregnant') {
+          resultValue = 'negative'
+        } else if (pregnancyRecord?.pregnancy_status === 'false') {
+          // ✅ Map 'false' pregnancy status to 'negative' result
           resultValue = 'negative'
         }
         
