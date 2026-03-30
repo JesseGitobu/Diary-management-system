@@ -14,7 +14,6 @@ export async function getFarmFeedMixRecipes(farmId: string) {
       .from('feed_mix_recipes')
       .select('*')
       .eq('farm_id', farmId)
-      .eq('active', true)
       .order('created_at', { ascending: false })
 
     if (error) throw error
@@ -85,12 +84,11 @@ export async function getApplicableRecipes(
   try {
     const supabase = await createServerSupabaseClient()
     
-    // Fetch all active recipes
+    // Fetch all recipes
     const { data: recipes, error: recipesError } = await supabase
       .from('feed_mix_recipes')
       .select('*')
       .eq('farm_id', farmId)
-      .eq('active', true)
 
     if (recipesError) throw recipesError
 

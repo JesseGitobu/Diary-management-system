@@ -56,13 +56,13 @@ export async function getAnimalFeedingRecords(
 
     // Get feeding records where this animal was involved
     const { data: records, error } = await supabase
-      .from('feed_consumption')
+      .from('feed_consumption_records')
       .select(`
         id,
         feed_type_id,
-        quantity_kg,
-        feeding_time,
-        feeding_mode,
+        quantity_consumed,
+        consumption_date,
+        batch_id,
         animal_count,
         notes,
         recorded_by,
@@ -393,11 +393,11 @@ export async function getAnimalFeedingStats(
     startDate.setDate(startDate.getDate() - days)
 
     const { data: records, error } = await supabase
-      .from('feed_consumption')
+      .from('feed_consumption_records')
       .select(`
         id,
-        quantity_kg,
-        feeding_time,
+        quantity_consumed,
+        consumption_date,
         feed_types!inner (
           typical_cost_per_kg
         ),

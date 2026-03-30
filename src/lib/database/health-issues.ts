@@ -16,6 +16,57 @@ export interface HealthIssueData {
   reported_by: string
   first_observed_at?: string | null
   assigned_veterinarian_id?: string | null
+
+  // Injury fields
+  injury_location?: string | null
+  injury_wound_type?: string | null
+  injury_bleeding?: boolean | null
+  injury_swelling?: boolean | null
+
+  // Illness fields
+  illness_temperature?: string | null
+  illness_onset_hours?: string | null
+  illness_other_animals?: boolean | null
+  illness_milk_change?: boolean | null
+  illness_appetite?: string | null
+
+  // Behavior change fields
+  behavior_type?: string | null
+  behavior_consistency?: string | null
+
+  // Lameness fields
+  lameness_affected_legs?: string | null
+  lameness_severity?: string | null
+  lameness_swelling?: boolean | null
+
+  // Respiratory fields
+  respiratory_cough_type?: string | null
+  respiratory_nasal_discharge?: string | null
+  respiratory_temperature?: string | null
+  respiratory_difficulty?: string | null
+  respiratory_duration?: string | null
+
+  // Reproductive fields
+  reproductive_cycle_stage?: string | null
+  reproductive_discharge?: string | null
+  reproductive_breeding_date?: string | null
+
+  // Poor appetite fields
+  appetite_level?: string | null
+  appetite_food_refused?: string | null
+  appetite_water_intake?: string | null
+  appetite_duration_hours?: string | null
+  appetite_other_symptoms?: string | null
+
+  // Reduced milk fields
+  reduced_milk_yield_change?: string | null
+  reduced_milk_color?: string | null
+  reduced_milk_consistency?: string | null
+  reduced_milk_temperature_check?: boolean | null
+  reduced_milk_body_temperature?: string | null
+  reduced_milk_udder_temperature?: string | null
+  reduced_milk_onset_hours?: string | null
+  reduced_milk_previous_yield?: string | null
 }
 
 export interface HealthIssueUpdateData {
@@ -72,6 +123,58 @@ export async function createHealthIssue(data: HealthIssueData) {
       is_urgent: data.severity === 'high' || data.severity === 'critical',
       requires_immediate_attention: data.severity === 'critical',
       veterinarian_notified_at: data.alert_veterinarian ? new Date().toISOString() : null,
+      
+      // Injury fields
+      injury_location: data.injury_location || null,
+      injury_wound_type: data.injury_wound_type || null,
+      injury_bleeding: data.injury_bleeding || false,
+      injury_swelling: data.injury_swelling || false,
+
+      // Illness fields
+      illness_temperature: data.illness_temperature || null,
+      illness_onset_hours: data.illness_onset_hours || null,
+      illness_other_animals: data.illness_other_animals || false,
+      illness_milk_change: data.illness_milk_change || false,
+      illness_appetite: data.illness_appetite || null,
+
+      // Behavior change fields
+      behavior_type: data.behavior_type || null,
+      behavior_consistency: data.behavior_consistency || null,
+
+      // Lameness fields
+      lameness_affected_legs: data.lameness_affected_legs || null,
+      lameness_severity: data.lameness_severity || null,
+      lameness_swelling: data.lameness_swelling || false,
+
+      // Respiratory fields
+      respiratory_cough_type: data.respiratory_cough_type || null,
+      respiratory_nasal_discharge: data.respiratory_nasal_discharge || null,
+      respiratory_temperature: data.respiratory_temperature || null,
+      respiratory_difficulty: data.respiratory_difficulty || null,
+      respiratory_duration: data.respiratory_duration || null,
+
+      // Reproductive fields
+      reproductive_cycle_stage: data.reproductive_cycle_stage || null,
+      reproductive_discharge: data.reproductive_discharge || null,
+      reproductive_breeding_date: data.reproductive_breeding_date || null,
+
+      // Poor appetite fields
+      appetite_level: data.appetite_level || null,
+      appetite_food_refused: data.appetite_food_refused || null,
+      appetite_water_intake: data.appetite_water_intake || null,
+      appetite_duration_hours: data.appetite_duration_hours || null,
+      appetite_other_symptoms: data.appetite_other_symptoms || null,
+
+      // Reduced milk fields
+      reduced_milk_yield_change: data.reduced_milk_yield_change || null,
+      reduced_milk_color: data.reduced_milk_color || null,
+      reduced_milk_consistency: data.reduced_milk_consistency || null,
+      reduced_milk_temperature_check: data.reduced_milk_temperature_check || false,
+      reduced_milk_body_temperature: data.reduced_milk_body_temperature || null,
+      reduced_milk_udder_temperature: data.reduced_milk_udder_temperature || null,
+      reduced_milk_onset_hours: data.reduced_milk_onset_hours || null,
+      reduced_milk_previous_yield: data.reduced_milk_previous_yield || null,
+
       observation_history: [
         {
           timestamp: new Date().toISOString(),

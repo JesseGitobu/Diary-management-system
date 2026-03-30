@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { createProductionRecord, getProductionRecords } from '@/lib/database/production'
+import { createServerSupabaseClient } from '@/lib/supabase/server'
 
 export async function POST(request: NextRequest) {
   try {
@@ -42,8 +43,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'milk_volume is required' }, { status: 400 })
     }
     if (!productionData.milking_session_id) {
+      console.error('[ProductionAPI] Missing milking_session_id in request:', {
+        received: productionData,
+        sessionId: productionData.milking_session_id
+      })
       return NextResponse.json({ error: 'milking_session_id is required' }, { status: 400 })
     }
+    
+    console.log('[ProductionAPI] Received record submission:', {
+      animal_id: productionData.animal_id,
+      record_date: productionData.record_date,
+      milking_session_id: productionData.milking_session_id,
+      milk_volume: productionData.milk_volume
+    })
     if (!productionData.milk_safety_status) {
       return NextResponse.json({ error: 'milk_safety_status is required' }, { status: 400 })
     }
@@ -64,6 +76,23 @@ export async function POST(request: NextRequest) {
           error: `mastitis_result must be one of: ${validMastitisResults.join(', ')}` 
         }, { status: 400 })
       }
+    }
+    
+    // Check for mastitis test requirement from settings
+    const supabase = await createServerSupabaseClient()
+    const { data: settingsData } = await supabase
+      .from('production_distribution_settings')
+      .select('settings')
+      .eq('farm_id', userRole.farm_id)
+      .single() as any
+    
+    const settings = (settingsData as any)?.settings || {}
+    
+    // If mastitis test is required, validate it's performed
+    if (settings.requireMastitisTest && !productionData.mastitis_test_performed) {
+      return NextResponse.json({ 
+        error: 'Mastitis test is required for this farm. Please perform and record the mastitis test before saving this record.' 
+      }, { status: 400 })
     }
     
     // Build the data object with only valid fields

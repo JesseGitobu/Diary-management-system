@@ -120,8 +120,8 @@ export async function getCurrentFeedStock(farmId: string) {
 
     // Get total consumption by feed type
     const { data: consumptionData } = await supabase
-      .from('feed_consumption')
-      .select('feed_type_id, quantity_kg')
+      .from('feed_consumption_records')
+      .select('feed_type_id, quantity_consumed')
       .eq('farm_id', farmId)
     
     // FIXED: Cast to any[]
@@ -155,11 +155,9 @@ export async function getCurrentFeedStock(farmId: string) {
       const feedTypeId = item.feed_type_id
       if (stockLevels.has(feedTypeId)) {
         const stock = stockLevels.get(feedTypeId)
-        stock.totalConsumed += item.quantity_kg || 0
+        stock.totalConsumed += item.quantity_consumed || 0
       }
     })
-    
-    // Calculate current stock
     const stockArray = Array.from(stockLevels.values()).map(stock => ({
       ...stock,
       currentStock: stock.totalPurchased - stock.totalConsumed,
@@ -173,11 +171,11 @@ export async function getCurrentFeedStock(farmId: string) {
 }
 
 // Feed Consumption Management
-export async function recordFeedConsumption(farmId: string, data: Omit<FeedConsumptionInsert, 'farm_id'>) {
+export async function recordFeedConsumption(farmId: string, data: any) {
   const supabase = await createServerSupabaseClient()
   
   const { data: consumption, error } = await (supabase
-    .from('feed_consumption') as any)
+    .from('feed_consumption_records') as any)
     .insert({
       ...data,
       farm_id: farmId,
@@ -200,8 +198,8 @@ export async function recordFeedConsumption(farmId: string, data: Omit<FeedConsu
   }
   
   // Update daily summary
-  if (data.feeding_time) {
-    await updateDailyFeedSummary(farmId, data.feeding_time)
+  if (data.consumption_date) {
+    await updateDailyFeedSummary(farmId, data.consumption_date)
   }
   
   return { success: true, data: consumption }
@@ -216,7 +214,7 @@ export async function getFeedConsumption(
   const supabase = await createServerSupabaseClient()
 
   let query = supabase
-    .from('feed_consumption')
+    .from('feed_consumption_records')
     .select(`
       *,
       feed_types (
@@ -259,20 +257,18 @@ export async function updateDailyFeedSummary(farmId: string, date: string) {
   try {
     // Calculate daily totals - get consumption with feed type cost information
     const { data: dailyConsumptionData, error: consumptionError } = await supabase
-      .from('feed_consumption')
+      .from('feed_consumption_records')
       .select(`
         id,
-        quantity_kg,
+        quantity_consumed,
         feed_type_id,
-        animal_count,
-        feeding_mode,
         feed_types!inner (
           typical_cost_per_kg
         )
       `)
       .eq('farm_id', farmId)
-      .gte('feeding_time', `${date}T00:00:00`)
-      .lt('feeding_time', `${date}T23:59:59`)
+      .gte('consumption_date', date)
+      .lte('consumption_date', date)
     
     if (consumptionError) {
       console.error('Error fetching daily consumption:', consumptionError)
@@ -293,33 +289,20 @@ export async function updateDailyFeedSummary(farmId: string, date: string) {
     }
     
     // Calculate totals
-    const totalQuantity = dailyConsumption.reduce((sum, record) => sum + (record.quantity_kg || 0), 0)
+    const totalQuantity = dailyConsumption.reduce((sum, record) => sum + (record.quantity_consumed || 0), 0)
     
     // Calculate total cost using feed type's typical cost
     const totalCost = dailyConsumption.reduce((sum, record) => {
       const costPerKg = record.feed_types?.typical_cost_per_kg || 0
-      return sum + ((record.quantity_kg || 0) * costPerKg)
+      return sum + ((record.quantity_consumed || 0) * costPerKg)
     }, 0)
     
     // Count unique feed types used
     const uniqueFeedTypes = new Set(dailyConsumption.map(r => r.feed_type_id)).size
     
-    // Calculate total animals fed
-    let totalAnimalsFed = 0
-    for (const record of dailyConsumption) {
-      if (record.feeding_mode === 'batch') {
-        // For batch feeding, use animal_count
-        totalAnimalsFed += record.animal_count || 0
-      } else if (record.feeding_mode === 'individual') {
-        // For individual feeding, count from junction table
-        const { data: animalAssociations } = await supabase
-          .from('feed_consumption_animals')
-          .select('animal_id')
-          .eq('consumption_id', record.id)
-        
-        totalAnimalsFed += animalAssociations?.length || 1 // Default to 1 if no associations found
-      }
-    }
+    // Count unique animals fed (each record represents one animal)
+    const uniqueAnimalsFed = new Set(dailyConsumption.map(r => r.animal_id)).size
+    const totalAnimalsFed = uniqueAnimalsFed
     
     const costPerAnimal = totalAnimalsFed > 0 ? totalCost / totalAnimalsFed : 0
     
@@ -398,20 +381,20 @@ export async function getFeedStats(farmId: string, days: number = 30) {
 
       // Get total consumption for this feed type
       const { data: consumptionData } = await supabase
-        .from('feed_consumption')
-        .select('id, quantity_kg, animal_count, feeding_mode, feeding_time')
+        .from('feed_consumption_records')
+        .select('id, quantity_consumed, consumption_date')
         .eq('farm_id', farmId)
         .eq('feed_type_id', feedType.id)
-        .gte('feeding_time', `${startDate}T00:00:00`)
-        .lte('feeding_time', `${endDate}T23:59:59`)
+        .gte('consumption_date', `${startDate}T00:00:00`)
+        .lte('consumption_date', `${endDate}T23:59:59`)
 
       // FIXED: Cast to any[]
       const consumption = (consumptionData as any[]) || []
 
       // Get total all-time consumption for this feed type
       const { data: allTimeConsumptionData } = await supabase
-        .from('feed_consumption')
-        .select('quantity_kg')
+        .from('feed_consumption_records')
+        .select('quantity_consumed')
         .eq('farm_id', farmId)
         .eq('feed_type_id', feedType.id)
 
@@ -419,28 +402,15 @@ export async function getFeedStats(farmId: string, days: number = 30) {
       const allTimeConsumption = (allTimeConsumptionData as any[]) || []
 
       const totalPurchased = inventory.reduce((sum, item) => sum + (item.quantity_in_stock || 0), 0) || 0
-      const totalAllTimeConsumed = allTimeConsumption.reduce((sum, item) => sum + (item.quantity_kg || 0), 0) || 0
+      const totalAllTimeConsumed = allTimeConsumption.reduce((sum, item) => sum + (item.quantity_consumed || 0), 0) || 0
       const currentStock = totalPurchased // quantity_in_stock is already the current stock
 
       // Calculate period consumption stats
-      const periodConsumption = consumption.reduce((sum, item) => sum + (item.quantity_kg || 0), 0) || 0
+      const periodConsumption = consumption.reduce((sum, item) => sum + (item.quantity_consumed || 0), 0) || 0
       const periodSessions = consumption.length || 0
       
-      // Calculate animals fed in period
-      let periodAnimalsFed = 0
-      for (const record of consumption) {
-        if (record.feeding_mode === 'batch') {
-          periodAnimalsFed += record.animal_count || 0
-        } else {
-          // For individual feeding, query the junction table
-          const { data: animalAssociations } = await supabase
-            .from('feed_consumption_animals')
-            .select('animal_id')
-            .in('consumption_id', consumption.map(r => r.id) || [])
-          
-          periodAnimalsFed += animalAssociations?.length || consumption.length || 0
-        }
-      }
+      // Count unique animals fed in period (each record is one animal)
+      const periodAnimalsFed = new Set(consumption.map(r => r.animal_id)).size
 
       const avgCostPerKg = feedType.typical_cost_per_kg || 0
 
@@ -511,16 +481,15 @@ export async function getFeedConsumptionRecords(farmId: string, limit: number = 
     const supabase = await createServerSupabaseClient()
     
     const { data: records, error } = await supabase
-      .from('feed_consumption')
+      .from('feed_consumption_records')
       .select(`
         id,
+        animal_id,
         feed_type_id,
-        quantity_kg,
-        feeding_time,
-        feeding_mode,
-        animal_count,
+        quantity_consumed,
+        consumption_date,
+        batch_id,
         notes,
-        recorded_by,
         created_at,
         feed_types (
           id,
@@ -529,7 +498,7 @@ export async function getFeedConsumptionRecords(farmId: string, limit: number = 
         )
       `)
       .eq('farm_id', farmId)
-      .order('feeding_time', { ascending: false })
+      .order('consumption_date', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(limit)
 
@@ -625,7 +594,7 @@ export async function deleteFeedType(farmId: string, feedTypeId: string) {
     
     // Check if there are any consumption records using this feed type
     const { data: consumptionRecords, error: consumptionError } = await supabase
-      .from('feed_consumption')
+      .from('feed_consumption_records')
       .select('id')
       .eq('feed_type_id', feedTypeId)
       .eq('farm_id', farmId)
@@ -701,7 +670,7 @@ export async function updateFeedConsumption(
   try {
     // First check if the consumption record belongs to the farm
     const { data: existingRecord, error: checkError } = await supabase
-      .from('feed_consumption')
+      .from('feed_consumption_records')
       .select('id, farm_id')
       .eq('id', consumptionId)
       .eq('farm_id', farmId)
@@ -717,16 +686,14 @@ export async function updateFeedConsumption(
     }
     
     if (data.feedTypeId) updateData.feed_type_id = data.feedTypeId
-    if (data.quantityKg !== undefined) updateData.quantity_kg = data.quantityKg
-    if (data.animalCount !== undefined) updateData.animal_count = data.animalCount
-    if (data.feedingTime) updateData.feeding_time = data.feedingTime
+    if (data.quantityKg !== undefined) updateData.quantity_consumed = data.quantityKg
+    if (data.feedingTime) updateData.consumption_date = data.feedingTime
     if (data.notes !== undefined) updateData.notes = data.notes
-    if (data.feedingMode) updateData.feeding_mode = data.feedingMode
     if (data.batchId !== undefined) updateData.batch_id = data.batchId
     
     // Update the consumption record
     const { data: updatedRecord, error: updateError } = await (supabase
-      .from('feed_consumption') as any)
+      .from('feed_consumption_records') as any)
       .update(updateData)
       .eq('id', consumptionId)
       .eq('farm_id', farmId)
@@ -745,37 +712,7 @@ export async function updateFeedConsumption(
       return { success: false, error: updateError.message }
     }
     
-    // Handle animal associations for individual feeding mode
-    if (data.feedingMode === 'individual' && data.animalIds) {
-      // Delete existing associations
-      const { error: deleteAssociationsError } = await supabase
-        .from('feed_consumption_animals')
-        .delete()
-        .eq('consumption_id', consumptionId)
-      
-      if (deleteAssociationsError) {
-        console.error('Error deleting existing animal associations:', deleteAssociationsError)
-      }
-      
-      // Insert new associations if there are animal IDs
-      if (data.animalIds.length > 0) {
-        const animalAssociations = data.animalIds.map(animalId => ({
-          consumption_id: consumptionId,
-          animal_id: animalId
-        }))
-        
-        const { error: insertAssociationsError } = await (supabase
-          .from('feed_consumption_animals') as any)
-          .insert(animalAssociations)
-        
-        if (insertAssociationsError) {
-          console.error('Error inserting new animal associations:', insertAssociationsError)
-          // Continue despite this error as the main record was updated
-        }
-      }
-    }
-    
-    // Update daily summary if feeding time was changed
+    // Update daily summary if consumption date was changed
     if (data.feedingTime) {
       const date = new Date(data.feedingTime).toISOString().split('T')[0]
       await updateDailyFeedSummary(farmId, date)
@@ -796,8 +733,8 @@ export async function deleteFeedConsumption(farmId: string, consumptionId: strin
   try {
     // First check if the consumption record belongs to the farm and get the feeding date
     const { data: existingRecord, error: checkError } = await (supabase
-      .from('feed_consumption') as any)
-      .select('id, farm_id, feeding_time')
+      .from('feed_consumption_records') as any)
+      .select('id, farm_id, consumption_date')
       .eq('id', consumptionId)
       .eq('farm_id', farmId)
       .single()
@@ -806,23 +743,11 @@ export async function deleteFeedConsumption(farmId: string, consumptionId: strin
       return { success: false, error: 'Consumption record not found or access denied' }
     }
     
-    const feedingDate = existingRecord.feeding_time ? 
-      new Date(existingRecord.feeding_time).toISOString().split('T')[0] : null
-    
-    // Delete associated animal records first (if any)
-    const { error: deleteAssociationsError } = await supabase
-      .from('feed_consumption_animals')
-      .delete()
-      .eq('consumption_id', consumptionId)
-    
-    if (deleteAssociationsError) {
-      console.error('Error deleting animal associations:', deleteAssociationsError)
-      // Continue with deletion even if associations couldn't be deleted
-    }
+    const feedingDate = existingRecord.consumption_date
     
     // Delete the consumption record
     const { error: deleteError } = await supabase
-      .from('feed_consumption')
+      .from('feed_consumption_records')
       .delete()
       .eq('id', consumptionId)
       .eq('farm_id', farmId)
@@ -851,7 +776,7 @@ export async function getFeedConsumptionById(farmId: string, consumptionId: stri
   
   try {
     const { data, error } = await supabase
-      .from('feed_consumption')
+      .from('feed_consumption_records')
       .select(`
         *,
         feed_types (
@@ -859,13 +784,10 @@ export async function getFeedConsumptionById(farmId: string, consumptionId: stri
           name,
           description
         ),
-        feed_consumption_animals (
-          animal_id,
-          animals (
-            id,
-            tag_number,
-            name
-          )
+        animals (
+          id,
+          tag_number,
+          name
         )
       `)
       .eq('id', consumptionId)

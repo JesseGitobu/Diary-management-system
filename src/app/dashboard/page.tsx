@@ -311,7 +311,7 @@ export default async function DashboardPage() {
                     <span className="font-medium text-orange-600">{dashboardStats?.breeding?.dueSoon || 0}</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-gray-600">Dry Cows</span>
+                    <span className="text-gray-600">Open Dry Cows</span>
                     <span className="font-medium">{dashboardStats?.animals?.dryCows || 0}</span>
                   </div>
                 </div>

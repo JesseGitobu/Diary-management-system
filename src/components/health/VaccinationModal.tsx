@@ -185,9 +185,7 @@ const form = useForm<VaccinationFormData>({
             <Syringe className="w-6 h-6 text-green-600" />
             <span>Record Vaccination</span>
           </h3>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            <X className="w-5 h-5" />
-          </Button>
+          
         </div>
         
         {error && (

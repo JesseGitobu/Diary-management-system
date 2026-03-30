@@ -1,7 +1,7 @@
 // src/components/animals/AnimalsClientPage.tsx
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
@@ -13,6 +13,7 @@ import { QuickActionButton } from '@/components/mobile/QuickActionButton'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { HealthNotificationBanner } from '@/components/health/HealthNotificationBanner'
 import CompleteHealthRecordModal from '@/components/health/CompleteHealthRecordModal'
+import { AnimalCategoriesManager } from './AnimalCategoriesManager'
 import {
   Plus,
   Users,
@@ -20,8 +21,15 @@ import {
   Download,
   Upload,
   TrendingUp,
-  Scale
+  Scale,
+  Tags
 } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/DropdownMenu'
 import { GiCow } from 'react-icons/gi'
 import { Animal } from '@/types/database'
 import { HealthStatusNotification } from '../health/HealthStatusChangeNotification'
@@ -76,6 +84,9 @@ export function AnimalsClientPage({
   const [stats, setStats] = useState(initialStats)
   const [showAddModal, setShowAddModal] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
+  const [showCategoriesModal, setShowCategoriesModal] = useState(false)
+  const [categories, setCategories] = useState<any[]>([])
+  const [loadingCategories, setLoadingCategories] = useState(false)
   const [loading, setLoading] = useState(false)
 
   const { isMobile } = useDeviceInfo()
@@ -84,6 +95,30 @@ export function AnimalsClientPage({
   const canManageAnimals = ['farm_owner', 'farm_manager', 'worker'].includes(userRole)
   const canExportData = ['farm_owner', 'farm_manager'].includes(userRole)
   const canImportData = ['farm_owner', 'farm_manager'].includes(userRole)
+  const canManageCategories = ['farm_owner', 'farm_manager'].includes(userRole)
+
+  // Load categories when modal opens
+  const handleOpenCategoriesModal = async () => {
+    setShowCategoriesModal(true)
+    if (categories.length === 0) {
+      setLoadingCategories(true)
+      try {
+        const response = await fetch(`/api/farms/${farmId}/feed-management/animal-categories`)
+        if (response.ok) {
+          const data = await response.json()
+          setCategories(data.data || [])
+        }
+      } catch (error) {
+        console.error('Error loading categories:', error)
+      } finally {
+        setLoadingCategories(false)
+      }
+    }
+  }
+
+  const handleCategoriesUpdated = (updatedCategories: any[]) => {
+    setCategories(updatedCategories)
+  }
 
   const [showHealthRecordModal, setShowHealthRecordModal] = useState(false)
   const [selectedHealthRecord, setSelectedHealthRecord] = useState<any>(null)
@@ -471,21 +506,22 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
 
   return (
     <div className={`
-      flex flex-col h-screen
+      flex flex-col h-screen overflow-hidden
       ${isMobile ? 'px-4 py-4' : 'dashboard-container'} 
-      pb-20 lg:pb-6
     `}>
-      {/* Health Notifications - Show at the top */}
-      <HealthNotificationBanner
-        farmId={farmId}
-        onRecordClick={handleHealthRecordClick}
-        missingRecords={healthRecordsNeedingCompletion} // Pass the state down
-        loading={loadingIncompleteRecords}
+      {/* Scrollable content area with banners and main content */}
+      <div className="flex-1 overflow-y-auto pb-20 lg:pb-6">
+        {/* Health Notifications - Show at the top */}
+        <HealthNotificationBanner
+          farmId={farmId}
+          onRecordClick={handleHealthRecordClick}
+          missingRecords={healthRecordsNeedingCompletion} // Pass the state down
+          loading={loadingIncompleteRecords}
 
-      />
+        />
 
-      {/* Weight Update Notifications */}
-    {!loadingWeightRequirements && animalsNeedingWeight.length > 0 && (
+        {/* Weight Update Notifications */}
+      {!loadingWeightRequirements && animalsNeedingWeight.length > 0 && (
       <div className="mb-4 p-4 bg-orange-50 border-l-4 border-orange-500 rounded-r-lg">
         <div className="flex items-start space-x-3">
           <Scale className="w-5 h-5 text-orange-600 mt-0.5 flex-shrink-0" />
@@ -561,24 +597,43 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
               </p>
             </div>
 
-            {/* Mobile Action Buttons */}
-            {canAddAnimals && (
-              <div className="flex space-x-2">
-                {canImportData && (
-                  <QuickActionButton
-                    onClick={() => setShowImportModal(true)}
-                    icon={<Upload className="h-5 w-5" />}
-                    label="Import"
-                    variant="secondary"
-                  />
+            {/* Quick Actions Menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm">
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                {canManageAnimals && (
+                  <DropdownMenuItem onClick={() => setShowAddModal(true)}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Animal
+                  </DropdownMenuItem>
                 )}
-                <QuickActionButton
-                  onClick={() => setShowAddModal(true)}
-                  icon={<Plus className="h-6 w-6" />}
-                  label="Add Animal"
-                />
-              </div>
-            )}
+                {canImportData && (
+                  <DropdownMenuItem onClick={() => setShowImportModal(true)}>
+                    <Upload className="mr-2 h-4 w-4" />
+                    Import Animals
+                  </DropdownMenuItem>
+                )}
+                {canExportData && (
+                  <DropdownMenuItem 
+                    onClick={handleExportAnimals}
+                    disabled={animals.length === 0}
+                  >
+                    <Download className="mr-2 h-4 w-4" />
+                    Export Animals
+                  </DropdownMenuItem>
+                )}
+                {canManageCategories && (
+                  <DropdownMenuItem onClick={handleOpenCategoriesModal}>
+                    <Tags className="mr-2 h-4 w-4" />
+                    Create Animal Categories
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       ) : (
@@ -591,35 +646,43 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
             </p>
           </div>
 
-          <div className="flex space-x-3">
-            {canExportData && (
-              <Button
-                variant="outline"
-                onClick={handleExportAnimals}
-                disabled={loading || animals.length === 0}
-              >
-                <Download className="mr-2 h-4 w-4" />
-                Export
-              </Button>
-            )}
-
-            {canImportData && (
-              <Button
-                variant="outline"
-                onClick={() => setShowImportModal(true)}
-              >
-                <Upload className="mr-2 h-4 w-4" />
-                Import
-              </Button>
-            )}
-
-            {canManageAnimals && (
-              <Button onClick={() => setShowAddModal(true)}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="default">
                 <Plus className="mr-2 h-4 w-4" />
-                Add Animal
+                Quick Actions
               </Button>
-            )}
-          </div>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              {canManageAnimals && (
+                <DropdownMenuItem onClick={() => setShowAddModal(true)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Animal
+                </DropdownMenuItem>
+              )}
+              {canImportData && (
+                <DropdownMenuItem onClick={() => setShowImportModal(true)}>
+                  <Upload className="mr-2 h-4 w-4" />
+                  Import Animals
+                </DropdownMenuItem>
+              )}
+              {canExportData && (
+                <DropdownMenuItem 
+                  onClick={handleExportAnimals}
+                  disabled={animals.length === 0}
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  Export Animals
+                </DropdownMenuItem>
+              )}
+              {canManageCategories && (
+                <DropdownMenuItem onClick={handleOpenCategoriesModal}>
+                  <Tags className="mr-2 h-4 w-4" />
+                  Create Animal Categories
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       )}
 
@@ -808,16 +871,15 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
       )}
 
       {/* Animals List */}
-      <div className="flex-1 overflow-hidden">
-        <AnimalsList
-          animals={animals}
-          farmId={farmId}
-          userRole={userRole}
-          onAnimalUpdated={handleAnimalUpdated}
-          onExportAnimals={handleExportAnimals}
-          loading={loading}
-          enrichedDataMap={enrichedDataMap}
-        />
+      <AnimalsList
+        animals={animals}
+        farmId={farmId}
+        userRole={userRole}
+        onAnimalUpdated={handleAnimalUpdated}
+        onExportAnimals={handleExportAnimals}
+        loading={loading}
+        enrichedDataMap={enrichedDataMap}
+      />
       </div>
 
       {/* Add Animal Modal */}
@@ -860,6 +922,40 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
         highlightWeight={true}
         weightUpdateReason={selectedAnimalForWeight.weightUpdateReason}
       />
+    )}
+
+    {/* Animal Categories Modal */}
+    {showCategoriesModal && (
+      <div className="fixed inset-0 z-50 bg-black/50 flex items-end lg:items-center justify-center lg:p-4">
+        <div className={`${isMobile ? 'w-full h-[90vh] rounded-t-2xl' : 'w-full max-w-4xl max-h-[90vh] rounded-lg'} bg-white shadow-lg overflow-auto`}>
+          <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-gray-900">Animal Categories Manager</h2>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowCategoriesModal(false)}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              ✕
+            </Button>
+          </div>
+          <div className="p-4 lg:p-6">
+            {loadingCategories ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              </div>
+            ) : (
+              <AnimalCategoriesManager
+                farmId={farmId}
+                categories={categories}
+                onCategoriesUpdate={handleCategoriesUpdated}
+                canEdit={true}
+                isMobile={isMobile}
+              />
+            )}
+          </div>
+        </div>
+      </div>
     )}
     </div>
   )

@@ -79,15 +79,15 @@ export async function POST(request: NextRequest) {
       address_state,
       address_postal,
       address_country,
-      availability_hours,
+      available_days,
+      availability_start_time,
+      availability_end_time,
       emergency_available,
-      travel_radius_km,
       service_types,
       rates_consultation,
       rates_emergency,
       preferred_payment,
       notes,
-      rating,
       is_primary,
       is_active,
       farm_id
@@ -102,7 +102,6 @@ export async function POST(request: NextRequest) {
 
     // If this veterinarian is being set as primary, update existing primary
     if (is_primary) {
-      // Cast supabase to any to fix "Argument of type ... is not assignable to parameter of type 'never'"
       await (supabase as any)
         .from('veterinarians')
         .update({ is_primary: false })
@@ -110,36 +109,33 @@ export async function POST(request: NextRequest) {
         .eq('is_primary', true)
     }
     
-    // Create the veterinarian record
-    // Cast supabase to any here as well
+    // Create the veterinarian record with main fields
     const { data: veterinarian, error: insertError } = await (supabase as any)
       .from('veterinarians')
       .insert({
         farm_id: userRole.farm_id,
         name,
-        clinic_name,
+        practice_name: clinic_name,
         license_number,
         specialization,
-        phone_primary,
-        phone_emergency,
+        phone: phone_primary,
         email,
+        // Comprehensive address
+        address: `${address_street}, ${address_city}, ${address_state} ${address_postal}, ${address_country}`,
+        // Extended fields
+        practice_phone_primary: phone_primary,
+        practice_phone_emergency: phone_emergency,
         address_street,
         address_city,
         address_state,
         address_postal,
         address_country,
-        availability_hours,
-        emergency_available,
-        travel_radius_km,
-        service_types,
-        rates_consultation,
-        rates_emergency,
-        preferred_payment,
-        notes,
-        rating,
-        is_primary,
-        is_active,
-        created_by: user.id,
+        rates_consultation: rates_consultation || null,
+        rates_emergency: rates_emergency || null,
+        emergency_available: emergency_available || false,
+        notes: notes || null,
+        is_primary: is_primary || false,
+        is_active: is_active !== false,
       })
       .select()
       .single()
@@ -147,6 +143,59 @@ export async function POST(request: NextRequest) {
     if (insertError) {
       console.error('Error creating veterinarian:', insertError)
       return NextResponse.json({ error: 'Failed to create veterinarian record' }, { status: 500 })
+    }
+
+    // Insert availability records for each selected day
+    if (available_days && available_days.length > 0) {
+      const availabilityRecords = available_days.map((day: string) => ({
+        veterinarian_id: (veterinarian as any).id,
+        day_of_week: day,
+        start_time: availability_start_time || '08:00',
+        end_time: availability_end_time || '17:00',
+      }))
+
+      const { error: availabilityError } = await (supabase as any)
+        .from('veterinarian_availability')
+        .insert(availabilityRecords)
+
+      if (availabilityError) {
+        console.error('Error creating availability records:', availabilityError)
+        // Don't fail the entire request if availability fails
+      }
+    }
+
+    // Insert service records for each selected service
+    if (service_types && service_types.length > 0) {
+      const serviceRecords = service_types.map((service: string) => ({
+        veterinarian_id: (veterinarian as any).id,
+        service_name: service,
+      }))
+
+      const { error: servicesError } = await (supabase as any)
+        .from('veterinarian_services')
+        .insert(serviceRecords)
+
+      if (servicesError) {
+        console.error('Error creating service records:', servicesError)
+        // Don't fail the entire request if services fail
+      }
+    }
+
+    // Insert payment method records for each selected payment method
+    if (preferred_payment && preferred_payment.length > 0) {
+      const paymentRecords = preferred_payment.map((method: string) => ({
+        veterinarian_id: (veterinarian as any).id,
+        payment_method: method,
+      }))
+
+      const { error: paymentsError } = await (supabase as any)
+        .from('veterinarian_payment_methods')
+        .insert(paymentRecords)
+
+      if (paymentsError) {
+        console.error('Error creating payment method records:', paymentsError)
+        // Don't fail the entire request if payments fail
+      }
     }
     
     return NextResponse.json({ 

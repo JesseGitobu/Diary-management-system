@@ -34,6 +34,7 @@ import { ProtocolCard } from '@/components/health/ProtocolCard'
 import { OutbreakCard } from '@/components/health/OutbreakCard'
 import { VaccinationCard } from '@/components/health/VaccinationCard'
 import { VetVisitCard } from '@/components/health/VetVisitCard'
+import { HealthIssueCard } from '@/components/health/HealthIssueCard'
 
 // Mobile-specific components
 import { MobileActionSheet } from '@/components/mobile/MobileActionSheet'
@@ -66,6 +67,7 @@ import {
   Users,
   Bell,
   ChevronDown,
+  ChevronUp,
   UserPlus,
   MoreHorizontal,
   ClipboardList,
@@ -139,6 +141,9 @@ export function HealthRecordsContent({
 
   const [healthIssues, setHealthIssues] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
+  const [creatingRecordFromIssueId, setCreatingRecordFromIssueId] = useState<string | null>(null)
+  const [selectedHealthIssueForRecord, setSelectedHealthIssueForRecord] = useState<any | null>(null)
+  const [expandedHealthIssuesSection, setExpandedHealthIssuesSection] = useState(true)
 
   // Modal states
   const [showAddModal, setShowAddModal] = useState(false)
@@ -284,6 +289,29 @@ export function HealthRecordsContent({
 
     return filtered
   }, [healthRecords, searchTerms, selectedRecordType, selectedAnimalFilter])
+
+  const filteredHealthIssues = useMemo(() => {
+    if (!Array.isArray(healthIssues)) return []
+
+    let filtered = [...healthIssues]
+    const searchTerm = searchTerms['health-records'].toLowerCase()
+
+    if (searchTerm) {
+      filtered = filtered.filter(issue => {
+        if (!issue) return false
+        return (
+          (issue.description && issue.description.toLowerCase().includes(searchTerm)) ||
+          (issue.notes && issue.notes.toLowerCase().includes(searchTerm))
+        )
+      })
+    }
+
+    if (selectedAnimalFilter) {
+      filtered = filtered.filter(issue => issue && issue.animal_id === selectedAnimalFilter)
+    }
+
+    return filtered
+  }, [healthIssues, searchTerms, selectedAnimalFilter])
 
   const filteredVeterinarians = useMemo(() => {
     if (!Array.isArray(veterinarians)) return []
@@ -989,14 +1017,16 @@ export function HealthRecordsContent({
         protocolsRes,
         outbreaksRes,
         vaccinationsRes,
-        vetVisitsRes
+        vetVisitsRes,
+        healthIssuesRes
       ] = await Promise.all([
         fetch('/api/health/records?includeFollowUps=true'),
         fetch('/api/health/veterinarians'),
         fetch('/api/health/protocols'),
         fetch('/api/health/outbreaks'),
         fetch('/api/health/vaccinations'),
-        fetch('/api/health/visits')
+        fetch('/api/health/visits'),
+        fetch('/api/health/issues?status=open&status=in_progress&status=under_observation')
       ])
 
       const [
@@ -1005,14 +1035,16 @@ export function HealthRecordsContent({
         protocolsData,
         outbreaksData,
         vaccinationsData,
-        vetVisitsData
+        vetVisitsData,
+        healthIssuesData
       ] = await Promise.all([
         healthRecordsRes.ok ? healthRecordsRes.json() : { healthRecords: [] },
         veterinariansRes.ok ? veterinariansRes.json() : { veterinarians: [] },
         protocolsRes.ok ? protocolsRes.json() : { protocols: [] },
         outbreaksRes.ok ? outbreaksRes.json() : { outbreaks: [] },
         vaccinationsRes.ok ? vaccinationsRes.json() : { vaccinations: [] },
-        vetVisitsRes.ok ? vetVisitsRes.json() : { visits: [] }
+        vetVisitsRes.ok ? vetVisitsRes.json() : { visits: [] },
+        healthIssuesRes.ok ? healthIssuesRes.json() : { issues: [] }
       ])
 
       setHealthRecords(healthData.healthRecords || [])
@@ -1021,6 +1053,7 @@ export function HealthRecordsContent({
       setOutbreaks(outbreaksData.outbreaks || [])
       setVaccinations(vaccinationsData.vaccinations || [])
       setVetVisits(vetVisitsData.visits || [])
+      setHealthIssues(healthIssuesData.issues || [])
     } catch (error) {
       console.error('Error refreshing health data:', error)
       toast.error('Failed to refresh data')
@@ -1173,7 +1206,22 @@ export function HealthRecordsContent({
     setSelectedRecordType('')
     setSelectedOriginalRecordId('')
     setRootCheckupId(null)
+    setSelectedHealthIssueForRecord(null)
     await refreshHealthData()
+  }
+
+  const handleCreateRecordFromIssue = (issueId: string) => {
+    const issue = healthIssues.find(i => i.id === issueId)
+    if (!issue) {
+      toast.error('Issue not found')
+      return
+    }
+
+    // Set the selected issue and animal
+    setSelectedHealthIssueForRecord(issue)
+    setSelectedAnimalId(issue.animal_id)
+    setShowAddModal(true)
+    setCreatingRecordFromIssueId(issueId)
   }
 
   const PaginationControls = () => {
@@ -1562,20 +1610,20 @@ export function HealthRecordsContent({
                 </div>
               )}
 
-              {/* Health Records Display - UPDATED */}
-              {filteredHealthRecords.length === 0 ? (
+              {/* Health Issues and Records Display - COMBINED MEDICAL TIMELINE */}
+              {filteredHealthIssues.length === 0 && filteredHealthRecords.length === 0 ? (
                 <div className="text-center py-12">
                   <ClipboardList className="mx-auto h-12 w-12 text-gray-400" />
                   <h3 className="mt-2 text-sm font-medium text-gray-900">
-                    {healthRecords.length === 0 ? 'No health records yet' : 'No records match your filters'}
+                    {healthRecords.length === 0 && healthIssues.length === 0 ? 'No health records or issues yet' : 'No items match your filters'}
                   </h3>
                   <p className="mt-1 text-sm text-gray-500">
-                    {healthRecords.length === 0
-                      ? 'Start by adding your first health record.'
+                    {healthRecords.length === 0 && healthIssues.length === 0
+                      ? 'Start by adding your first health record or reporting a health issue.'
                       : 'Try adjusting your search and filter criteria.'
                     }
                   </p>
-                  {canAddRecords && healthRecords.length === 0 && (
+                  {canAddRecords && healthRecords.length === 0 && healthIssues.length === 0 && (
                     <Button onClick={() => setShowAddModal(true)} className="mt-4">
                       <Plus className="mr-2 h-4 w-4" />
                       Add First Health Record
@@ -1584,22 +1632,69 @@ export function HealthRecordsContent({
                 </div>
               ) : (
                 <>
-                  <div className={isMobile || isTablet ? `grid ${getMobileGridCols(paginatedHealthRecords.length)} gap-4` : 'space-y-3'}>
-                    {paginatedHealthRecords.map((record) => (
-                      <HealthRecordCard
-                        key={record.id}
-                        record={record}
-                        onEdit={() => handleEditRecord(record)}
-                        onDelete={() => handleDeleteRecord(record.id)}
-                        onFollowUp={() => handleFollowUpRecord(record)}
-                        canEdit={canAddRecords}
-                        isDeleting={deletingRecordId === record.id}
-                        showFollowUp={true}
-                      />
-                    ))}
-                  </div>
+                  {/* Display Health Issues Section */}
+                  {filteredHealthIssues.length > 0 && (
+                    <div className="space-y-3 mb-6">
+                      <button
+                        onClick={() => setExpandedHealthIssuesSection(!expandedHealthIssuesSection)}
+                        className="w-full flex items-center justify-between gap-2 px-4 py-3 bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded-lg transition-colors"
+                      >
+                        <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4" />
+                          Open Health Issues ({filteredHealthIssues.length})
+                        </h4>
+                        {expandedHealthIssuesSection ? (
+                          <ChevronUp className="w-5 h-5 text-gray-600 flex-shrink-0" />
+                        ) : (
+                          <ChevronDown className="w-5 h-5 text-gray-600 flex-shrink-0" />
+                        )}
+                      </button>
+                      
+                      {expandedHealthIssuesSection && (
+                        <div className={isMobile || isTablet ? `grid ${getMobileGridCols(filteredHealthIssues.length)} gap-4` : 'space-y-3'}>
+                          {filteredHealthIssues.map((issue) => {
+                            const animal = animals.find(a => a.id === issue.animal_id)
+                            return (
+                              <HealthIssueCard
+                                key={issue.id}
+                                issue={issue}
+                                animal={animal}
+                                onCreateRecord={handleCreateRecordFromIssue}
+                                showCreateButton={canAddRecords}
+                                isCreatingRecord={creatingRecordFromIssueId === issue.id}
+                              />
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
-                  <PaginationControls />
+                  {/* Display Health Records Section */}
+                  {filteredHealthRecords.length > 0 && (
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                        <Activity className="w-4 h-4" />
+                        Medical Timeline ({filteredHealthRecords.length})
+                      </h4>
+                      <div className={isMobile || isTablet ? `grid ${getMobileGridCols(paginatedHealthRecords.length)} gap-4` : 'space-y-3'}>
+                        {paginatedHealthRecords.map((record) => (
+                          <HealthRecordCard
+                            key={record.id}
+                            record={record}
+                            onEdit={() => handleEditRecord(record)}
+                            onDelete={() => handleDeleteRecord(record.id)}
+                            onFollowUp={() => handleFollowUpRecord(record)}
+                            canEdit={canAddRecords}
+                            isDeleting={deletingRecordId === record.id}
+                            showFollowUp={true}
+                          />
+                        ))}
+                      </div>
+
+                      {totalPages > 1 && <PaginationControls />}
+                    </div>
+                  )}
                 </>
               )}
             </TabsContent>
@@ -1949,11 +2044,14 @@ export function HealthRecordsContent({
             setSelectedRecordType('')
             setSelectedOriginalRecordId('')
             setRootCheckupId(null)
+            setSelectedHealthIssueForRecord(null)
+            setCreatingRecordFromIssueId(null)
           }}
           onRecordAdded={handleHealthRecordAdded}
           preSelectedAnimalId={selectedAnimalId}
           preSelectedRecordType={selectedRecordType}
           rootCheckupId={rootCheckupId}
+          preSelectedHealthIssue={selectedHealthIssueForRecord}
         />
       )}
 

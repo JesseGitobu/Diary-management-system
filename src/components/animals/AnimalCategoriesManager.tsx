@@ -1994,7 +1994,7 @@ export function AnimalCategoriesManager({
 
                       await Promise.all([...addPromises, ...removePromises])
 
-                      // Refresh
+                      // Refresh assignment data in modal
                       if (viewingAnimals) {
                         await handleViewAnimals(viewingAnimals)
                       }
@@ -2002,6 +2002,19 @@ export function AnimalCategoriesManager({
                       setSelectedForRemove(new Set())
                       setManualModeSearch('')
                       setSelectedAnimalForPreview(null)
+
+                      // Refresh overall categories list to show updated animal counts
+                      try {
+                        const categoriesResponse = await fetch(`/api/farms/${farmId}/feed-management/animal-categories`)
+                        if (categoriesResponse.ok) {
+                          const result = await categoriesResponse.json()
+                          if (result.data) {
+                            onCategoriesUpdate(result.data)
+                          }
+                        }
+                      } catch (error) {
+                        console.error('Error refreshing categories:', error)
+                      }
                     } catch (error) {
                       console.error('Error updating assignments:', error)
                       alert('Error updating assignments')

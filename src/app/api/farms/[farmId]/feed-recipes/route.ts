@@ -34,7 +34,6 @@ export async function GET(
       .from('feed_mix_recipes')
       .select('*')
       .eq('farm_id', farmId)
-      .eq('active', true)
       .order('created_at', { ascending: false })
 
     if (recipesError) throw recipesError
@@ -89,13 +88,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       .from('feed_mix_recipes')
       .insert({
         farm_id: farmId,
-        name: body.name,
+        recipe_name: body.name,
         description: body.description,
         ingredients: body.ingredients,
-        target_nutrition: body.target_nutrition || {},
-        applicable_conditions: body.applicable_conditions || {},
-        estimated_cost_per_day: body.estimated_cost_per_day || 0,
-        active: true,
+        nutritional_target: body.nutritional_target || {},
+        total_yield: body.total_yield || 0,
+        unit_of_measure: body.unit_of_measure || 'kg',
+        target_animals: body.target_animals || {},
+        cost_per_unit: body.cost_per_unit || 0,
+        notes: body.notes || '',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       } as any)

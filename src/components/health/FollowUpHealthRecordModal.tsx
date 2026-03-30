@@ -56,17 +56,17 @@ interface FollowUpHealthRecordModalProps {
   onFollowUpAdded: (followUp: any) => void
 }
 
-export function FollowUpHealthRecordModal({ 
-  farmId, 
+export function FollowUpHealthRecordModal({
+  farmId,
   originalRecord,
-  isOpen, 
-  onClose, 
+  isOpen,
+  onClose,
   onFollowUpAdded
 }: FollowUpHealthRecordModalProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-    const [showRecordTypePrompt, setShowRecordTypePrompt] = useState(false)
-  
+  const [showRecordTypePrompt, setShowRecordTypePrompt] = useState(false)
+
   const form = useForm<FollowUpFormData>({
     resolver: zodResolver(followUpSchema),
     defaultValues: {
@@ -76,11 +76,11 @@ export function FollowUpHealthRecordModal({
       resolved: false,
     },
   })
-  
+
   const watchedStatus = form.watch('status')
   const watchedResolved = form.watch('resolved')
 
-  
+
   // Show prompt when "requires_attention" is selected for checkup records
   useEffect(() => {
     if (watchedStatus === 'requires_attention' && originalRecord.record_type === 'checkup') {
@@ -90,73 +90,73 @@ export function FollowUpHealthRecordModal({
     }
   }, [watchedStatus, originalRecord.record_type])
 
-  
+
   // In FollowUpHealthRecordModal.tsx - handleSubmit function
-const handleSubmit = async (data: FollowUpFormData) => {
-  setLoading(true)
-  setError(null)
-  
-  try {
-    const response = await fetch(`/api/health/records/${originalRecord.id}/follow-up`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        // Map form fields to database columns
-        record_date: data.record_date,
-        follow_up_status: data.status,  // Maps status → follow_up_status
-        description: data.description,
-        is_resolved: data.resolved,      // Maps resolved → is_resolved
-        treatment_effectiveness: data.treatment_effectiveness,
-        medication_changes: data.medication_changes,
-        veterinarian: data.veterinarian || null,
-        cost: data.cost || 0,
-        notes: data.notes,
-        next_due_date: data.next_followup_date || null,
-        farm_id: farmId,
-      }),
-    })
-    
-    const result = await response.json()
-    
-    if (!response.ok) {
-      throw new Error(result.error || 'Failed to create follow-up record')
+  const handleSubmit = async (data: FollowUpFormData) => {
+    setLoading(true)
+    setError(null)
+
+    try {
+      const response = await fetch(`/api/health/records/${originalRecord.id}/follow-up`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          // Map form fields to database columns
+          record_date: data.record_date,
+          follow_up_status: data.status,  // Maps status → follow_up_status
+          description: data.description,
+          is_resolved: data.resolved,      // Maps resolved → is_resolved
+          treatment_effectiveness: data.treatment_effectiveness,
+          medication_changes: data.medication_changes,
+          veterinarian: data.veterinarian || null,
+          cost: data.cost || 0,
+          notes: data.notes,
+          next_due_date: data.next_followup_date || null,
+          farm_id: farmId,
+        }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to create follow-up record')
+      }
+
+      // Determine the root checkup ID
+      const rootCheckupId = originalRecord.record_type === 'checkup'
+        ? originalRecord.id
+        : originalRecord.root_checkup_id || null
+
+      // Pass enriched data with root checkup tracking
+      const enrichedResult = {
+        ...result.followUp,
+        animalHealthStatusUpdated: result.animalHealthStatusUpdated,
+        newHealthStatus: result.newHealthStatus,
+        updatedAnimal: result.updatedAnimal,
+        original_record_id: originalRecord.id,
+        animal_id: originalRecord.animal_id,
+        requires_new_record: data.status === 'requires_attention' && originalRecord.record_type === 'checkup',
+        root_checkup_id: rootCheckupId // ADD THIS
+      }
+
+      onFollowUpAdded(enrichedResult)
+
+      form.reset()
+      onClose()
+
+    } catch (err) {
+      if (err instanceof Error) {
+        setError(err.message)
+      } else {
+        setError('An unexpected error occurred')
+      }
+    } finally {
+      setLoading(false)
     }
-    
-    // Determine the root checkup ID
-    const rootCheckupId = originalRecord.record_type === 'checkup' 
-      ? originalRecord.id 
-      : originalRecord.root_checkup_id || null
-    
-    // Pass enriched data with root checkup tracking
-    const enrichedResult = {
-      ...result.followUp,
-      animalHealthStatusUpdated: result.animalHealthStatusUpdated,
-      newHealthStatus: result.newHealthStatus,
-      updatedAnimal: result.updatedAnimal,
-      original_record_id: originalRecord.id,
-      animal_id: originalRecord.animal_id,
-      requires_new_record: data.status === 'requires_attention' && originalRecord.record_type === 'checkup',
-      root_checkup_id: rootCheckupId // ADD THIS
-    }
-    
-    onFollowUpAdded(enrichedResult)
-    
-    form.reset()
-    onClose()
-    
-  } catch (err) {
-    if (err instanceof Error) {
-      setError(err.message)
-    } else {
-      setError('An unexpected error occurred')
-    }
-  } finally {
-    setLoading(false)
   }
-}
-  
+
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'improving': return '📈'
@@ -178,7 +178,7 @@ const handleSubmit = async (data: FollowUpFormData) => {
       default: return 'text-gray-600'
     }
   }
-  
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} className="max-w-4xl max-h-[90vh] overflow-y-auto">
       <div className="p-6">
@@ -187,9 +187,6 @@ const handleSubmit = async (data: FollowUpFormData) => {
             <Activity className="w-6 h-6 text-farm-green" />
             <span>Add Follow-up Record</span>
           </h3>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            <X className="w-5 h-5" />
-          </Button>
         </div>
 
         {/* Original Record Summary */}
@@ -205,20 +202,20 @@ const handleSubmit = async (data: FollowUpFormData) => {
         </div>
 
         <div className="bg-blue-50 p-3 rounded-lg mb-4">
-  <p className="text-sm text-blue-800">
-    {originalRecord.record_type === 'vaccination' && 
-      "Document any reactions, side effects, or follow-up vaccination needs."}
-    {originalRecord.record_type === 'reproductive' && 
-      "Track pregnancy progress, calving updates, or breeding complications."}
-    {originalRecord.record_type === 'deworming' && 
-      "Monitor effectiveness, any adverse reactions, or schedule next treatment."}
-    {['illness', 'injury', 'treatment'].includes(originalRecord.record_type) && 
-      "Track recovery progress, treatment effectiveness, and current health status."}
-    {originalRecord.record_type === 'checkup' && 
-      "Document changes since last check, new concerns, or follow-up requirements."}
-  </p>
-</div>
-        
+          <p className="text-sm text-blue-800">
+            {originalRecord.record_type === 'vaccination' &&
+              "Document any reactions, side effects, or follow-up vaccination needs."}
+            {originalRecord.record_type === 'reproductive' &&
+              "Track pregnancy progress, calving updates, or breeding complications."}
+            {originalRecord.record_type === 'deworming' &&
+              "Monitor effectiveness, any adverse reactions, or schedule next treatment."}
+            {['illness', 'injury', 'treatment'].includes(originalRecord.record_type) &&
+              "Track recovery progress, treatment effectiveness, and current health status."}
+            {originalRecord.record_type === 'checkup' &&
+              "Document changes since last check, new concerns, or follow-up requirements."}
+          </p>
+        </div>
+
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm flex items-center space-x-2">
             <AlertCircle className="w-4 h-4 text-red-500" />
@@ -234,14 +231,14 @@ const handleSubmit = async (data: FollowUpFormData) => {
               <div>
                 <h4 className="font-semibold text-orange-900 mb-1">Additional Health Record Required</h4>
                 <p className="text-sm text-orange-800">
-                  Since the animal requires attention, you'll be prompted to create a specific health record 
+                  Since the animal requires attention, you'll be prompted to create a specific health record
                   (Vaccination, Treatment, Illness, Reproductive, or Deworming) after saving this follow-up.
                 </p>
               </div>
             </div>
           </div>
         )}
-        
+
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
           {/* Follow-up Details */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -257,7 +254,7 @@ const handleSubmit = async (data: FollowUpFormData) => {
                 error={form.formState.errors.record_date?.message}
               />
             </div>
-            
+
             <div>
               <Label htmlFor="status">Current Status</Label>
               <select
@@ -309,7 +306,7 @@ const handleSubmit = async (data: FollowUpFormData) => {
               </select>
             </div>
           )}
-          
+
           <div>
             <Label htmlFor="description">Follow-up Description</Label>
             <textarea
@@ -337,7 +334,7 @@ const handleSubmit = async (data: FollowUpFormData) => {
               placeholder="Any changes to medication dosage, new treatments, or modifications to care..."
             />
           </div>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <Label htmlFor="veterinarian">Veterinarian (Optional)</Label>
@@ -347,7 +344,7 @@ const handleSubmit = async (data: FollowUpFormData) => {
                 placeholder="Dr. Smith, Veterinary Clinic Name"
               />
             </div>
-            
+
             <div>
               <Label htmlFor="cost" className="flex items-center space-x-2">
                 <DollarSign className="w-4 h-4" />
@@ -379,7 +376,7 @@ const handleSubmit = async (data: FollowUpFormData) => {
               </p>
             </div>
           )}
-          
+
           <div>
             <Label htmlFor="notes">Additional Notes</Label>
             <textarea
@@ -390,7 +387,7 @@ const handleSubmit = async (data: FollowUpFormData) => {
               placeholder="Any additional observations, recommendations, or important notes..."
             />
           </div>
-          
+
           {/* Action Buttons */}
           <div className="flex justify-end space-x-3 pt-6 border-t">
             <Button

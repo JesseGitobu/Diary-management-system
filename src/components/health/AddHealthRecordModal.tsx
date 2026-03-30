@@ -167,6 +167,7 @@ interface AddHealthRecordModalProps {
   preSelectedRecordType?: string
   originalRecordId?: string
   rootCheckupId?: string | null
+  preSelectedHealthIssue?: any | null
 }
 
 export function AddHealthRecordModal({
@@ -178,7 +179,8 @@ export function AddHealthRecordModal({
   preSelectedAnimalId,
   preSelectedRecordType,
   originalRecordId,
-  rootCheckupId
+  rootCheckupId,
+  preSelectedHealthIssue
 }: AddHealthRecordModalProps) {
 
   console.log('🔍 AddHealthRecordModal component rendered:', { isOpen, farmId, animalsCount: animals?.length })
@@ -213,17 +215,35 @@ export function AddHealthRecordModal({
 
   useEffect(() => {
   if (isOpen) {
+    let descriptionText = ''
+    let issueId = ''
+    let recordType = (preSelectedRecordType as any) || 'checkup'
+    
+    // If a health issue is pre-selected, use its information
+    if (preSelectedHealthIssue) {
+      issueId = preSelectedHealthIssue.id
+      recordType = mapIssueTypeToRecordType(preSelectedHealthIssue.issue_type)
+      descriptionText = `Follow-up: ${preSelectedHealthIssue.description}${preSelectedHealthIssue.severity ? ` (${preSelectedHealthIssue.severity})` : ''}`
+      setSelectedHealthIssue(preSelectedHealthIssue)
+    }
+    
     form.reset({
       animal_id: preSelectedAnimalId || '',
       record_date: new Date().toISOString().split('T')[0],
-      record_type: (preSelectedRecordType as any) || 'checkup',
-      severity: null as any, // Use null instead of undefined for nullish enum
-      illness_severity: null as any, // Use null instead of undefined for nullish enum
+      record_type: recordType,
+      description: descriptionText,
+      linked_health_issue_id: issueId,
+      severity: null as any,
+      illness_severity: null as any,
       follow_up_required: false,
       pregnancy_result: 'pending',
     })
-    setHealthIssues([])
-    setSelectedHealthIssue(null)
+    
+    // Don't clear health issues if we selected one
+    if (!preSelectedHealthIssue) {
+      setHealthIssues([])
+      setSelectedHealthIssue(null)
+    }
     
     // Auto-focus search input with a small delay to ensure DOM is ready
     setTimeout(() => {
@@ -231,7 +251,7 @@ export function AddHealthRecordModal({
       animalSearchInputRef.current?.select()
     }, 100)
   }
-}, [isOpen, preSelectedAnimalId, preSelectedRecordType, form])
+}, [isOpen, preSelectedAnimalId, preSelectedRecordType, preSelectedHealthIssue, form])
 
   // Map health issue types to record types
   const mapIssueTypeToRecordType = (issueType: string): string => {
@@ -402,8 +422,6 @@ export function AddHealthRecordModal({
   const handleSubmit = useCallback(async (data: HealthRecordFormData) => {
     console.log('\n🚀 ========== HANDLE SUBMIT CALLED ==========')
     console.log('🚀 Raw form data:', data);
-    console.log('🚀 Form valid?', form.formState.isValid);
-    console.log('🚀 Form errors:', form.formState.errors);
 
     // Log specific field errors
     if (form.formState.errors.severity) {
@@ -608,6 +626,54 @@ export function AddHealthRecordModal({
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm flex items-center space-x-2">
             <span className="text-red-500">⚠️</span>
             <span>{error}</span>
+          </div>
+        )}
+
+        {/* Selected Health Issue Display */}
+        {selectedHealthIssue && (
+          <div className="mb-6 p-4 bg-blue-50 border-l-4 border-blue-500 rounded-lg">
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <h4 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-blue-600" />
+                  Following Up On Health Issue
+                </h4>
+                <div className="space-y-2 text-sm text-blue-800">
+                  <p>
+                    <span className="font-medium">Issue Type:</span> {selectedHealthIssue.issue_type?.replace(/_/g, ' ').charAt(0).toUpperCase() + selectedHealthIssue.issue_type?.slice(1).replace(/_/g, ' ')}
+                  </p>
+                  <p>
+                    <span className="font-medium">Description:</span> {selectedHealthIssue.description}
+                  </p>
+                  {selectedHealthIssue.severity && (
+                    <p>
+                      <span className="font-medium">Severity:</span>
+                      <Badge className="ml-2" variant="outline">
+                        {selectedHealthIssue.severity}
+                      </Badge>
+                    </p>
+                  )}
+                  {selectedHealthIssue.notes && (
+                    <p>
+                      <span className="font-medium">Notes:</span> {selectedHealthIssue.notes}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedHealthIssue(null)
+                  form.setValue('linked_health_issue_id', '')
+                  form.setValue('description', '')
+                  form.setValue('record_type', 'checkup')
+                }}
+                className="text-blue-600 hover:text-blue-800 hover:bg-blue-100 p-2 rounded transition-colors"
+                title="Clear selected issue"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
         )}
 

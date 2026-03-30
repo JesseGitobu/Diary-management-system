@@ -152,17 +152,7 @@ export async function getVeterinaryVisits(farmId: string, filters: VisitFilters 
   try {
     let query = supabase
       .from('veterinary_visits')
-      .select(`
-        *,
-        visit_animals (
-          animal_id,
-          animals (
-            id,
-            name,
-            tag_number
-          )
-        )
-      `)
+      .select('*')
       .eq('farm_id', farmId)
 
     // Apply filters
@@ -227,16 +217,7 @@ export async function getUpcomingVisits(farmId: string, limit: number = 10) {
   try {
     const { data, error } = await supabase
       .from('veterinary_visits')
-      .select(`
-        *,
-        visit_animals (
-          animals (
-            id,
-            name,
-            tag_number
-          )
-        )
-      `)
+      .select('*')
       .eq('farm_id', farmId)
       .eq('status', 'scheduled')
       .gte('scheduled_datetime', new Date().toISOString())
@@ -248,8 +229,37 @@ export async function getUpcomingVisits(farmId: string, limit: number = 10) {
       return { success: false, error: error.message, data: [] }
     }
 
-    // FIXED: Cast to any[]
-    return { success: true, data: (data as any[]) || [] }
+    // Fetch animals for each visit
+    const visitsWithAnimals = await Promise.all(
+      (data || []).map(async (visit: any) => {
+        const { data: animalLinks } = await supabase
+          .from('visit_animals')
+          .select('animal_id')
+          .eq('visit_id', visit.id)
+
+        const animalIds = (animalLinks as any[])?.map(l => l.animal_id) || []
+        let animals: any[] = []
+        
+        if (animalIds.length > 0) {
+          const { data: animalDetails } = await supabase
+            .from('animals')
+            .select('id, name, tag_number')
+            .in('id', animalIds)
+            .eq('farm_id', farmId)
+
+          animals = (animalDetails as any[]) || []
+        }
+
+        return {
+          ...visit,
+          visit_animals: (animalLinks as any[])?.map((link: any, idx: number) => ({
+            animals: animals[idx] || { id: link.animal_id, name: '', tag_number: '' }
+          })) || []
+        }
+      })
+    )
+
+    return { success: true, data: visitsWithAnimals }
   } catch (error) {
     console.error('Error in getUpcomingVisits:', error)
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error', data: [] }
@@ -263,16 +273,7 @@ export async function getFollowUpVisits(farmId: string, limit: number = 10) {
   try {
     const { data, error } = await supabase
       .from('veterinary_visits')
-      .select(`
-        *,
-        visit_animals (
-          animals (
-            id,
-            name,
-            tag_number
-          )
-        )
-      `)
+      .select('*')
       .eq('farm_id', farmId)
       .eq('follow_up_required', true)
       .lte('follow_up_date', new Date().toISOString().split('T')[0])
@@ -284,8 +285,37 @@ export async function getFollowUpVisits(farmId: string, limit: number = 10) {
       return { success: false, error: error.message, data: [] }
     }
 
-    // FIXED: Cast to any[]
-    return { success: true, data: (data as any[]) || [] }
+    // Fetch animals for each visit
+    const visitsWithAnimals = await Promise.all(
+      (data || []).map(async (visit: any) => {
+        const { data: animalLinks } = await supabase
+          .from('visit_animals')
+          .select('animal_id')
+          .eq('visit_id', visit.id)
+
+        const animalIds = (animalLinks as any[])?.map(l => l.animal_id) || []
+        let animals: any[] = []
+        
+        if (animalIds.length > 0) {
+          const { data: animalDetails } = await supabase
+            .from('animals')
+            .select('id, name, tag_number')
+            .in('id', animalIds)
+            .eq('farm_id', farmId)
+
+          animals = (animalDetails as any[]) || []
+        }
+
+        return {
+          ...visit,
+          visit_animals: (animalLinks as any[])?.map((link: any, idx: number) => ({
+            animals: animals[idx] || { id: link.animal_id, name: '', tag_number: '' }
+          })) || []
+        }
+      })
+    )
+
+    return { success: true, data: visitsWithAnimals }
   } catch (error) {
     console.error('Error in getFollowUpVisits:', error)
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error', data: [] }

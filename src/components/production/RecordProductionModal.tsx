@@ -185,6 +185,7 @@ export function RecordProductionModal({
             recordDate={selectedDate}
             settings={settings}
             closeAfterSuccess={false}
+            sessionName={currentSessionObject?.name}
           />
         )}
 
@@ -196,6 +197,7 @@ export function RecordProductionModal({
             sessionId={selectedSession}
             recordDate={selectedDate}
             settings={settings}
+            sessionName={currentSessionObject?.name}
           />
         )}
       </div>

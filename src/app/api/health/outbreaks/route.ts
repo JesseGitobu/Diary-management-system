@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
     
     const supabase = await createServerSupabaseClient()
     
-    // Create the outbreak record
+    // Create the outbreak record (without affected_animals - those go in junction table)
     // Cast supabase to any to fix "Argument of type ... is not assignable to parameter of type 'never'"
     const { data: outbreak, error: outbreakError } = await (supabase as any)
       .from('disease_outbreaks')
@@ -74,7 +74,6 @@ export async function POST(request: NextRequest) {
         first_detected_date,
         description,
         symptoms,
-        affected_animals,
         quarantine_required,
         quarantine_area,
         treatment_protocol,
@@ -90,22 +89,50 @@ export async function POST(request: NextRequest) {
     if (outbreakError) {
       console.error('Error creating outbreak:', outbreakError)
       return NextResponse.json({ 
-        error: 'Failed to create outbreak record' 
+        error: 'Failed to create outbreak record',
+        details: outbreakError.message
+      }, { status: 500 })
+    }
+    
+    // Insert affected animals into junction table
+    const outbreakAnimals = affected_animals.map((animalId: string) => ({
+      outbreak_id: outbreak.id,
+      animal_id: animalId,
+      infection_date: first_detected_date,
+      status: 'infected'
+    }))
+
+    const { error: outbreakAnimalsError } = await (supabase as any)
+      .from('outbreak_animals')
+      .insert(outbreakAnimals)
+    
+    if (outbreakAnimalsError) {
+      console.error('Error linking animals to outbreak:', outbreakAnimalsError)
+      return NextResponse.json({ 
+        error: 'Outbreak created but failed to link animals',
+        details: outbreakAnimalsError.message
       }, { status: 500 })
     }
     
     // Create individual health records for each affected animal
+    // Convert symptoms string to array by splitting on newlines
+    const symptomsArray = symptoms
+      .split('\n')
+      .map((s: string) => s.trim())
+      .filter((s: string) => s.length > 0)
+    
     const healthRecords = affected_animals.map((animalId: string) => ({
       farm_id: userRole.farm_id,
       animal_id: animalId,
       record_type: 'illness',
       record_date: first_detected_date,
       description: `Disease outbreak: ${disease_type}`,
-      symptoms,
+      symptoms: symptomsArray,
       treatment: treatment_protocol || null,
       veterinarian: veterinarian || null,
       notes: `Part of outbreak: ${outbreak_name}. ${notes || ''}`.trim(),
-      outbreak_id: outbreak.id
+      outbreak_id: outbreak.id,
+      created_by: user.id
     }))
     
     // Insert health records

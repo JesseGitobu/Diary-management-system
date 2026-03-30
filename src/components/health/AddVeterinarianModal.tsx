@@ -19,7 +19,6 @@ import {
   Mail, 
   MapPin, 
   Clock, 
-  Star,
   Building,
   User,
   Calendar,
@@ -27,11 +26,20 @@ import {
   Shield
 } from 'lucide-react'
 
+const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+const veterinarySpecializations = [
+  'Large Animal Specialist',
+  'Dairy Specialist',
+  'Reproduction Specialist',
+  'Surgery Specialist',
+  'Emergency & Critical Care'
+]
+
 const veterinarianSchema = z.object({
   name: z.string().min(2, 'Veterinarian name is required'),
   clinic_name: z.string().min(2, 'Clinic/practice name is required'),
   license_number: z.string().min(3, 'License number is required'),
-  specialization: z.string().optional(),
+  specialization: z.string().min(2, 'Specialization is required'),
   phone_primary: z.string().min(10, 'Primary phone number is required'),
   phone_emergency: z.string().optional(),
   email: z.string().email('Valid email address is required'),
@@ -40,15 +48,15 @@ const veterinarianSchema = z.object({
   address_state: z.string().min(2, 'State/Province is required'),
   address_postal: z.string().min(3, 'Postal/ZIP code is required'),
   address_country: z.string().min(2, 'Country is required'),
-  availability_hours: z.string().optional(),
+  available_days: z.array(z.string()).min(1, 'Select at least one day available'),
+  availability_start_time: z.string().min(1, 'Start time is required'),
+  availability_end_time: z.string().min(1, 'End time is required'),
   emergency_available: z.boolean(),
-  travel_radius_km: z.number().min(0).optional(),
   service_types: z.array(z.string()).min(1, 'At least one service type is required'),
   rates_consultation: z.number().min(0).optional(),
   rates_emergency: z.number().min(0).optional(),
   preferred_payment: z.array(z.string()).optional(),
   notes: z.string().optional(),
-  rating: z.number().min(1).max(5).optional(),
   is_primary: z.boolean(),
   is_active: z.boolean(),
 })
@@ -96,21 +104,23 @@ export function AddVeterinarianModal({
   const [error, setError] = useState<string | null>(null)
   const [selectedServices, setSelectedServices] = useState<string[]>(['General Practice'])
   const [selectedPayments, setSelectedPayments] = useState<string[]>(['Cash'])
+  const [selectedDays, setSelectedDays] = useState<string[]>(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'])
   
   const form = useForm<VeterinarianFormData>({
     resolver: zodResolver(veterinarianSchema),
     defaultValues: {
       emergency_available: false,
-      is_primary: existingVeterinarians.length === 0, // First vet is primary by default
+      is_primary: existingVeterinarians.length === 0,
       is_active: true,
       service_types: ['General Practice'],
       preferred_payment: ['Cash'],
-      rating: 5,
-      address_country: 'United States',
+      address_country: 'Kenya',
+      available_days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+      availability_start_time: '08:00',
+      availability_end_time: '17:00',
     },
   })
   
-  const watchedEmergencyAvailable = form.watch('emergency_available')
   const watchedIsPrimary = form.watch('is_primary')
    
   const handleSubmit = async (data: VeterinarianFormData) => {
@@ -128,6 +138,7 @@ export function AddVeterinarianModal({
           farm_id: farmId,
           service_types: selectedServices,
           preferred_payment: selectedPayments,
+          available_days: selectedDays,
         }),
       })
       
@@ -141,6 +152,7 @@ export function AddVeterinarianModal({
       form.reset()
       setSelectedServices(['General Practice'])
       setSelectedPayments(['Cash'])
+      setSelectedDays(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'])
       onClose()
       
     } catch (err) {
@@ -170,6 +182,16 @@ export function AddVeterinarianModal({
     })
   }
   
+  const toggleDay = (day: string) => {
+    setSelectedDays(prev => {
+      const updated = prev.includes(day) 
+        ? prev.filter(d => d !== day)
+        : [...prev, day]
+      form.setValue('available_days', updated)
+      return updated
+    })
+  }
+  
   return (
     <Modal isOpen={isOpen} onClose={onClose} className="max-w-4xl max-h-[90vh] overflow-y-auto">
       <div className="p-6">
@@ -178,9 +200,7 @@ export function AddVeterinarianModal({
             <Stethoscope className="w-6 h-6 text-blue-600" />
             <span>Add Veterinarian</span>
           </h3>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            <X className="w-5 h-5" />
-          </Button>
+         
         </div>
         
         {error && (
@@ -205,7 +225,7 @@ export function AddVeterinarianModal({
                   id="name"
                   {...form.register('name')}
                   error={form.formState.errors.name?.message}
-                  placeholder="Dr. Sarah Johnson"
+                  placeholder="Dr. Kariuki Njoroge"
                 />
               </div>
               
@@ -215,7 +235,7 @@ export function AddVeterinarianModal({
                   id="clinic_name"
                   {...form.register('clinic_name')}
                   error={form.formState.errors.clinic_name?.message}
-                  placeholder="Valley Veterinary Clinic"
+                  placeholder="Nairobi Veterinary Clinic"
                 />
               </div>
             </div>
@@ -232,39 +252,28 @@ export function AddVeterinarianModal({
               </div>
               
               <div>
-                <Label htmlFor="specialization">Specialization</Label>
-                <Input
+                <Label htmlFor="specialization">Specialization *</Label>
+                <select
                   id="specialization"
                   {...form.register('specialization')}
-                  placeholder="Large Animal Medicine, Dairy Health"
-                />
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">Select a specialization</option>
+                  {veterinarySpecializations.map(spec => (
+                    <option key={spec} value={spec}>
+                      {spec}
+                    </option>
+                  ))}
+                </select>
+                {form.formState.errors.specialization && (
+                  <p className="text-sm text-red-600 mt-1">
+                    {form.formState.errors.specialization.message}
+                  </p>
+                )}
               </div>
             </div>
             
-            <div className="mt-4">
-              <Label htmlFor="rating">Your Rating (1-5 stars)</Label>
-              <div className="flex items-center space-x-2 mt-1">
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <button
-                    key={star}
-                    type="button"
-                    onClick={() => form.setValue('rating', star)}
-                    className="focus:outline-none"
-                  >
-                    <Star 
-                      className={`w-6 h-6 ${
-                        (form.watch('rating') ?? 0) >= star 
-                          ? 'text-yellow-400 fill-current' 
-                          : 'text-gray-300'
-                      }`} 
-                    />
-                  </button>
-                ))}
-                <span className="text-sm text-gray-600 ml-2">
-                  {form.watch('rating')} star{form.watch('rating') !== 1 ? 's' : ''}
-                </span>
-              </div>
-            </div>
+
           </div>
 
           {/* Contact Information */}
@@ -281,7 +290,7 @@ export function AddVeterinarianModal({
                   id="phone_primary"
                   {...form.register('phone_primary')}
                   error={form.formState.errors.phone_primary?.message}
-                  placeholder="(555) 123-4567"
+                  placeholder="+254 712 345 678"
                 />
               </div>
               
@@ -290,7 +299,7 @@ export function AddVeterinarianModal({
                 <Input
                   id="phone_emergency"
                   {...form.register('phone_emergency')}
-                  placeholder="(555) 987-6543"
+                  placeholder="+254 723 456 789"
                 />
               </div>
             </div>
@@ -302,7 +311,7 @@ export function AddVeterinarianModal({
                 type="email"
                 {...form.register('email')}
                 error={form.formState.errors.email?.message}
-                placeholder="dr.johnson@valleyvet.com"
+                placeholder="dr.njoroge@nairobivet.co.ke"
               />
             </div>
           </div>
@@ -321,7 +330,7 @@ export function AddVeterinarianModal({
                   id="address_street"
                   {...form.register('address_street')}
                   error={form.formState.errors.address_street?.message}
-                  placeholder="123 Main Street"
+                  placeholder="Kiambu Road, Plot 45"
                 />
               </div>
               
@@ -332,29 +341,29 @@ export function AddVeterinarianModal({
                     id="address_city"
                     {...form.register('address_city')}
                     error={form.formState.errors.address_city?.message}
-                    placeholder="Springfield"
+                    placeholder="Nairobi"
                   />
                 </div>
                 
                 <div>
-                  <Label htmlFor="address_state">State/Province *</Label>
+                  <Label htmlFor="address_state">County *</Label>
                   <Input
                     id="address_state"
                     {...form.register('address_state')}
                     error={form.formState.errors.address_state?.message}
-                    placeholder="California"
+                    placeholder="Nairobi County"
                   />
                 </div>
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="address_postal">Postal/ZIP Code *</Label>
+                  <Label htmlFor="address_postal">Postal Code *</Label>
                   <Input
                     id="address_postal"
                     {...form.register('address_postal')}
                     error={form.formState.errors.address_postal?.message}
-                    placeholder="12345"
+                    placeholder="00100"
                   />
                 </div>
                 
@@ -364,7 +373,7 @@ export function AddVeterinarianModal({
                     id="address_country"
                     {...form.register('address_country')}
                     error={form.formState.errors.address_country?.message}
-                    placeholder="United States"
+                    placeholder="Kenya"
                   />
                 </div>
               </div>
@@ -404,24 +413,49 @@ export function AddVeterinarianModal({
                 )}
               </div>
               
+              <div>
+                <Label>Days Available *</Label>
+                <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2">
+                  {daysOfWeek.map(day => (
+                    <label
+                      key={day}
+                      className="flex items-center space-x-2 p-2 hover:bg-yellow-100 rounded cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedDays.includes(day)}
+                        onChange={() => toggleDay(day)}
+                        className="text-yellow-600 focus:ring-yellow-500"
+                      />
+                      <span className="text-sm">{day}</span>
+                    </label>
+                  ))}
+                </div>
+                {form.formState.errors.available_days && (
+                  <p className="text-sm text-red-600 mt-1">
+                    {form.formState.errors.available_days.message}
+                  </p>
+                )}
+              </div>
+              
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="availability_hours">Availability Hours</Label>
+                  <Label htmlFor="availability_start_time">Availability Start Time *</Label>
                   <Input
-                    id="availability_hours"
-                    {...form.register('availability_hours')}
-                    placeholder="Mon-Fri 8AM-6PM, Sat 8AM-2PM"
+                    id="availability_start_time"
+                    type="time"
+                    {...form.register('availability_start_time')}
+                    error={form.formState.errors.availability_start_time?.message}
                   />
                 </div>
                 
                 <div>
-                  <Label htmlFor="travel_radius_km">Travel Radius (km)</Label>
+                  <Label htmlFor="availability_end_time">Availability End Time *</Label>
                   <Input
-                    id="travel_radius_km"
-                    type="number"
-                    min="0"
-                    {...form.register('travel_radius_km', { valueAsNumber: true })}
-                    placeholder="50"
+                    id="availability_end_time"
+                    type="time"
+                    {...form.register('availability_end_time')}
+                    error={form.formState.errors.availability_end_time?.message}
                   />
                 </div>
               </div>
@@ -449,26 +483,26 @@ export function AddVeterinarianModal({
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="rates_consultation">Consultation Rate ($)</Label>
+                <Label htmlFor="rates_consultation">Consultation Rate (Kes)</Label>
                 <Input
                   id="rates_consultation"
                   type="number"
                   min="0"
                   step="0.01"
                   {...form.register('rates_consultation', { valueAsNumber: true })}
-                  placeholder="150.00"
+                  placeholder="5000"
                 />
               </div>
               
               <div>
-                <Label htmlFor="rates_emergency">Emergency Rate ($)</Label>
+                <Label htmlFor="rates_emergency">Emergency Rate (Kes)</Label>
                 <Input
                   id="rates_emergency"
                   type="number"
                   min="0"
                   step="0.01"
                   {...form.register('rates_emergency', { valueAsNumber: true })}
-                  placeholder="250.00"
+                  placeholder="10000"
                 />
               </div>
             </div>

@@ -853,7 +853,7 @@ export type PriorityLevel = 'low' | 'medium' | 'high' | 'urgent'
 export type VisitStatus = 'scheduled' | 'completed' | 'cancelled' | 'rescheduled'
 export type SeverityLevel = 'low' | 'medium' | 'high' | 'critical'
 export type OutbreakStatus = 'active' | 'contained' | 'resolved'
-export type ProtocolType = 'vaccination' | 'treatment' | 'checkup' | 'breeding' | 'nutrition'
+export type ProtocolType = 'vaccination' | 'treatment' | 'checkup' | 'breeding' | 'nutrition' | 'deworming_parasites' | 'post_mortem'
 export type FrequencyType = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'one_time'
 export type TargetAnimals = 'all' | 'group' | 'individual'
 export type AnimalHealthStatus = 'infected' | 'recovered' | 'deceased'
@@ -1045,9 +1045,26 @@ export interface Veterinarian {
   specialization?: string
   license_number?: string
   is_primary: boolean
+  is_active: boolean
   created_at: string
+  // Extended fields
+  practice_phone_primary?: string
+  practice_phone_emergency?: string
+  address_street?: string
+  address_city?: string
+  address_state?: string
+  address_postal?: string
+  address_country?: string
+  rates_consultation?: number
+  rates_emergency?: number
+  emergency_available?: boolean
+  notes?: string
+  updated_at?: string
   // Navigation properties
   veterinary_visits?: VeterinaryVisit[]
+  availability?: VeterinarianAvailability[]
+  services?: VeterinarianService[]
+  payment_methods?: VeterinarianPaymentMethod[]
 }
 
 // ============================================================================
@@ -1135,6 +1152,62 @@ export interface VeterinarianInsert {
   specialization?: string
   license_number?: string
   is_primary?: boolean
+  is_active?: boolean
+  // Extended fields from form
+  practice_phone_primary?: string
+  practice_phone_emergency?: string
+  address_street?: string
+  address_city?: string
+  address_state?: string
+  address_postal?: string
+  address_country?: string
+  rates_consultation?: number
+  rates_emergency?: number
+  emergency_available?: boolean
+  notes?: string
+}
+
+// Veterinarian availability (days and hours)
+export interface VeterinarianAvailability {
+  id: string
+  veterinarian_id: string
+  day_of_week: string
+  start_time: string
+  end_time: string
+  created_at: string
+}
+
+export interface VeterinarianAvailabilityInsert {
+  veterinarian_id: string
+  day_of_week: string
+  start_time: string
+  end_time: string
+}
+
+// Veterinarian services
+export interface VeterinarianService {
+  id: string
+  veterinarian_id: string
+  service_name: string
+  created_at: string
+}
+
+export interface VeterinarianServiceInsert {
+  veterinarian_id: string
+  service_name: string
+}
+
+// Veterinarian payment methods
+export interface VeterinarianPaymentMethod {
+  id: string
+  veterinarian_id: string
+  payment_method: string
+  created_at: string
+}
+
+export interface VeterinarianPaymentMethodInsert {
+  veterinarian_id: string
+  payment_method: string
 }
 
 // ============================================================================

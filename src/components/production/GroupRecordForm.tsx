@@ -39,6 +39,7 @@ interface GroupRecordFormProps {
   recordDate: string
   settings: ProductionSettings | null
   onSuccess?: () => void
+  sessionName?: string
 }
 
 export function GroupRecordForm({
@@ -48,11 +49,13 @@ export function GroupRecordForm({
   sessionId,
   recordDate,
   settings,
-  onSuccess
+  onSuccess,
+  sessionName,
 }: GroupRecordFormProps) {
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
   const [selectedAnimalId, setSelectedAnimalId] = useState<string | null>(null)
   const [recordedAnimalIds, setRecordedAnimalIds] = useState<Set<string>>(new Set())
+  const [sessionRecordedByGroup, setSessionRecordedByGroup] = useState<Record<string, Set<string>>>({})
   const [preRecordedAnimalIds, setPreRecordedAnimalIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -62,8 +65,8 @@ export function GroupRecordForm({
   // Reset form state when date or session changes
   useEffect(() => {
     console.log(`[GroupRecordForm] Date/Session changed - recordDate: ${recordDate}, session: ${session}`)
-    // Clear current session recordings and selected animal (if any)
-    // But keep the selected group so animal list updates in place
+    // Clear current session state - but sessionRecordedByGroup persists for group list
+    setSelectedGroupId(null)
     setSelectedAnimalId(null)
     setRecordedAnimalIds(new Set())
     setSearchQuery('')
@@ -300,10 +303,10 @@ export function GroupRecordForm({
             </div>
           ) : (
             groups.map(group => {
-              // Count both pre-recorded and current session recorded animals
+              // Count both pre-recorded and current session recorded animals (across all visits to this group)
               const preRecordedInGroup = group.animals.filter(a => preRecordedAnimalIds.has(a.id)).length
-              const currentRecordedInGroup = group.animals.filter(a => recordedAnimalIds.has(a.id)).length
-              const totalRecordedInGroup = preRecordedInGroup + currentRecordedInGroup
+              const sessionRecordedInGroup = (sessionRecordedByGroup[group.id]?.size || 0)
+              const totalRecordedInGroup = preRecordedInGroup + sessionRecordedInGroup
               const totalCount = group.animals.length
               const isComplete = totalRecordedInGroup === totalCount && totalCount > 0
 
@@ -369,6 +372,7 @@ export function GroupRecordForm({
           variant="outline"
           size="sm"
           onClick={() => {
+            // Don't clear sessionRecordedByGroup - it persists for group list display
             setSelectedGroupId(null)
             setRecordedAnimalIds(new Set())
           }}
@@ -484,6 +488,7 @@ export function GroupRecordForm({
           <Button
             variant="outline"
             onClick={() => {
+              // Don't clear sessionRecordedByGroup - it persists for group list display
               setSelectedGroupId(null)
               setSelectedAnimalId(null)
               setRecordedAnimalIds(new Set())
@@ -560,13 +565,22 @@ export function GroupRecordForm({
             sessionId={sessionId}
             recordDate={recordDate}
             settings={settings}
+            sessionName={sessionName}
             closeAfterSuccess={false}
             recordingType="group"
             milkingGroupId={selectedGroupId || undefined}
             onRecordSaved={(animalId) => {
-              // Mark animal as recorded
+              // Mark animal as recorded in current session for this group
               const updated = new Set([...recordedAnimalIds, animalId])
               setRecordedAnimalIds(updated)
+              
+              // Also track in sessionRecordedByGroup so it persists when going back to group list
+              if (selectedGroupId) {
+                setSessionRecordedByGroup(prev => ({
+                  ...prev,
+                  [selectedGroupId]: new Set([...(prev[selectedGroupId] || new Set()), animalId])
+                }))
+              }
               
               // Check if there are more animals to record (excluding pre-recorded)
               const stillPending = selectedGroup.animals.filter(a => 

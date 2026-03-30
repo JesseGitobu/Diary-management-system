@@ -27,39 +27,46 @@ export async function GET(
     const { id } = await params
     const supabase = await createServerSupabaseClient()
     
-    const { data: vaccinationResult, error } = await supabase
+    // Fetch vaccination record
+    const { data: vaccination, error } = await supabase
       .from('vaccinations')
-      .select(`
-        *,
-        vaccination_animals (
-          animal_id,
-          animals (
-            id,
-            name,
-            tag_number,
-            breed
-          )
-        )
-      `)
+      .select('*')
       .eq('id', id)
       .eq('farm_id', userRole.farm_id)
       .single()
-    
-    // Cast to any to fix "Property 'vaccination_animals' does not exist on type 'never'"
-    const vaccination = vaccinationResult as any
 
     if (error || !vaccination) {
       return NextResponse.json({ error: 'Vaccination not found' }, { status: 404 })
     }
 
-    // Extract selected animal IDs for the response
-    const selectedAnimals = vaccination.vaccination_animals?.map((va: any) => va.animal_id) || []
+    // Fetch animals linked to this vaccination
+    const { data: animalLinks } = await supabase
+      .from('vaccination_animals')
+      .select('animal_id')
+      .eq('vaccination_id', id)
+
+    const animalIds = (animalLinks as any[])?.map(l => l.animal_id) || []
+    let vaccinationAnimals: any[] = []
+    
+    if (animalIds.length > 0) {
+      const { data: animals } = await supabase
+        .from('animals')
+        .select('id, name, tag_number, breed')
+        .in('id', animalIds)
+        .eq('farm_id', userRole.farm_id)
+
+      vaccinationAnimals = (animalLinks as any[])?.map((link: any, idx: number) => ({
+        animal_id: link.animal_id,
+        animals: animals?.[idx] || { id: link.animal_id, name: '', tag_number: '', breed: '' }
+      })) || []
+    }
     
     return NextResponse.json({ 
       success: true, 
       vaccination: { 
-        ...vaccination, 
-        selected_animals: selectedAnimals 
+        ...(vaccination as any),
+        vaccination_animals: vaccinationAnimals,
+        selected_animals: animalIds
       } 
     })
     

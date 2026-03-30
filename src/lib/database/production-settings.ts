@@ -2,6 +2,33 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { ProductionSettings, getDefaultProductionSettings } from '@/types/production-distribution-settings'
 
+// Helper functions to convert between period string format and numeric days
+function convertChartPeriodToNumbers(period: string | number): number {
+  if (typeof period === 'number') return period
+  switch (period) {
+    case '7days': return 7
+    case '14days': return 14
+    case '30days': return 30
+    case '60days': return 60
+    case '90days': return 90
+    case 'year': return 365
+    default: return 30
+  }
+}
+
+function convertChartNumbersToPeriod(days: number | string): '7days' | '14days' | '30days' | '60days' | '90days' | 'year' {
+  const numDays = typeof days === 'string' ? parseInt(days) : days
+  switch (numDays) {
+    case 7: return '7days'
+    case 14: return '14days'
+    case 30: return '30days'
+    case 60: return '60days'
+    case 90: return '90days'
+    case 365: return 'year'
+    default: return '30days'
+  }
+}
+
 export async function getProductionSettings(farmId: string): Promise<ProductionSettings | null> {
   try {
     const supabase = await createServerSupabaseClient()
@@ -80,6 +107,10 @@ function transformDbToProductionSettings(data: any): ProductionSettings {
     tbcRequired: data.tbc_required,
     tbcAlertThreshold: data.tbc_alert_threshold,
     
+    requireMastitisTest: data.require_mastitis_test,
+    mastitisTestAlertOnAbnormal: data.mastitis_test_alert_on_abnormal,
+    withdrawalDaysAfterTreatment: data.withdrawal_days_after_treatment,
+    
     autoFilterEligibleAnimals: data.auto_filter_eligible_animals,
     eligibleProductionStatuses: data.eligible_production_statuses,
     eligibleGenders: data.eligible_genders,
@@ -116,7 +147,8 @@ function transformDbToProductionSettings(data: any): ProductionSettings {
     alertProductionDecline: data.alert_production_decline,
     declineThresholdPercent: data.decline_threshold_percent,
     
-    defaultChartPeriod: data.default_chart_period,
+    defaultChartPeriod: convertChartNumbersToPeriod(data.default_chart_period),
+    defaultChartType: data.default_chart_type || 'bar',
     chartDisplayMode: data.chart_display_mode,
     showVolumeChart: data.show_volume_chart,
     showFatProteinChart: data.show_fat_protein_chart,
@@ -219,6 +251,10 @@ export async function updateProductionSettings(
       tbc_required: settings.tbcRequired,
       tbc_alert_threshold: settings.tbcAlertThreshold,
       
+      require_mastitis_test: settings.requireMastitisTest,
+      mastitis_test_alert_on_abnormal: settings.mastitisTestAlertOnAbnormal,
+      withdrawal_days_after_treatment: settings.withdrawalDaysAfterTreatment,
+      
       auto_filter_eligible_animals: settings.autoFilterEligibleAnimals,
       eligible_production_statuses: settings.eligibleProductionStatuses,
       eligible_genders: settings.eligibleGenders,
@@ -255,7 +291,8 @@ export async function updateProductionSettings(
       alert_production_decline: settings.alertProductionDecline,
       decline_threshold_percent: settings.declineThresholdPercent,
       
-      default_chart_period: settings.defaultChartPeriod,
+      default_chart_period: convertChartPeriodToNumbers(settings.defaultChartPeriod),
+      default_chart_type: settings.defaultChartType || 'bar',
       chart_display_mode: settings.chartDisplayMode,
       show_volume_chart: settings.showVolumeChart,
       show_fat_protein_chart: settings.showFatProteinChart,
@@ -297,7 +334,20 @@ export async function updateProductionSettings(
       .from('farm_production_settings') as any)
       .upsert(dbSettings, { onConflict: 'farm_id' })
 
-    if (error) throw error
+    if (error) {
+      console.error('Database upsert error details:', {
+        message: error.message,
+        code: error.code,
+        hint: error.hint,
+        details: error.details,
+        dbSettings: {
+          farm_id: dbSettings.farm_id,
+          default_chart_period: dbSettings.default_chart_period,
+          default_chart_type: dbSettings.default_chart_type
+        }
+      })
+      throw error
+    }
 
     return { success: true }
   } catch (error) {

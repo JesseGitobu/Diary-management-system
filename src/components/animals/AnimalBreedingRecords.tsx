@@ -37,6 +37,7 @@ import { HeatDetectionForm } from '@/components/breeding/HeatDetectionForm'
 import { InseminationForm } from '@/components/breeding/InseminationForm'
 import { PregnancyCheckForm } from '@/components/breeding/PregnancyCheckForm'
 import { CalvingEventForm } from '@/components/breeding/CalvingEventForm'
+import { AbortionForm } from '@/components/breeding/AbortionForm'
 
 interface BreedingRecord {
   id: string
@@ -115,7 +116,19 @@ interface AnimalBreedingRecordsProps {
   canAddRecords: boolean
 }
 
-type ModalType = 'heat_detection' | 'insemination' | 'pregnancy_check' | 'calving' | null
+type ModalType = 'heat_detection' | 'insemination' | 'pregnancy_check' | 'calving' | 'mark_as_aborted' | null
+
+interface AbortionDetails {
+  abortion_date: string
+  cause?: 'unknown' | 'infection' | 'trauma' | 'genetic' | 'nutritional' | 'stress' | 'other'
+  stage_of_pregnancy?: string // weeks
+  complications?: string
+  veterinary_involved?: boolean
+  veterinarian_name?: string
+  treatment_given?: string
+  recovery_status?: 'recovered' | 'recovering' | 'ongoing_treatment' | 'deceased'
+  notes?: string
+}
 
 interface InseminationEvent {
   id: string
@@ -148,6 +161,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
   const [activeModal, setActiveModal] = useState<ModalType>(null)
   const [showDropdown, setShowDropdown] = useState(false)
   const [currentTime, setCurrentTime] = useState(new Date()) // For live timer updates
+  const [selectedPregnancyRecord, setSelectedPregnancyRecord] = useState<BreedingRecord | null>(null) // Track which pregnancy to mark as aborted
   
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -761,7 +775,8 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                 <button 
                   className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-md"
                   onClick={() => {
-                    setActiveModal('heat_detection') 
+                    setSelectedPregnancyRecord(currentPregnancy || null)
+                    setActiveModal('mark_as_aborted') 
                     setShowDropdown(false)
                   }}
                 >
@@ -1747,8 +1762,9 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                 {activeModal === 'insemination' && 'Record Insemination'}
                 {activeModal === 'pregnancy_check' && 'Record Pregnancy Check'}
                 {activeModal === 'calving' && 'Record Calving Event'}
+                {activeModal === 'mark_as_aborted' && 'Record Pregnancy Abortion'}
               </h2>
-              <Button variant="ghost" size="sm" onClick={() => setActiveModal(null)}>✕</Button>
+              
             </div>
             
             {activeModal === 'heat_detection' && (
@@ -1784,6 +1800,19 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                 onEventCreated={handleEventCreated} 
                 onCancel={() => setActiveModal(null)}
                 preSelectedAnimalId={animalId} 
+              />
+            )}
+
+            {activeModal === 'mark_as_aborted' && (
+              <AbortionForm
+                farmId={farmId}
+                animalId={animalId}
+                pregnancyRecord={selectedPregnancyRecord}
+                onAbortionRecorded={handleEventCreated}
+                onCancel={() => {
+                  setActiveModal(null)
+                  setSelectedPregnancyRecord(null)
+                }}
               />
             )}
           </div>

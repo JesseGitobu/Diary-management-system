@@ -81,17 +81,15 @@ export async function PATCH(
 
     // Verify the consumption record exists and belongs to the correct farm and animal
     const { data: existingRecord, error: fetchError } = await supabase
-      .from('feed_consumption')
+      .from('feed_consumption_records')
       .select(`
         id,
         farm_id,
-        feed_consumption_animals!inner (
-          animal_id
-        )
+        animal_id
       `)
       .eq('id', recordId)
       .eq('farm_id', farmId)
-      .eq('feed_consumption_animals.animal_id', animalId)
+      .eq('animal_id', animalId)
       .single()
 
     if (fetchError || !existingRecord) {
@@ -103,11 +101,9 @@ export async function PATCH(
     // Update the consumption record with observations
     // Cast supabase to any to fix "Argument of type ... is not assignable to parameter of type 'never'"
     const { data: updatedRecord, error: updateError } = await (supabase as any)
-      .from('feed_consumption')
+      .from('feed_consumption_records')
       .update({
-        appetite_score: appetite_score !== undefined ? appetite_score : undefined,
-        approximate_waste_kg: approximate_waste_kg !== undefined ? approximate_waste_kg : undefined,
-        observational_notes: observational_notes !== undefined ? observational_notes : undefined,
+        notes: observational_notes !== undefined ? observational_notes : undefined,
         updated_at: new Date().toISOString()
       })
       .eq('id', recordId)

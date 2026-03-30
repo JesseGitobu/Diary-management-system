@@ -197,7 +197,9 @@ async function processImport(supabase: any, request: NextRequest, user: any) {
     const globalSortedAnimals = sortAnimalsByDependency(animals)
     console.log(`📊 Global topological sort: ${globalSortedAnimals.length} animals`)
 
-    // Process animals in batches
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // CRITICAL FIX: Two-phase global processing to ensure calves exist before PASS 2
+    // ═══════════════════════════════════════════════════════════════════════════════
     const batchSize = 50
     const results = {
       imported: 0,
@@ -206,15 +208,60 @@ async function processImport(supabase: any, request: NextRequest, user: any) {
       errors: [] as string[]
     }
 
+    // ─────────────────────────────────────────────────────────────────────────────
+    // GLOBAL PASS 1: Insert ALL animals across ALL batches
+    // ─────────────────────────────────────────────────────────────────────────────
+    console.log('\n🔄 STARTING GLOBAL PASS 1: Inserting all animals...')
+    const allInsertedAnimals: Array<{
+      raw: ImportAnimal, 
+      record: any,
+      shouldCreateReleaseRecord: boolean,
+      releaseReason: 'deceased' | 'sold' | null
+    }> = []
+    let globalParentTagMap = new Map<string, string>()
+    const globalOriginalTagToGenerated = new Map<string, string>()
+
     for (let i = 0; i < globalSortedAnimals.length; i += batchSize) {
       const batch = globalSortedAnimals.slice(i, i + batchSize)
-      const processedBatch = await processBatch(supabase, farmId, batch, user.id, globalSortedAnimals)
+      const pass1Result = await processBatchPass1(
+        supabase, 
+        farmId, 
+        batch, 
+        user.id, 
+        globalSortedAnimals,
+        globalParentTagMap,
+        globalOriginalTagToGenerated
+      )
       
-      results.imported += processedBatch.imported
-      results.skipped += processedBatch.skipped
-      results.animals.push(...processedBatch.animals)
-      results.errors.push(...processedBatch.errors)
+      results.imported += pass1Result.imported
+      results.skipped += pass1Result.skipped
+      results.animals.push(...pass1Result.animals)
+      results.errors.push(...pass1Result.errors)
+      allInsertedAnimals.push(...pass1Result.insertedAnimals)
     }
+    console.log(`✅ GLOBAL PASS 1 COMPLETE: ${results.imported} animals inserted, ${results.skipped} skipped`)
+    console.log(`📊 parentTagMap now contains ${globalParentTagMap.size} animals for calf resolution`)
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // GLOBAL PASS 2: Create all related records (now all animals exist!)
+    // ─────────────────────────────────────────────────────────────────────────────
+    console.log('\n🔄 STARTING GLOBAL PASS 2: Creating related records...')
+    const pass2Errors: string[] = []
+
+    for (const entry of allInsertedAnimals) {
+      await processSingleAnimalPass2(
+        supabase,
+        farmId,
+        globalSortedAnimals,
+        entry,
+        user.id,
+        globalParentTagMap,
+        globalOriginalTagToGenerated,
+        pass2Errors
+      )
+    }
+    console.log(`✅ GLOBAL PASS 2 COMPLETE`)
+    results.errors.push(...pass2Errors)
 
     return NextResponse.json(results)
   } catch (error) {
@@ -226,38 +273,33 @@ async function processImport(supabase: any, request: NextRequest, user: any) {
   }
 }
 
-async function processBatch(
+async function processBatchPass1(
   supabase: any,
   farmId: string,
   animals: ImportAnimal[],
   userId: string,
-  allAnimals: ImportAnimal[]
+  allAnimals: ImportAnimal[],
+  parentTagMap: Map<string, string>,
+  originalTagToGenerated: Map<string, string>
 ) {
   const results = {
     imported: 0,
     skipped: 0,
     animals: [] as any[],
-    errors: [] as string[]
+    errors: [] as string[],
+    insertedAnimals: [] as Array<{raw: ImportAnimal, record: any, shouldCreateReleaseRecord: boolean, releaseReason: 'deceased' | 'sold' | null}>
   }
 
   try {
-    // STEP 1: Fetch existing animals
+    // Fetch existing animals for this batch check
     const { data: existingAnimals } = await supabase
       .from('animals')
       .select('tag_number, id')
       .eq('farm_id', farmId)
 
     const existingTags = new Set(existingAnimals?.map((a: any) => a.tag_number) || [])
-    let parentTagMap = new Map<string, string>(
-      existingAnimals?.map((a: any) => [a.tag_number, a.id]) || []
-    )
 
-    // ──────────────────────────────────────────────────────────────────────
-    // PASS 1: Insert all animal rows
-    // ──────────────────────────────────────────────────────────────────────
-    console.log('🔄 PASS 1: Inserting all animal records...')
-    const insertedAnimals: Array<{ raw: ImportAnimal; record: any }> = []
-    const originalTagToGenerated = new Map<string, string>()  // Track original→generated tags
+    console.log(`🔄 PASS 1 batch: Inserting ${animals.length} animals...`)
 
     for (const animal of animals) {
       try {
@@ -277,12 +319,25 @@ async function processBatch(
           continue
         }
 
-        // Determine animal status based on health_status
+        // Handle special health_status values
         let animalStatus: 'active' | 'sold' | 'deceased' | 'quarantined' = 'active'
-        if (sanitizedAnimal.health_status?.toLowerCase() === 'deceased') {
+        const healthStatusNormalized = sanitizedAnimal.health_status?.toLowerCase().trim() || ''
+        let shouldCreateReleaseRecord = false
+        let releaseReason: 'deceased' | 'sold' | null = null
+        
+        if (healthStatusNormalized === 'deceased') {
           animalStatus = 'deceased'
-        } else if (sanitizedAnimal.health_status?.toLowerCase() === 'released') {
+          shouldCreateReleaseRecord = true
+          releaseReason = 'deceased'
+          sanitizedAnimal.health_status = null
+        } else if (healthStatusNormalized === 'released') {
           animalStatus = 'sold'
+          shouldCreateReleaseRecord = true
+          releaseReason = 'sold'
+          sanitizedAnimal.health_status = null
+        } else if (healthStatusNormalized === 'quarantine' || healthStatusNormalized === 'quarantined') {
+          animalStatus = 'quarantined'
+          sanitizedAnimal.health_status = 'quarantined'
         }
 
         const { data: newAnimal, error: insertError } = await supabase
@@ -317,18 +372,24 @@ async function processBatch(
           continue
         }
 
-        // Add to parentTagMap immediately
+        // Add to global parentTagMap
         parentTagMap.set(newAnimal.tag_number, newAnimal.id)
         existingTags.add(newAnimal.tag_number)
         
-        // Track original→generated mapping for auto-generated tags
+        // Track original→generated mapping
         const originalTag = String(animal.tag_number || '').trim()
         if (originalTag && originalTag !== newAnimal.tag_number) {
           originalTagToGenerated.set(originalTag, newAnimal.tag_number)
           parentTagMap.set(originalTag, newAnimal.id)
         }
         
-        insertedAnimals.push({ raw: animal, record: newAnimal })
+        // Store for PASS 2
+        results.insertedAnimals.push({ 
+          raw: animal, 
+          record: newAnimal,
+          shouldCreateReleaseRecord,
+          releaseReason
+        } as any)
         results.animals.push(newAnimal)
 
         console.log(`✅ Inserted animal: ${animal.tag_number} (id: ${newAnimal.id})`)
@@ -340,111 +401,114 @@ async function processBatch(
       }
     }
 
-    console.log(`📊 PASS 1 complete: ${insertedAnimals.length} animals inserted, ${results.skipped} skipped`)
-
-    // ──────────────────────────────────────────────────────────────────────
-    // PASS 2: Create all related records
-    // ──────────────────────────────────────────────────────────────────────
-    console.log('🔄 PASS 2: Creating related records...')
-
-    for (const { raw: animal, record: newAnimal } of insertedAnimals) {
-      try {
-        console.log(`📝 Creating records for: ${animal.tag_number}`)
-
-        // Create purchase record if purchased animal
-        if (animal.animal_source === 'purchased_animal') {
-          await supabase
-            .from('animal_purchases')
-            .insert({
-              farm_id: farmId,
-              animal_id: newAnimal.id,
-              previous_farm_tag: animal.previous_farm_tag_number || null,
-              dam_tag_at_origin: animal.mother_dam_tag || null,
-              dam_name_at_origin: animal.mother_dam_name || null,
-              sire_tag_or_semen_code: animal.father_sire_semen_tag || null,
-              sire_name_or_semen_source: animal.father_sire_name_semen_source || null,
-              farm_seller_name: animal.farm_seller_name || null,
-              farm_seller_contact: animal.farm_seller_contact || null,
-              purchase_date: animal.purchase_date || null,
-              purchase_price: animal.purchase_price || null,
-              created_at: new Date().toISOString()
-            })
-            .then(() => console.log(`✅ Purchase record created for ${animal.tag_number}`))
-            .catch((e: any) => console.warn(`⚠️ Purchase record failed for ${animal.tag_number}:`, e.message))
-        }
-
-        // Create weight record if current_weight_kg and weighing_date are provided
-        if (animal.current_weight_kg && animal.weighing_date) {
-          await supabase
-            .from('animal_weight_records')
-            .insert({
-              farm_id: farmId,
-              animal_id: newAnimal.id,
-              weight_date: animal.weighing_date,
-              weight_kg: Number(animal.current_weight_kg),
-              weight_unit: 'kg',
-              measurement_purpose: 'import - current weight at import time',
-              created_at: new Date().toISOString()
-            })
-            .then(() => console.log(`✅ Weight record created for ${animal.tag_number}`))
-            .catch((e: any) => console.warn(`⚠️ Weight record failed for ${animal.tag_number}:`, e.message))
-        }
-
-        // Create animal release record if health_status is 'deceased' or 'released'
-        const healthStatusLower = String(animal.health_status || '').toLowerCase().trim()
-        if (healthStatusLower === 'deceased' || healthStatusLower === 'released') {
-          const releaseReason = healthStatusLower === 'deceased' ? 'deceased' : 'sold'
-          
-          await supabase
-            .from('animal_release_records')
-            .insert({
-              farm_id: farmId,
-              animal_id: newAnimal.id,
-              release_date: new Date().toISOString().split('T')[0],  // Today's date
-              release_reason: releaseReason,
-              death_cause: healthStatusLower === 'deceased' ? 'imported - cause unknown' : null,
-              veterinarian_notes: null,
-              notes: `Animal imported with health status: ${animal.health_status}`,
-              created_at: new Date().toISOString(),
-              created_by: userId
-            })
-            .then(() => console.log(`✅ Release record created for ${animal.tag_number} (reason: ${releaseReason})`))
-            .catch((e: any) => console.warn(`⚠️ Release record failed for ${animal.tag_number}:`, e.message))
-        }
-
-        // Create production cycles if service data exists
-        if (animal.service_date_1) {
-          await createProductionCycles(
-            supabase,
-            farmId,
-            newAnimal.id,
-            animal,
-            userId,
-            parentTagMap,
-            allAnimals,
-            originalTagToGenerated
-          ).catch(e => {
-            console.warn(`⚠️ Production cycles failed for ${animal.tag_number}:`, e.message)
-          })
-        }
-
-        console.log(`✅ Records created for: ${animal.tag_number}`)
-
-      } catch (error) {
-        console.error(`💥 Error creating records for ${animal.tag_number}:`, error)
-        results.errors.push(`Error creating records for ${animal.tag_number}: ${error}`)
-      }
-    }
-
-    console.log(`📊 PASS 2 complete`)
-    results.imported = insertedAnimals.length
+    results.imported = results.insertedAnimals.length
 
   } catch (batchError) {
-    results.errors.push(`Batch processing failed: ${batchError}`)
-    console.error('💥 Batch error:', batchError)
+    results.errors.push(`Batch PASS 1 failed: ${batchError}`)
+    console.error('💥 Batch PASS 1 error:', batchError)
   }
 
   return results
+}
+
+async function processSingleAnimalPass2(
+  supabase: any,
+  farmId: string,
+  allAnimals: ImportAnimal[],
+  entry: any,
+  userId: string,
+  parentTagMap: Map<string, string>,
+  originalTagToGenerated: Map<string, string>,
+  errors: string[]
+) {
+  const { raw: animal, record: newAnimal, shouldCreateReleaseRecord, releaseReason } = entry
+
+  try {
+    console.log(`📝 Creating records for: ${animal.tag_number}`)
+
+    // Create purchase record if purchased animal
+    if (animal.animal_source === 'purchased_animal') {
+      await supabase
+        .from('animal_purchases')
+        .insert({
+          farm_id: farmId,
+          animal_id: newAnimal.id,
+          previous_farm_tag: animal.previous_farm_tag_number || null,
+          dam_tag_at_origin: animal.mother_dam_tag || null,
+          dam_name_at_origin: animal.mother_dam_name || null,
+          sire_tag_or_semen_code: animal.father_sire_semen_tag || null,
+          sire_name_or_semen_source: animal.father_sire_name_semen_source || null,
+          farm_seller_name: animal.farm_seller_name || null,
+          farm_seller_contact: animal.farm_seller_contact || null,
+          purchase_date: animal.purchase_date || null,
+          purchase_price: animal.purchase_price || null,
+          created_at: new Date().toISOString()
+        })
+        .then(() => console.log(`✅ Purchase record created for ${animal.tag_number}`))
+        .catch((e: any) => console.warn(`⚠️ Purchase record failed for ${animal.tag_number}:`, e.message))
+    }
+
+    // Create weight record
+    if (animal.current_weight_kg && animal.weighing_date) {
+      await supabase
+        .from('animal_weight_records')
+        .insert({
+          farm_id: farmId,
+          animal_id: newAnimal.id,
+          weight_date: animal.weighing_date,
+          weight_kg: Number(animal.current_weight_kg),
+          weight_unit: 'kg',
+          measurement_purpose: 'import - current weight at import time',
+          created_at: new Date().toISOString()
+        })
+        .then(() => console.log(`✅ Weight record created for ${animal.tag_number}`))
+        .catch((e: any) => console.warn(`⚠️ Weight record failed for ${animal.tag_number}:`, e.message))
+    }
+
+    // Create release record if needed
+    if (shouldCreateReleaseRecord && releaseReason) {
+      const deathCause = releaseReason === 'deceased' ? 'imported - cause unknown' : null
+      
+      await supabase
+        .from('animal_release_records')
+        .insert({
+          farm_id: farmId,
+          animal_id: newAnimal.id,
+          release_date: new Date().toISOString().split('T')[0],
+          release_reason: releaseReason,
+          death_cause: deathCause,
+          veterinarian_notes: null,
+          notes: `Animal imported with release status: ${releaseReason}. Status set to ${newAnimal.status}.`,
+          created_at: new Date().toISOString(),
+          created_by: userId
+        })
+        .then(() => console.log(`✅ Release record created for ${animal.tag_number} (reason: ${releaseReason})`))
+        .catch((e: any) => console.warn(`⚠️ Release record failed for ${animal.tag_number}:`, e.message))
+    }
+
+    // Create production cycles
+    if (animal.service_date_1) {
+      await createProductionCycles(
+        supabase,
+        farmId,
+        newAnimal.id,
+        animal,
+        userId,
+        parentTagMap,
+        allAnimals,
+        originalTagToGenerated
+      ).catch(e => {
+        console.warn(`⚠️ Production cycles failed for ${animal.tag_number}:`, e.message)
+        errors.push(`Production cycles failed for ${animal.tag_number}: ${e.message}`)
+      })
+    }
+
+    console.log(`✅ Records created for: ${animal.tag_number}`)
+
+  } catch (error) {
+    console.error(`💥 Error creating records for ${animal.tag_number}:`, error)
+    errors.push(`Error creating records for ${animal.tag_number}: ${error}`)
+  }
 }
 
 function sanitizeAnimalData(animal: ImportAnimal, parentTagMap: Map<string, string>) {

@@ -21,12 +21,14 @@ import {
   CheckCircle,
   AlertCircle
 } from 'lucide-react'
+import { getProtocolPreset, getProtocolIcon } from '@/lib/health/protocol-presets'
+import type { ProtocolTypeKey } from '@/lib/health/protocol-presets'
 
 interface ProtocolCardProps {
   protocol: {
     id: string
     protocol_name: string
-    protocol_type: 'vaccination' | 'treatment' | 'checkup' | 'breeding' | 'nutrition'
+    protocol_type: ProtocolTypeKey
     description: string
     frequency_type: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'one_time'
     frequency_value: number
@@ -57,26 +59,15 @@ export function ProtocolCard({
   isDeleting = false
 }: ProtocolCardProps) {
   
-  const getProtocolTypeIcon = (type: string) => {
-    switch (type) {
-      case 'vaccination': return '💉'
-      case 'treatment': return '💊'
-      case 'checkup': return '🩺'
-      case 'breeding': return '🐄'
-      case 'nutrition': return '🌾'
-      default: return '📋'
-    }
+  const preset = getProtocolPreset(protocol.protocol_type)
+  
+  const getProtocolTypeIcon = (type: ProtocolTypeKey) => {
+    return getProtocolIcon(type)
   }
   
-  const getProtocolTypeColor = (type: string) => {
-    switch (type) {
-      case 'vaccination': return 'bg-green-100 text-green-800 border-green-200'
-      case 'treatment': return 'bg-blue-100 text-blue-800 border-blue-200'
-      case 'checkup': return 'bg-purple-100 text-purple-800 border-purple-200'
-      case 'breeding': return 'bg-pink-100 text-pink-800 border-pink-200'
-      case 'nutrition': return 'bg-yellow-100 text-yellow-800 border-yellow-200'
-      default: return 'bg-gray-100 text-gray-800 border-gray-200'
-    }
+  const getProtocolTypeColor = (type: ProtocolTypeKey) => {
+    const typePreset = getProtocolPreset(type)
+    return typePreset?.badge_color || 'bg-gray-100 text-gray-800 border-gray-200'
   }
   
   const getFrequencyLabel = (type: string, value: number) => {

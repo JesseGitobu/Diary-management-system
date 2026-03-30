@@ -56,39 +56,38 @@ export function AnimalsList({
 }: AnimalsListProps) {
   const { isMobile } = useDeviceInfo()
   
-  // ✅ Initialize filters directly from localStorage to avoid race condition
-  const [filters, setFilters] = useState<FiltersState>(() => {
+  // Default state - no localStorage access in initializer
+  const [filters, setFilters] = useState<FiltersState>({
+    search: '',
+    animalSource: 'all',
+    productionStatus: 'all',
+    healthStatus: 'all',
+    gender: 'all',
+  })
+  
+  // Default view mode
+  const [viewMode, setViewMode] = useState<ViewMode>('grid')
+  
+  // Load from localStorage only after mount
+  useEffect(() => {
     try {
       const savedFilters = localStorage.getItem('animalListFilters')
-      return savedFilters ? JSON.parse(savedFilters) : {
-        search: '',
-        animalSource: 'all',
-        productionStatus: 'all',
-        healthStatus: 'all',
-        gender: 'all',
+      if (savedFilters) {
+        setFilters(JSON.parse(savedFilters))
       }
     } catch (error) {
       console.error('Error loading filters from localStorage:', error)
-      return {
-        search: '',
-        animalSource: 'all',
-        productionStatus: 'all',
-        healthStatus: 'all',
-        gender: 'all',
-      }
     }
-  })
-  
-  // ✅ Initialize view mode directly from localStorage
-  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    
     try {
       const saved = localStorage.getItem('animalListViewMode')
-      return (saved as ViewMode) || 'grid'
+      if (saved) {
+        setViewMode((saved as ViewMode) || 'grid')
+      }
     } catch (error) {
       console.error('Error loading view mode from localStorage:', error)
-      return 'grid'
     }
-  })
+  }, [])
   
   const [animalsList, setAnimalsList] = useState(animals)
   const [showFilters, setShowFilters] = useState(false)

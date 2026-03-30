@@ -188,14 +188,166 @@ export async function POST(request: NextRequest) {
       lactation_number: finalLactationNumber // ✅ Use transformed value
     }
     
-    console.log('🔍 [API] Creating animal with final data:', finalAnimalData)
-    const result = await createAnimal(userRole.farm_id, finalAnimalData)
+    // ✅ FILTER OUT FIELDS THAT DON'T BELONG IN ANIMALS TABLE
+    // Only keep fields that exist in the animals table schema
+    const allowedAnimalFields = [
+      'tag_number', 'name', 'breed', 'gender', 'birth_date', 'animal_source',
+      'health_status', 'production_status', 'status', 'notes',
+      'mother_id', 'father_id', 'father_info', 'mother_name',
+      'autoGenerateTag', 'customAttributes' // These are for tag generation context
+    ]
+    
+    const cleanAnimalData = Object.keys(finalAnimalData)
+      .filter(key => allowedAnimalFields.includes(key))
+      .reduce((obj: any, key: string) => {
+        obj[key] = (finalAnimalData as any)[key]
+        return obj
+      }, {})
+    
+    console.log('🔍 [API] Creating animal with clean data (filtered):', cleanAnimalData)
+    const result = await createAnimal(userRole.farm_id, cleanAnimalData)
     
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 })
     }
     
     const createdAnimal = result.data
+
+    // ===== CREATE ANIMAL_PURCHASES RECORD FOR PURCHASED ANIMALS =====
+    if (animalData.animal_source === 'purchased_animal' && animalData.purchase_date && animalData.seller_info) {
+      console.log('🔍 [API] Creating animal_purchases record for purchased animal...')
+      
+      try {
+        const supabase = await createServerSupabaseClient()
+        const { error: purchaseError } = await (supabase as any)
+          .from('animal_purchases')
+          .insert({
+            farm_id: userRole.farm_id,
+            animal_id: createdAnimal.id,
+            purchase_date: animalData.purchase_date,
+            purchase_price: animalData.purchase_price || null,
+            farm_seller_name: animalData.seller_info,
+            farm_seller_contact: null,
+            notes: animalData.notes || null,
+            created_by: user.id
+          })
+        
+        if (purchaseError) {
+          console.error('❌ [API] Failed to create animal_purchases record:', purchaseError)
+        } else {
+          console.log('✅ [API] animal_purchases record created for purchased animal')
+        }
+      } catch (error) {
+        console.error('❌ [API] Error creating animal_purchases record:', error)
+      }
+    }
+
+    // ===== CREATE CALF_RECORDS FOR NEWBORN CALVES =====
+    if (animalData.animal_source === 'newborn_calf' && animalData.mother_id) {
+      console.log('🔍 [API] Creating calf_records record for newborn calf...')
+      
+      try {
+        const supabase = await createServerSupabaseClient()
+        const { error: calfError } = await (supabase as any)
+          .from('calf_records')
+          .insert({
+            farm_id: userRole.farm_id,
+            animal_id: createdAnimal.id,
+            dam_id: animalData.mother_id,
+            birth_date: animalData.birth_date,
+            gender: animalData.gender,
+            birth_weight: animalData.birth_weight || null,
+            breed: animalData.breed || null,
+            sire_info: animalData.father_info || null,
+            notes: animalData.notes || null
+          })
+        
+        if (calfError) {
+          console.error('❌ [API] Failed to create calf_records record:', calfError)
+        } else {
+          console.log('✅ [API] calf_records record created for newborn calf')
+        }
+      } catch (error) {
+        console.error('❌ [API] Error creating calf_records record:', error)
+      }
+    }
+
+    // ===== CREATE SERVICE_RECORDS FOR SERVED ANIMALS =====
+    if (finalProductionStatus === 'served' && animalData.service_date) {
+      console.log('🔍 [API] Creating service_records record for served animal...')
+      
+      try {
+        const supabase = await createServerSupabaseClient()
+        const { error: serviceError } = await (supabase as any)
+          .from('service_records')
+          .insert({
+            farm_id: userRole.farm_id,
+            animal_id: createdAnimal.id,
+            service_number: animalData.lactation_number || 1,
+            service_date: animalData.service_date,
+            service_type: animalData.service_method === 'artificial_insemination' ? 'artificial_insemination' : (animalData.service_method || 'artificial_insemination'),
+            bull_tag_or_semen_code: null,
+            expected_calving_date: animalData.expected_calving_date || null,
+            notes: animalData.notes || null
+          })
+        
+        if (serviceError) {
+          console.error('❌ [API] Failed to create service_records record:', serviceError)
+        } else {
+          console.log('✅ [API] service_records record created for served animal')
+        }
+      } catch (error) {
+        console.error('❌ [API] Error creating service_records record:', error)
+      }
+    }
+
+    // ===== CREATE LACTATION_CYCLE_RECORDS FOR LACTATING/DRY ANIMALS =====
+    if ((finalProductionStatus === 'lactating' || finalProductionStatus === 'served' || finalProductionStatus === 'steaming_dry_cows' || finalProductionStatus === 'open_culling_dry_cows') && animalData.lactation_number) {
+      console.log('🔍 [API] Creating lactation_cycle_records record...')
+      
+      try {
+        const supabase = await createServerSupabaseClient()
+        
+        // Determine lactation cycle status based on production_status
+        let cycleStatus: 'active' | 'completed' | 'culling dry'
+        if (finalProductionStatus === 'lactating') {
+          cycleStatus = 'active'
+        } else if (finalProductionStatus === 'steaming_dry_cows' || finalProductionStatus === 'served') {
+          cycleStatus = 'active'
+        } else {
+          cycleStatus = 'culling dry'
+        }
+
+        // For lactating animals, use provided days_in_milk or estimate
+        let startDate = new Date()
+        if (finalProductionStatus === 'lactating' && animalData.days_in_milk) {
+          startDate = new Date()
+          startDate.setDate(startDate.getDate() - animalData.days_in_milk)
+        }
+
+        const { error: lactationError } = await (supabase as any)
+          .from('lactation_cycle_records')
+          .insert({
+            farm_id: userRole.farm_id,
+            animal_id: createdAnimal.id,
+            lactation_number: animalData.lactation_number,
+            start_date: startDate.toISOString().split('T')[0],
+            expected_end_date: animalData.expected_calving_date || new Date(new Date().getTime() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+            status: cycleStatus,
+            current_average_production: animalData.current_daily_production || null,
+            days_in_milk: animalData.days_in_milk || (finalProductionStatus === 'lactating' ? 60 : null),
+            notes: animalData.notes || null
+          })
+        
+        if (lactationError) {
+          console.error('❌ [API] Failed to create lactation_cycle_records record:', lactationError)
+        } else {
+          console.log('✅ [API] lactation_cycle_records record created')
+        }
+      } catch (error) {
+        console.error('❌ [API] Error creating lactation_cycle_records record:', error)
+      }
+    }
 
     // ===== AUTO-GENERATE BREEDING RECORDS =====
     let breedingRecordsGenerated = false
@@ -328,7 +480,7 @@ export async function POST(request: NextRequest) {
       
       if (initialWeight && ageDays > 0) {
         const supabase = await createServerSupabaseClient()
-        const measurementType = animalData.animal_source === 'newborn_calf' ? 'birth' : 'purchase'
+        const measurementPurpose = animalData.animal_source === 'newborn_calf' ? 'birth' : 'purchase'
         
         // Cast supabase to any
         const { error: initialWeightError } = await (supabase as any)
@@ -337,11 +489,11 @@ export async function POST(request: NextRequest) {
             animal_id: createdAnimal.id,
             farm_id: userRole.farm_id,
             weight_kg: initialWeight,
-            measurement_date: referenceDate.toISOString().split('T')[0],
-            measurement_type: measurementType,
-            notes: `Initial ${measurementType} weight`,
-            is_required: false,
-            recorded_by: user.id
+            weight_date: referenceDate.toISOString().split('T')[0],
+            measurement_purpose: measurementPurpose,
+            measured_by: user.id,
+            notes: `Initial ${measurementPurpose} weight`,
+            weight_unit: 'kg'
           })
         
         if (initialWeightError) {
@@ -361,11 +513,11 @@ export async function POST(request: NextRequest) {
             animal_id: createdAnimal.id,
             farm_id: userRole.farm_id,
             weight_kg: animalData.weight,
-            measurement_date: now.toISOString().split('T')[0],
-            measurement_type: 'routine',
+            weight_date: now.toISOString().split('T')[0],
+            measurement_purpose: 'routine',
+            measured_by: user.id,
             notes: 'Current weight at registration',
-            is_required: true,
-            recorded_by: user.id
+            weight_unit: 'kg'
           })
         
         if (currentWeightError) {

@@ -16,6 +16,8 @@ import { RecordProductionModal } from '@/components/production/RecordProductionM
 import { ProductionSessionBanner } from '@/components/production/ProductionSessionBanner' // Import the new banner
 import { ProductionStatsCards } from '@/components/production/ProductionStatsCards'
 import { MilkingGroupsManager } from '@/components/production/MilkingGroupsManager'
+import { QuickActionsDropdown } from '@/components/production/QuickActionsDropdown'
+import { SetTargetsModal } from '@/components/production/SetTargetsModal'
 
 // Distribution components
 import { DistributionChart } from '@/components/distribution/DistributionChart'
@@ -189,6 +191,7 @@ export function ProductionDistributionDashboard({
   const [showProductionDetailModal, setShowProductionDetailModal] = useState(false)
   const [showProductionEditModal, setShowProductionEditModal] = useState(false)
   const [showMilkingGroupsModal, setShowMilkingGroupsModal] = useState(false)
+  const [showTargetsModal, setShowTargetsModal] = useState(false)
 
   useEffect(() => {
     const handleMobileNavAction = (event: Event) => {
@@ -489,6 +492,20 @@ export function ProductionDistributionDashboard({
           icon: Plus,
           color: 'text-blue-600',
           onClick: () => setShowProductionEntryModal(true)
+        },
+        {
+          id: 'manage-milking-groups',
+          label: 'Manage Milking Groups',
+          icon: Settings,
+          color: 'text-purple-600',
+          onClick: () => setShowMilkingGroupsModal(true)
+        },
+        {
+          id: 'set-targets',
+          label: 'Set Targets',
+          icon: Target,
+          color: 'text-green-600',
+          onClick: () => setShowTargetsModal(true)
         }
       ] : []
     } else {
@@ -534,16 +551,11 @@ export function ProductionDistributionDashboard({
           {/* Action buttons code... */}
           <div className="flex items-center space-x-2">
             {!isMobile && activeTab === 'production' && canAddRecords && (
-               <Button onClick={() => setShowProductionEntryModal(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Record Production
-               </Button>
-            )}
-            {!isMobile && activeTab === 'production' && (
-               <Button onClick={() => setShowMilkingGroupsModal(true)} variant="outline">
-                  <Settings className="mr-2 h-4 w-4" />
-                  Manage Milking Groups
-               </Button>
+              <QuickActionsDropdown
+                onRecordProduction={() => setShowProductionEntryModal(true)}
+                onManageMilkingGroups={() => setShowMilkingGroupsModal(true)}
+                onSetTargets={() => setShowTargetsModal(true)}
+              />
             )}
              {!isMobile && activeTab === 'distribution' && canAddRecords && (
                <>
@@ -880,6 +892,20 @@ export function ProductionDistributionDashboard({
             />
           </div>
         </Modal>
+      )}
+
+      {showTargetsModal && (
+        <SetTargetsModal
+          isOpen={showTargetsModal}
+          onClose={() => setShowTargetsModal(false)}
+          animals={animals}
+          farmId={farmId}
+          isMobile={isMobile}
+          onSuccess={() => {
+            // Optional: Refresh targets or data here if needed
+            setShowTargetsModal(false)
+          }}
+        />
       )}
     </div>
   )

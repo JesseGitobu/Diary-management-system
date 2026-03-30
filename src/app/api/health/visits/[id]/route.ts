@@ -27,39 +27,46 @@ export async function GET(
     const { id } = await params
     const supabase = await createServerSupabaseClient()
     
-    const { data: visitResult, error } = await supabase
+    // Fetch veterinary visit record
+    const { data: visit, error } = await supabase
       .from('veterinary_visits')
-      .select(`
-        *,
-        visit_animals (
-          animal_id,
-          animals (
-            id,
-            name,
-            tag_number,
-            breed
-          )
-        )
-      `)
+      .select('*')
       .eq('id', id)
       .eq('farm_id', userRole.farm_id)
       .single()
-    
-    // Cast to any to fix "Property 'visit_animals' does not exist on type 'never'"
-    const visit = visitResult as any
 
     if (error || !visit) {
       return NextResponse.json({ error: 'Veterinary visit not found' }, { status: 404 })
     }
 
-    // Extract selected animal IDs for the response
-    const animalsInvolved = visit.visit_animals?.map((va: any) => va.animal_id) || []
+    // Fetch animals linked to this visit
+    const { data: animalLinks } = await supabase
+      .from('visit_animals')
+      .select('animal_id')
+      .eq('visit_id', id)
+
+    const animalIds = (animalLinks as any[])?.map(l => l.animal_id) || []
+    let visitAnimals: any[] = []
+    
+    if (animalIds.length > 0) {
+      const { data: animals } = await supabase
+        .from('animals')
+        .select('id, name, tag_number, breed')
+        .in('id', animalIds)
+        .eq('farm_id', userRole.farm_id)
+
+      visitAnimals = (animalLinks as any[])?.map((link: any, idx: number) => ({
+        animal_id: link.animal_id,
+        animals: animals?.[idx] || { id: link.animal_id, name: '', tag_number: '', breed: '' }
+      })) || []
+    }
     
     return NextResponse.json({ 
       success: true, 
       visit: { 
-        ...visit, 
-        animals_involved: animalsInvolved 
+        ...(visit as any),
+        visit_animals: visitAnimals,
+        animalsInvolved: animalIds
       } 
     })
     

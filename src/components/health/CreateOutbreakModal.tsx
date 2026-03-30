@@ -96,9 +96,11 @@ const handleSubmit = async (data: OutbreakFormData) => {
     // Reset form and close modal
     form.reset()
     setSelectedAnimals([])
+    onClose()
     
   } catch (err) {
     setError(err instanceof Error ? err.message : 'An unexpected error occurred')
+    console.error('Error creating outbreak:', err)
   } finally {
     setLoading(false)
   }

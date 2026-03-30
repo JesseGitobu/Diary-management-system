@@ -122,6 +122,7 @@ export function ProductionRecordsList({
   const [milkingGroups, setMilkingGroups] = useState<Map<string, string>>(new Map())
   const [availableSessions, setAvailableSessions] = useState<Array<{ id: string; name: string }>>([])
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set())
+  const [selectedSession, setSelectedSession] = useState<string | null>(null) // Format: "${cycleDate}-${animalId}-${sessionId}"
   const RECORDS_PER_PAGE = 10
 
   // Fetch milking sessions on mount
@@ -719,106 +720,256 @@ export function ProductionRecordsList({
       ) : filterSession === 'all' && viewTab === 'individual' && dailySummaryRecords ? (
         // Daily totals view for individual animals
         <div className="space-y-4 max-h-[600px] overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-100 [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded pr-2">
-          {dailySummaryRecords.map((summary, idx) => {
+          {(paginatedData as any[]).map((summary, idx) => {
             const qualityIndicator = getQualityIndicator(summary.avgFatContent || undefined, summary.avgProteinContent || undefined)
+            const summaryKey = `${summary.cycleDate}-${summary.animal_id}`
+            const isSessionViewActive = selectedSession?.startsWith(summaryKey)
+            const selectedSessionId = isSessionViewActive ? selectedSession?.split('-').pop() : null
+            const sessionRecords = isSessionViewActive
+              ? summary.records.filter((r: ProductionRecord) => r.milking_session_id === selectedSessionId)
+              : []
             
             return (
               <Card key={`summary-${summary.cycleDate}-${summary.animal_id}`} className="hover:shadow-md transition-shadow overflow-hidden">
                 <CardContent className="p-2 md:p-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-start space-x-2 flex-1 min-w-0">
-                      <div className="flex-shrink-0">
-                        <div className="w-10 h-10 bg-farm-green/10 rounded-lg flex items-center justify-center">
-                          <Droplets className="w-5 h-5 text-farm-green" />
+                  {/* Session Detail View */}
+                  {isSessionViewActive && sessionRecords.length > 0 ? (
+                    <div className="space-y-3">
+                      {/* Back Button and Title */}
+                      <div className="flex items-center justify-between mb-3 pb-3 border-b border-gray-200">
+                        <button
+                          onClick={() => setSelectedSession(null)}
+                          className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors"
+                        >
+                          ← Back to Daily View
+                        </button>
+                        <div className="text-sm font-semibold text-gray-900">
+                          {summary.animalName} • {getSessionName(selectedSessionId || undefined)} • {formatDate(summary.cycleDate)}
                         </div>
                       </div>
-                      
-                      <div className="min-w-0 flex-1">
-                        {/* Header Row */}
-                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-1 mb-2">
-                          <div>
-                            <h4 className="text-sm md:text-base font-semibold text-gray-900 truncate">
-                              {summary.animalName}
-                            </h4>
-                            <p className="text-xs text-gray-600">
-                              Tag: {summary.animalTag}
-                            </p>
-                          </div>
 
-                          <div className="flex flex-wrap items-center gap-1">
-                            <Badge className="bg-blue-100 text-blue-800 text-xs">
-                              <Calendar className="w-2 h-2 mr-0.5" />
-                              {formatDate(summary.cycleDate)}
-                            </Badge>
-                            <Badge className="bg-indigo-100 text-indigo-800 text-xs">
-                              <Clock className="w-2 h-2 mr-0.5" />
-                              {summary.recordCount} session{summary.recordCount !== 1 ? 's' : ''}
-                            </Badge>
-                            {qualityIndicator && (
-                              <Badge className={`${qualityIndicator.color} text-xs`}>
-                                {qualityIndicator.label}
-                              </Badge>
+                      {/* Individual Session Records */}
+                      {sessionRecords.map((record: ProductionRecord) => {
+                        const safetyStatus = getSafetyStatusBadge(record.milk_safety_status)
+                        const SafetyIcon = safetyStatus.icon
+
+                        return (
+                          <div key={record.id} className="p-2 md:p-3 bg-stone-50 rounded-lg border border-stone-200 space-y-2">
+                            {/* Time and Safety Status */}
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <Clock className="w-3 h-3 text-gray-500" />
+                                <span className="text-xs md:text-sm font-medium text-gray-900">{formatDateTime(record.created_at)}</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Badge className={safetyStatus.color} style={{fontSize: '0.7rem'}}>
+                                  <SafetyIcon className="w-2 h-2 mr-0.5" />
+                                  {safetyStatus.label}
+                                </Badge>
+                              </div>
+                            </div>
+
+                            {/* Core Metrics */}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-1">
+                              <div className="text-center p-1.5 bg-blue-50 rounded">
+                                <p className="text-sm md:text-base font-bold text-blue-600">{record.milk_volume?.toFixed(1) || '-'}</p>
+                                <p className="text-xs text-blue-600 font-medium">Volume (L)</p>
+                              </div>
+                              {record.temperature && (
+                                <div className="text-center p-1.5 bg-red-50 rounded">
+                                  <p className="text-sm md:text-base font-bold text-red-600">{record.temperature.toFixed(1)}</p>
+                                  <p className="text-xs text-red-600 font-medium">Temp (°C)</p>
+                                </div>
+                              )}
+                              {record.fat_content !== null && record.fat_content !== undefined && (
+                                <div className="text-center p-1.5 bg-orange-50 rounded">
+                                  <p className="text-sm md:text-base font-bold text-orange-600">{record.fat_content.toFixed(2)}</p>
+                                  <p className="text-xs text-orange-600 font-medium">Fat %</p>
+                                </div>
+                              )}
+                              {record.protein_content !== null && record.protein_content !== undefined && (
+                                <div className="text-center p-1.5 bg-green-50 rounded">
+                                  <p className="text-sm md:text-base font-bold text-green-600">{record.protein_content.toFixed(2)}</p>
+                                  <p className="text-xs text-green-600 font-medium">Protein %</p>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Additional Metrics */}
+                            {(record.somatic_cell_count || record.lactose_content || record.ph_level) && (
+                              <div className="grid grid-cols-2 md:grid-cols-3 gap-1">
+                                {record.somatic_cell_count !== null && record.somatic_cell_count !== undefined && (
+                                  <div className="text-center p-1.5 bg-yellow-50 rounded">
+                                    <p className="text-xs md:text-sm font-bold text-yellow-600">{record.somatic_cell_count.toLocaleString()}</p>
+                                    <p className="text-xs text-yellow-600 font-medium">SCC</p>
+                                  </div>
+                                )}
+                                {record.lactose_content !== null && record.lactose_content !== undefined && (
+                                  <div className="text-center p-1.5 bg-cyan-50 rounded">
+                                    <p className="text-xs md:text-sm font-bold text-cyan-600">{record.lactose_content.toFixed(2)}</p>
+                                    <p className="text-xs text-cyan-600 font-medium">Lactose %</p>
+                                  </div>
+                                )}
+                                {record.ph_level !== null && record.ph_level !== undefined && (
+                                  <div className="text-center p-1.5 bg-indigo-50 rounded">
+                                    <p className="text-xs md:text-sm font-bold text-indigo-600">{record.ph_level.toFixed(2)}</p>
+                                    <p className="text-xs text-indigo-600 font-medium">pH</p>
+                                  </div>
+                                )}
+                              </div>
                             )}
+
+                            {/* Notes */}
+                            {record.notes && (
+                              <div className="p-1.5 bg-gray-100 rounded border border-gray-200">
+                                <p className="text-xs text-gray-700">
+                                  <span className="font-semibold">Notes:</span> {record.notes}
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Action Buttons */}
+                            {canEdit && (
+                              <div className="flex gap-1 justify-end pt-1">
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  onClick={() => onView?.(record)}
+                                  className="h-6 px-2 text-xs"
+                                >
+                                  <Eye className="w-3 h-3 mr-1" />
+                                  View
+                                </Button>
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  onClick={() => onEdit?.(record)}
+                                  className="h-6 px-2 text-xs"
+                                >
+                                  <Edit className="w-3 h-3 mr-1" />
+                                  Edit
+                                </Button>
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  onClick={() => handleDelete(record.id)}
+                                  disabled={deletingId === record.id}
+                                  className="h-6 px-2 text-xs text-red-600 hover:text-red-800"
+                                >
+                                  <Trash2 className="w-3 h-3 mr-1" />
+                                  {deletingId === record.id ? 'Deleting' : 'Delete'}
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    /* Daily Total View */
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-start space-x-2 flex-1 min-w-0">
+                        <div className="flex-shrink-0">
+                          <div className="w-10 h-10 bg-farm-green/10 rounded-lg flex items-center justify-center">
+                            <Droplets className="w-5 h-5 text-farm-green" />
                           </div>
                         </div>
                         
-                        {/* Production Metrics Grid */}
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-1 mb-1">
-                          <div className="text-center p-1 md:p-2 bg-blue-50 rounded">
-                            <p className="text-base md:text-lg font-bold text-blue-600">{summary.totalMilkVolume.toFixed(1)}</p>
-                            <p className="text-xs text-blue-600 font-medium">Total L</p>
-                          </div>
-                          {summary.avgFatContent !== null && (
-                            <div className="text-center p-1 md:p-2 bg-orange-50 rounded">
-                              <p className="text-sm md:text-base font-bold text-orange-600">{summary.avgFatContent.toFixed(2)}%</p>
-                              <p className="text-xs text-orange-600 font-medium">Fat</p>
+                        <div className="min-w-0 flex-1">
+                          {/* Header Row */}
+                          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-1 mb-2">
+                            <div>
+                              <h4 className="text-sm md:text-base font-semibold text-gray-900 truncate">
+                                {summary.animalName}
+                              </h4>
+                              <p className="text-xs text-gray-600">
+                                Tag: {summary.animalTag}
+                              </p>
                             </div>
-                          )}
-                          {summary.avgProteinContent !== null && (
-                            <div className="text-center p-1 md:p-2 bg-green-50 rounded">
-                              <p className="text-sm md:text-base font-bold text-green-600">{summary.avgProteinContent.toFixed(2)}%</p>
-                              <p className="text-xs text-green-600 font-medium">Protein</p>
-                            </div>
-                          )}
-                          <div className="text-center p-1 md:p-2 bg-purple-50 rounded">
-                            <p className="text-sm md:text-base font-bold text-purple-600">{summary.recordCount}</p>
-                            <p className="text-xs text-purple-600 font-medium">Records</p>
-                          </div>
-                        </div>
 
-                        {/* Sessions in this cycle */}
-                        <div className="mt-1 pt-1 border-t border-gray-200">
-                          <button
-                            onClick={() => {
-                              const key = `${summary.cycleDate}-${summary.animal_id}`
-                              const newSet = new Set(expandedSessions)
-                              if (newSet.has(key)) {
-                                newSet.delete(key)
-                              } else {
-                                newSet.add(key)
-                              }
-                              setExpandedSessions(newSet)
-                            }}
-                            className="flex items-center gap-1 text-xs font-semibold text-gray-600 hover:text-gray-900 transition-colors cursor-pointer"
-                          >
-                            <ChevronDown 
-                              className={`w-3 h-3 transition-transform ${expandedSessions.has(`${summary.cycleDate}-${summary.animal_id}`) ? 'rotate-180' : ''}`}
-                            />
-                            Sessions in cycle ({summary.sessions.length})
-                          </button>
-                          {expandedSessions.has(`${summary.cycleDate}-${summary.animal_id}`) && (
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {summary.sessions.map(sessionId => (
-                                <Badge key={sessionId} className={getSessionBadgeColor(sessionId)}>
-                                  {getSessionName(sessionId)}
+                            <div className="flex flex-wrap items-center gap-1">
+                              <Badge className="bg-blue-100 text-blue-800 text-xs">
+                                <Calendar className="w-2 h-2 mr-0.5" />
+                                {formatDate(summary.cycleDate)}
+                              </Badge>
+                              <Badge className="bg-indigo-100 text-indigo-800 text-xs">
+                                <Clock className="w-2 h-2 mr-0.5" />
+                                {summary.recordCount} session{summary.recordCount !== 1 ? 's' : ''}
+                              </Badge>
+                              {qualityIndicator && (
+                                <Badge className={`${qualityIndicator.color} text-xs`}>
+                                  {qualityIndicator.label}
                                 </Badge>
-                              ))}
+                              )}
                             </div>
-                          )}
+                          </div>
+                          
+                          {/* Production Metrics Grid */}
+                          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-1 mb-1">
+                            <div className="text-center p-1 md:p-2 bg-blue-50 rounded">
+                              <p className="text-base md:text-lg font-bold text-blue-600">{summary.totalMilkVolume.toFixed(1)}</p>
+                              <p className="text-xs text-blue-600 font-medium">Total L</p>
+                            </div>
+                            {summary.avgFatContent !== null && (
+                              <div className="text-center p-1 md:p-2 bg-orange-50 rounded">
+                                <p className="text-sm md:text-base font-bold text-orange-600">{summary.avgFatContent.toFixed(2)}%</p>
+                                <p className="text-xs text-orange-600 font-medium">Fat</p>
+                              </div>
+                            )}
+                            {summary.avgProteinContent !== null && (
+                              <div className="text-center p-1 md:p-2 bg-green-50 rounded">
+                                <p className="text-sm md:text-base font-bold text-green-600">{summary.avgProteinContent.toFixed(2)}%</p>
+                                <p className="text-xs text-green-600 font-medium">Protein</p>
+                              </div>
+                            )}
+                            <div className="text-center p-1 md:p-2 bg-purple-50 rounded">
+                              <p className="text-sm md:text-base font-bold text-purple-600">{summary.recordCount}</p>
+                              <p className="text-xs text-purple-600 font-medium">Records</p>
+                            </div>
+                          </div>
+
+                          {/* Sessions in this cycle */}
+                          <div className="mt-1 pt-1 border-t border-gray-200">
+                            <button
+                              onClick={() => {
+                                const key = `${summary.cycleDate}-${summary.animal_id}`
+                                const newSet = new Set(expandedSessions)
+                                if (newSet.has(key)) {
+                                  newSet.delete(key)
+                                } else {
+                                  newSet.add(key)
+                                }
+                                setExpandedSessions(newSet)
+                              }}
+                              className="flex items-center gap-1 text-xs font-semibold text-gray-600 hover:text-gray-900 transition-colors cursor-pointer"
+                            >
+                              <ChevronDown 
+                                className={`w-3 h-3 transition-transform ${expandedSessions.has(`${summary.cycleDate}-${summary.animal_id}`) ? 'rotate-180' : ''}`}
+                              />
+                              Sessions in cycle ({summary.sessions.length})
+                            </button>
+                            {expandedSessions.has(`${summary.cycleDate}-${summary.animal_id}`) && (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {summary.sessions.map((sessionId: string) => (
+                                  <button
+                                    key={sessionId}
+                                    onClick={() => setSelectedSession(`${summary.cycleDate}-${summary.animal_id}-${sessionId}`)}
+                                    className="transition-all"
+                                  >
+                                    <Badge 
+                                      className={`${getSessionBadgeColor(sessionId)} cursor-pointer hover:opacity-80 hover:shadow-md transition-all`}
+                                    >
+                                      {getSessionName(sessionId)}
+                                    </Badge>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </CardContent>
               </Card>
             )
@@ -827,7 +978,7 @@ export function ProductionRecordsList({
       ) : filterSession === 'all' && viewTab === 'groups' && dailySummaryGroups ? (
         // Daily totals view for milking groups
         <div className="space-y-4 max-h-[600px] overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-100 [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded pr-2">
-          {dailySummaryGroups.map((summary) => {
+          {(paginatedData as any[]).map((summary) => {
             const qualityIndicator = getQualityIndicator(summary.avgFatContent || undefined, summary.avgProteinContent || undefined)
             
             return (
@@ -1217,55 +1368,168 @@ export function ProductionRecordsList({
         </div>
       )}
 
-      {/* Pagination Controls */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
-          <div className="text-sm text-gray-600">
-            Page <span className="font-semibold">{currentPage}</span> of <span className="font-semibold">{totalPages}</span>
-            <span className="ml-3">
-              ({startIndex + 1}-{Math.min(endIndex, filteredRecords.length)} of {filteredRecords.length})
-            </span>
-          </div>
+      {/* Pagination Controls - Device Optimized */}
+      {totalPages > 1 && (() => {
+        // Calculate which page numbers to display (show current +/- 2 on desktop)
+        const getPagesToShow = () => {
+          if (totalPages <= 5) {
+            return Array.from({ length: totalPages }, (_, i) => i + 1)
+          }
+          const pages: (number | string)[] = []
+          const range = 2
+          
+          // Always show first page
+          pages.push(1)
+          
+          // Add ellipsis or pages before current
+          if (currentPage - range > 2) {
+            pages.push('...')
+          }
+          
+          // Pages around current - always include them, don't skip due to ellipsis
+          for (let i = Math.max(2, currentPage - range); i <= Math.min(totalPages - 1, currentPage + range); i++) {
+            pages.push(i)
+          }
+          
+          // Add ellipsis or pages after current
+          if (currentPage + range < totalPages - 1) {
+            pages.push('...')
+          }
+          
+          // Always show last page
+          if (!pages.includes(totalPages)) {
+            pages.push(totalPages)
+          }
+          
+          return pages
+        }
 
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-              disabled={currentPage === 1}
-              className="flex items-center gap-1"
-            >
-              <ChevronLeft className="w-4 h-4" />
-              Previous
-            </Button>
-
-            <div className="flex items-center gap-1">
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                <Button
-                  key={page}
-                  variant={currentPage === page ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setCurrentPage(page)}
-                  className="w-8 h-8 p-0"
-                >
-                  {page}
-                </Button>
-              ))}
+        return (
+          <div className="flex flex-col gap-3 p-3 md:p-4 bg-white rounded-lg border border-gray-200 shadow-sm">
+            {/* Desktop Info Row */}
+            <div className="hidden md:flex items-center justify-between">
+              <div className="text-sm text-gray-600">
+                Showing <span className="font-semibold">{startIndex + 1}</span> to <span className="font-semibold">{Math.min(endIndex, filteredRecords.length)}</span> of <span className="font-semibold">{filteredRecords.length}</span> records
+              </div>
+              <div className="text-sm text-gray-600">
+                Page <span className="font-semibold">{currentPage}</span> of <span className="font-semibold">{totalPages}</span>
+              </div>
             </div>
 
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-              disabled={currentPage === totalPages}
-              className="flex items-center gap-1"
-            >
-              Next
-              <ChevronRight className="w-4 h-4" />
-            </Button>
+            {/* Mobile Info Row */}
+            <div className="md:hidden text-center">
+              <div className="text-xs font-semibold text-gray-900">
+                Page {currentPage} of {totalPages}
+              </div>
+              <div className="text-xs text-gray-600 mt-0.5">
+                {startIndex + 1}–{Math.min(endIndex, filteredRecords.length)} of {filteredRecords.length}
+              </div>
+            </div>
+
+            {/* Pagination Controls */}
+            <div className="flex items-center justify-between gap-2">
+              {/* Left: Previous Button */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1}
+                className="flex items-center gap-1 md:gap-2 px-2 md:px-3 py-2 md:py-2 h-9 md:h-10"
+              >
+                <ChevronLeft className="w-4 h-4 flex-shrink-0" />
+                <span className="hidden sm:inline">Previous</span>
+              </Button>
+
+              {/* Center: Page Numbers - Hide on mobile, show smart range on desktop */}
+              <div className="hidden lg:flex items-center gap-1">
+                {getPagesToShow().map((page, idx) => 
+                  page === '...' ? (
+                    <span key={`ellipsis-${idx}`} className="px-2 text-gray-400 text-xs font-semibold">
+                      …
+                    </span>
+                  ) : (
+                    <Button
+                      key={page}
+                      variant={currentPage === page ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setCurrentPage(page as number)}
+                      className={`w-9 h-9 p-0 text-sm font-medium transition-all ${
+                        currentPage === page 
+                          ? 'bg-farm-green text-white border-farm-green' 
+                          : 'hover:bg-gray-100'
+                      }`}
+                    >
+                      {page}
+                    </Button>
+                  )
+                )}
+              </div>
+
+              {/* Tablet: Compact page display */}
+              <div className="lg:hidden flex items-center gap-1">
+                {/* Show page buttons only around current page */}
+                {currentPage > 1 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(currentPage - 1)}
+                    className="w-8 h-8 p-0 text-xs"
+                  >
+                    {currentPage - 1}
+                  </Button>
+                )}
+                <div className="px-2 py-1 bg-farm-green/10 rounded text-farm-green font-bold text-sm min-w-fit">
+                  {currentPage}
+                </div>
+                {currentPage < totalPages && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(currentPage + 1)}
+                    className="w-8 h-8 p-0 text-xs"
+                  >
+                    {currentPage + 1}
+                  </Button>
+                )}
+              </div>
+
+              {/* Right: Next Button */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                disabled={currentPage === totalPages}
+                className="flex items-center gap-1 md:gap-2 px-2 md:px-3 py-2 md:py-2 h-9 md:h-10"
+              >
+                <span className="hidden sm:inline">Next</span>
+                <ChevronRight className="w-4 h-4 flex-shrink-0" />
+              </Button>
+            </div>
+
+            {/* Desktop: Quick Jump Input */}
+            <div className="hidden lg:flex items-center justify-end gap-2">
+              <label htmlFor="page-jump" className="text-xs font-medium text-gray-600">
+                Go to page:
+              </label>
+              <input
+                id="page-jump"
+                type="number"
+                min="1"
+                max={totalPages}
+                value={currentPage}
+                onChange={(e) => {
+                  const page = parseInt(e.target.value, 10)
+                  if (!isNaN(page) && page >= 1 && page <= totalPages) {
+                    setCurrentPage(page)
+                  }
+                }}
+                className="w-12 h-9 px-2 border border-gray-300 rounded text-sm text-center focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+              />
+              <span className="text-xs text-gray-600">/ {totalPages}</span>
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
     </div>
   )
 }

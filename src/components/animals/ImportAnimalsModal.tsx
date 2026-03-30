@@ -93,9 +93,19 @@ export function ImportAnimalsModal({
       'Limousin', 'Brahman', 'Zebu', 'Sahiwal', 'Gir', 'Red Sindhi',
       'Crossbred', 'Other'
     ],
+    // ✅ CRITICAL: These health_status values sync to the animals table 'status' field
+    // - 'healthy' → status='active' (normal operational animal)
+    // - 'sick' → status='active' (requires attention but still operational)
+    // - 'requires_attention' → status='active' (flagged for monitoring)
+    // - 'quarantine' or 'quarantined' → status='quarantined' (isolated, under observation)
+    // - 'deceased' → status='deceased' + animal_release_records created (with death_cause)
+    // - 'released' → status='sold' + animal_release_records created (as sale)
     healthStatuses: [
-      'healthy', 'sick', 'injured', 'quarantine', 'vaccinated',
-      'treatment', 'recovering', 'deceased', 'released'
+      'healthy', 'sick', 'injured', 'requires_attention',
+      'quarantine', 'quarantined',  // Both forms supported, 'quarantine' auto-converts to 'quarantined'
+      'vaccinated', 'treatment', 'recovering',
+      'deceased',   // Creates release record with release_reason='deceased'
+      'released'    // Creates release record with release_reason='sold'
     ]
   }
 

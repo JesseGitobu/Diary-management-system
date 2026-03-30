@@ -570,8 +570,6 @@ export async function createAnimal(
       breed: animalData.breed || null,
       gender: animalData.gender,
       birth_date: animalData.birth_date || null,
-      birth_weight: animalData.birth_weight || null,
-      weight: animalData.weight || null,
       status: animalData.status || 'active',
       notes: animalData.notes || null,
       animal_source: animalData.animal_source,
@@ -581,27 +579,17 @@ export async function createAnimal(
       father_id: animalData.father_id || null,
       father_info: animalData.father_info || null,
 
-      // Purchase specific fields
-      purchase_date: animalData.purchase_date || null,
-      purchase_price: animalData.purchase_price || null,
-      seller_info: animalData.seller_info || null,
-
       // Status fields
       health_status: animalData.health_status || 'healthy',
       production_status: animalData.production_status || 'calf',
-      
-      // Service fields (for served animals)
-      service_date: animalData.service_date || null,
-      service_method: animalData.service_method || null,
-      expected_calving_date: animalData.expected_calving_date || null,
-
-      // Production fields (for lactating animals)
-      current_daily_production: animalData.current_daily_production || null,
-      days_in_milk: animalData.days_in_milk || null,
-
-      // Mother production info (for heifers)
-      mother_production_info: animalData.mother_production_info || null,
-    }
+    } as any
+    
+    // ✅ NOTE: DO NOT include these fields here - they belong in separate tables:
+    // - birth_weight → calf_records table
+    // - weight, purchase_weight, current_daily_production, days_in_milk → animal_weight_records table
+    // - purchase_date, purchase_price, seller_info → animal_purchases table
+    // - service_date, service_method, expected_calving_date → service_records table
+    // - mother_production_info → calf_records table
     
     // FIXED: Cast to any to bypass 'never' type on insert
     const { data, error } = await (supabase
@@ -1297,7 +1285,9 @@ export async function getAnimalStats(farmId: string): Promise<AnimalStats> {
       needsAttention: animals.filter(a => a.health_status !== 'healthy').length,
     },
     
-    averageAge: calculateAverageAge(animals)
+    averageAge: calculateAverageAge(animals),
+    milkingCows: animals.filter(a => a.production_status === 'lactating' || a.production_status === 'steaming_dry_cows').length,
+    dryCows: animals.filter(a => a.production_status === 'open_culling_dry_cows').length
   }
   
   return stats

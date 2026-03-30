@@ -258,14 +258,7 @@ export function BreedingDashboard({
             )}>
               {modalTitles[activeModal]}
             </h2>
-            {/* <Button
-              variant="ghost"
-              onClick={handleModalClose}
-              size={isMobile ? "default" : "sm"}
-              className={cn(isMobile && "h-10 w-10")}
-            >
-              ✕
-            </Button> */}
+            
           </div>
 
           {activeModal === 'heat_detection' && <HeatDetectionForm {...commonProps} />}

@@ -137,7 +137,7 @@ export async function recordFeedConsumption(
 
       // FIXED: Cast to any to bypass 'never' type error
       const { data: consumptionRecord, error: consumptionError } = await (supabase
-        .from('feed_consumption') as any)
+        .from('feed_consumption_records') as any)
         .insert(insertData)
         .select()
         .single()
@@ -207,7 +207,7 @@ export async function updateFeedConsumption(
   try {
     // Get the original record for inventory adjustment
     const { data: originalRecord, error: fetchError } = await supabase
-      .from('feed_consumption')
+      .from('feed_consumption_records')
       .select('*')
       .eq('id', recordId)
       .eq('farm_id', data.farmId)
@@ -257,7 +257,7 @@ export async function updateFeedConsumption(
 
     // FIXED: Cast to any
     const { data: updatedRecord, error: updateError } = await (supabase
-      .from('feed_consumption') as any)
+      .from('feed_consumption_records') as any)
       .update(updateData)
       .eq('id', recordId)
       .eq('farm_id', data.farmId)
@@ -346,7 +346,7 @@ export async function deleteFeedConsumption(
   try {
     // Get the record for inventory restoration
     const { data: record, error: fetchError } = await supabase
-      .from('feed_consumption')
+      .from('feed_consumption_records')
       .select('*')
       .eq('id', recordId)
       .eq('farm_id', farmId)
@@ -366,7 +366,7 @@ export async function deleteFeedConsumption(
     // Delete the main consumption record
     // FIXED: Cast to any
     const { error: deleteError } = await (supabase
-      .from('feed_consumption') as any)
+      .from('feed_consumption_records') as any)
       .delete()
       .eq('id', recordId)
       .eq('farm_id', farmId)
@@ -402,7 +402,7 @@ export async function getFeedConsumptionRecords(
 
   try {
     const { data, error } = await supabase
-      .from('feed_consumption')
+      .from('feed_consumption_records')
       .select(`
         *,
         feed_types (
@@ -451,11 +451,11 @@ export async function getFeedConsumptionStats(
     startDate.setDate(endDate.getDate() - days)
 
     const { data: consumptionData, error } = await supabase
-      .from('feed_consumption')
-      .select('quantity_kg, feeding_time, feed_type_id')
+      .from('feed_consumption_records')
+      .select('quantity_consumed, consumption_date, feed_type_id')
       .eq('farm_id', farmId)
-      .gte('feeding_time', startDate.toISOString())
-      .lte('feeding_time', endDate.toISOString())
+      .gte('consumption_date', startDate.toISOString())
+      .lte('consumption_date', endDate.toISOString())
 
     if (error) {
       console.error('Error fetching consumption stats:', error)
@@ -472,16 +472,16 @@ export async function getFeedConsumptionStats(
     const data = (consumptionData as any[]) || []
 
     // Calculate statistics
-    const totalQuantity = data.reduce((sum, record) => sum + record.quantity_kg, 0) || 0
+    const totalQuantity = data.reduce((sum, record) => sum + record.quantity_consumed, 0) || 0
     const avgDailyQuantity = totalQuantity / days
 
     // Group by date for daily summaries
     const dailyConsumption = data.reduce((acc: any, record) => {
-      const date = new Date(record.feeding_time).toISOString().split('T')[0]
+      const date = new Date(record.consumption_date).toISOString().split('T')[0]
       if (!acc[date]) {
         acc[date] = 0
       }
-      acc[date] += record.quantity_kg
+      acc[date] += record.quantity_consumed
       return acc
     }, {}) || {}
 
@@ -528,7 +528,7 @@ export async function getAnimalConsumptionRecords(
     console.log('Querying consumption records:', { farmId, animalId, limit })
     // First, get the consumption records for this animal
     const { data: consumptionData, error: consumptionError } = await supabase
-      .from('feed_consumption')
+      .from('feed_consumption_records')
       .select(`
         id,
         feeding_time,

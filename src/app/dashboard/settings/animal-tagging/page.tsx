@@ -70,8 +70,6 @@ export default async function AnimalTaggingPage({ searchParams }: PageProps) {
         currentHerdSize={currentHerdSize}
         initialSettings={initialSettings}
         farmName={farmName}
-        // Pass the fetched animal categories as a prop
-        initialAnimalCategories={initialAnimalCategories}
       />
     )
   } catch (error) {

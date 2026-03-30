@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select'
-import { AnimalCategoriesManager } from '@/components/settings/animals/AnimalCategoriesManager'
 import { Textarea } from '@/components/ui/Textarea'
 import { Switch } from '@/components/ui/Switch'
 import { Badge } from '@/components/ui/Badge'
@@ -88,19 +87,16 @@ export default function AnimalTaggingSettings({
   currentHerdSize,
   initialSettings,
   farmName,
-  initialAnimalCategories,
 }: {
   farmId: any
   userRole: any
   currentHerdSize?: number
   initialSettings: any
   farmName: string
-  initialAnimalCategories: any[]
 }) {
   type TaggingMethodKey = keyof typeof taggingMethods;
   const [selectedMethod, setSelectedMethod] = useState<TaggingMethodKey>('basic')
   const { isMobile } = useDeviceInfo()
-  const [animalCategories, setAnimalCategories] = useState(initialAnimalCategories || [])
   const canEdit = ['farm_owner', 'farm_manager'].includes(userRole)
 
   const [settings, setSettings] = useState({
@@ -815,29 +811,6 @@ const resetUnsavedChanges = () => {
           </Badge>
         </div>
       </div>
-
-      {/* Animal Categories */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Users className="w-5 h-5" />
-            <span>Animal Categories</span>
-          </CardTitle>
-          <CardDescription>
-            Define animal groups based on age, breeding status, and other characteristics.
-            This helps create targeted feeding programs and better animal management.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <AnimalCategoriesManager
-            farmId={farmId}
-            categories={animalCategories}
-            onCategoriesUpdate={setAnimalCategories}
-            canEdit={canEdit}
-            isMobile={isMobile}
-          />
-        </CardContent>
-      </Card>
 
 
       {/* Method Selection */}

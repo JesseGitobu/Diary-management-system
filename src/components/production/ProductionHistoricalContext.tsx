@@ -7,7 +7,10 @@ import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
 interface HistoricalData {
   yesterdayTotal?: number | null
   previousSessionVolume?: number | null
+  previousSessionId?: string | null
+  previousSessionIsFromYesterday?: boolean
   sameTimeYesterdayVolume?: number | null
+  sameTimeYesterdaySessionId?: string | null
 }
 
 interface CacheEntry {
@@ -24,13 +27,17 @@ interface ProductionHistoricalContextProps {
   animalId: string
   currentDate: string
   currentSession: string
+  currentSessionName?: string
+  sessions?: Array<{ id: string; name: string }>
 }
 
 export function ProductionHistoricalContext({
   farmId,
   animalId,
   currentDate,
-  currentSession
+  currentSession,
+  currentSessionName,
+  sessions
 }: ProductionHistoricalContextProps) {
   const [historicalData, setHistoricalData] = useState<HistoricalData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -98,6 +105,13 @@ export function ProductionHistoricalContext({
     }
   }, [farmId, animalId, currentDate, currentSession])
 
+  const getSessionName = (sessionId?: string | null) => {
+    if (!sessionId) return 'Previous Session'
+    if (!sessions) return sessionId
+    const session = sessions.find(s => s.id === sessionId)
+    return session?.name || sessionId
+  }
+
   if (loading) {
     return (
       <div className="flex justify-center py-4">
@@ -149,7 +163,9 @@ export function ProductionHistoricalContext({
           )}
         </div>
         {historicalData.previousSessionVolume && (
-          <p className="text-xs text-stone-500">Earlier today</p>
+          <p className="text-xs text-stone-500">
+            {getSessionName(historicalData.previousSessionId)} {historicalData.previousSessionIsFromYesterday ? 'yesterday' : 'earlier today'}
+          </p>
         )}
       </div>
 
@@ -171,7 +187,7 @@ export function ProductionHistoricalContext({
           </div>
         </div>
         {historicalData.sameTimeYesterdayVolume && (
-          <p className="text-xs text-stone-500">{currentSession} session</p>
+          <p className="text-xs text-stone-500">{getSessionName(historicalData.sameTimeYesterdaySessionId)} session</p>
         )}
       </div>
     </div>

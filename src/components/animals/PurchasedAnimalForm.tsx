@@ -38,7 +38,7 @@ const purchasedAnimalSchema = z.object({
   health_status: z.enum(['healthy', 'sick', 'requires_attention', 'quarantined'], {
     required_error: 'Health status is required',
   }),
-  production_status: z.enum(['calf', 'heifer', 'served', 'lactating', 'dry', 'bull']).optional(),
+  production_status: z.enum(['calf', 'heifer', 'served', 'lactating', 'steaming_dry_cows', 'open_culling_dry_cows', 'bull']).optional(),
   purchase_weight: z.number().positive().optional(),
   weight: z.number().positive().optional(),
   purchase_price: z.number().positive().optional(),
@@ -59,20 +59,20 @@ const purchasedAnimalSchema = z.object({
   autoGenerateTag: z.boolean().optional(),
 }).refine(
   (data) => {
-    // ✅ If production status is 'dry', expected_calving_date is required
-    if (data.production_status === 'dry') {
+    // ✅ Only steaming_dry_cows requires expected_calving_date (they're pregnant)
+    if (data.production_status === 'steaming_dry_cows') {
       return !!data.expected_calving_date && data.expected_calving_date.trim().length > 0
     }
     return true
   },
   {
-    message: 'Expected calving date is required for dry animals',
+    message: 'Expected calving date is required for steaming dry cows',
     path: ['expected_calving_date'], // Show error on this field
   }
 ).refine(
   (data) => {
-    // ✅ Breeding cycle number is REQUIRED for served, dry, and lactating animals
-    if (data.production_status === 'served' || data.production_status === 'dry' || data.production_status === 'lactating') {
+    // ✅ Breeding cycle number is REQUIRED for served, steaming_dry_cows, open_culling_dry_cows, and lactating animals
+    if (data.production_status === 'served' || data.production_status === 'steaming_dry_cows' || data.production_status === 'open_culling_dry_cows' || data.production_status === 'lactating') {
       return !!data.lactation_number && data.lactation_number > 0
     }
     return true
@@ -282,7 +282,7 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
               setCanOverrideStatus(true)
             } else {
               // 15+ months - can be anything
-              allowed.push('heifer', 'served', 'lactating', 'dry')
+              allowed.push('heifer', 'served', 'lactating', 'steaming_dry_cows', 'open_culling_dry_cows')
               setCanOverrideStatus(true)
             }
           } else {
@@ -341,13 +341,11 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
       form.setValue('mother_peak_production', undefined)
     }
     
-    if (productionStatusValue !== 'served' && productionStatusValue !== 'dry') {
+    const isDryOrServed = productionStatusValue === 'served' || (productionStatusValue as any) === 'steaming_dry_cows' || (productionStatusValue as any) === 'open_culling_dry_cows'
+    if (!isDryOrServed) {
       form.setValue('service_date', '')
       form.setValue('service_method', '')
-      // ⚠️ CRITICAL: Don't clear expected_calving_date if dry
-      if (productionStatusValue !== 'dry' as PurchasedAnimalFormData['production_status']) {
-        form.setValue('expected_calving_date', '')
-      }
+      form.setValue('expected_calving_date', '')
     }
     
     if (productionStatusValue !== 'lactating') {
@@ -393,12 +391,12 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
     console.log('🔍 [Form] Form production status:', data.production_status)
     console.log('🔍 [Form] Calculated production status:', calculatedProductionStatus)
 
-    // ✅ Validation for dry animals
-    if (finalProductionStatus === 'dry' && !data.expected_calving_date) {
-      setError('Expected calving date is required for dry animals.')
+    // ✅ Validation: Only steaming_dry_cows require expected_calving_date (they're pregnant)
+    if (finalProductionStatus === 'steaming_dry_cows' && !data.expected_calving_date) {
+      setError('Expected calving date is required for steaming dry cows.')
       form.setError('expected_calving_date', {
         type: 'manual',
-        message: 'Expected calving date is required for dry animals'
+        message: 'Expected calving date is required for steaming dry cows'
       })
       return
     }
@@ -429,7 +427,7 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
         if (data.current_daily_production) conditionalData.current_daily_production = data.current_daily_production
         if (data.days_in_milk) conditionalData.days_in_milk = data.days_in_milk
         if (data.lactation_number) conditionalData.lactation_number = data.lactation_number
-      } else if (finalProductionStatus === 'dry') {
+      } else if (finalProductionStatus === 'steaming_dry_cows' || finalProductionStatus === 'open_culling_dry_cows') {
         // ✅ NEW: For dry animals, add expected_calving_date AND breeding cycle number
         if (data.expected_calving_date) {
           conditionalData.expected_calving_date = data.expected_calving_date
@@ -940,6 +938,46 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
                 </div>
               </div>
 
+              {/* ✅ NEW: Optional Current Lactating Details for In-Calf Animals */}
+              <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+                <div className="flex items-center space-x-2 mb-4">
+                  <Droplets className="w-5 h-5 text-green-600" />
+                  <h5 className="font-medium text-green-900">Current Production Information (Optional)</h5>
+                </div>
+                <p className="text-sm text-green-700 mb-4">
+                  If this animal is still producing milk while in-calf, enter the production details below:
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="current_daily_production_served">Current Daily Production (L)</Label>
+                    <Input
+                      id="current_daily_production_served"
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      {...form.register('current_daily_production', { valueAsNumber: true })}
+                      placeholder="e.g., 28.5"
+                    />
+                    <p className="text-xs text-gray-500">
+                      Current milk production in liters per day
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="days_in_milk_served">Days in Milk</Label>
+                    <Input
+                      id="days_in_milk_served"
+                      type="number"
+                      min="0"
+                      {...form.register('days_in_milk', { valueAsNumber: true })}
+                      placeholder="e.g., 150"
+                    />
+                    <p className="text-xs text-gray-500">
+                      Number of days this animal has been producing milk
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               {/* ✅ NEW: Display calculation summary */}
               {(form.watch('service_date') || form.watch('expected_calving_date')) && breedingSettings && (
                 <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg mt-4">
@@ -1058,27 +1096,26 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
           </Card>
         )}
 
-        {productionStatus === 'dry' && (
-          <Card className="border-l-4 border-gray-500">
+        {productionStatus === 'steaming_dry_cows' && (
+          <Card className="border-l-4 border-orange-500">
             <CardContent className="p-4">
               <div className="flex items-center space-x-2 mb-4">
-                <Calendar className="w-5 h-5 text-gray-600" />
-                <h4 className="font-medium text-gray-900">Dry Period Information</h4>
-                <Info className="w-4 h-4 text-gray-500" />
+                <Calendar className="w-5 h-5 text-orange-600" />
+                <h4 className="font-medium text-orange-900">Steaming Dry Period Information</h4>
+                <Info className="w-4 h-4 text-orange-500" />
               </div>
-              <p className="text-sm text-gray-700 mb-4">
-                This animal is currently in the dry period (not producing milk).
-                This is normal preparation for the next lactation.
+              <p className="text-sm text-orange-700 mb-4">
+                This animal is in the dry period and is preparing to calve. Expected calving date is required.
               </p>
 
-              {/* ✅ NEW: Display gestation period info */}
+              {/* ✅ Display gestation period info */}
               {breedingSettings && (
-                <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg mb-4">
-                  <p className="text-sm text-gray-700">
+                <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg mb-4">
+                  <p className="text-sm text-orange-700">
                     <span className="font-medium">Gestation Period:</span> {breedingSettings.default_gestation} days ({Math.round(breedingSettings.default_gestation / 30)} months)
                   </p>
-                  <p className="text-xs text-gray-600 mt-1">
-                    💡 This information is used to calculate when the animal was serviced based on the expected calving date.
+                  <p className="text-xs text-orange-600 mt-1">
+                    💡 This information is used to calculate the service date based on the expected calving date.
                   </p>
                 </div>
               )}
@@ -1089,13 +1126,12 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
                   <div className="space-y-2">
                     <Label htmlFor="expected_calving_date">
                       Expected Calving Date *
-                      <span className="text-xs text-red-600 ml-2">(Required for dry animals)</span>
+                      <span className="text-xs text-red-600 ml-2">(Required)</span>
                     </Label>
                     <Input
                       id="expected_calving_date"
                       type="date"
                       {...form.register('expected_calving_date')}
-                      min={new Date().toISOString().split('T')[0]} // Can't be in the past
                       className={form.formState.errors.expected_calving_date ? 'border-red-500' : ''}
                     />
                     {form.formState.errors.expected_calving_date && (
@@ -1109,17 +1145,17 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
                     </p>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="lactation_number_dry">
+                    <Label htmlFor="lactation_number_steaming">
                       Breeding Cycle Number *
                       <span className="text-xs text-gray-500 ml-2">(Required)</span>
                     </Label>
                     <Input
-                      id="lactation_number_dry"
+                      id="lactation_number_steaming"
                       type="number"
                       min="1"
                       required
                       {...form.register('lactation_number', { valueAsNumber: true })}
-                      placeholder="e.g., 1 (first cycle), 2 (second cycle), etc."
+                      placeholder="e.g., 1, 2, 3, etc."
                       className={form.formState.errors.lactation_number ? 'border-red-500' : ''}
                     />
                     {form.formState.errors.lactation_number && (
@@ -1129,7 +1165,7 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
                       </p>
                     )}
                     <p className="text-xs text-gray-500">
-                      💡 Required: Which breeding cycle number is this animal on?
+                      Which breeding cycle number?
                     </p>
                   </div>
                 </div>
@@ -1140,24 +1176,14 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
                     <div className="flex items-start space-x-2">
                       <Info className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
                       <div className="text-sm text-blue-700">
-                        <p className="font-medium">Dry Period & Breeding Information:</p>
+                        <p className="font-medium">Breeding & Gestation Timeline:</p>
                         <p className="mt-2">
-                          Expected calving: <span className="font-medium">{new Date(form.watch('expected_calving_date') as string).toLocaleDateString('en-US', {
-                            weekday: 'short',
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric'
-                          })}</span>
+                          Expected Calving: <span className="font-medium">{new Date(form.watch('expected_calving_date') as string).toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}</span>
                         </p>
                         <p className="mt-1">
-                          Service date (calculated): <span className="font-medium">{new Date(subtractDaysFromDate(form.watch('expected_calving_date') as string, breedingSettings.default_gestation)).toLocaleDateString('en-US', {
-                            weekday: 'short',
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric'
-                          })}</span>
+                          Service Date (calculated): <span className="font-medium">{new Date(subtractDaysFromDate(form.watch('expected_calving_date') as string, breedingSettings.default_gestation)).toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}</span>
                           <br />
-                          <span className="text-xs text-blue-600">(Gestation period: {breedingSettings.default_gestation} days / ~{Math.round(breedingSettings.default_gestation / 7)} weeks)</span>
+                          <span className="text-xs text-blue-600">(Gestation: {breedingSettings.default_gestation} days / ~{Math.round(breedingSettings.default_gestation / 7)} weeks)</span>
                         </p>
                         {(() => {
                           const expectedDate = form.watch('expected_calving_date')
@@ -1166,31 +1192,9 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
                           const daysUntilCalving = Math.ceil((calvingDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 
                           return (
-                            <>
-                              <p className="mt-2 font-medium">
-                                Days until calving: <span className="text-gray-700">{daysUntilCalving} days</span>
-                              </p>
-                              {daysUntilCalving < 0 && (
-                                <p className="mt-1 text-red-600 font-medium">
-                                  ⚠️ This date is in the past. Please update the calving date or production status.
-                                </p>
-                              )}
-                              {daysUntilCalving > 0 && daysUntilCalving < 30 && (
-                                <p className="mt-1 text-orange-600 font-medium">
-                                  ⚠️ Calving is approaching soon! Ensure close monitoring.
-                                </p>
-                              )}
-                              {daysUntilCalving >= 30 && daysUntilCalving <= 60 && (
-                                <p className="mt-1 text-green-600">
-                                  ✓ Typical dry period duration (30-60 days)
-                                </p>
-                              )}
-                              {daysUntilCalving > 60 && (
-                                <p className="mt-1 text-amber-600">
-                                  💡 Dry period is longer than typical (60+ days)
-                                </p>
-                              )}
-                            </>
+                            <p className="mt-2 font-medium">
+                              Days until calving: <span className={daysUntilCalving < 0 ? 'text-red-600' : daysUntilCalving < 30 ? 'text-orange-600' : 'text-gray-700'}>{daysUntilCalving} days</span>
+                            </p>
                           )
                         })()}
                       </div>
@@ -1198,15 +1202,83 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
                   </div>
                 )}
 
-                <div className="bg-gray-50 p-3 rounded-md">
-                  <p className="text-sm text-gray-600">
-                    <strong>Dry Period Guidelines:</strong>
+                <div className="bg-orange-50 p-3 rounded-md">
+                  <p className="text-sm text-orange-800 font-medium">
+                    💡 Steaming Dry Period Care:
                   </p>
-                  <ul className="text-xs text-gray-600 mt-2 space-y-1 ml-4 list-disc">
-                    <li>Typical dry period: 60 days (about 2 months)</li>
-                    <li>Allows the cow to rest and prepare for next lactation</li>
-                    <li>Critical for udder health and future milk production</li>
-                    <li>Monitor body condition and adjust feeding accordingly</li>
+                  <ul className="text-xs text-orange-700 mt-2 space-y-1 ml-4 list-disc">
+                    <li>Monitor closely for signs of calving (discharge, udder development)</li>
+                    <li>Ensure proper nutrition for fetal development</li>
+                    <li>Separate from lactating herd if possible</li>
+                    <li>Watch for expulsion of placenta and calf</li>
+                  </ul>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {productionStatus === 'open_culling_dry_cows' && (
+          <Card className="border-l-4 border-gray-500">
+            <CardContent className="p-4">
+              <div className="flex items-center space-x-2 mb-4">
+                <Activity className="w-5 h-5 text-gray-600" />
+                <h4 className="font-medium text-gray-900">Open Dry Cow Status</h4>
+                <Info className="w-4 h-4 text-gray-500" />
+              </div>
+              <p className="text-sm text-gray-700 mb-4">
+                This animal is not currently pregnant. It is "open" - available for breeding or being held for evaluation.
+              </p>
+
+              {/* ✅ Breeding Cycle Number (still required to track cycle history) */}
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="lactation_number_open">
+                    Breeding Cycle Number *
+                    <span className="text-xs text-gray-500 ml-2">(Required)</span>
+                  </Label>
+                  <Input
+                    id="lactation_number_open"
+                    type="number"
+                    min="1"
+                    required
+                    {...form.register('lactation_number', { valueAsNumber: true })}
+                    placeholder="e.g., 1, 2, 3, etc."
+                    className={form.formState.errors.lactation_number ? 'border-red-500' : ''}
+                  />
+                  {form.formState.errors.lactation_number && (
+                    <p className="text-sm text-red-600 flex items-center">
+                      <AlertTriangle className="w-3 h-3 mr-1" />
+                      {form.formState.errors.lactation_number.message}
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-500">
+                    Track which breeding cycle this animal is on
+                  </p>
+                </div>
+
+                <div className="bg-gray-50 p-3 rounded-md">
+                  <p className="text-sm text-gray-800 font-medium">
+                    📋 Open Dry Cow Status Explained:
+                  </p>
+                  <ul className="text-xs text-gray-700 mt-2 space-y-1 ml-4 list-disc">
+                    <li><strong>Not Pregnant:</strong> This animal has not been successfully serviced or is between breeding cycles</li>
+                    <li><strong>Available for Breeding:</strong> Can be serviced when ready</li>
+                    <li><strong>Dry Period:</strong> Not currently producing milk</li>
+                    <li><strong>No Expected Calving Date:</strong> Because the animal is not pregnant</li>
+                  </ul>
+                </div>
+
+                <div className="bg-blue-50 border border-blue-200 p-3 rounded-md">
+                  <p className="text-sm text-blue-800 font-medium">
+                    💡 Next Steps for Open Dry Cows:
+                  </p>
+                  <ul className="text-xs text-blue-700 mt-2 space-y-1 ml-4 list-disc">
+                    <li>Health check and body condition scoring</li>
+                    <li>Plan breeding/service schedule</li>
+                    <li>If culling candidate: Define reason (low production, age, health, genetics)</li>
+                    <li>If holding for breeding: Monitor for estrus signs</li>
+                    <li>Note any special requirements in farm notes</li>
                   </ul>
                 </div>
               </div>

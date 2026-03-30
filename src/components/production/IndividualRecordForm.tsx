@@ -17,6 +17,7 @@ type ProductionFormData = {
   animal_id: string
   record_date: string
   milking_session: string
+  milking_time?: string | null
   milk_volume: number
   milk_safety_status: 'safe' | 'unsafe_health' | 'unsafe_colostrum'
   temperature?: number | null
@@ -47,6 +48,7 @@ interface IndividualRecordFormProps {
   onSuccess?: () => void
   onRecordSaved?: (animalId: string) => void
   closeAfterSuccess?: boolean
+  sessionName?: string
   recordingType?: 'individual' | 'group'
   milkingGroupId?: string
 }
@@ -62,7 +64,8 @@ export function IndividualRecordForm({
   onRecordSaved,
   closeAfterSuccess = true,
   recordingType = 'individual',
-  milkingGroupId
+  milkingGroupId,
+  sessionName
 }: IndividualRecordFormProps) {
   const [step, setStep] = useState<'select' | 'form'>('select')
   const [selectedAnimal, setSelectedAnimal] = useState<typeof animals[0] | null>(null)
@@ -70,6 +73,7 @@ export function IndividualRecordForm({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [preRecordedAnimalIds, setPreRecordedAnimalIds] = useState<Set<string>>(new Set())
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
   // Reset form when date or session changes
   useEffect(() => {
@@ -78,7 +82,18 @@ export function IndividualRecordForm({
     setSelectedAnimal(null)
     setSearchQuery('')
     setError(null)
+    setSuccessMessage(null)
   }, [recordDate, session])
+
+  // Auto-dismiss success message after 4 seconds
+  useEffect(() => {
+    if (successMessage) {
+      const timer = setTimeout(() => {
+        setSuccessMessage(null)
+      }, 4000)
+      return () => clearTimeout(timer)
+    }
+  }, [successMessage])
 
   // Fetch already-recorded animals for this date and session
   useEffect(() => {
@@ -131,6 +146,10 @@ export function IndividualRecordForm({
   const productionSchema = useMemo(() => {
     const isQualityFocused = settings?.productionTrackingMode === 'quality_focused'
     
+    // Find current session to check if milking time is required
+    const currentSession = settings?.milkingSessions?.find(s => s.id === session)
+    const requiresMilkingTime = currentSession?.requiresTimeInput || false
+    
     const createNumberSchema = (isRequired: boolean, label: string, min = 0, max = 100) => {
       const schema = z.number()
         .min(min, `${label} must be at least ${min}`)
@@ -150,6 +169,9 @@ export function IndividualRecordForm({
       animal_id: z.string().min(1, 'Animal is required'),
       record_date: z.string().min(1, 'Date is required'),
       milking_session: z.string().min(1, 'Session is required'),
+      milking_time: requiresMilkingTime 
+        ? z.string().min(1, 'Exact milking time is required for this session')
+        : z.string().optional().nullable(),
       milk_volume: z.number()
         .min(0.1, 'Volume must be positive')
         .max(100, 'Volume seems too high'),
@@ -164,19 +186,53 @@ export function IndividualRecordForm({
       lactose_content: createNumberSchema(isQualityFocused && !!settings?.lactoseRequired, 'Lactose', 0, 10),
       ph_level: createNumberSchema(isQualityFocused && !!settings?.phRequired, 'pH Level', 0, 14),
       notes: z.string().nullable().optional(),
-    })
-  }, [settings])
+    }).refine(
+      (data) => {
+        // If mastitis test is performed, result must be provided
+        if (data.mastitis_test_performed && !data.mastitis_result) {
+          return false
+        }
+        return true
+      },
+      {
+        message: 'Test result is required when mastitis test is performed',
+        path: ['mastitis_result']
+      }
+    ).refine(
+      (data) => {
+        // If mastitis result is severe, milk safety status must be unsafe_health
+        if (data.mastitis_result === 'severe' && data.milk_safety_status !== 'unsafe_health') {
+          return false
+        }
+        return true
+      },
+      {
+        message: 'Milk safety status must be marked as "Unsafe - Animal Health Issue" when mastitis result is severe',
+        path: ['milk_safety_status']
+      }
+    )
+  }, [settings, session])
+
+  // Get current time in HH:MM format for default milking time
+  const getCurrentTime = () => {
+    const now = new Date()
+    const hours = String(now.getHours()).padStart(2, '0')
+    const minutes = String(now.getMinutes()).padStart(2, '0')
+    return `${hours}:${minutes}`
+  }
 
   const form = useForm<ProductionFormData>({
     resolver: zodResolver(productionSchema),
+    mode: 'onTouched',
     defaultValues: {
       animal_id: selectedAnimal?.id || '',
       record_date: recordDate,
       milking_session: session,
+      milking_time: getCurrentTime(),
       milk_volume: undefined,
       milk_safety_status: 'safe',
       temperature: null,
-      mastitis_test_performed: false,
+      mastitis_test_performed: settings?.requireMastitisTest ? false : false,
       mastitis_result: null,
       affected_quarters: null,
       fat_content: null,
@@ -187,6 +243,25 @@ export function IndividualRecordForm({
       notes: '',
     },
   })
+
+  // Watch mastitis result to conditionally show withdrawal period banner
+  const mastitisTestPerformed = form.watch('mastitis_test_performed')
+  const mastitisResult = form.watch('mastitis_result')
+  const milkSafetyStatus = form.watch('milk_safety_status')
+  const showWithdrawalWarning = mastitisTestPerformed && (mastitisResult === 'mild' || mastitisResult === 'severe')
+
+  // Auto-update milk safety status when severe mastitis is detected
+  useEffect(() => {
+    if (mastitisResult === 'severe') {
+      // Automatically set safety status to unsafe due to animal health when severe mastitis is detected
+      form.setValue('milk_safety_status', 'unsafe_health', { shouldValidate: true })
+      console.log('[IndividualRecordForm] Mastitis severity is SEVERE - automatically setting milk_safety_status to unsafe_health')
+    } else if (mastitisResult === 'negative' || mastitisResult === null) {
+      // When mastitis is negative or cleared, reset to safe
+      form.setValue('milk_safety_status', 'safe', { shouldValidate: true })
+      console.log('[IndividualRecordForm] Mastitis result is negative/cleared - resetting milk_safety_status to safe')
+    }
+  }, [mastitisResult, form])
 
   // Update form when animal is selected
   useEffect(() => {
@@ -264,8 +339,80 @@ export function IndividualRecordForm({
     setSearchQuery('')
   }
 
+  // Helper function to create health issue for mastitis
+  const createMastitisHealthIssue = async (
+    animalId: string,
+    mastitisResult: 'mild' | 'severe',
+    data: ProductionFormData
+  ) => {
+    try {
+      // Map mastitis severity to health issue severity
+      const healthSeverity = mastitisResult === 'severe' ? 'high' : 'medium'
+      const shouldAlertVeterinarian = mastitisResult === 'severe'
+
+      const healthIssuePayload = {
+        animal_id: animalId,
+        issue_type: 'illness',
+        severity: healthSeverity,
+        description: `Mastitis detected (${mastitisResult}) during production recording`,
+        notes: `Milk volume: ${data.milk_volume}L\nAffected quarters: ${data.affected_quarters?.join(', ') || 'Not specified'}\nRecording notes: ${data.notes || 'None'}`,
+        symptoms: ['mastitis', mastitisResult],
+        alert_veterinarian: shouldAlertVeterinarian,
+        first_observed_at: new Date().toISOString(),
+        // Illness-specific fields
+        illness_temperature: data.temperature?.toString() || null,
+        illness_milk_change: true,
+        illness_onset_hours: '0',
+        illness_other_animals: false,
+        illness_appetite: null,
+      }
+
+      console.log('[IndividualRecordForm] Creating health issue for mastitis:', healthIssuePayload)
+
+      const healthResponse = await fetch('/api/health/issues', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(healthIssuePayload),
+      })
+
+      if (!healthResponse.ok) {
+        const errorData = await healthResponse.json()
+        console.warn('[IndividualRecordForm] Failed to create health issue:', errorData)
+        // Don't throw - health issue creation failure shouldn't prevent production record from being saved
+      } else {
+        const healthData = await healthResponse.json()
+        console.log('[IndividualRecordForm] Health issue created successfully:', healthData)
+        
+        // Set success message
+        const severityLabel = mastitisResult === 'severe' ? 'Severe Mastitis' : 'Mild Mastitis'
+        const veterinarianAlert = shouldAlertVeterinarian ? ' Veterinarian has been alerted.' : ''
+        setSuccessMessage(`✓ Production record saved. Health issue created for ${severityLabel}.${veterinarianAlert}`)
+        
+        return true
+      }
+    } catch (err) {
+      console.error('[IndividualRecordForm] Error creating health issue:', err)
+      // Don't throw - we don't want to fail the production record save if health issue creation fails
+    }
+    return false
+  }
+
   const handleSubmit = async (data: ProductionFormData) => {
     console.log('[IndividualRecordForm] Form submitted with data:', data)
+    
+    // Validate mastitis test requirement at submission time
+    if (settings?.requireMastitisTest && !data.mastitis_test_performed) {
+      setError('Mastitis test is required for this record before it can be saved')
+      return
+    }
+    
+    // Find current session to check if milking time input is required
+    const currentSession = settings?.milkingSessions?.find(s => s.id === session)
+    if (currentSession?.requiresTimeInput && !data.milking_time) {
+      setError('Please provide the exact milking time for this session')
+      return
+    }
+    
     setLoading(true)
     setError(null)
 
@@ -279,6 +426,7 @@ export function IndividualRecordForm({
           recording_type: recordingType,
           milking_group_id: milkingGroupId || null,
           milking_session_id: sessionId || null,
+          milking_time: data.milking_time || null,
           temperature: data.temperature === undefined ? null : data.temperature,
           mastitis_test_performed: data.mastitis_test_performed || false,
           mastitis_result: data.mastitis_result || null,
@@ -299,6 +447,12 @@ export function IndividualRecordForm({
 
       const animalId = data.animal_id
 
+      // Create health issue if mastitis is detected (mild or severe)
+      if (data.mastitis_result === 'mild' || data.mastitis_result === 'severe') {
+        console.log(`[IndividualRecordForm] Mastitis ${data.mastitis_result} detected - creating health issue`)
+        await createMastitisHealthIssue(animalId, data.mastitis_result, data)
+      }
+
       // For group mode: notify parent without closing
       if (onRecordSaved) {
         onRecordSaved(animalId)
@@ -312,10 +466,12 @@ export function IndividualRecordForm({
       // Reset form for next entry
       setSelectedAnimal(null)
       setStep('select')
+      setSuccessMessage(null)
       form.reset({
         animal_id: '',
         record_date: recordDate,
         milking_session: session,
+        milking_time: getCurrentTime(),
         milk_volume: undefined,
         milk_safety_status: 'safe',
         temperature: null,
@@ -435,17 +591,29 @@ export function IndividualRecordForm({
         </div>
       )}
 
-      {/* Show all form validation errors for debugging */}
-      {Object.keys(form.formState.errors).length > 0 && (
-        <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-          <p className="text-sm font-semibold text-yellow-800 mb-2">Validation Errors:</p>
-          <ul className="text-sm text-yellow-700 space-y-1">
-            {Object.entries(form.formState.errors).map(([field, error]: any) => (
-              <li key={field}>• {field}: {error?.message || 'Invalid'}</li>
-            ))}
-          </ul>
+      {successMessage && (
+        <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-start space-x-2 text-green-700 text-sm">
+          <svg className="w-5 h-5 flex-shrink-0 mt-0.5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+          </svg>
+          <p>{successMessage}</p>
         </div>
       )}
+
+      {/* Show all form validation errors for debugging */}
+      {(() => {
+        const filteredErrors = Object.entries(form.formState.errors).filter(([field]) => field !== 'milking_time');
+        return filteredErrors.length > 0 && (
+          <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <p className="text-sm font-semibold text-yellow-800 mb-2">Validation Errors:</p>
+            <ul className="text-sm text-yellow-700 space-y-1">
+              {filteredErrors.map(([field, error]: any) => (
+                <li key={field}>• {field}: {error?.message || 'Invalid'}</li>
+              ))}
+            </ul>
+          </div>
+        );
+      })()}
 
       {/* Historical Context Panel */}
       <ProductionHistoricalContext
@@ -453,10 +621,21 @@ export function IndividualRecordForm({
         animalId={selectedAnimal.id}
         currentDate={recordDate}
         currentSession={session}
+        currentSessionName={sessionName}
+        sessions={settings?.milkingSessions}
       />
 
       {/* Form */}
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+        {/* Withdrawal Days Warning - Only show if mastitis test is positive (mild or severe) */}
+        {showWithdrawalWarning && settings?.withdrawalDaysAfterTreatment && settings.withdrawalDaysAfterTreatment > 0 && (
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+            <p className="text-sm text-amber-800">
+              <strong>⚠️ Withdrawal Period:</strong> {settings.withdrawalDaysAfterTreatment} days must pass after any treatment before milk from this animal can be recorded as sale-ready.
+            </p>
+          </div>
+        )}
+
         {/* Milk Quantity */}
         <div>
           <Label htmlFor="milk_volume">Milk Quantity ({settings?.productionUnit || 'Liters'}) *</Label>
@@ -478,6 +657,26 @@ export function IndividualRecordForm({
           )}
         </div>
 
+        {/* Milking Time - Conditionally Required */}
+        {settings?.milkingSessions?.find(s => s.id === session)?.requiresTimeInput && (
+          <div>
+            <Label htmlFor="milking_time">Exact Milking Time *</Label>
+            <Input
+              id="milking_time"
+              type="time"
+              placeholder="HH:MM"
+              className="mt-2"
+              {...form.register('milking_time')}
+            />
+            {form.formState.errors.milking_time && (
+              <p className="text-sm text-red-600 mt-1">{form.formState.errors.milking_time.message}</p>
+            )}
+            <p className="text-xs text-stone-600 mt-1">
+              Record the exact time the animal was milked
+            </p>
+          </div>
+        )}
+
         {/* Health & Safety Section */}
         <ProductionHealthSection
           form={form}
@@ -486,16 +685,31 @@ export function IndividualRecordForm({
 
         {/* Milk Safety Status */}
         <div>
-          <Label htmlFor="milk_safety_status">Milk Safety Status *</Label>
+          <div className="flex items-center justify-between">
+            <Label htmlFor="milk_safety_status">Milk Safety Status *</Label>
+            {mastitisResult === 'severe' && (
+              <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-1 rounded">
+                Auto-set: Severe Mastitis
+              </span>
+            )}
+          </div>
           <select
             id="milk_safety_status"
             {...form.register('milk_safety_status')}
-            className="w-full mt-2 px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            disabled={mastitisResult === 'severe'}
+            className={`w-full mt-2 px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent ${
+              mastitisResult === 'severe' ? 'bg-red-50 cursor-not-allowed opacity-75' : ''
+            }`}
           >
             <option value="safe">✓ Safe - Approved for Sale</option>
             <option value="unsafe_health">⚠️ Unsafe - Animal Health Issue</option>
             <option value="unsafe_colostrum">✖️ Unsafe - Colostrum (Cannot Sell)</option>
           </select>
+          {mastitisResult === 'severe' && (
+            <p className="text-xs text-red-600 mt-2 px-2 py-1 bg-red-50 rounded border border-red-200">
+              ℹ️ When mastitis test result is <strong>severe</strong>, milk is automatically marked as <strong>unsafe due to animal health issue</strong>. You cannot change this status until the mastitis result is updated.
+            </p>
+          )}
           {form.formState.errors.milk_safety_status && (
             <p className="text-sm text-red-600 mt-1">{form.formState.errors.milk_safety_status.message}</p>
           )}

@@ -1,7 +1,7 @@
 // src/components/animals/AnimalProfile.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback, useMemo, memo } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -63,7 +63,7 @@ const BREEDING_AGE_THRESHOLDS = {
   }
 }
 
-export function AnimalProfile({ animal, userRole, farmId, lactationCycleRecord }: AnimalProfileProps) {
+export const AnimalProfile = memo(function AnimalProfile({ animal, userRole, farmId, lactationCycleRecord }: AnimalProfileProps) {
   const [activeTab, setActiveTab] = useState('overview')
   const [showEditModal, setShowEditModal] = useState(false)
   const [showReleaseModal, setShowReleaseModal] = useState(false)
@@ -77,7 +77,7 @@ export function AnimalProfile({ animal, userRole, farmId, lactationCycleRecord }
   const canAddRecords = ['farm_owner', 'farm_manager', 'worker'].includes(userRole)
   const canRelease = ['farm_owner', 'farm_manager'].includes(userRole)
   
-  const getStatusBadgeColor = (status: string) => {
+  const getStatusBadgeColor = useCallback((status: string) => {
     switch (status) {
       case 'active': return 'bg-green-100 text-green-800'
       case 'pregnant': return 'bg-blue-100 text-blue-800'
@@ -85,9 +85,9 @@ export function AnimalProfile({ animal, userRole, farmId, lactationCycleRecord }
       case 'sick': return 'bg-red-100 text-red-800'
       default: return 'bg-gray-100 text-gray-800'
     }
-  }
+  }, [])
   
-  const calculateAge = (birthDate: string) => {
+  const calculateAge = useCallback((birthDate: string) => {
     if (!birthDate) return 'Unknown'
     
     const birth = new Date(birthDate)
@@ -107,20 +107,20 @@ export function AnimalProfile({ animal, userRole, farmId, lactationCycleRecord }
         ? `${years}y ${remainingMonths}m`
         : `${years} year${years !== 1 ? 's' : ''} ${remainingMonths} month${remainingMonths !== 1 ? 's' : ''}`
     }
-  }
+  }, [isMobile])
   
   // Calculate age in days for breeding eligibility
-  const calculateAgeInDays = (birthDate: string): number => {
+  const calculateAgeInDays = useCallback((birthDate: string): number => {
     if (!birthDate) return 0
     
     const birth = new Date(birthDate)
     const now = new Date()
     const diffTime = Math.abs(now.getTime() - birth.getTime())
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-  }
+  }, [])
   
   // Check if animal is of breeding age
-  const isBreedingAge = (): boolean => {
+  const isBreedingAge = useCallback((): boolean => {
     const ageInDays = calculateAgeInDays(animalData.birth_date)
     
     // Determine animal type from breed or default to cattle
@@ -138,10 +138,10 @@ export function AnimalProfile({ animal, userRole, farmId, lactationCycleRecord }
     const genderThreshold = threshold[animalData.gender as keyof typeof threshold] || threshold.female
     
     return ageInDays >= genderThreshold
-  }
+  }, [animalData.birth_date, animalData.breed, animalData.gender, calculateAgeInDays])
   
   // Get days until breeding age
-  const getDaysUntilBreedingAge = (): number => {
+  const getDaysUntilBreedingAge = useCallback((): number => {
     const ageInDays = calculateAgeInDays(animalData.birth_date)
     
     let animalType = 'cattle'
@@ -158,16 +158,17 @@ export function AnimalProfile({ animal, userRole, farmId, lactationCycleRecord }
     const genderThreshold = threshold[animalData.gender as keyof typeof threshold] || threshold.female
     
     return Math.max(0, genderThreshold - ageInDays)
-  }
+  }, [animalData.birth_date, animalData.breed, animalData.gender, calculateAgeInDays])
   
-  const shouldShowBreedingTab = isBreedingAge()
+  // Memoize breeding age calculation
+  const shouldShowBreedingTab = useMemo(() => isBreedingAge(), [isBreedingAge])
   
-  const handleAnimalUpdated = (updatedAnimal: any) => {
+  const handleAnimalUpdated = useCallback((updatedAnimal: any) => {
     setAnimalData(updatedAnimal)
     setShowEditModal(false)
-  }
+  }, [])
   
-  const handleProductionStatusChanged = async (newStatus: string) => {
+  const handleProductionStatusChanged = useCallback(async (newStatus: string) => {
     // Update local state immediately for UI responsiveness
     setAnimalData((prev: any) => ({
       ...prev,
@@ -187,15 +188,15 @@ export function AnimalProfile({ animal, userRole, farmId, lactationCycleRecord }
     } finally {
       setRefreshing(false)
     }
-  }
+  }, [animal.id])
   
-  const handleAnimalReleased = () => {
+  const handleAnimalReleased = useCallback(() => {
     setShowReleaseModal(false)
     router.push('/dashboard/animals')
-  }
+  }, [router])
 
-  // Mobile action menu items
-  const actionMenuItems = [
+  // Mobile action menu items - memoized
+  const actionMenuItems = useMemo(() => [
     ...(canEdit ? [{
       label: 'Edit Animal',
       icon: Edit,
@@ -221,10 +222,10 @@ export function AnimalProfile({ animal, userRole, farmId, lactationCycleRecord }
       },
       destructive: true
     }] : [])
-  ]
+  ], [canEdit, canRelease])
   
-  // Generate tab configuration
-  const tabs = [
+  // Generate tab configuration - memoized
+  const tabs = useMemo(() => [
     { value: 'overview', label: isMobile ? 'Info' : 'Overview', icon: FileText },
     { value: 'feeding', label: isMobile ? 'Feed' : 'Feeding', icon: Utensils },
     { value: 'health', label: 'Health', icon: Heart },
@@ -236,7 +237,7 @@ export function AnimalProfile({ animal, userRole, farmId, lactationCycleRecord }
     { value: 'production', label: isMobile ? 'Prod.' : 'Production', icon: Milk },
     { value: 'history', label: isMobile ? 'History' : 'Timeline', icon: Clock },
     { value: 'notes', label: 'Notes', icon: FileText }
-  ]
+  ], [isMobile, shouldShowBreedingTab])
   
   return (
     <div className={cn(
@@ -700,4 +701,4 @@ export function AnimalProfile({ animal, userRole, farmId, lactationCycleRecord }
       )}
     </div>
   )
-}
+})

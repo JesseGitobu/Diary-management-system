@@ -13,11 +13,13 @@ import { Label } from '@/components/ui/Label'
 import { Modal } from '@/components/ui/Modal'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Badge } from '@/components/ui/Badge'
-import { X, Calendar, Repeat, AlertCircle } from 'lucide-react'
+import { X, Calendar, Repeat, AlertCircle, Info } from 'lucide-react'
+import { PROTOCOL_PRESETS, getProtocolPreset, getAllProtocolTypes } from '@/lib/health/protocol-presets'
+import type { ProtocolFieldConfig, ProtocolTypeKey } from '@/lib/health/protocol-presets'
 
-const protocolSchema = z.object({
+const baseProtocolSchema = z.object({
   protocol_name: z.string().min(2, 'Protocol name must be at least 2 characters'),
-  protocol_type: z.enum(['vaccination', 'treatment', 'checkup', 'breeding', 'nutrition']),
+  protocol_type: z.enum(['vaccination', 'treatment', 'checkup', 'breeding', 'nutrition', 'deworming_parasites', 'post_mortem'] as const),
   description: z.string().min(5, 'Description must be at least 5 characters'),
   frequency_type: z.enum(['daily', 'weekly', 'monthly', 'quarterly', 'yearly', 'one_time']),
   frequency_value: z.number().min(1).max(365),
@@ -31,14 +33,14 @@ const protocolSchema = z.object({
   notes: z.string().optional().or(z.literal('')),
   auto_create_records: z.boolean(),
   is_active: z.boolean(),
-})
+}).catchall(z.any())
 
-type ProtocolFormData = z.infer<typeof protocolSchema>
+type ProtocolFormData = z.infer<typeof baseProtocolSchema>
 
 interface Protocol {
   id: string
   protocol_name: string
-  protocol_type: 'vaccination' | 'treatment' | 'checkup' | 'breeding' | 'nutrition'
+  protocol_type: ProtocolTypeKey
   description: string
   frequency_type: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'one_time'
   frequency_value: number
@@ -78,7 +80,7 @@ export function EditProtocolModal({
   const [selectedAnimals, setSelectedAnimals] = useState<string[]>(protocol.individual_animals || [])
   
   const form = useForm<ProtocolFormData>({
-    resolver: zodResolver(protocolSchema),
+    resolver: zodResolver(baseProtocolSchema),
     defaultValues: {
       protocol_name: protocol.protocol_name || '',
       protocol_type: protocol.protocol_type || 'vaccination',
@@ -196,10 +198,49 @@ export function EditProtocolModal({
         )}
         
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+          {/* Protocol Type Selection */}
+          <div>
+            <Label htmlFor="protocol_type">Protocol Type <span className="text-red-500">*</span></Label>
+            <div className="mt-2 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+              {getAllProtocolTypes().map(type => {
+                const typePreset = getProtocolPreset(type)
+                const isSelected = form.watch('protocol_type') === type
+                return (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => form.setValue('protocol_type', type)}
+                    className={`p-3 rounded-lg border-2 transition-all ${
+                      isSelected
+                        ? 'border-farm-green bg-green-50'
+                        : 'border-gray-200 hover:border-farm-green'
+                    }`}
+                  >
+                    <div className="text-2xl mb-1">{typePreset?.icon}</div>
+                    <div className="text-xs font-medium text-gray-900">{typePreset?.name}</div>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+          
+          {/* Protocol Info Section */}
+          {getProtocolPreset(form.watch('protocol_type')) && (
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 text-sm flex items-start gap-2">
+              <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium">{getProtocolPreset(form.watch('protocol_type'))?.description}</p>
+                {getProtocolPreset(form.watch('protocol_type'))?.auto_create_health_record && (
+                  <p className="text-xs mt-1">✓ Health records will be auto-created when events occur</p>
+                )}
+              </div>
+            </div>
+          )}
+          
           {/* Protocol Basic Information */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="protocol_name">Protocol Name</Label>
+              <Label htmlFor="protocol_name">Protocol Name <span className="text-red-500">*</span></Label>
               <Input
                 id="protocol_name"
                 {...form.register('protocol_name')}
@@ -207,25 +248,10 @@ export function EditProtocolModal({
                 placeholder="e.g., Monthly Vaccination Schedule"
               />
             </div>
-            
-            <div>
-              <Label htmlFor="protocol_type">Protocol Type</Label>
-              <select
-                id="protocol_type"
-                {...form.register('protocol_type')}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
-              >
-                <option value="vaccination">💉 Vaccination</option>
-                <option value="treatment">💊 Treatment</option>
-                <option value="checkup">🩺 Health Checkup</option>
-                <option value="breeding">🐄 Breeding Protocol</option>
-                <option value="nutrition">🌾 Nutrition Program</option>
-              </select>
-            </div>
           </div>
           
           <div>
-            <Label htmlFor="description">Description</Label>
+            <Label htmlFor="description">Description <span className="text-red-500">*</span></Label>
             <textarea
               id="description"
               {...form.register('description')}

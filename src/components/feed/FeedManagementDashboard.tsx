@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
 import { AddFeedTypeModal } from '@/components/feed/AddFeedTypeModal'
 import { AddFeedInventoryModal } from '@/components/feed/AddFeedInventoryModal'
 import { FeedConsumptionModal } from '@/components/feed/FeedConsumptionModal'
+import { FeedingGroupsManager } from '@/components/feed/FeedingGroupsManager'
 import { FeedOverviewTab } from '@/components/feed/FeedOverviewTab'
 import { FeedInventoryTab } from '@/components/feed/FeedInventoryTab'
 import { FeedConsumptionTab } from '@/components/feed/FeedConsumptionTab'
@@ -27,7 +28,8 @@ import {
   Clock,
   Users,
   Lightbulb,
-  Zap
+  Zap,
+  Leaf
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -69,6 +71,7 @@ export function FeedManagementDashboard({
   const [showAddTypeModal, setShowAddTypeModal] = useState(false)
   const [showAddInventoryModal, setShowAddInventoryModal] = useState(false)
   const [showConsumptionModal, setShowConsumptionModal] = useState(false)
+  const [showFeedingGroupsModal, setShowFeedingGroupsModal] = useState(false)
   const [feedTypes, setFeedTypes] = useState(initialFeedTypes)
   const [inventory, setInventory] = useState(initialInventory)
   const [consumptionRecords, setConsumptionRecords] = useState(initialConsumptionRecords)
@@ -346,12 +349,19 @@ export function FeedManagementDashboard({
     }
   ], [feedStats, inventory, enhancedStats, animals, consumptionRecords])
 
-  // Mobile Action Menu
-  const MobileActionMenu = () => (
+  // Quick Actions Menu
+  const QuickActionsMenu = () => (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm">
-          <MoreVertical className="h-4 w-4" />
+        <Button size={isMobile ? "sm" : "default"}>
+          {isMobile ? (
+            <Plus className="h-4 w-4" />
+          ) : (
+            <>
+              <Plus className="mr-2 h-4 w-4" />
+              Quick Actions
+            </>
+          )}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">
@@ -363,6 +373,10 @@ export function FeedManagementDashboard({
         )}
         {canManageFeed && (
           <>
+            <DropdownMenuItem onClick={() => setShowFeedingGroupsModal(true)}>
+              <Leaf className="mr-2 h-4 w-4" />
+              Manage Feeding Groups
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setShowAddTypeModal(true)}>
               <Plus className="mr-2 h-4 w-4" />
               Add Feed Type
@@ -392,30 +406,7 @@ export function FeedManagementDashboard({
           </div>
 
           <div className="ml-4">
-            {isMobile ? (
-              <MobileActionMenu />
-            ) : (
-              <div className="flex space-x-3">
-                {canRecordFeeding && (
-                  <Button onClick={handleOpenConsumptionModal}>
-                    <Wheat className="mr-2 h-4 w-4" />
-                    Record Feeding
-                  </Button>
-                )}
-                {canManageFeed && (
-                  <>
-                    <Button onClick={() => setShowAddTypeModal(true)} variant="outline">
-                      <Plus className="mr-2 h-4 w-4" />
-                      Add Feed Type
-                    </Button>
-                    <Button variant="outline" onClick={() => setShowAddInventoryModal(true)}>
-                      <Package className="mr-2 h-4 w-4" />
-                      Add Inventory
-                    </Button>
-                  </>
-                )}
-              </div>
-            )}
+            <QuickActionsMenu />
           </div>
         </div>
       </div>
@@ -723,6 +714,33 @@ export function FeedManagementDashboard({
         feedMixRecipes={feedMixRecipes}
         editingRecord={editingRecord}
       />
+
+      {/* Feeding Groups Modal */}
+      {showFeedingGroupsModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-end lg:items-center justify-center lg:p-4">
+          <div className={`${isMobile ? 'w-full h-[90vh] rounded-t-2xl' : 'w-full max-w-2xl max-h-[90vh] rounded-lg'} bg-white shadow-lg overflow-auto`}>
+            <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900">Manage Feeding Groups</h2>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowFeedingGroupsModal(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </Button>
+            </div>
+            <div className="p-4 lg:p-6">
+              <FeedingGroupsManager
+                farmId={farmId}
+                animals={animals}
+                isMobile={isMobile}
+                onClose={() => setShowFeedingGroupsModal(false)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

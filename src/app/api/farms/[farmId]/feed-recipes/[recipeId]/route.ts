@@ -108,11 +108,12 @@ export async function DELETE(
       )
     }
 
-    // Soft delete
+    // Delete recipe
     const { error: deleteError } = await (supabase
       .from('feed_mix_recipes') as any)
-      .update({ active: false })
+      .delete()
       .eq('id', recipeId)
+      .eq('farm_id', farmId)
 
     if (deleteError) throw deleteError
 

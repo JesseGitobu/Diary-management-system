@@ -12,7 +12,7 @@ export interface ProductionSettings {
   productionUnit: 'liters' | 'gallons' | 'kg'
   
   // 2. Milking Session Configuration
-  milkingSessions: Array<{ id: string; name: string; time: string }>
+  milkingSessions: Array<{ id: string; name: string; time: string; requiresTimeInput?: boolean }>
   enabledSessions?: Array<'morning' | 'afternoon' | 'evening'>
   allowMultipleSessionsPerDay: boolean
   requireSessionTimeRecording: boolean
@@ -69,6 +69,11 @@ export interface ProductionSettings {
   tbcRequired: boolean
   tbcAlertThreshold: number
   
+  // Health & Safety Requirements
+  requireMastitisTest: boolean
+  mastitisTestAlertOnAbnormal: boolean
+  withdrawalDaysAfterTreatment: number
+  
   // 4. Animal Eligibility Settings
   autoFilterEligibleAnimals: boolean
   eligibleProductionStatuses: string[]
@@ -110,10 +115,14 @@ export interface ProductionSettings {
   declineThresholdPercent: number
   
   // 8. Chart & Visualization Settings
-  defaultChartPeriod: number
+  // Chart Data Scope (what data to show)
   chartDisplayMode: 'volume_only' | 'quality_only' | 'combined' | 'separate'
   showVolumeChart: boolean
   showFatProteinChart: boolean
+  
+  // Chart Display Format (how to visualize the data)
+  defaultChartPeriod: '7days' | '14days' | '30days' | '60days' | '90days' | 'year'
+  defaultChartType: 'bar' | 'line' | 'area'
   showTrendLines: boolean
   showAverages: boolean
   showTargets: boolean
@@ -398,6 +407,11 @@ export const getDefaultProductionSettings = (): ProductionSettings => ({
   tbcRequired: false,
   tbcAlertThreshold: 100000,
   
+  // Health & Safety Requirements
+  requireMastitisTest: false,
+  mastitisTestAlertOnAbnormal: true,
+  withdrawalDaysAfterTreatment: 0,
+  
   // Animal Eligibility
   autoFilterEligibleAnimals: true,
   eligibleProductionStatuses: ['lactating'],
@@ -438,7 +452,8 @@ export const getDefaultProductionSettings = (): ProductionSettings => ({
   declineThresholdPercent: 20,
   
   // Charts
-  defaultChartPeriod: 30,
+  defaultChartPeriod: '30days',
+  defaultChartType: 'bar',
   chartDisplayMode: 'combined',
   showVolumeChart: true,
   showFatProteinChart: true,

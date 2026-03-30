@@ -86,7 +86,10 @@ export interface HealthRecordData {
 
 export async function createHealthRecord(data: HealthRecordData & { 
   is_auto_generated?: boolean 
-  completion_status?: string 
+  completion_status?: string
+  linked_health_issue_id?: string | null
+  is_follow_up?: boolean
+  original_record_id?: string | null
 }, operationId?: string) {
   const supabase = await createServerSupabaseClient()
 
@@ -177,7 +180,12 @@ export async function createHealthRecord(data: HealthRecordData & {
       product_used: data.product_used,
       deworming_dose: data.deworming_dose,
       next_deworming_date: data.next_deworming_date,
-      deworming_administered_by: data.deworming_administered_by
+      deworming_administered_by: data.deworming_administered_by,
+      
+      // Linking fields
+      linked_health_issue_id: data.linked_health_issue_id || null,
+      is_follow_up: data.is_follow_up || false,
+      original_record_id: data.original_record_id || null
     }
     
     if (operationId && isDebugEnabled()) {
@@ -311,11 +319,31 @@ export async function getAnimalHealthRecords(
           tag_number,
           name,
           breed,
-          gender
+          gender,
+          farm_id
+        ),
+        health_issues:linked_health_issue_id (
+          id,
+          issue_type,
+          status,
+          description
+        ),
+        outbreak:outbreak_id (
+          id,
+          outbreak_name,
+          disease_type,
+          severity_level,
+          status
+        ),
+        original_record:root_checkup_id (
+          id,
+          record_type,
+          description,
+          record_date
         )
       `)
       .in('animal_id', animalIds)
-      .eq('is_follow_up', false) // ADD THIS LINE - Only get original records
+      .eq('is_follow_up', false) // Only get original records
       .order('record_date', { ascending: false })
     
     if (options.animalId) {
@@ -359,14 +387,38 @@ export async function getHealthRecordById(recordId: string, farmId: string) {
         breed,
         gender,
         farm_id
+      ),
+      health_issues:linked_health_issue_id (
+        id,
+        issue_type,
+        status,
+        description
+      ),
+      outbreak:outbreak_id (
+        id,
+        outbreak_name,
+        disease_type,
+        severity_level,
+        status
+      ),
+      original_record:root_checkup_id (
+        id,
+        record_type,
+        description,
+        record_date
       )
     `)
     .eq('id', recordId)
-    .eq('animals.farm_id', farmId)
     .single()
   
   if (error) {
     console.error('Error fetching health record:', error)
+    return null
+  }
+  
+  // Verify farm ownership
+  if ((data as any).animals?.farm_id !== farmId) {
+    console.error('Health record does not belong to user farm')
     return null
   }
   
@@ -666,110 +718,183 @@ export async function getVeterinaryVisits(farmId: string, options: {
 } = {}) {
   const supabase = await createServerSupabaseClient()
   
-  let query = supabase
-    .from('veterinary_visits')
-    .select(`
-      *,
-      visit_animals (
-        animal_id,
-        animals (
-          id,
-          name,
-          tag_number
-        )
-      ),
-      veterinarians (
-        id,
-        name,
-        clinic_name,
-        phone_primary,
-        email
-      )
-    `)
-    .eq('farm_id', farmId)
+  try {
+    let query = supabase
+      .from('veterinary_visits')
+      .select('*')
+      .eq('farm_id', farmId)
 
-  // Apply filters
-  if (options.status) {
-    query = query.eq('status', options.status)
-  }
+    // Apply filters
+    if (options.status) {
+      query = query.eq('status', options.status)
+    }
 
-  if (options.upcoming) {
-    query = query.gte('scheduled_datetime', new Date().toISOString())
-  }
+    if (options.upcoming) {
+      query = query.gte('scheduled_datetime', new Date().toISOString())
+    }
 
-  // Order and limit
-  query = query
-    .order('scheduled_datetime', { ascending: false })
-    .limit(options.limit || 50)
+    // Order and limit
+    query = query
+      .order('scheduled_datetime', { ascending: false })
+      .limit(options.limit || 50)
 
-  const { data, error } = await query
+    const { data, error } = await query
 
-  if (error) {
+    if (error) {
+      console.error('Error fetching veterinary visits:', error)
+      return []
+    }
+
+    // Fetch animals for each visit
+    const visitsWithAnimals = await Promise.all(
+      (data || []).map(async (visit: any) => {
+        const { data: animalLinks } = await supabase
+          .from('visit_animals')
+          .select('animal_id')
+          .eq('visit_id', visit.id)
+
+        const animalIds = (animalLinks as any[])?.map(l => l.animal_id) || []
+        let animals: any[] = []
+        
+        if (animalIds.length > 0) {
+          const { data: animalDetails } = await supabase
+            .from('animals')
+            .select('id, name, tag_number')
+            .in('id', animalIds)
+            .eq('farm_id', farmId)
+
+          animals = (animalDetails as any[]) || []
+        }
+
+        return {
+          ...visit,
+          visit_animals: (animalLinks as any[])?.map((link: any, idx: number) => ({
+            animal_id: link.animal_id,
+            animals: animals[idx] || { id: link.animal_id, name: '', tag_number: '' }
+          })) || []
+        }
+      })
+    )
+
+    return visitsWithAnimals
+  } catch (error) {
     console.error('Error fetching veterinary visits:', error)
     return []
   }
-
-  // FIXED: Cast to any[]
-  return (data as any[]) || []
 }
+
 
 export async function getUpcomingVisits(farmId: string) {
   const supabase = await createServerSupabaseClient()
 
-  const { data, error } = await supabase
-    .from('veterinary_visits')
-    .select(`
-      *,
-      visit_animals (
-        animals (
-          name,
-          tag_number
-        )
-      )
-    `)
-    .eq('farm_id', farmId)
-    .eq('status', 'scheduled')
-    .gte('scheduled_datetime', new Date().toISOString())
-    .order('scheduled_datetime', { ascending: true })
-    .limit(10)
+  try {
+    const { data, error } = await supabase
+      .from('veterinary_visits')
+      .select('*')
+      .eq('farm_id', farmId)
+      .eq('status', 'scheduled')
+      .gte('scheduled_datetime', new Date().toISOString())
+      .order('scheduled_datetime', { ascending: true })
+      .limit(10)
 
-  if (error) {
+    if (error) {
+      console.error('Error fetching upcoming visits:', error)
+      return []
+    }
+
+    // Fetch animals for each visit
+    const visitsWithAnimals = await Promise.all(
+      (data || []).map(async (visit: any) => {
+        const { data: animalLinks } = await supabase
+          .from('visit_animals')
+          .select('animal_id')
+          .eq('visit_id', visit.id)
+
+        const animalIds = (animalLinks as any[])?.map(l => l.animal_id) || []
+        let animals: any[] = []
+        
+        if (animalIds.length > 0) {
+          const { data: animalDetails } = await supabase
+            .from('animals')
+            .select('name, tag_number')
+            .in('id', animalIds)
+            .eq('farm_id', farmId)
+
+          animals = (animalDetails as any[]) || []
+        }
+
+        return {
+          ...visit,
+          visit_animals: (animalLinks as any[])?.map((link: any, idx: number) => ({
+            animals: animals[idx] || { name: '', tag_number: '' }
+          })) || []
+        }
+      })
+    )
+
+    return visitsWithAnimals
+  } catch (error) {
     console.error('Error fetching upcoming visits:', error)
     return []
   }
-
-  // FIXED: Cast to any[]
-  return (data as any[]) || []
 }
+
 
 export async function getFollowUpVisits(farmId: string) {
   const supabase = await createServerSupabaseClient()
 
-  const { data, error } = await supabase
-    .from('veterinary_visits')
-    .select(`
-      *,
-      visit_animals (
-        animals (
-          name,
-          tag_number
-        )
-      )
-    `)
-    .eq('farm_id', farmId)
-    .eq('follow_up_required', true)
-    .lte('follow_up_date', new Date().toISOString())
-    .order('follow_up_date', { ascending: true })
-    .limit(10)
+  try {
+    const { data, error } = await supabase
+      .from('veterinary_visits')
+      .select('*')
+      .eq('farm_id', farmId)
+      .eq('follow_up_required', true)
+      .lte('follow_up_date', new Date().toISOString())
+      .order('follow_up_date', { ascending: true })
+      .limit(10)
 
-  if (error) {
+    if (error) {
+      console.error('Error fetching follow-up visits:', error)
+      return []
+    }
+
+    // Fetch animals for each visit
+    const visitsWithAnimals = await Promise.all(
+      (data || []).map(async (visit: any) => {
+        const { data: animalLinks } = await supabase
+          .from('visit_animals')
+          .select('animal_id')
+          .eq('visit_id', visit.id)
+
+        const animalIds = (animalLinks as any[])?.map(l => l.animal_id) || []
+        let animals: any[] = []
+        
+        if (animalIds.length > 0) {
+          const { data: animalDetails } = await supabase
+            .from('animals')
+            .select('name, tag_number')
+            .in('id', animalIds)
+            .eq('farm_id', farmId)
+
+          animals = (animalDetails as any[]) || []
+        }
+
+        return {
+          ...visit,
+          visit_animals: (animalLinks as any[])?.map((link: any, idx: number) => ({
+            animals: animals[idx] || { name: '', tag_number: '' }
+          })) || []
+        }
+      })
+    )
+
+    return visitsWithAnimals
+  } catch (error) {
     console.error('Error fetching follow-up visits:', error)
     return []
   }
-
-  // FIXED: Cast to any[]
-  return (data as any[]) || []
 }
+
 
 export async function createVaccination(farmId: string, vaccinationData: any) {
   const supabase = await createServerSupabaseClient()
@@ -876,19 +1001,10 @@ export async function getVaccinations(farmId: string, filters: {
   const supabase = await createServerSupabaseClient()
   
   try {
+    // Fetch vaccinations with basic filters
     let query = supabase
       .from('vaccinations')
-      .select(`
-        *,
-        vaccination_animals (
-          animal_id,
-          animals (
-            id,
-            name,
-            tag_number
-          )
-        )
-      `)
+      .select('*', { count: 'exact' })
       .eq('farm_id', farmId)
       .order('vaccination_date', { ascending: false })
 
@@ -905,21 +1021,26 @@ export async function getVaccinations(farmId: string, filters: {
       query = query.lte('vaccination_date', filters.endDate)
     }
 
-    // For animal-specific filter, we need a different approach
+    // For animal-specific filter, fetch vaccination IDs first
     if (filters.animalId) {
-      const { data: animalVaccinations } = await supabase
+      const { data: animalVaccinations, error: linkError } = await supabase
         .from('vaccination_animals')
         .select('vaccination_id')
         .eq('animal_id', filters.animalId)
 
+      if (linkError) {
+        console.error('Error fetching animal vaccination links:', linkError)
+        return { success: false, error: 'Failed to fetch vaccinations' }
+      }
+
       const vaccinationIds = animalVaccinations?.map((v: any) => v.vaccination_id) || []
       
-      if (vaccinationIds.length > 0) {
-        query = query.in('id', vaccinationIds)
-      } else {
+      if (vaccinationIds.length === 0) {
         // No vaccinations for this animal
         return { success: true, data: [], total: 0 }
       }
+      
+      query = query.in('id', vaccinationIds)
     }
 
     // Apply pagination
@@ -949,31 +1070,42 @@ export async function getVaccinations(farmId: string, filters: {
 export async function getVaccinationById(vaccinationId: string, farmId: string) {
   const supabase = await createServerSupabaseClient()
 
-  const { data, error } = await supabase
+  // Fetch vaccination record
+  const { data: vaccination, error } = await supabase
     .from('vaccinations')
-    .select(`
-      *,
-      vaccination_animals (
-        animal_id,
-        animals (
-          id,
-          name,
-          tag_number,
-          breed,
-          gender
-        )
-      )
-    `)
+    .select('*')
     .eq('id', vaccinationId)
     .eq('farm_id', farmId)
     .single()
 
-  if (error) {
+  if (error || !vaccination) {
     console.error('Error fetching vaccination:', error)
     return { success: false, error: error instanceof Error ? error.message : String(error) }
   }
 
-  return { success: true, data }
+  // Fetch animals linked to this vaccination
+  const { data: animalLinks } = await supabase
+    .from('vaccination_animals')
+    .select('animal_id')
+    .eq('vaccination_id', vaccinationId)
+
+  const animalIds = (animalLinks as any[])?.map(l => l.animal_id) || []
+  let vaccinationAnimals: any[] = []
+  
+  if (animalIds.length > 0) {
+    const { data: animals } = await supabase
+      .from('animals')
+      .select('id, name, tag_number, breed, gender')
+      .in('id', animalIds)
+      .eq('farm_id', farmId)
+
+    vaccinationAnimals = (animalLinks as any[])?.map((link: any, idx: number) => ({
+      animal_id: link.animal_id,
+      animals: (animals as any[])?.[idx] || { id: link.animal_id, name: '', tag_number: '', breed: '', gender: '' }
+    })) || []
+  }
+
+  return { success: true, data: { ...(vaccination as any), vaccination_animals: vaccinationAnimals } as any }
 }
 
 export async function updateVaccination(vaccinationId: string, farmId: string, updateData: any) {
@@ -1468,7 +1600,28 @@ export async function getFollowUpRecords(originalRecordId: string, farmId: strin
     
     const { data: followUpRecordsResult, error: recordsError } = await supabase
       .from('animal_health_records')
-      .select('*')
+      .select(`
+        *,
+        animals!animal_health_records_animal_id_fkey (
+          id,
+          tag_number,
+          name,
+          breed,
+          gender
+        ),
+        health_issues:linked_health_issue_id (
+          id,
+          issue_type,
+          status,
+          description
+        ),
+        outbreak:outbreak_id (
+          id,
+          outbreak_name,
+          disease_type,
+          severity_level
+        )
+      `)
       .in('id', followUpIds)
       .eq('farm_id', farmId)
       .order('record_date', { ascending: false }) // Most recent first
@@ -2565,6 +2718,36 @@ export async function createFollowUpRecordWithStatusUpdate(
         userId,
         operationId
       )
+      
+      // CRITICAL: Also update the linked health issue status to "resolved"
+      // Get the original record to find linked health issue
+      const { data: originalRecordFull } = await supabase
+        .from('animal_health_records')
+        .select('linked_health_issue_id')
+        .eq('id', originalRecordId)
+        .eq('farm_id', farmId)
+        .single()
+      
+      const originalRecordFull_typed = originalRecordFull as any
+      
+      if (originalRecordFull_typed?.linked_health_issue_id) {
+        // Update the linked health issue to resolved
+        const { error: issueError } = await (supabase as any)
+          .from('health_issues')
+          .update({
+            status: 'resolved',
+            resolved_at: new Date().toISOString(),
+            resolved_by: userId
+          })
+          .eq('id', originalRecordFull_typed.linked_health_issue_id)
+          .eq('farm_id', farmId)
+        
+        if (issueError) {
+          console.error('Error updating linked health issue to resolved:', issueError)
+        } else {
+          console.log('✅ Health issue marked as resolved:', originalRecordFull_typed.linked_health_issue_id)
+        }
+      }
     } else {
       // Otherwise, recalculate the health status based on remaining open records
       statusResult = await updateAnimalHealthStatus(originalRecord.animal_id, farmId, operationId)

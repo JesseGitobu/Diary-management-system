@@ -12,7 +12,7 @@ interface AnimalCategory {
     breeding_male?: boolean
     growth_phase?: boolean
   }
-  production_status?: 'calf' | 'heifer' | 'bull' | 'served' | 'lactating' | 'dry' | null
+  production_status?: 'calf' | 'heifer' | 'bull' | 'served' | 'lactating' | 'steaming_dry_cows' | 'open_culling_dry_cows' | null
 }
 
 /**
@@ -23,7 +23,7 @@ const DEFAULT_PRODUCTION_RULES = {
   female: [
     { maxAgeDays: 180, status: 'calf' },        // 0-6 months = Calf
     { maxAgeDays: 730, status: 'heifer' },      // 6-24 months = Heifer
-    { maxAgeDays: Infinity, status: 'dry' }     // 24+ months = Dry (until bred/lactating)
+    { maxAgeDays: Infinity, status: 'steaming_dry_cows' }     // 24+ months = Steaming Dry Cows (until bred/lactating)
   ],
   male: [
     { maxAgeDays: 180, status: 'calf' },        // 0-6 months = Calf
@@ -68,7 +68,7 @@ export function getProductionStatusFromCategories(
       // Use explicit production_status if available
       if (category.production_status) {
         // Validate gender-specific statuses
-        if (gender === 'male' && ['heifer', 'served', 'lactating', 'dry'].includes(category.production_status)) {
+        if (gender === 'male' && ['heifer', 'served', 'lactating', 'steaming_dry_cows', 'open_culling_dry_cows'].includes(category.production_status)) {
           console.warn(`Category "${category.name}" has female-only status "${category.production_status}" but is being applied to a male animal. Using default rules.`)
           return getDefaultProductionStatus(ageDays, gender)
         }
@@ -129,7 +129,7 @@ function mapCategoryToProductionStatus(
   }
   
   if (nameLower.includes('dry')) {
-    return 'dry'
+    return 'steaming_dry_cows'
   }
   
   if (chars.growth_phase || nameLower.includes('young')) {
@@ -272,7 +272,8 @@ export function getProductionStatusDisplay(status: string, gender?: string): str
     'bull': 'Bull',
     'served': 'Served (In-Calf)',
     'lactating': 'Lactating',
-    'dry': 'Dry'
+    'steaming_dry_cows': 'Steaming Dry Cows',
+    'open_culling_dry_cows': 'Open Culling Dry Cows'
   }
   
   return labels[status] || status
@@ -285,7 +286,8 @@ export function getProductionStatusBadgeColor(status: string): string {
     'bull': 'bg-orange-100 text-orange-800',
     'served': 'bg-pink-100 text-pink-800',
     'lactating': 'bg-green-100 text-green-800',
-    'dry': 'bg-gray-100 text-gray-800'
+    'steaming_dry_cows': 'bg-orange-100 text-orange-800',
+    'open_culling_dry_cows': 'bg-gray-100 text-gray-800'
   }
   
   return colors[status] || 'bg-gray-100 text-gray-800'

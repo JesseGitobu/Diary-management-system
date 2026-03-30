@@ -105,21 +105,39 @@ export function ProductionHealthSection({
                     form.setValue('affected_quarters', null)
                   }
                 }}
-                className="w-4 h-4 rounded border-stone-300 text-green-600 focus:ring-green-500"
+                className={`w-4 h-4 rounded border-stone-300 focus:ring-2 ${
+                  settings?.requireMastitisTest
+                    ? 'border-red-500 text-red-600 focus:ring-red-500'
+                    : 'text-green-600 focus:ring-green-500'
+                }`}
               />
               <Label htmlFor="mastitis_test_performed" className="cursor-pointer font-medium">
                 Perform Mastitis Test
+                {settings?.requireMastitisTest && (
+                  <span className="ml-2 inline-block px-2 py-0.5 bg-red-100 text-red-700 text-xs font-semibold rounded">
+                    Required
+                  </span>
+                )}
               </Label>
             </div>
             <p className="text-xs text-stone-600 mt-1 ml-7">
-              Check for signs of mastitis using CMT or similar test
+              {settings?.requireMastitisTest
+                ? 'Mastitis test is required before this record can be saved'
+                : 'Check for signs of mastitis using CMT or similar test'}
             </p>
+            {settings?.requireMastitisTest && !mastitis_test_performed && (
+              <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+                ⚠️ This record cannot be saved without performing a mastitis test
+              </div>
+            )}
           </div>
 
           {/* Mastitis Result */}
           {mastitis_test_performed && (
             <div>
-              <Label htmlFor="mastitis_result">Test Result</Label>
+              <Label htmlFor="mastitis_result">
+                Test Result <span className="text-red-500">*</span>
+              </Label>
               <select
                 id="mastitis_result"
                 value={mastitis_result || ''}
@@ -129,13 +147,22 @@ export function ProductionHealthSection({
                     form.setValue('affected_quarters', null)
                   }
                 }}
-                className="w-full mt-2 px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                className={`w-full mt-2 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:border-transparent ${
+                  form.formState.errors.mastitis_result
+                    ? 'border-red-300 focus:ring-red-500'
+                    : 'border-stone-300 focus:ring-green-500'
+                }`}
               >
                 <option value="">Select result...</option>
                 <option value="negative">✓ Negative - No mastitis</option>
                 <option value="mild">⚠️ Mild - Slight signs</option>
                 <option value="severe">✖️ Severe - Clear signs</option>
               </select>
+              {form.formState.errors.mastitis_result && (
+                <p className="text-xs text-red-600 mt-1 flex items-center space-x-1">
+                  <span>⚠️ {(form.formState.errors.mastitis_result as any)?.message || 'Invalid selection'}</span>
+                </p>
+              )}
             </div>
           )}
         </div>
