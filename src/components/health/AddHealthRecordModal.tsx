@@ -14,12 +14,60 @@ import { Modal } from '@/components/ui/Modal'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Select } from '@/components/ui/Select'
 import { Badge } from '@/components/ui/Badge'
-import { Search, Filter, X, Calendar, Stethoscope, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react'
+import { Search, Filter, X, Calendar, Clock, Stethoscope, ChevronDown, ChevronUp, AlertTriangle, Heart, TrendingUp, Image as ImageIcon, Trash2 } from 'lucide-react'
+
+// Helper functions for status display
+const getHealthStatusColor = (status: string | null | undefined): string => {
+  switch (status) {
+    case 'healthy':
+      return 'bg-green-100 text-green-800 border border-green-300'
+    case 'sick':
+      return 'bg-red-100 text-red-800 border border-red-300'
+    case 'requires_attention':
+      return 'bg-yellow-100 text-yellow-800 border border-yellow-300'
+    case 'quarantined':
+      return 'bg-purple-100 text-purple-800 border border-purple-300'
+    default:
+      return 'bg-gray-100 text-gray-800 border border-gray-300'
+  }
+}
+
+const getHealthStatusLabel = (status: string | null | undefined): string => {
+  if (!status) return 'No Status'
+  return status.replace(/_/g, ' ').split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+}
+
+const getProductionStatusColor = (status: string | null | undefined): string => {
+  switch (status) {
+    case 'calf':
+      return 'bg-pink-100 text-pink-800 border border-pink-300'
+    case 'heifer':
+      return 'bg-amber-100 text-amber-800 border border-amber-300'
+    case 'bull':
+      return 'bg-blue-100 text-blue-800 border border-blue-300'
+    case 'served':
+      return 'bg-indigo-100 text-indigo-800 border border-indigo-300'
+    case 'lactating':
+      return 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+    case 'steaming_dry_cows':
+      return 'bg-orange-100 text-orange-800 border border-orange-300'
+    case 'open_culling_dry_cows':
+      return 'bg-slate-100 text-slate-800 border border-slate-300'
+    default:
+      return 'bg-gray-100 text-gray-800 border border-gray-300'
+  }
+}
+
+const getProductionStatusLabel = (status: string | null | undefined): string => {
+  if (!status) return 'No Status'
+  return status.replace(/_/g, ' ').split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+}
 
 const healthRecordSchema = z.object({
   animal_id: z.string().min(1, 'Please select an animal'),
   record_date: z.string().min(1, 'Record date is required'),
-  record_type: z.enum(['vaccination', 'treatment', 'checkup', 'injury', 'illness', 'reproductive', 'deworming', 'post_mortem']),
+  record_time: z.string().optional(),
+  record_type: z.enum(['vaccination', 'treatment', 'checkup', 'injury', 'illness', 'reproductive', 'deworming', 'dehorning', 'post_mortem']),
   description: z.string().min(5, 'Description must be at least 5 characters'),
   veterinarian: z.string().optional(),
   cost: z.preprocess(
@@ -130,6 +178,22 @@ const healthRecordSchema = z.object({
   next_deworming_date: z.string().optional(),
   deworming_administered_by: z.string().optional(),
 
+  // Dehorning fields
+  dehorning_method: z.string().optional(),
+  dehorning_method_other: z.string().optional(),
+  dehorning_reason: z.string().optional(),
+  dehorning_date: z.string().optional(),
+  dehorning_age: z.preprocess((val) => {
+    if (val === '' || val === null || val === undefined) return undefined;
+    const num = Number(val);
+    return isNaN(num) ? undefined : num;
+  }, z.number().min(0).optional()),
+  dehorning_veterinarian: z.string().optional(),
+  anesthesia_used: z.boolean().optional(),
+  anesthesia_type: z.string().optional(),
+  post_dehorning_care: z.string().optional(),
+  dehorning_complications: z.string().optional(),
+
   // Post Mortem fields
   cause_of_death: z.string().optional(),
   death_circumstances: z.string().optional(),
@@ -143,6 +207,20 @@ const healthRecordSchema = z.object({
   // Linking fields
   root_checkup_id: z.string().optional(),
   linked_health_issue_id: z.string().optional(),
+  outbreak_id: z.string().optional(),
+  
+  // Resolution & Follow-up fields
+  completion_status: z.enum(['completed', 'pending', 'in_progress', 'cancelled']).optional(),
+  is_resolved: z.boolean().optional(),
+  resolved_date: z.string().optional(),
+  follow_up_status: z.enum(['none', 'pending', 'scheduled', 'completed']).optional(),
+  
+  // Treatment tracking fields
+  treatment_effectiveness: z.enum(['excellent', 'good', 'fair', 'poor', 'no_response']).optional(),
+  medication_changes: z.string().optional(),
+  
+  // Image field (note: actual file handling is done separately with state)
+  images: z.array(z.any()).optional(),
 })
 
 type HealthRecordFormData = z.infer<typeof healthRecordSchema>
@@ -155,6 +233,8 @@ interface Animal {
   gender: 'male' | 'female'
   birth_date?: string
   status: string
+  health_status?: string | null
+  production_status?: string | null
 }
 
 interface AddHealthRecordModalProps {
@@ -195,6 +275,14 @@ export function AddHealthRecordModal({
   const [loadingHealthIssues, setLoadingHealthIssues] = useState(false)
   const [selectedHealthIssue, setSelectedHealthIssue] = useState<any | null>(null)
   
+  // Image upload state
+  const [imageFiles, setImageFiles] = useState<File[]>([])
+  const [imagePreviews, setImagePreviews] = useState<string[]>([])
+  
+  // Custom dropdown state
+  const [showAnimalDropdown, setShowAnimalDropdown] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+  
   // Search input ref for auto-focus
   const animalSearchInputRef = useRef<HTMLInputElement>(null)
   
@@ -230,6 +318,7 @@ export function AddHealthRecordModal({
     form.reset({
       animal_id: preSelectedAnimalId || '',
       record_date: new Date().toISOString().split('T')[0],
+      record_time: '',
       record_type: recordType,
       description: descriptionText,
       linked_health_issue_id: issueId,
@@ -252,6 +341,20 @@ export function AddHealthRecordModal({
     }, 100)
   }
 }, [isOpen, preSelectedAnimalId, preSelectedRecordType, preSelectedHealthIssue, form])
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowAnimalDropdown(false)
+      }
+    }
+
+    if (showAnimalDropdown) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showAnimalDropdown])
 
   // Map health issue types to record types
   const mapIssueTypeToRecordType = (issueType: string): string => {
@@ -401,7 +504,9 @@ export function AddHealthRecordModal({
 
   // Filter and search animals
   const filteredAnimals = useMemo(() => {
-    let filtered = animals.filter(animal => animal.status === 'active')
+    // For post_mortem records, show only deceased animals; for all others, show active animals
+    const statusFilter = watchedRecordType === 'post_mortem' ? 'deceased' : 'active'
+    let filtered = animals.filter(animal => animal.status === statusFilter)
 
     if (animalSearch) {
       const search = animalSearch.toLowerCase()
@@ -417,11 +522,64 @@ export function AddHealthRecordModal({
     }
 
     return filtered
-  }, [animals, animalSearch, showAllAnimals])
+  }, [animals, animalSearch, showAllAnimals, watchedRecordType])
+
+  // Handle image selection and preview generation
+  const handleImageChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    console.log('\n📸 ========== IMAGE SELECTION ==========')
+    console.log(`📸 Files selected: ${files.length}`)
+    files.forEach((f, i) => console.log(`  ${i+1}. ${f.name} (${f.type}, ${f.size} bytes)`))
+    
+    // Filter to image files only
+    const imageFilesOnly = files.filter(file => file.type.startsWith('image/'))
+    console.log(`📸 Valid image files: ${imageFilesOnly.length}`)
+    
+    if (imageFilesOnly.length > 0) {
+      console.log('📸 Adding files to state...')
+      setImageFiles(prev => {
+        const newFiles = [...prev, ...imageFilesOnly]
+        console.log(`📸 imageFiles state updated:`, newFiles)
+        console.log(`📸 Total files in state: ${newFiles.length}`)
+        return newFiles
+      })
+      
+      // Generate previews for new images
+      imageFilesOnly.forEach((file, idx) => {
+        console.log(`📸 Generating preview ${idx + 1}/${imageFilesOnly.length}: ${file.name}`)
+        const reader = new FileReader()
+        reader.onload = (event) => {
+          setImagePreviews(prev => {
+            const newPreviews = [...prev, event.target?.result as string]
+            console.log(`📸 Preview added. Total previews: ${newPreviews.length}`)
+            return newPreviews
+          })
+        }
+        reader.readAsDataURL(file)
+      })
+    } else {
+      console.warn('⚠️ No valid image files detected')
+    }
+    
+    // Reset input
+    if (e.target) {
+      e.target.value = ''
+      console.log('📸 File input reset')
+    }
+  }, [])
+
+  // Remove image from selected images
+  const handleRemoveImage = useCallback((index: number) => {
+    setImageFiles(prev => prev.filter((_, i) => i !== index))
+    setImagePreviews(prev => prev.filter((_, i) => i !== index))
+  }, [])
 
   const handleSubmit = useCallback(async (data: HealthRecordFormData) => {
     console.log('\n🚀 ========== HANDLE SUBMIT CALLED ==========')
     console.log('🚀 Raw form data:', data);
+    console.log(`🚀 Current imageFiles state: ${imageFiles.length} files`)
+    imageFiles.forEach((f, i) => console.log(`  ${i+1}. ${f.name} (${f.type}, ${f.size} bytes)`))
+    console.log(`🚀 Current imagePreviews state: ${imagePreviews.length} previews`)
 
     // Log specific field errors
     if (form.formState.errors.severity) {
@@ -466,6 +624,7 @@ export function AddHealthRecordModal({
         calving_outcome: data.calving_outcome === 'other' ? data.calving_outcome_other : data.calving_outcome,
         complications: data.complications === 'other' ? data.complications_other : data.complications,
         product_used: data.product_used === 'other' ? data.product_used_other : data.product_used,
+        dehorning_method: data.dehorning_method === 'other' ? data.dehorning_method_other : data.dehorning_method,
       } as any
 
       // Remove the "_other" fields from the final payload
@@ -478,6 +637,7 @@ export function AddHealthRecordModal({
       delete processedData.calving_outcome_other
       delete processedData.complications_other
       delete processedData.product_used_other
+      delete processedData.dehorning_method_other
 
       // Only include severity if record type is injury AND severity is not null
       if (data.record_type !== 'injury' || !data.severity) {
@@ -531,15 +691,79 @@ export function AddHealthRecordModal({
       console.log('\n✅ ========== SUCCESS ==========')
       console.log('✅ Health record created:', result.record);
       onRecordAdded(result.record);
+      
+      // Handle image uploads if any images were selected
+      console.log('\n📸 ========== IMAGE UPLOAD CHECK ==========')
+      console.log(`📸 imageFiles.length: ${imageFiles.length}`)
+      console.log(`📸 imageFiles contents:`, imageFiles)
+      
+      if (imageFiles.length > 0 && result.record?.id) {
+        console.log('\n📸 ========== IMAGE UPLOAD PHASE ==========')
+        console.log('📸 Total images to upload:', imageFiles.length);
+        console.log('📸 Record ID:', result.record.id);
+        console.log('📸 Farm ID:', farmId);
+        console.log('📸 Image files:', imageFiles.map((f, i) => ({ index: i, name: f.name, size: f.size, type: f.type })));
+        
+        const formData = new FormData();
+        imageFiles.forEach((file, index) => {
+          console.log(`📸 Adding image ${index} to FormData:`, file.name);
+          formData.append(`image_${index}`, file);
+        });
+        formData.append('record_id', result.record.id);
+        
+        console.log('📸 FormData keys:', Array.from(formData.keys()));
+        
+        try {
+          console.log('📸 Sending POST to /api/health/records/upload-images');
+          const imageResponse = await fetch('/api/health/records/upload-images', {
+            method: 'POST',
+            body: formData,
+          });
+          
+          console.log('📸 Upload response status:', imageResponse.status);
+          console.log('📸 Upload response statusText:', imageResponse.statusText);
+          console.log('📸 Upload response ok:', imageResponse.ok);
+          
+          const imageResult = await imageResponse.json();
+          console.log('📸 Upload response body:', imageResult);
+          
+          if (imageResponse.ok) {
+            console.log('✅ Images uploaded successfully');
+            console.log('✅ Uploaded count:', imageResult.uploadedImages?.length || 0);
+            console.log('✅ Errors:', imageResult.errors || []);
+          } else {
+            console.warn('⚠️ Image upload returned error status:', imageResponse.status);
+            console.warn('⚠️ Error details:', imageResult);
+          }
+        } catch (imageErr) {
+          console.error('❌ Image upload exception:', imageErr);
+          console.error('❌ Error type:', typeof imageErr);
+          if (imageErr instanceof Error) {
+            console.error('❌ Error message:', imageErr.message);
+            console.error('❌ Error stack:', imageErr.stack);
+          }
+        }
+      } else {
+        if (imageFiles.length === 0) {
+          console.log('ℹ️ No images selected - skipping upload');
+          console.log(`ℹ️ DEBUG: imageFiles.length = ${imageFiles.length}, imageFiles = `, imageFiles);
+        } else if (!result.record?.id) {
+          console.warn('⚠️ Record ID missing - cannot upload images:', result.record);
+        }
+      }
+      
       form.reset({
         animal_id: '',
         record_date: new Date().toISOString().split('T')[0],
+        record_time: '',
         record_type: 'checkup',
         severity: null as any,
         illness_severity: null as any,
         follow_up_required: false,
         pregnancy_result: 'pending',
       })
+      setImageFiles([])
+      setImagePreviews([])
       setAnimalSearch('')
       onClose()
 
@@ -560,7 +784,7 @@ export function AddHealthRecordModal({
       console.log('\n🏁 ========== SUBMISSION COMPLETE ==========')
       setLoading(false);
     }
-  }, [farmId, onRecordAdded, onClose, form, originalRecordId, rootCheckupId])
+  }, [farmId, onRecordAdded, onClose, form, originalRecordId, rootCheckupId, imageFiles, imagePreviews])
 
   const getRecordTypeIcon = (type: string) => {
     switch (type) {
@@ -571,6 +795,7 @@ export function AddHealthRecordModal({
       case 'illness': return '🤒'
       case 'reproductive': return '🤱'
       case 'deworming': return '🪱'
+      case 'dehorning': return '🐮'
       case 'post_mortem': return '⚰️'
       default: return '📋'
     }
@@ -739,13 +964,13 @@ export function AddHealthRecordModal({
             </div>
 
             {selectedAnimal && (
-              <div className="mb-4 p-3 bg-farm-green/10 border border-farm-green/20 rounded-lg sticky top-0 z-10 shadow-sm">
+              <div className="mb-4 p-4 bg-farm-green/10 border border-farm-green/20 rounded-lg sticky top-0 z-10 shadow-sm space-y-3">
                 <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="font-medium text-farm-green">
+                  <div className="flex-1">
+                    <h4 className="font-medium text-farm-green text-lg">
                       ✓ {selectedAnimal.name || `Animal ${selectedAnimal.tag_number}`}
                     </h4>
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-gray-600 mt-1">
                       Tag: {selectedAnimal.tag_number} • {selectedAnimal.breed} • {selectedAnimal.gender}
                       {selectedAnimal.birth_date && (
                         <span> • Born: {new Date(selectedAnimal.birth_date).toLocaleDateString()}</span>
@@ -754,30 +979,134 @@ export function AddHealthRecordModal({
                   </div>
                   <Badge variant="secondary">✓ Selected</Badge>
                 </div>
+
+                {/* Health & Production Status Row */}
+                <div className="flex flex-wrap gap-3 pt-2 border-t border-farm-green/20">
+                  <div className="flex items-center gap-2">
+                    <Heart className="w-4 h-4 text-red-600" />
+                    <span className="text-xs font-medium text-gray-700">Health:</span>
+                    <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${getHealthStatusColor(selectedAnimal.health_status)}`}>
+                      {getHealthStatusLabel(selectedAnimal.health_status)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4 text-blue-600" />
+                    <span className="text-xs font-medium text-gray-700">Production:</span>
+                    <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${getProductionStatusColor(selectedAnimal.production_status)}`}>
+                      {getProductionStatusLabel(selectedAnimal.production_status)}
+                    </span>
+                  </div>
+                </div>
               </div>
             )}
 
-            <div>
-              <select
-                {...form.register('animal_id')}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+            <div className="relative" ref={dropdownRef}>
+              {/* Custom Dropdown Trigger */}
+              <button
+                type="button"
+                onClick={() => setShowAnimalDropdown(!showAnimalDropdown)}
+                className="w-full px-4 py-3 text-left border border-gray-300 rounded-lg bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent transition-all flex items-center justify-between"
               >
-                <option value="">Choose an animal...</option>
-                {filteredAnimals.map((animal) => (
-                  <option key={animal.id} value={animal.id}>
-                    {animal.name || `Animal ${animal.tag_number}`} (#{animal.tag_number}) - {animal.breed}
-                  </option>
-                ))}
-              </select>
+                {selectedAnimal ? (
+                  <div className="flex-1">
+                    <p className="font-medium text-gray-900">
+                      {selectedAnimal.name || `Animal ${selectedAnimal.tag_number}`}
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      #{selectedAnimal.tag_number} • {selectedAnimal.breed}
+                    </p>
+                  </div>
+                ) : (
+                  <span className="text-gray-500">Choose an animal...</span>
+                )}
+                <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${showAnimalDropdown ? 'rotate-180' : ''}`} />
+              </button>
 
-              {filteredAnimals.length === 20 && !showAllAnimals && (
-                <button
-                  type="button"
-                  onClick={() => setShowAllAnimals(true)}
-                  className="mt-2 text-sm text-farm-green hover:text-farm-green/80"
-                >
-                  Show all {animals.length} animals...
-                </button>
+              {/* Custom Dropdown Menu */}
+              {showAnimalDropdown && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-h-96 overflow-y-auto">
+                  {filteredAnimals.length === 0 ? (
+                    <div className="p-8 text-center text-gray-500">
+                      <p className="text-sm">
+                        {animalSearch ? '🔍 No animals match your search' : watchedRecordType === 'post_mortem' ? '📋 No deceased animals found' : '📋 No active animals found'}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-gray-200">
+                      {filteredAnimals.map((animal) => (
+                        <button
+                          key={animal.id}
+                          type="button"
+                          onClick={() => {
+                            form.setValue('animal_id', animal.id)
+                            setShowAnimalDropdown(false)
+                          }}
+                          className={`w-full px-4 py-3 text-left hover:bg-farm-green/5 transition-colors ${
+                            selectedAnimal?.id === animal.id ? 'bg-farm-green/10 border-l-4 border-farm-green' : ''
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              {/* Animal Name and Basic Info */}
+                              <p className="font-medium text-gray-900 truncate">
+                                {animal.name || `Animal ${animal.tag_number}`}
+                              </p>
+                              <p className="text-xs text-gray-600 mt-1">
+                                #{animal.tag_number} • {animal.breed} • {animal.gender}
+                              </p>
+
+                              {/* Status Badges Row */}
+                              <div className="flex flex-wrap gap-2 mt-2">
+                                {/* Health Status Badge */}
+                                {animal.health_status && (
+                                  <div className="flex items-center gap-1">
+                                    <Heart className="w-3 h-3 text-red-600" />
+                                    <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${getHealthStatusColor(animal.health_status)}`}>
+                                      {getHealthStatusLabel(animal.health_status)}
+                                    </span>
+                                  </div>
+                                )}
+
+                                {/* Production Status Badge */}
+                                {animal.production_status && (
+                                  <div className="flex items-center gap-1">
+                                    <TrendingUp className="w-3 h-3 text-blue-600" />
+                                    <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${getProductionStatusColor(animal.production_status)}`}>
+                                      {getProductionStatusLabel(animal.production_status)}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Selection Checkmark */}
+                            {selectedAnimal?.id === animal.id && (
+                              <div className="text-farm-green flex-shrink-0">
+                                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                </svg>
+                              </div>
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {filteredAnimals.length === 20 && !showAllAnimals && (
+                    <div className="p-3 border-t border-gray-200">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowAllAnimals(true)
+                        }}
+                        className="w-full px-3 py-2 text-sm text-farm-green hover:bg-farm-green/10 rounded transition-colors font-medium"
+                      >
+                        📋 Show all {animals.filter(a => a.status === 'active').length} animals
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
 
               {form.formState.errors.animal_id && (
@@ -891,7 +1220,7 @@ export function AddHealthRecordModal({
           )}
 
           {/* Basic Record Details */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <Label htmlFor="record_date" className="flex items-center space-x-2">
                 <Calendar className="w-4 h-4" />
@@ -902,6 +1231,19 @@ export function AddHealthRecordModal({
                 type="date"
                 {...form.register('record_date')}
                 error={form.formState.errors.record_date?.message}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="record_time" className="flex items-center space-x-2">
+                <Clock className="w-4 h-4" />
+                <span>Record Time (Optional)</span>
+              </Label>
+              <Input
+                id="record_time"
+                type="time"
+                {...form.register('record_time')}
+                error={form.formState.errors.record_time?.message}
               />
             </div>
 
@@ -919,6 +1261,7 @@ export function AddHealthRecordModal({
                 <option value="illness">{getRecordTypeIcon('illness')} Illness</option>
                 <option value="reproductive">{getRecordTypeIcon('reproductive')} Reproductive Health</option>
                 <option value="deworming">{getRecordTypeIcon('deworming')} Deworming & Parasite Control</option>
+                <option value="dehorning">{getRecordTypeIcon('dehorning')} Dehorning</option>
                 <option value="post_mortem">{getRecordTypeIcon('post_mortem')} Post Mortem</option>
               </select>
             </div>
@@ -1604,6 +1947,123 @@ export function AddHealthRecordModal({
             </CollapsibleSection>
           )}
 
+          {watchedRecordType === 'dehorning' && (
+            <CollapsibleSection
+              title="🐄 Dehorning Details"
+              isOpen={!collapsedSections.has('dehorning')}
+              onToggle={() => toggleSection('dehorning')}
+            >
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="dehorning_method">Dehorning Method</Label>
+                  <select
+                    id="dehorning_method"
+                    {...form.register('dehorning_method')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+                  >
+                    <option value="">Select method...</option>
+                    <option value="hot_iron">Hot Iron/Branding</option>
+                    <option value="disbudding">Disbudding (Young Animals)</option>
+                    <option value="surgical">Surgical Removal</option>
+                    <option value="caustic_paste">Caustic Paste</option>
+                    <option value="laser">Laser</option>
+                    <option value="other">Other</option>
+                  </select>
+                  {form.watch('dehorning_method') === 'other' && (
+                    <Input
+                      {...form.register('dehorning_method_other')}
+                      placeholder="Describe the method"
+                      className="mt-2"
+                    />
+                  )}
+                </div>
+
+                <div>
+                  <Label htmlFor="dehorning_date">Date of Dehorning</Label>
+                  <Input
+                    id="dehorning_date"
+                    type="date"
+                    {...form.register('dehorning_date')}
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="dehorning_reason">Reason for Dehorning</Label>
+                  <Input
+                    id="dehorning_reason"
+                    {...form.register('dehorning_reason')}
+                    placeholder="e.g., Safety, Farm policy, Behavior management"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="dehorning_age">Animal Age at Dehorning (months)</Label>
+                  <Input
+                    id="dehorning_age"
+                    type="number"
+                    min="0"
+                    {...form.register('dehorning_age', { valueAsNumber: true })}
+                    placeholder="Age at dehorning"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="dehorning_veterinarian">Performed by</Label>
+                  <Input
+                    id="dehorning_veterinarian"
+                    {...form.register('dehorning_veterinarian')}
+                    placeholder="Veterinarian or technician name"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-4 pt-2 border-t mt-4">
+                <div>
+                  <Label className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      {...form.register('anesthesia_used')}
+                      className="w-4 h-4 text-farm-green border-gray-300 rounded focus:ring-farm-green"
+                    />
+                    <span>Anesthesia Used</span>
+                  </Label>
+                </div>
+                {form.watch('anesthesia_used') && (
+                  <div>
+                    <Label htmlFor="anesthesia_type">Anesthesia Type</Label>
+                    <Input
+                      id="anesthesia_type"
+                      {...form.register('anesthesia_type')}
+                      placeholder="Local, General, Regional"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <Label htmlFor="post_dehorning_care">Post-Dehorning Care</Label>
+                <textarea
+                  id="post_dehorning_care"
+                  {...form.register('post_dehorning_care')}
+                  rows={2}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+                  placeholder="Wound care, pain management, infection prevention measures..."
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="dehorning_complications">Complications (if any)</Label>
+                <textarea
+                  id="dehorning_complications"
+                  {...form.register('dehorning_complications')}
+                  rows={2}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+                  placeholder="Excessive bleeding, infection, behavioral changes, other complications..."
+                />
+              </div>
+            </CollapsibleSection>
+          )}
+
           {watchedRecordType === 'post_mortem' && (
             <CollapsibleSection
               title="Post Mortem Details"
@@ -1741,6 +2201,59 @@ export function AddHealthRecordModal({
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
               placeholder="Any additional observations, follow-up instructions, or important notes..."
             />
+          </div>
+
+          {/* Image Upload Section */}
+          <div>
+            <Label htmlFor="record_images" className="flex items-center space-x-2">
+              <ImageIcon className="w-4 h-4 text-farm-green" />
+              <span>Attach Images (Optional)</span>
+            </Label>
+            <div className="mt-2 border-2 border-dashed border-gray-300 rounded-lg p-4 bg-gray-50 hover:bg-gray-100 transition">
+              <input
+                id="record_images"
+                type="file"
+                multiple
+                accept="image/*"
+                onChange={handleImageChange}
+                className="hidden"
+              />
+              <label htmlFor="record_images" className="cursor-pointer">
+                <div className="flex flex-col items-center justify-center space-y-2">
+                  <ImageIcon className="w-8 h-8 text-gray-400" />
+                  <span className="text-sm text-gray-600 font-medium">Click to browse or drag images here</span>
+                  <span className="text-xs text-gray-500">JPG, PNG, GIF up to 5MB each</span>
+                </div>
+              </label>
+            </div>
+
+            {/* Image Preview Grid */}
+            {imagePreviews.length > 0 && (
+              <div className="mt-4">
+                <p className="text-sm font-medium text-gray-700 mb-3">
+                  Selected Images ({imagePreviews.length})
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                  {imagePreviews.map((preview, idx) => (
+                    <div key={idx} className="relative group">
+                      <img
+                        src={preview}
+                        alt={`Preview ${idx + 1}`}
+                        className="w-full h-24 object-cover rounded-lg border border-gray-200 shadow-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveImage(idx)}
+                        className="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Remove image"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Debug Panel - Remove in production */}

@@ -91,8 +91,8 @@ export function AnimalsClientPage({
 
   const { isMobile } = useDeviceInfo()
 
-  const canAddAnimals = ['farm_owner', 'farm_manager', 'worker'].includes(userRole)
-  const canManageAnimals = ['farm_owner', 'farm_manager', 'worker'].includes(userRole)
+  const canAddAnimals = ['farm_owner', 'farm_manager', 'worker', 'veterinarian'].includes(userRole)
+  const canManageAnimals = ['farm_owner', 'farm_manager', 'worker', 'veterinarian'].includes(userRole)
   const canExportData = ['farm_owner', 'farm_manager'].includes(userRole)
   const canImportData = ['farm_owner', 'farm_manager'].includes(userRole)
   const canManageCategories = ['farm_owner', 'farm_manager'].includes(userRole)

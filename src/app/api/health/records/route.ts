@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     
     const userRole = await getUserRole(user.id) as any
     
-    if (!userRole?.farm_id || !['farm_owner', 'farm_manager', 'worker'].includes(userRole.role_type)) {
+    if (!userRole?.farm_id || !['farm_owner', 'farm_manager', 'worker', 'veterinarian'].includes(userRole.role_type)) {
       logFinalResponse(operationId, false, null, 'Insufficient permissions')
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
@@ -52,7 +52,8 @@ export async function POST(request: NextRequest) {
     const { 
       // Basic fields
       animal_id, 
-      record_date, 
+      record_date,
+      record_time,
       record_type, 
       description, 
       veterinarian, 
@@ -64,11 +65,23 @@ export async function POST(request: NextRequest) {
       symptoms,
       treatment,
       is_auto_generated = false,
-      completion_status = 'pending',
+      completion_status = 'completed',
       
-      // Follow-up fields - ADD THESE
+      // Follow-up fields
       is_follow_up = false,
       original_record_id = null,
+      root_checkup_id = null,
+      linked_health_issue_id = null,
+      outbreak_id = null,
+      
+      // Resolution & Follow-up fields
+      is_resolved = false,
+      resolved_date = null,
+      follow_up_status = 'none',
+      
+      // Treatment tracking fields
+      treatment_effectiveness = null,
+      medication_changes = null,
       
       // General checkup fields
       body_condition_score,
@@ -120,8 +133,27 @@ export async function POST(request: NextRequest) {
       deworming_dose,
       next_deworming_date,
       deworming_administered_by,
-      root_checkup_id,
-      linked_health_issue_id
+      
+      // Dehorning fields
+      dehorning_method,
+      dehorning_reason,
+      dehorning_date,
+      dehorning_age,
+      dehorning_veterinarian,
+      anesthesia_used,
+      anesthesia_type,
+      post_dehorning_care,
+      dehorning_complications,
+      
+      // Post-mortem fields
+      cause_of_death,
+      death_circumstances,
+      location_of_death,
+      suspected_disease,
+      necropsy_performed,
+      necropsy_findings,
+      body_disposal_method,
+      post_mortem_notes
     } = body
     
     // Validate required fields
@@ -130,6 +162,7 @@ export async function POST(request: NextRequest) {
     
     if (!animal_id) validationErrors.push('animal_id is required')
     if (!record_date) validationErrors.push('record_date is required')
+    if (!record_time) validationErrors.push('record_time is required')
     if (!record_type) validationErrors.push('record_type is required')
     if (!description) validationErrors.push('description is required')
     
@@ -144,7 +177,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Validate record type
-    const validRecordTypes = ['vaccination', 'treatment', 'checkup', 'injury', 'illness', 'reproductive', 'deworming']
+    const validRecordTypes = ['vaccination', 'treatment', 'checkup', 'injury', 'illness', 'reproductive', 'deworming', 'dehorning', 'post_mortem']
     if (!validRecordTypes.includes(record_type)) {
       logFinalResponse(operationId, false, null, `Invalid record type: ${record_type}`)
       return NextResponse.json({ 
@@ -165,6 +198,7 @@ export async function POST(request: NextRequest) {
       farm_id: userRole.farm_id,
       animal_id,
       record_date,
+      record_time: record_time,
       record_type,
       description,
       veterinarian: veterinarian || null,
@@ -233,8 +267,41 @@ export async function POST(request: NextRequest) {
       deworming_dose: deworming_dose || null,
       next_deworming_date: next_deworming_date || null,
       deworming_administered_by: deworming_administered_by || null,
+      
+      // Dehorning fields
+      dehorning_method: dehorning_method || null,
+      dehorning_reason: dehorning_reason || null,
+      dehorning_date: dehorning_date || null,
+      dehorning_age: dehorning_age || null,
+      dehorning_veterinarian: dehorning_veterinarian || null,
+      anesthesia_used: anesthesia_used || false,
+      anesthesia_type: anesthesia_type || null,
+      post_dehorning_care: post_dehorning_care || null,
+      dehorning_complications: dehorning_complications || null,
+      
+      // Post-mortem fields
+      cause_of_death: cause_of_death || null,
+      death_circumstances: death_circumstances || null,
+      location_of_death: location_of_death || null,
+      suspected_disease: suspected_disease || null,
+      necropsy_performed: necropsy_performed || false,
+      necropsy_findings: necropsy_findings || null,
+      body_disposal_method: body_disposal_method || null,
+      post_mortem_notes: post_mortem_notes || null,
+      
+      // Linking & outbreak fields
       root_checkup_id: root_checkup_id || null,
-      linked_health_issue_id: linked_health_issue_id || null
+      linked_health_issue_id: linked_health_issue_id || null,
+      outbreak_id: outbreak_id || null,
+      
+      // Resolution & Follow-up fields
+      is_resolved: is_resolved || false,
+      resolved_date: resolved_date || null,
+      follow_up_status: follow_up_status || 'none',
+      
+      // Treatment tracking fields
+      treatment_effectiveness: treatment_effectiveness || null,
+      medication_changes: medication_changes || null
     }
     
     // Log data preparation

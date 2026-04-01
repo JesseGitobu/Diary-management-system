@@ -17,6 +17,7 @@ import {
 export interface HealthRecordData {
   animal_id: string
   record_date: string
+  record_time?: string | null
   record_type: 'vaccination' | 'treatment' | 'checkup' | 'injury' | 'illness' | 'reproductive' | 'deworming'
   description: string
   veterinarian?: string | null
@@ -31,6 +32,21 @@ export interface HealthRecordData {
   requires_record_type_selection?: boolean
   available_record_types?: string[]
   root_checkup_id?: string | null
+  
+  // Additional tracking fields
+  symptoms?: string | null
+  treatment?: string | null
+  is_auto_generated?: boolean
+  completion_status?: string
+  is_follow_up?: boolean
+  original_record_id?: string | null
+  linked_health_issue_id?: string | null
+  outbreak_id?: string | null
+  is_resolved?: boolean
+  resolved_date?: string | null
+  follow_up_status?: string
+  treatment_effectiveness?: string | null
+  medication_changes?: string | null
   
   // General checkup fields
   body_condition_score?: number | null
@@ -82,15 +98,30 @@ export interface HealthRecordData {
   deworming_dose?: string | null
   next_deworming_date?: string | null
   deworming_administered_by?: string | null
+  
+  // Dehorning fields
+  dehorning_method?: string | null
+  dehorning_reason?: string | null
+  dehorning_date?: string | null
+  dehorning_age?: number | null
+  dehorning_veterinarian?: string | null
+  anesthesia_used?: boolean
+  anesthesia_type?: string | null
+  post_dehorning_care?: string | null
+  dehorning_complications?: string | null
+  
+  // Post-mortem fields
+  cause_of_death?: string | null
+  death_circumstances?: string | null
+  location_of_death?: string | null
+  suspected_disease?: string | null
+  necropsy_performed?: boolean
+  necropsy_findings?: string | null
+  body_disposal_method?: string | null
+  post_mortem_notes?: string | null
 }
 
-export async function createHealthRecord(data: HealthRecordData & { 
-  is_auto_generated?: boolean 
-  completion_status?: string
-  linked_health_issue_id?: string | null
-  is_follow_up?: boolean
-  original_record_id?: string | null
-}, operationId?: string) {
+export async function createHealthRecord(data: HealthRecordData, operationId?: string) {
   const supabase = await createServerSupabaseClient()
 
   try {
@@ -115,6 +146,7 @@ export async function createHealthRecord(data: HealthRecordData & {
       farm_id: data.farm_id,
       animal_id: data.animal_id,
       record_date: data.record_date,
+      record_time: data.record_time,
       record_type: data.record_type,
       description: data.description,
       veterinarian: data.veterinarian,
@@ -125,7 +157,7 @@ export async function createHealthRecord(data: HealthRecordData & {
       severity: data.severity,
       created_by: data.created_by,
       is_auto_generated: data.is_auto_generated || false,
-      completion_status: data.completion_status || 'pending',
+      completion_status: data.completion_status || 'completed',
       original_health_status: data.original_health_status,
       requires_record_type_selection: data.requires_record_type_selection,
       available_record_types: data.available_record_types,
@@ -182,10 +214,43 @@ export async function createHealthRecord(data: HealthRecordData & {
       next_deworming_date: data.next_deworming_date,
       deworming_administered_by: data.deworming_administered_by,
       
+      // Dehorning fields
+      dehorning_method: data.dehorning_method,
+      dehorning_reason: data.dehorning_reason,
+      dehorning_date: data.dehorning_date,
+      dehorning_age: data.dehorning_age,
+      dehorning_veterinarian: data.dehorning_veterinarian,
+      anesthesia_used: data.anesthesia_used,
+      anesthesia_type: data.anesthesia_type,
+      post_dehorning_care: data.post_dehorning_care,
+      dehorning_complications: data.dehorning_complications,
+      
+      // Post-mortem fields
+      cause_of_death: data.cause_of_death,
+      death_circumstances: data.death_circumstances,
+      location_of_death: data.location_of_death,
+      suspected_disease: data.suspected_disease,
+      necropsy_performed: data.necropsy_performed,
+      necropsy_findings: data.necropsy_findings,
+      body_disposal_method: data.body_disposal_method,
+      post_mortem_notes: data.post_mortem_notes,
+      
       // Linking fields
       linked_health_issue_id: data.linked_health_issue_id || null,
       is_follow_up: data.is_follow_up || false,
-      original_record_id: data.original_record_id || null
+      original_record_id: data.original_record_id || null,
+      
+      // Resolution & Follow-up fields
+      is_resolved: data.is_resolved || false,
+      resolved_date: data.resolved_date || null,
+      follow_up_status: data.follow_up_status || 'none',
+      
+      // Treatment tracking fields
+      treatment_effectiveness: data.treatment_effectiveness || null,
+      medication_changes: data.medication_changes || null,
+      
+      // Outbreak linking
+      outbreak_id: data.outbreak_id || null
     }
     
     if (operationId && isDebugEnabled()) {
@@ -1641,6 +1706,7 @@ export async function getFollowUpRecords(originalRecordId: string, farmId: strin
       return {
         id: record.id,
         record_date: record.record_date,
+        record_time: record.record_time,
         description: record.description,
         veterinarian: record.veterinarian,
         cost: record.cost,
@@ -2567,10 +2633,7 @@ export async function updateAnimalHealthStatus(animalId: string, farmId: string,
     return { success: false, error: 'Failed to update animal health status' }
   }
 }
-export async function createHealthRecordWithStatusUpdate(data: HealthRecordData & { 
-  is_auto_generated?: boolean 
-  completion_status?: string 
-}, operationId?: string) {
+export async function createHealthRecordWithStatusUpdate(data: HealthRecordData, operationId?: string) {
   const supabase = await createServerSupabaseClient()
 
   try {

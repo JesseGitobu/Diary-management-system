@@ -4,7 +4,7 @@
  * This enables intelligent form field configuration and data capture
  */
 
-export type ProtocolTypeKey = 'vaccination' | 'treatment' | 'checkup' | 'breeding' | 'nutrition' | 'deworming_parasites' | 'post_mortem'
+export type ProtocolTypeKey = 'vaccination' | 'treatment' | 'checkup' | 'breeding' | 'nutrition' | 'deworming_parasites' | 'dehorning' | 'post_mortem'
 
 export interface ProtocolFieldConfig {
   key: string
@@ -32,7 +32,7 @@ export interface ProtocolPreset {
   
   // Automation settings
   auto_create_health_record: boolean
-  default_health_record_type?: 'vaccination' | 'treatment' | 'checkup' | 'injury' | 'illness' | 'reproductive' | 'deworming' | 'post_mortem'
+  default_health_record_type?: 'vaccination' | 'treatment' | 'checkup' | 'injury' | 'illness' | 'reproductive' | 'deworming' | 'dehorning' | 'post_mortem'
   
   // Frequency guidelines
   default_frequency_type: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'one_time'
@@ -578,6 +578,90 @@ export const PROTOCOL_PRESETS: Record<ProtocolTypeKey, ProtocolPreset> = {
     track_cost: true,
     track_follow_up: true,
     require_veterinarian: true,
+    allow_scheduling: true,
+  },
+
+  dehorning: {
+    id: 'dehorning',
+    name: 'Dehorning',
+    description: 'Dehorning procedures, post-operative care, and complication tracking',
+    icon: '🐄',
+    color: 'bg-amber-100',
+    badge_color: 'bg-amber-100 text-amber-800 border-amber-200',
+    
+    fields: [
+      {
+        key: 'dehorning_method',
+        label: 'Dehorning Method',
+        type: 'select',
+        required: true,
+        options: [
+          { value: 'hot_iron', label: 'Hot Iron/Branding' },
+          { value: 'disbudding', label: 'Disbudding (Young Animals)' },
+          { value: 'surgical', label: 'Surgical Removal' },
+          { value: 'caustic_paste', label: 'Caustic Paste' },
+          { value: 'laser', label: 'Laser' },
+        ],
+      },
+      {
+        key: 'dehorning_reason',
+        label: 'Reason for Dehorning',
+        type: 'text',
+        required: true,
+        placeholder: 'e.g., Safety, Farm policy, Behavioral management',
+      },
+      {
+        key: 'dehorning_age',
+        label: 'Animal Age at Dehorning (months)',
+        type: 'number',
+        required: false,
+        min: 0,
+        max: 200,
+      },
+      {
+        key: 'anesthesia_used',
+        label: 'Anesthesia Used?',
+        type: 'select',
+        required: true,
+        options: [
+          { value: 'none', label: 'None' },
+          { value: 'local', label: 'Local' },
+          { value: 'regional', label: 'Regional' },
+          { value: 'general', label: 'General' },
+        ],
+      },
+      {
+        key: 'post_dehorning_care',
+        label: 'Post-Operative Care',
+        type: 'textarea',
+        required: false,
+        placeholder: 'Wound care, pain management, infection prevention measures...',
+      },
+      {
+        key: 'dehorning_veterinarian',
+        label: 'Performed by',
+        type: 'text',
+        required: false,
+        placeholder: 'Veterinarian or technician name',
+      },
+      {
+        key: 'dehorning_complications',
+        label: 'Complications Noted',
+        type: 'textarea',
+        required: false,
+        placeholder: 'Any adverse reactions, infections, behavioral changes...',
+      },
+    ],
+    
+    auto_create_health_record: true,
+    default_health_record_type: 'dehorning',
+    
+    default_frequency_type: 'one_time',
+    default_frequency_value: 1,
+    
+    track_cost: true,
+    track_follow_up: true,
+    require_veterinarian: false,
     allow_scheduling: true,
   },
 

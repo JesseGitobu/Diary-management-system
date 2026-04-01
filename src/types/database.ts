@@ -1,5 +1,5 @@
 // src/types/database.ts - Complete Type Definitions
-export type UserRole = 'farm_owner' | 'farm_manager' | 'worker' | 'super_admin'
+export type UserRole = 'farm_owner' | 'farm_manager' | 'worker' | 'veterinarian' | 'super_admin'
 export type InvitationStatus = 'pending' | 'accepted' | 'declined' | 'expired'
 export type AnimalStatus = 'active' | 'sold' | 'deceased' | 'dry'
 export type AnimalGender = 'male' | 'female'
@@ -240,6 +240,7 @@ export interface HealthRecord {
   id: string
   animal_id: string
   record_date: string
+  record_time?: string | null
   record_type: 'vaccination' | 'treatment' | 'checkup' | 'injury' | 'illness'
   description?: string
   veterinarian?: string
@@ -845,7 +846,7 @@ export interface PurchaseOrderItem {
 
 
 // Health-specific types
-export type HealthRecordType = 'vaccination' | 'treatment' | 'checkup' | 'injury' | 'illness'
+export type HealthRecordType = 'vaccination' | 'treatment' | 'checkup' | 'injury' | 'illness' | 'reproductive' | 'deworming' | 'post_mortem' | 'dehorning'
 export type VaccineType = 'core' | 'risk_based' | 'elective'
 export type AdministrationRoute = 'intramuscular' | 'subcutaneous' | 'intranasal' | 'oral'
 export type VisitType = 'routine_checkup' | 'vaccination' | 'emergency' | 'consultation' | 'breeding' | 'other'
@@ -864,6 +865,7 @@ export interface AnimalHealthRecord {
   id: string
   animal_id: string
   record_date: string
+  record_time?: string | null
   record_type: HealthRecordType
   description: string
   veterinarian?: string

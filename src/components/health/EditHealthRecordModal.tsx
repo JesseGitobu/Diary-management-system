@@ -18,7 +18,7 @@ import { X, Calendar, DollarSign, Stethoscope, AlertCircle, ChevronDown, Chevron
 const healthRecordSchema = z.object({
   animal_id: z.string().min(1, 'Please select an animal'),
   record_date: z.string().min(1, 'Record date is required'),
-  record_type: z.enum(['vaccination', 'treatment', 'checkup', 'injury', 'illness', 'reproductive', 'deworming']),
+  record_type: z.enum(['vaccination', 'treatment', 'checkup', 'injury', 'illness', 'reproductive', 'deworming', 'dehorning', 'post_mortem']),
   description: z.string().min(5, 'Description must be at least 5 characters'),
   veterinarian: z.string().optional(),
   cost: z.preprocess(
@@ -149,7 +149,7 @@ interface HealthRecord {
   id: string
   animal_id: string
   record_date: string
-  record_type: 'vaccination' | 'treatment' | 'checkup' | 'injury' | 'illness' | 'reproductive' | 'deworming'
+  record_type: 'vaccination' | 'treatment' | 'checkup' | 'injury' | 'illness' | 'reproductive' | 'deworming' | 'dehorning' | 'post_mortem'
   description: string
   veterinarian?: string
   cost?: number

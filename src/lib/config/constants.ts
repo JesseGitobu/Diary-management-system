@@ -16,6 +16,7 @@ export const USER_ROLES = {
   FARM_OWNER: 'farm_owner',
   FARM_MANAGER: 'farm_manager', 
   WORKER: 'worker',
+  VETERINARIAN: 'veterinarian',
   SUPER_ADMIN: 'super_admin',
 } as const
 

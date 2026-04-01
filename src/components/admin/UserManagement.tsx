@@ -94,6 +94,8 @@ export function UserManagement({ initialUsers, totalCount }: UserManagementProps
     const colors: Record<string, string> = {
       farm_owner: 'bg-purple-100 text-purple-800',
       farm_manager: 'bg-blue-100 text-blue-800',
+      worker: 'bg-green-100 text-green-800',
+      veterinarian: 'bg-orange-100 text-orange-800',
       team_member: 'bg-green-100 text-green-800',
       viewer: 'bg-gray-100 text-gray-800'
     }

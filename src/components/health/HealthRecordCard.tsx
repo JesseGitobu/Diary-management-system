@@ -32,13 +32,17 @@ import {
   Syringe,
   Heart,
   X,
-  Maximize2
+  Maximize2,
+  Image as ImageIcon,
+  ChevronLeft,
+  ChevronRight as ChevronRightIcon
 } from 'lucide-react'
 import { format } from 'date-fns'
 
 interface FollowUpRecord {
   id: string
   record_date: string
+  record_time?: string
   description: string
   veterinarian?: string
   cost?: number
@@ -51,10 +55,19 @@ interface FollowUpRecord {
   next_followup_date?: string
 }
 
+interface HealthRecordImage {
+  id: string
+  image_url: string
+  image_title?: string
+  image_description?: string
+  uploaded_at?: string
+}
+
 interface HealthRecordCardProps {
   record: {
     id: string
     record_date: string
+    record_time?: string
     record_type: string
     description: string
     veterinarian?: string
@@ -78,6 +91,7 @@ interface HealthRecordCardProps {
     created_at?: string
     updated_at?: string
     follow_ups?: FollowUpRecord[]
+    images?: HealthRecordImage[]
     symptoms?: string
     illness_diagnosis?: string
     illness_severity?: string
@@ -104,6 +118,31 @@ interface HealthRecordCardProps {
     pregnancy_result?: 'pending' | 'yes' | 'no'
     calving_outcome?: string
     complications?: string
+    
+    // Post-mortem fields
+    cause_of_death?: string
+    death_circumstances?: string
+    location_of_death?: string
+    suspected_disease?: string
+    necropsy_performed?: boolean
+    necropsy_findings?: string
+    body_disposal_method?: string
+    post_mortem_notes?: string
+    
+    // Deworming fields
+    next_deworming_date?: string
+    deworming_administered_by?: string
+    
+    // Dehorning fields
+    dehorning_method?: string
+    dehorning_reason?: string
+    dehorning_date?: string
+    dehorning_age?: number
+    dehorning_veterinarian?: string
+    anesthesia_used?: boolean
+    anesthesia_type?: string
+    post_dehorning_care?: string
+    dehorning_complications?: string
   }
   onEdit: (recordId: string) => void
   onDelete: (recordId: string) => void
@@ -128,6 +167,12 @@ export function HealthRecordCard({
   const [loadingFollowUps, setLoadingFollowUps] = useState(false)
   const [healthIssues, setHealthIssues] = useState<any[]>([])
   const [loadingHealthIssues, setLoadingHealthIssues] = useState(false)
+  const [images, setImages] = useState<HealthRecordImage[]>(record.images || [])
+  const [loadingImages, setLoadingImages] = useState(false)
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({})
+  const [loadingSignedUrls, setLoadingSignedUrls] = useState(false)
+  const [showImageViewerModal, setShowImageViewerModal] = useState(false)
+  const [currentImageIndex, setCurrentImageIndex] = useState(0)
 
   const { isMobile, isTablet } = useDeviceInfo()
   const useModalView = isMobile || isTablet
@@ -151,6 +196,13 @@ export function HealthRecordCard({
     }
   }, [expanded, showModal, record.id])
 
+  // Fetch signed URLs when images are loaded (for private bucket access)
+  useEffect(() => {
+    if (images.length > 0) {
+      fetchSignedUrls(images)
+    }
+  }, [images])
+
   const loadFollowUps = async () => {
     setLoadingFollowUps(true)
     try {
@@ -163,6 +215,61 @@ export function HealthRecordCard({
       console.error('Error loading follow-ups:', error)
     } finally {
       setLoadingFollowUps(false)
+    }
+  }
+
+  const loadImages = async () => {
+    setLoadingImages(true)
+    try {
+      const response = await fetch(`/api/health/records/${record.id}/images`)
+      if (response.ok) {
+        const data = await response.json()
+        setImages(data.images || [])
+      }
+    } catch (error) {
+      console.error('Error loading images:', error)
+    } finally {
+      setLoadingImages(false)
+    }
+  }
+
+  const fetchSignedUrls = async (imagesToSign: HealthRecordImage[]) => {
+    if (imagesToSign.length === 0) return
+    
+    console.log(`🔐 Fetching ${imagesToSign.length} signed URL(s)...`)
+    setLoadingSignedUrls(true)
+    try {
+      const urls: Record<string, string> = {}
+      
+      // Fetch signed URLs for each image
+      for (const image of imagesToSign) {
+        try {
+          const response = await fetch('/api/health/records/images/signed-url', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ imageId: image.id })
+          })
+          
+          if (response.ok) {
+            const data = await response.json()
+            urls[image.id] = data.signedUrl
+            console.log(`🔐 Signed URL fetched for image ${image.id}`)
+          } else {
+            console.warn(`⚠️ Failed to fetch signed URL for image ${image.id}, using fallback`)
+            urls[image.id] = image.image_url // Fallback to stored URL
+          }
+        } catch (err) {
+          console.error(`❌ Error fetching signed URL for image ${image.id}:`, err)
+          urls[image.id] = image.image_url // Fallback to stored URL
+        }
+      }
+      
+      setSignedUrls(urls)
+      console.log(`✅ All signed URLs fetched`)
+    } catch (error) {
+      console.error('Error fetching signed URLs:', error)
+    } finally {
+      setLoadingSignedUrls(false)
     }
   }
 
@@ -185,6 +292,13 @@ export function HealthRecordCard({
     }
   }
 
+  // Load images when card expands
+  useEffect(() => {
+    if ((expanded || showModal) && images.length === 0) {
+      loadImages()
+    }
+  }, [expanded, showModal, record.id])
+
   const handleExpandClick = () => {
     if (useModalView) {
       setShowModal(true)
@@ -206,6 +320,8 @@ export function HealthRecordCard({
       case 'illness': return '🤒'
       case 'reproductive': return '🤱'
       case 'deworming': return '🪱'
+      case 'post_mortem': return '⚰️'
+      case 'dehorning': return '🔪'
       default: return '📋'
     }
   }
@@ -219,6 +335,8 @@ export function HealthRecordCard({
       case 'illness': return 'bg-yellow-100 text-yellow-800 border-yellow-200'
       case 'reproductive': return 'bg-pink-100 text-pink-800 border-pink-200'
       case 'deworming': return 'bg-orange-100 text-orange-800 border-orange-200'
+      case 'post_mortem': return 'bg-gray-100 text-gray-800 border-gray-200'
+      case 'dehorning': return 'bg-indigo-100 text-indigo-800 border-indigo-200'
       default: return 'bg-gray-100 text-gray-800 border-gray-200'
     }
   }
@@ -273,6 +391,30 @@ export function HealthRecordCard({
       return format(new Date(dateString), 'MM/dd/yy')
     }
     return format(new Date(dateString), 'MM/dd/yyyy')
+  }
+
+  const formatDateTime = (dateString?: string, timeString?: string) => {
+    const dateFormatted = formatDate(dateString)
+    if (!timeString) return dateFormatted
+    
+    // Parse time string (HH:mm format)
+    try {
+      const [hour, minute] = timeString.split(':')
+      const timeFormatted = `${hour}:${minute}`
+      return `${dateFormatted} ${timeFormatted}`
+    } catch {
+      return dateFormatted
+    }
+  }
+
+  const formatTime = (timeString?: string) => {
+    if (!timeString) return ''
+    try {
+      const [hour, minute] = timeString.split(':')
+      return `${hour}:${minute}`
+    } catch {
+      return timeString
+    }
   }
 
   const isOverdue = record.next_due_date && new Date(record.next_due_date) < new Date()
@@ -431,7 +573,7 @@ export function HealthRecordCard({
                   <h5 className="font-semibold text-gray-900 text-sm">
                     {getRecordTypeLabel(record.record_type)}
                   </h5>
-                  <p className="text-xs text-gray-600">{formatDate(record.record_date)}</p>
+                  <p className="text-xs text-gray-600">{formatDateTime(record.record_date, record.record_time)}</p>
                 </div>
                 {record.severity && (
                   <Badge className={`${getSeverityColor(record.severity)} text-xs`}>
@@ -770,15 +912,15 @@ export function HealthRecordCard({
 
                   {record.deworming_dose && (
                     <div>
-                      <p className="text-xs text-gray-600">Dose: {record.deworming_dose}</p>
+                      <p className="text-xs font-semibold text-gray-900 mb-1">Dose:</p>
+                      <p className="text-sm text-gray-800">{record.deworming_dose}</p>
                     </div>
                   )}
 
                   {record.veterinarian && (
                     <div>
-                      <p className="text-xs text-gray-600">
-                        Administered by: {record.veterinarian}
-                      </p>
+                      <p className="text-xs font-semibold text-gray-900 mb-1">Administered by:</p>
+                      <p className="text-sm text-gray-800">{record.veterinarian}</p>
                     </div>
                   )}
 
@@ -818,6 +960,167 @@ export function HealthRecordCard({
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* RECORD DETAILS FOR NON-TIMELINE RECORDS (dehorning, post_mortem) */}
+      {!isTimelineRecord && (
+        <div className="space-y-4">
+          {/* DEHORNING RENDERING */}
+          {record.record_type === 'dehorning' && (
+            <div className="border rounded-lg p-4 bg-gray-50">
+              <h4 className="font-semibold text-gray-900 mb-3 flex items-center space-x-2">
+                {/* <AlertTriangle className="w-4 h-4 text-indigo-600" /> */}
+                <span>Dehorning Details</span>
+              </h4>
+              <div className="space-y-3">
+                {record.dehorning_method && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-900 mb-1">Method:</p>
+                    <p className="text-sm text-gray-800">{record.dehorning_method}</p>
+                  </div>
+                )}
+
+                {record.dehorning_reason && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-900 mb-1">Reason:</p>
+                    <p className="text-sm text-gray-800">{record.dehorning_reason}</p>
+                  </div>
+                )}
+
+                {record.dehorning_date && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-900 mb-1">Date Performed:</p>
+                    <p className="text-sm text-gray-800">{formatDate(record.dehorning_date)}</p>
+                  </div>
+                )}
+
+                {record.dehorning_age && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-900 mb-1">Age at Dehorning:</p>
+                    <p className="text-sm text-gray-800">{record.dehorning_age} months</p>
+                  </div>
+                )}
+
+                {record.dehorning_veterinarian && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-900 mb-1">Performed by:</p>
+                    <p className="text-sm text-gray-800">{record.dehorning_veterinarian}</p>
+                  </div>
+                )}
+
+                {record.anesthesia_used && (
+                  <div className="bg-blue-50 rounded p-2 border border-blue-200">
+                    <div className="flex items-center space-x-2 mb-2">
+                      <Badge className="bg-blue-100 text-blue-800">
+                        Anesthesia Used
+                      </Badge>
+                    </div>
+                    {record.anesthesia_type && (
+                      <p className="text-sm text-blue-800">Type: {record.anesthesia_type}</p>
+                    )}
+                  </div>
+                )}
+
+                {record.post_dehorning_care && (
+                  <div className="bg-green-50 rounded p-2 border border-green-200">
+                    <p className="text-xs font-semibold text-green-800 mb-1">Post-Dehorning Care:</p>
+                    <p className="text-sm text-green-800">{record.post_dehorning_care}</p>
+                  </div>
+                )}
+
+                {record.dehorning_complications && (
+                  <div className="bg-yellow-50 rounded p-2 border border-yellow-200">
+                    <p className="text-xs font-semibold text-yellow-900 mb-1">Complications Observed:</p>
+                    <p className="text-sm text-yellow-800">{record.dehorning_complications}</p>
+                  </div>
+                )}
+
+                {record.description && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-900 mb-1">Additional Notes:</p>
+                    <p className="text-sm text-gray-800">{record.description}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* POST-MORTEM RENDERING */}
+          {record.record_type === 'post_mortem' && (
+            <div className="border rounded-lg p-4 bg-red-50">
+              <h4 className="font-semibold text-gray-900 mb-3 flex items-center space-x-2">
+                <AlertTriangle className="w-4 h-4 text-red-600" />
+                <span>Post-Mortem Details</span>
+              </h4>
+              <div className="space-y-3">
+                {record.cause_of_death && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-900 mb-1">Cause of Death:</p>
+                    <p className="text-sm text-gray-800">{record.cause_of_death}</p>
+                  </div>
+                )}
+
+                {record.death_circumstances && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-900 mb-1">Circumstances:</p>
+                    <p className="text-sm text-gray-800">{record.death_circumstances}</p>
+                  </div>
+                )}
+
+                {record.location_of_death && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-900 mb-1">Location:</p>
+                    <p className="text-sm text-gray-800">{record.location_of_death}</p>
+                  </div>
+                )}
+
+                {record.suspected_disease && (
+                  <div className="bg-red-100 rounded p-2 border border-red-300">
+                    <p className="text-xs font-semibold text-red-800 mb-1">Suspected Disease:</p>
+                    <p className="text-sm text-red-800">{record.suspected_disease}</p>
+                  </div>
+                )}
+
+                {record.necropsy_performed && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-900 mb-1">Necropsy:</p>
+                    <Badge className="bg-yellow-100 text-yellow-800">
+                      Performed
+                    </Badge>
+                  </div>
+                )}
+
+                {record.necropsy_findings && (
+                  <div className="bg-yellow-50 rounded p-2 border border-yellow-200">
+                    <p className="text-xs font-semibold text-yellow-800 mb-1">Necropsy Findings:</p>
+                    <p className="text-sm text-yellow-800">{record.necropsy_findings}</p>
+                  </div>
+                )}
+
+                {record.body_disposal_method && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-900 mb-1">Disposal Method:</p>
+                    <p className="text-sm text-gray-800">{record.body_disposal_method}</p>
+                  </div>
+                )}
+
+                {record.description && !record.post_mortem_notes && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-900 mb-1">Notes:</p>
+                    <p className="text-sm text-gray-800">{record.description}</p>
+                  </div>
+                )}
+
+                {record.post_mortem_notes && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-900 mb-1">Post-Mortem Notes:</p>
+                    <p className="text-sm text-gray-800">{record.post_mortem_notes}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -862,7 +1165,7 @@ export function HealthRecordCard({
                     <h5 className="font-semibold text-gray-900 text-sm">
                       Follow-up {followUps.length - index}
                     </h5>
-                    <p className="text-xs text-gray-600">{formatDate(followUp.record_date)}</p>
+                    <p className="text-xs text-gray-600">{formatDateTime(followUp.record_date, followUp.record_time)}</p>
                   </div>
                   <div className="flex flex-col items-end space-y-1 ml-2">
                     <Badge className={`text-xs ${getStatusColor(followUp.follow_up_status)} border`}>
@@ -977,7 +1280,9 @@ export function HealthRecordCard({
       'injury': 'Injury Record',
       'illness': 'Illness Record',
       'reproductive': 'Reproductive Record',
-      'deworming': 'Deworming Record'
+      'deworming': 'Deworming Record',
+      'post_mortem': 'Post-Mortem Record',
+      'dehorning': 'Dehorning Record'
     }
     return labels[type] || 'Initial Record'
   }
@@ -990,7 +1295,9 @@ export function HealthRecordCard({
       'injury': 'bg-red-500',
       'illness': 'bg-yellow-500',
       'reproductive': 'bg-pink-500',
-      'deworming': 'bg-orange-500'
+      'deworming': 'bg-orange-500',
+      'post_mortem': 'bg-gray-600',
+      'dehorning': 'bg-indigo-500'
     }
     return colors[type] || 'bg-blue-500'
   }
@@ -1003,7 +1310,9 @@ export function HealthRecordCard({
       'injury': 'bg-red-50 border-red-200',
       'illness': 'bg-yellow-50 border-yellow-200',
       'reproductive': 'bg-pink-50 border-pink-200',
-      'deworming': 'bg-orange-50 border-orange-200'
+      'deworming': 'bg-orange-50 border-orange-200',
+      'post_mortem': 'bg-gray-50 border-gray-200',
+      'dehorning': 'bg-indigo-50 border-indigo-200'
     }
     return colors[type] || 'bg-blue-50 border-blue-200'
   }
@@ -1016,7 +1325,9 @@ export function HealthRecordCard({
       'injury': 'border-red-200',
       'illness': 'border-yellow-200',
       'reproductive': 'border-pink-200',
-      'deworming': 'border-orange-200'
+      'deworming': 'border-orange-200',
+      'post_mortem': 'border-gray-200',
+      'dehorning': 'border-indigo-200'
     }
     return colors[type] || 'border-blue-200'
   }
@@ -1051,10 +1362,10 @@ export function HealthRecordCard({
             <div className="flex-1 grid grid-cols-3 gap-4">
               {/* Date */}
               <div>
-                <p className="text-xs text-gray-500 mb-1">Date</p>
+                <p className="text-xs text-gray-500 mb-1">Date & Time</p>
                 <div className="flex items-center space-x-1 text-sm text-gray-900">
                   <Calendar className="w-3 h-3" />
-                  <span>{formatDate(record.record_date)}</span>
+                  <span>{formatDateTime(record.record_date, record.record_time)}</span>
                 </div>
               </div>
 
@@ -1216,21 +1527,6 @@ export function HealthRecordCard({
             {loadingFollowUps || loadingHealthIssues ? (
               <div className="flex justify-center py-8">
                 <LoadingSpinner size="lg" />
-              </div>
-            ) : followUps.length === 0 && !isTimelineRecord ? (
-              <div className="text-center py-6 text-gray-500">
-                <MessageSquare className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                <p className="text-sm">No follow-ups recorded yet</p>
-                {canEdit && shouldShowFollowUp && onFollowUp && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => onFollowUp(record)}
-                    className="mt-2 text-green-600 hover:text-green-700"
-                  >
-                    Add First Follow-up
-                  </Button>
-                )}
               </div>
             ) : (
               renderTimelineContent()
@@ -1397,7 +1693,7 @@ export function HealthRecordCard({
           <div className="flex items-center justify-between text-xs flex-wrap gap-2">
             <div className="flex items-center space-x-1 text-gray-600">
               <Calendar className="w-3 h-3" />
-              <span>{formatDate(record.record_date)}</span>
+              <span>{formatDateTime(record.record_date, record.record_time)}</span>
             </div>
 
             {record.cost && record.cost > 0 && (
@@ -1553,6 +1849,42 @@ export function HealthRecordCard({
               )}
             </div>
 
+            {/* Images Gallery */}
+            {images.length > 0 && (
+              <div className="bg-white rounded-lg p-4 mt-4 shadow-sm">
+                <h5 className="text-sm font-semibold text-gray-700 mb-3 flex items-center space-x-2">
+                  <ImageIcon className="w-4 h-4 text-farm-green" />
+                  <span>Photos ({images.length})</span>
+                </h5>
+                <div className="grid grid-cols-2 gap-3">
+                  {images.map((image, idx) => (
+                    <div
+                      key={image.id}
+                      onClick={() => {
+                        setCurrentImageIndex(idx)
+                        setShowImageViewerModal(true)
+                      }}
+                      className="relative bg-gray-100 rounded-lg overflow-hidden group cursor-pointer aspect-square"
+                    >
+                      <img
+                        src={signedUrls[image.id] || image.image_url}
+                        alt={image.image_title || `Image ${idx + 1}`}
+                        className="w-full h-full object-cover group-hover:opacity-80 transition-opacity"
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30">
+                        <Maximize2 className="w-6 h-6 text-white" />
+                      </div>
+                      {image.image_title && (
+                        <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs p-1 truncate">
+                          {image.image_title}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Additional Info */}
             {record.notes && (
               <div className="bg-white rounded-lg p-4 mt-4 shadow-sm">
@@ -1601,6 +1933,127 @@ export function HealthRecordCard({
               Close
             </Button>
           </div>
+        </div>
+      </Modal>
+
+      {/* Image Viewer Modal */}
+      <Modal
+        isOpen={showImageViewerModal}
+        onClose={() => setShowImageViewerModal(false)}
+        className="max-w-4xl"
+        size="xl"
+        closeOnOverlayClick={true}
+      >
+        <div className="bg-black rounded-lg">
+          {/* Image Viewer Header */}
+          <div className="flex items-center justify-between p-4 bg-black text-white">
+            <h3 className="text-lg font-semibold flex items-center space-x-2">
+              <ImageIcon className="w-5 h-5" />
+              <span>Photo Gallery</span>
+            </h3>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowImageViewerModal(false)}
+              className="text-white hover:text-gray-200"
+            >
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
+
+          {/* Image Viewer Content */}
+          {images.length > 0 && (
+            <div className="relative bg-black">
+              {/* Main Image */}
+              <div className="relative w-full bg-black flex items-center justify-center" style={{ maxHeight: '60vh' }}>
+                {loadingSignedUrls && currentImageIndex < images.length ? (
+                  <div className="flex flex-col items-center justify-center text-white space-y-2">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+                    <p className="text-sm">Loading image...</p>
+                  </div>
+                ) : (
+                  <img
+                    src={signedUrls[images[currentImageIndex]?.id] || images[currentImageIndex]?.image_url}
+                    alt={images[currentImageIndex]?.image_title || `Image ${currentImageIndex + 1}`}
+                    className="max-w-full max-h-full object-contain"
+                  />
+                )}
+              </div>
+
+              {/* Image Info */}
+              <div className="p-4 bg-gray-900 text-white">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex-1">
+                    {images[currentImageIndex].image_title && (
+                      <h4 className="text-sm font-semibold text-white mb-1">
+                        {images[currentImageIndex].image_title}
+                      </h4>
+                    )}
+                    {images[currentImageIndex].image_description && (
+                      <p className="text-xs text-gray-400">
+                        {images[currentImageIndex].image_description}
+                      </p>
+                    )}
+                  </div>
+                  <span className="text-xs text-gray-400 ml-4">
+                    {currentImageIndex + 1} / {images.length}
+                  </span>
+                </div>
+
+                {images[currentImageIndex].uploaded_at && (
+                  <p className="text-xs text-gray-500">
+                    Uploaded: {formatDate(images[currentImageIndex].uploaded_at)}
+                  </p>
+                )}
+              </div>
+
+              {/* Navigation Controls */}
+              {images.length > 1 && (
+                <div className="flex items-center justify-between gap-4 p-4 bg-gray-900">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentImageIndex((prev) => (prev - 1 + images.length) % images.length)}
+                    className="flex items-center space-x-2"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                    <span>Previous</span>
+                  </Button>
+
+                  {/* Thumbnails */}
+                  <div className="flex gap-2 overflow-x-auto flex-1">
+                    {images.map((image, idx) => (
+                      <button
+                        key={image.id}
+                        onClick={() => setCurrentImageIndex(idx)}
+                        className={`flex-shrink-0 w-12 h-12 rounded border-2 overflow-hidden transition-all ${
+                          idx === currentImageIndex
+                            ? 'border-blue-500 opacity-100'
+                            : 'border-gray-600 opacity-50 hover:opacity-75'
+                        }`}
+                      >
+                        <img
+                          src={signedUrls[image.id] || image.image_url}
+                          alt={`Thumbnail ${idx + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                      </button>
+                    ))}
+                  </div>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentImageIndex((prev) => (prev + 1) % images.length)}
+                    className="flex items-center space-x-2"
+                  >
+                    <span>Next</span>
+                    <ChevronRightIcon className="w-4 h-4" />
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </Modal>
     </>

@@ -30,7 +30,7 @@ export default async function HealthRecordsPage() {
   
   // Get all necessary data
   const [animals, healthRecords, healthStats, upcomingTasks] = await Promise.all([
-    getFarmAnimals(userRole.farm_id),
+    getFarmAnimals(userRole.farm_id, { includeInactive: true }),
     getAnimalHealthRecords(userRole.farm_id, { limit: 100 }),
     getHealthStats(userRole.farm_id),
     getUpcomingHealthTasks(userRole.farm_id, 30)

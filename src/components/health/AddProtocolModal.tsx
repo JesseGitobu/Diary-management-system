@@ -18,7 +18,7 @@ import type { ProtocolFieldConfig } from '@/lib/health/protocol-presets'
 // Base schema - will be extended with protocol-specific fields
 const baseProtocolSchema = z.object({
   protocol_name: z.string().min(2, 'Protocol name must be at least 2 characters'),
-  protocol_type: z.enum(['vaccination', 'treatment', 'checkup', 'breeding', 'nutrition', 'deworming_parasites', 'post_mortem'] as const),
+  protocol_type: z.enum(['vaccination', 'treatment', 'checkup', 'breeding', 'nutrition', 'deworming_parasites', 'dehorning', 'post_mortem'] as const),
   description: z.string().min(5, 'Description must be at least 5 characters'),
   frequency_type: z.enum(['daily', 'weekly', 'monthly', 'quarterly', 'yearly', 'one_time']),
   frequency_value: z.number().min(1).max(365),

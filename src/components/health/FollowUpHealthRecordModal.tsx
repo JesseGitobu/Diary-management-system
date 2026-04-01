@@ -34,7 +34,7 @@ interface HealthRecord {
   id: string
   animal_id: string
   record_date: string
-  record_type: 'vaccination' | 'treatment' | 'checkup' | 'injury' | 'illness' | 'reproductive' | 'deworming'
+  record_type: 'vaccination' | 'treatment' | 'checkup' | 'injury' | 'illness' | 'reproductive' | 'deworming' | 'dehorning' | 'post_mortem'
   description: string
   veterinarian?: string
   cost?: number

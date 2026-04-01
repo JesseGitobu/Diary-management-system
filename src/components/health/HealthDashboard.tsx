@@ -1673,10 +1673,10 @@ export function HealthRecordsContent({
                   {/* Display Health Records Section */}
                   {filteredHealthRecords.length > 0 && (
                     <div className="space-y-3">
-                      <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                      {/* <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
                         <Activity className="w-4 h-4" />
                         Medical Timeline ({filteredHealthRecords.length})
-                      </h4>
+                      </h4> */}
                       <div className={isMobile || isTablet ? `grid ${getMobileGridCols(paginatedHealthRecords.length)} gap-4` : 'space-y-3'}>
                         {paginatedHealthRecords.map((record) => (
                           <HealthRecordCard
