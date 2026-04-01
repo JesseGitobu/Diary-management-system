@@ -17,7 +17,7 @@ export interface VeterinaryVisit {
   special_instructions?: string
   estimated_cost?: number
   actual_cost?: number
-  status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled' | 'rescheduled'
+  status: 'scheduled' | 'completed' | 'cancelled' | 'rescheduled'
   preparation_notes?: string
   visit_notes?: string
   follow_up_required: boolean
@@ -157,11 +157,11 @@ export async function getVeterinaryVisits(farmId: string, filters: VisitFilters 
 
     // Apply filters
     if (filters.status) {
-      query = query.eq('status', filters.status)
+      query = query.eq('status', filters.status as 'scheduled' | 'completed' | 'cancelled' | 'rescheduled')
     }
 
     if (filters.visit_type) {
-      query = query.eq('visit_type', filters.visit_type)
+      query = query.eq('visit_type', filters.visit_type as 'routine_checkup' | 'vaccination' | 'emergency' | 'consultation' | 'breeding' | 'other')
     }
 
     if (filters.veterinarian_name) {
@@ -169,7 +169,7 @@ export async function getVeterinaryVisits(farmId: string, filters: VisitFilters 
     }
 
     if (filters.priority_level) {
-      query = query.eq('priority_level', filters.priority_level)
+      query = query.eq('priority_level', filters.priority_level as 'low' | 'medium' | 'high' | 'urgent')
     }
 
     if (filters.upcoming) {
@@ -526,12 +526,14 @@ export async function getVisitStatistics(farmId: string) {
   const supabase = await createServerSupabaseClient()
 
   try {
-    // FIXED: Cast arguments to any to bypass type check on RPC call
-    const { data, error } = await supabase
-      .rpc('get_visit_statistics', { farm_uuid: farmId } as any)
+    // Fetch visit data to calculate statistics
+    const { data: visits, error } = await supabase
+      .from('veterinary_visits')
+      .select('*')
+      .eq('farm_id', farmId)
 
     if (error) {
-      console.error('Error fetching visit statistics:', error)
+      console.error('Error fetching visits for statistics:', error)
       return { 
         success: false, 
         error: error.message, 
@@ -550,7 +552,25 @@ export async function getVisitStatistics(farmId: string) {
       }
     }
 
-    return { success: true, data: data || {} }
+    // Calculate statistics from the data
+    const visitList = (visits as any[]) || []
+    const now = new Date()
+    const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+    
+    const stats = {
+      total_visits: visitList.length,
+      scheduled_visits: visitList.filter(v => v.status === 'scheduled').length,
+      completed_visits: visitList.filter(v => v.status === 'completed').length,
+      cancelled_visits: visitList.filter(v => v.status === 'cancelled').length,
+      upcoming_visits: visitList.filter(v => v.status === 'scheduled' && new Date(v.scheduled_datetime) > now).length,
+      overdue_follow_ups: visitList.filter(v => v.follow_up_required && v.follow_up_date && new Date(v.follow_up_date) <= now).length,
+      this_month_visits: visitList.filter(v => new Date(v.created_at) >= thisMonth).length,
+      emergency_visits: visitList.filter(v => v.priority_level === 'urgent' || v.priority_level === 'high').length,
+      average_cost: visitList.length > 0 ? visitList.reduce((sum, v) => sum + (v.actual_cost || 0), 0) / visitList.length : 0,
+      total_cost: visitList.reduce((sum, v) => sum + (v.actual_cost || 0), 0)
+    }
+
+    return { success: true, data: stats }
   } catch (error) {
     console.error('Error in getVisitStatistics:', error)
     return { 

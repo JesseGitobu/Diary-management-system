@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     
     // Get recent breedings that don't have confirmed pregnancy status
     const { data: breedings, error } = await supabase
-      .from('breeding_records')
+      .from('service_records')
       .select(`
         *,
         animals (

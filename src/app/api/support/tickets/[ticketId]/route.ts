@@ -30,7 +30,7 @@ export async function GET(
     const { ticketId } = await params
 
     // Fetch ticket (verify ownership)
-    const { data: ticket, error: ticketError } = await supabase
+    const { data: ticket, error: ticketError } = await (supabase as any)
       .from('support_tickets')
       .select('*')
       .eq('id', ticketId)
@@ -45,7 +45,7 @@ export async function GET(
     }
 
     // Fetch messages (exclude internal messages)
-    const { data: messages, error: messagesError } = await supabase
+    const { data: messages, error: messagesError } = await (supabase as any)
       .from('support_ticket_messages')
       .select('*')
       .eq('ticket_id', ticketId)
@@ -106,8 +106,8 @@ export async function PATCH(
     }
 
     // Verify ticket ownership
-    const { data: ticket, error: verifyError } = await (supabase
-      .from('support_tickets') as any)
+    const { data: ticket, error: verifyError } = await (supabase as any)
+      .from('support_tickets')
       .select('user_id')
       .eq('id', ticketId)
       .single()
@@ -120,8 +120,8 @@ export async function PATCH(
     }
 
     // Update status
-    const { data, error } = await (supabase
-      .from('support_tickets') as any)
+    const { data, error } = await (supabase as any)
+      .from('support_tickets')
       .update({
         status,
         updated_at: new Date().toISOString(),

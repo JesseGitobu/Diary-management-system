@@ -36,8 +36,8 @@ export async function handlePostBreedingAutomation(
     checkDate.setDate(checkDate.getDate() + settings.pregnancyCheckDays)
 
     // FIXED: Cast to any to bypass 'never' type on insert
-    await (supabase
-      .from('breeding_calendar') as any)
+    await (supabase as any)
+      .from('breeding_calendar') 
       .insert({
         farm_id: farmId,
         animal_id: animalId,
@@ -77,8 +77,8 @@ export async function handlePostPregnancyConfirmationAutomation(
     )
 
     // FIXED: Cast to any
-    await (supabase
-      .from('breeding_calendar') as any)
+    await (supabase as any)
+      .from('breeding_calendar') 
       .insert({
         farm_id: farmId,
         animal_id: animalId,
@@ -91,8 +91,8 @@ export async function handlePostPregnancyConfirmationAutomation(
 
   // Schedule calving reminder
   // FIXED: Cast to any
-  await (supabase
-    .from('breeding_calendar') as any)
+  await (supabase as any)
+    .from('breeding_calendar') 
     .insert({
       farm_id: farmId,
       animal_id: animalId,
@@ -130,8 +130,8 @@ export async function handlePostCalvingAutomation(
 
   // Schedule breeding reminder
   // FIXED: Cast to any
-  await (supabase
-    .from('breeding_calendar') as any)
+  await (supabase as any)
+    .from('breeding_calendar') 
     .insert({
       farm_id: farmId,
       animal_id: animalId,

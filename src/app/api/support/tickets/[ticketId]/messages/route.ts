@@ -30,8 +30,8 @@ export async function GET(
     const { ticketId } = await params
 
     // Verify ticket ownership
-    const { data: ticket, error: verifyError } = await (supabase
-      .from('support_tickets') as any)
+    const { data: ticket, error: verifyError } = await (supabase as any)
+      .from('support_tickets')
       .select('user_id')
       .eq('id', ticketId)
       .single()
@@ -44,7 +44,7 @@ export async function GET(
     }
 
     // Fetch messages
-    const { data: messages, error: messagesError } = await supabase
+    const { data: messages, error: messagesError } = await (supabase as any)
       .from('support_ticket_messages')
       .select('*')
       .eq('ticket_id', ticketId)
@@ -102,8 +102,8 @@ export async function POST(
     }
 
     // Verify ticket ownership and that it's not closed
-    const { data: ticket, error: verifyError } = await (supabase
-      .from('support_tickets') as any)
+    const { data: ticket, error: verifyError } = await (supabase as any)
+      .from('support_tickets')
       .select('user_id, status')
       .eq('id', ticketId)
       .single()
@@ -123,8 +123,8 @@ export async function POST(
     }
 
     // Add message
-    const { data, error } = await (supabase
-      .from('support_ticket_messages') as any)
+    const { data, error } = await (supabase as any)
+      .from('support_ticket_messages')
       .insert({
         ticket_id: ticketId,
         sender_id: user.id,
@@ -145,8 +145,8 @@ export async function POST(
     }
 
     // Update ticket's updated_at timestamp
-    await (supabase
-      .from('support_tickets') as any)
+    await (supabase as any)
+      .from('support_tickets')
       .update({ updated_at: new Date().toISOString() })
       .eq('id', ticketId)
 

@@ -166,8 +166,8 @@ export async function recordFeedConsumption(
         }))
 
         // FIXED: Cast to any
-        const { error: animalError } = await (supabase
-          .from('feed_consumption_animals') as any)
+        const { error: animalError } = await (supabase as any)
+          .from('feed_consumption_animals') 
           .insert(animalRecords)
 
         if (animalError) {
@@ -275,8 +275,8 @@ export async function updateFeedConsumption(
     // Delete existing animal records for individual/batch modes
     if (data.mode === 'individual' || data.mode === 'batch') {
       // FIXED: Cast to any
-      await (supabase
-        .from('feed_consumption_animals') as any)
+      await (supabase as any)
+        .from('feed_consumption_animals') 
         .delete()
         .eq('consumption_id', recordId)
 
@@ -295,8 +295,8 @@ export async function updateFeedConsumption(
         }))
 
         // FIXED: Cast to any
-        const { error: animalError } = await (supabase
-          .from('feed_consumption_animals') as any)
+        const { error: animalError } = await (supabase as any)
+          .from('feed_consumption_animals') 
           .insert(animalRecords)
 
         if (animalError) {
@@ -358,8 +358,8 @@ export async function deleteFeedConsumption(
 
     // Delete animal consumption records first (due to foreign key constraint)
     // FIXED: Cast to any
-    await (supabase
-      .from('feed_consumption_animals') as any)
+    await (supabase as any)
+      .from('feed_consumption_animals') 
       .delete()
       .eq('consumption_id', recordId)
 

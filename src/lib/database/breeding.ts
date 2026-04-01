@@ -101,7 +101,7 @@ export async function generateCalfTag(
       return `${parentAnimalTag || 'CALF'}-${year}${month}C`
     }
 
-    const tagSettings = settings as AnimalTaggingSettings
+    const tagSettings = settings as any
     console.log('🐄 generateCalfTag: Settings loaded:', { numbering_system: tagSettings.numbering_system, custom_format: tagSettings.custom_format })
 
     const calvingYear = new Date(calvingDate).getFullYear()
@@ -115,7 +115,7 @@ export async function generateCalfTag(
       calfTag = tagSettings.custom_format
         .replace('{PREFIX}', tagSettings.tag_prefix || 'COW')
         .replace('{YEAR}', tagSettings.include_year_in_tag ? calvingYear.toString() : '')
-        .replace(/\{NUMBER:(\d+)\}/, (match, digits) => {
+        .replace(/\{NUMBER:(\d+)\}/, (match: string, digits: string) => {
           const padLength = parseInt(digits, 10)
           return tagSettings.padding_zeros
             ? nextNumber.toString().padStart(padLength, '0')

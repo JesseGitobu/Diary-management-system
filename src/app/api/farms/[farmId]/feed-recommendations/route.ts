@@ -123,7 +123,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     // If status is 'accepted', we should create a feeding plan
     if (body.status === 'accepted') {
       // Store acceptance in recommendations table (if exists) or create a log
-      const { error: logError } = await supabase
+      const { error: logError } = await (supabase as any)
         .from('feed_recommendation_logs')
         .insert([
           {

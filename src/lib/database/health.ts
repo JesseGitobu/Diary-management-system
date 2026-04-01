@@ -287,7 +287,7 @@ export async function createHealthRecord(data: HealthRecordData, operationId?: s
     // Update the health attention tracking table
     if (data.is_auto_generated) {
       const { data: updateData, error: updateError } = await (supabase
-        .from('animals_requiring_health_attention') as any)
+        .from('animal_health_status_attention') as any)
         .update({
           health_record_id: record.id,
           health_record_created: true,
@@ -323,7 +323,7 @@ export async function markHealthAttentionCompleted(animalId: string, farmId: str
   
   try {
     const { data, error } = await (supabase
-      .from('animals_requiring_health_attention') as any)
+      .from('animal_health_status_attention') as any)
       .update({
         health_record_completed: true,
         resolved_at: new Date().toISOString(),
@@ -416,7 +416,7 @@ export async function getAnimalHealthRecords(
     }
     
     if (options.recordType) {
-      query = query.eq('record_type', options.recordType)
+      query = query.eq('record_type', options.recordType as any)
     }
     
     if (options.limit) {
@@ -791,7 +791,7 @@ export async function getVeterinaryVisits(farmId: string, options: {
 
     // Apply filters
     if (options.status) {
-      query = query.eq('status', options.status)
+      query = query.eq('status', options.status as any)
     }
 
     if (options.upcoming) {
@@ -1075,7 +1075,7 @@ export async function getVaccinations(farmId: string, filters: {
 
     // Apply filters
     if (filters.vaccineType) {
-      query = query.eq('vaccine_type', filters.vaccineType)
+      query = query.eq('vaccine_type', filters.vaccineType as any)
     }
 
     if (filters.startDate) {
@@ -1777,7 +1777,7 @@ export async function getHealthRecordsWithFollowUps(
     }
     
     if (options.recordType) {
-      query = query.eq('record_type', options.recordType)
+      query = query.eq('record_type', options.recordType as any)
     }
     
     if (options.limit) {
@@ -2532,7 +2532,7 @@ export async function getHealthAlerts(farmId: string) {
       .select('id, tag_number, name, health_status')
       .eq('farm_id', farmId)
       .eq('status', 'active')
-      .in('health_status', ['sick', 'requires_attention', 'quarantined'])
+      .in('health_status', ['sick', 'injured', 'quarantine'] as any)
     
     // FIXED: Cast to any[]
     const concerningAnimals = (concerningAnimalsData as any[]) || []
@@ -2837,7 +2837,7 @@ export async function recalculateAllAnimalHealthStatuses(farmId: string) {
   try {
     // FIXED: Cast rpc args to any
     const { data, error } = await supabase
-      .rpc('recalculate_farm_animal_health_status', { farm_id_param: farmId } as any)
+      .rpc('refresh_animal_health_status_attention', { farm_id_param: farmId } as any)
     
     if (error) {
       console.error('Error recalculating health statuses:', error)

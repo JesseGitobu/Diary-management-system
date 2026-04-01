@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
             included_data: {
               animals: true,
               health_records: true,
-              breeding_records: true,
+              service_records: true,
               production_records: true
             }
           })

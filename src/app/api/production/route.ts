@@ -81,15 +81,15 @@ export async function POST(request: NextRequest) {
     // Check for mastitis test requirement from settings
     const supabase = await createServerSupabaseClient()
     const { data: settingsData } = await supabase
-      .from('production_distribution_settings')
-      .select('settings')
+      .from('farm_production_settings')
+      .select('require_mastitis_test')
       .eq('farm_id', userRole.farm_id)
       .single() as any
     
-    const settings = (settingsData as any)?.settings || {}
+    const settings = (settingsData as any) || {}
     
     // If mastitis test is required, validate it's performed
-    if (settings.requireMastitisTest && !productionData.mastitis_test_performed) {
+    if (settings.require_mastitis_test && !productionData.mastitis_test_performed) {
       return NextResponse.json({ 
         error: 'Mastitis test is required for this farm. Please perform and record the mastitis test before saving this record.' 
       }, { status: 400 })

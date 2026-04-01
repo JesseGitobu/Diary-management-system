@@ -130,7 +130,7 @@ export async function GET(request: NextRequest) {
 
     // ✅ NEW: Check for breeding records (indicates context-based status)
     const { data: breedingRecords } = await supabase
-      .from('breeding_records')
+      .from('service_records')
       .select('id')
       .eq('animal_id', animalId)
       .limit(1)

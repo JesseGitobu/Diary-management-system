@@ -440,10 +440,19 @@ export function ImportAnimalsModal({
         }
       })
 
+      console.log('📤 Sending import request with', validatedAnimals.length, 'animals')
       const result = await importAnimalsActionWithAuth(farmId, validatedAnimals as any)
 
       clearInterval(progressInterval)
       setImportProgress(100)
+
+      console.log('📥 Server response:', result)
+      
+      // Validate response structure
+      if (!result || typeof result !== 'object') {
+        console.error('❌ Invalid response:', result)
+        throw new Error(`An unexpected response was received from the server. Expected an object but got: ${typeof result}`)
+      }
 
       if (result.success) {
         setImportedCount(result.imported)
@@ -456,11 +465,13 @@ export function ImportAnimalsModal({
 
         setStep('complete')
       } else {
+        console.error('❌ Import failed:', result.message, result.errors)
         throw new Error(result.message || 'Import failed')
       }
     } catch (error) {
-      console.error('Import error:', error)
-      alert(`Import failed: ${error}`)
+      console.error('❌ Import error:', error)
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      alert(`Import failed: ${errorMessage}`)
       setStep('preview')
     } finally {
       setIsImporting(false)

@@ -4,8 +4,10 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react'
 import { User } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
-import { UserRole } from '@/lib/supabase/types'
+import type { Database } from '@/lib/supabase/types'
 import { debugLogger } from '@/lib/utils/debugLogger'
+
+type UserRole = Database["public"]["Enums"]["user_role"] | 'super_admin' | null
 
 type SessionStatus = 'loading' | 'authenticated' | 'unauthenticated' | 'error'
 

@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
 
     // Apply filters
     if (status) {
-      query = query.eq('distribution_status', status)
+      query = query.eq('distribution_status', status as any)
     }
     
     if (dateFrom) {

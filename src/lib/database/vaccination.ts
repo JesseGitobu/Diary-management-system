@@ -28,8 +28,8 @@ export interface VaccinationSchedule {
 export async function createVaccinationProtocol(protocol: VaccinationProtocol) {
   const supabase = await createServerSupabaseClient()
   
-  const { data, error } = await (supabase
-    .from('vaccination_protocols') as any)
+  const { data, error } = await ((supabase as any)
+    .from('vaccination_protocols'))
     .insert(protocol)
     .select()
     .single()
@@ -45,12 +45,12 @@ export async function createVaccinationProtocol(protocol: VaccinationProtocol) {
 export async function getVaccinationProtocols(farmId: string) {
   const supabase = await createServerSupabaseClient()
   
-  const { data, error } = await supabase
+  const { data, error } = await ((supabase as any)
     .from('vaccination_protocols')
     .select('*')
     .eq('farm_id', farmId)
     .eq('is_active', true)
-    .order('name')
+    .order('name')) as any
   
   if (error) {
     console.error('Error fetching vaccination protocols:', error)
@@ -66,11 +66,11 @@ export async function generateVaccinationSchedule(animalId: string, protocolId: 
   
   try {
     // Get protocol details
-    const { data: protocolData, error: protocolError } = await supabase
+    const { data: protocolData, error: protocolError } = await ((supabase as any)
       .from('vaccination_protocols')
       .select('*')
       .eq('id', protocolId)
-      .single()
+      .single()) as any
     
     if (protocolError) throw protocolError
     
@@ -115,8 +115,8 @@ export async function generateVaccinationSchedule(animalId: string, protocolId: 
     
     // Insert all schedules
     // FIXED: Cast to any for insert
-    const { data, error } = await (supabase
-      .from('vaccination_schedules') as any)
+    const { data, error } = await ((supabase as any)
+      .from('vaccination_schedules'))
       .insert(schedules)
       .select()
     
@@ -142,7 +142,7 @@ export async function getVaccinationSchedules(farmId: string, status?: string) {
 
   if (animalIds.length === 0) return []
 
-  let query = supabase
+  let query = ((supabase as any)
     .from('vaccination_schedules')
     .select(`
       *,
@@ -160,10 +160,10 @@ export async function getVaccinationSchedules(farmId: string, status?: string) {
       )
     `)
     .in('animal_id', animalIds)
-    .order('scheduled_date')
+    .order('scheduled_date')) as any
   
   if (status) {
-    query = query.eq('status', status)
+    query = query.eq('status', status as 'pending' | 'completed' | 'overdue' | 'skipped')
   }
   
   const { data, error } = await query
@@ -185,8 +185,8 @@ export async function completeVaccination(scheduleId: string, data: {
   const supabase = await createServerSupabaseClient()
   
   // FIXED: Cast to any for update
-  const { error } = await (supabase
-    .from('vaccination_schedules') as any)
+  const { error } = await ((supabase as any)
+    .from('vaccination_schedules'))
     .update({
       status: 'completed',
       actual_date: data.actual_date,
@@ -217,7 +217,7 @@ export async function getOverdueVaccinations(farmId: string) {
 
   if (animalIds.length === 0) return []
 
-  const { data: overdueData, error } = await supabase
+  const { data: overdueData, error } = await ((supabase as any)
     .from('vaccination_schedules')
     .select(`
       *,
@@ -233,7 +233,7 @@ export async function getOverdueVaccinations(farmId: string) {
     `)
     .in('animal_id', animalIds)
     .eq('status', 'pending')
-    .lt('scheduled_date', today)
+    .lt('scheduled_date', today)) as any
   
   if (error) {
     console.error('Error fetching overdue vaccinations:', error)
@@ -246,8 +246,8 @@ export async function getOverdueVaccinations(farmId: string) {
   // Update status to overdue
   if (data.length) {
     // FIXED: Cast to any for update
-    await (supabase
-      .from('vaccination_schedules') as any)
+    await ((supabase as any)
+      .from('vaccination_schedules'))
       .update({ status: 'overdue' })
       .in('id', data.map(v => v.id))
   }

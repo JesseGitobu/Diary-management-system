@@ -987,7 +987,7 @@ async function autoGenerateBreedingRecords(
           }
           
           const { data: breedingRecord, error: breedingError } = await (supabase as any)
-            .from('breeding_records')
+            .from('service_records')
             .insert(breedingRecordData)
             .select()
             .single()

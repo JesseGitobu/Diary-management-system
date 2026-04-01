@@ -16,7 +16,7 @@ export async function generateProductionReport(filters: ReportFilters) {
   
   try {
     // Production summary data
-    const { data: productionSummaryData } = await supabase
+    const { data: productionSummaryData } = await (supabase as any)
       .from('daily_production_summary')
       .select('*')
       .eq('farm_id', filters.farmId)
@@ -125,8 +125,8 @@ export async function generateFeedReport(filters: ReportFilters) {
     const feedSummary = (feedSummaryData as any[]) || []
 
     // Feed consumption by type
-    const { data: feedConsumptionData } = await supabase
-      .from('feed_consumption')
+    const { data: feedConsumptionData } = await (supabase as any)
+      .from('feed_consumption_ records')
       .select(`
         *,
         feed_types (

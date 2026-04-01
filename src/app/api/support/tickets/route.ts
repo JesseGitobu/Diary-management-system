@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await ( supabase as any)
       .from('support_tickets')
       .select('*')
       .eq('user_id', user.id)
@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
 
     // Verify farm ownership
     const { data: farm, error: farmError } = await supabase
-      .from('farms')
+      .from('user_roles')
       .select('id')
       .eq('id', farm_id)
       .eq('user_id', user.id)
@@ -104,8 +104,8 @@ export async function POST(request: NextRequest) {
     const ticket_number = `TKT-${year}-${random}`
 
     // Create ticket
-    const { data, error } = await (supabase
-      .from('support_tickets') as any)
+    const { data, error } = await (supabase as any)
+      .from('support_tickets')
       .insert({
         ticket_number,
         user_id: user.id,

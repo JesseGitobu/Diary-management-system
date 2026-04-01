@@ -5,8 +5,8 @@ type FeedType = Database['public']['Tables']['feed_types']['Row']
 type FeedTypeInsert = Database['public']['Tables']['feed_types']['Insert']
 type FeedInventory = Database['public']['Tables']['feed_inventory']['Row']
 type FeedInventoryInsert = Database['public']['Tables']['feed_inventory']['Insert']
-type FeedConsumption = Database['public']['Tables']['feed_consumption']['Row']
-type FeedConsumptionInsert = Database['public']['Tables']['feed_consumption']['Insert']
+type FeedConsumption = Database['public']['Tables']['feed_consumption_records']['Row']
+type FeedConsumptionInsert = Database['public']['Tables']['feed_consumption_records']['Insert']
 
 // Feed Types Management
 export async function createFeedType(farmId: string, data: Omit<FeedTypeInsert, 'farm_id'>) {

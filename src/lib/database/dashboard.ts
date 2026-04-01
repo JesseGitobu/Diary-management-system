@@ -626,10 +626,10 @@ export async function getCriticalAlerts(farmId: string) {
     
     // Breeding alerts - calvings due soon
     const { count: dueSoon } = await supabase
-      .from('breeding_records')
+      .from('pregnancy_records')
       .select('*', { count: 'exact', head: true })
       .eq('farm_id', farmId)
-      .eq('status', 'pregnant')
+      .eq('pregnancy_status', 'confirmed')
       .lte('expected_calving_date', tomorrow)
     
     if (dueSoon && dueSoon > 0) {
@@ -795,11 +795,11 @@ export async function getRecentActivities(farmId: string, limit: number = 10) {
     
     // Recent breeding events
     const { data: breedingRecordsData } = await supabase
-      .from('breeding_records')
+      .from('service_records')
       .select(`
         breeding_type,
         created_at,
-        animals!breeding_records_animal_id_fkey(name, tag_number)
+        animals!service_records_animal_id_fkey(name, tag_number)
       `)
       .eq('farm_id', farmId)
       .gte('created_at', threeDaysAgo)

@@ -257,20 +257,17 @@ export async function getAvailableVolume(farmId: string): Promise<number> {
   try {
     const supabase = await createServerSupabaseClient()
     
-    // Try to use the database function first
-    const { data, error } = await supabase
-      .rpc('get_available_volume', { 
-        target_farm_id: farmId,
-        check_date: new Date().toISOString().split('T')[0]
-      } as any)
-
-    if (error) {
-      console.log('Database function not available, using fallback calculation')
-    } else {
-      return data || 0
-    }
+    // Note: RPC function 'get_available_volume' not available, using fallback calculation
+    // Uncomment below when RPC function is deployed:
+    // const { data, error } = await supabase
+    //   .rpc('get_available_volume', { 
+    //     target_farm_id: farmId,
+    //     check_date: new Date().toISOString().split('T')[0]
+    //   } as any)
+    //
+    // if (!error && data) return data || 0
   } catch (error) {
-    console.log('RPC function error, using fallback calculation')
+    console.log('RPC function not available, using fallback calculation')
   }
   
   // Fallback calculation

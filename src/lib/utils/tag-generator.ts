@@ -257,8 +257,8 @@ async function getNextSequenceNumber(farmId: string): Promise<number> {
 
   try {
     // Get current next number and increment it atomically
-    const { data, error } = await supabase
-      .rpc('increment_tag_number', { farm_id_input: farmId } as any)
+    // FIXED: Cast rpc call to any for unregistered function
+    const { data, error } = await (supabase.rpc('increment_tag_number' as any, { farm_id_input: farmId }) as any)
 
     if (error) {
       console.error('Error incrementing tag number:', error)
@@ -267,7 +267,7 @@ async function getNextSequenceNumber(farmId: string): Promise<number> {
       return (settings.nextNumber || 1) + 1
     }
 
-    return data || 1
+    return (data as number) || 1
   } catch (error) {
     console.error('Error in getNextSequenceNumber:', error)
     return 1
@@ -282,7 +282,7 @@ async function checkTagUniqueness(farmId: string, tagNumber: string): Promise<bo
     .select('id')
     .eq('farm_id', farmId)
     .eq('tag_number', tagNumber)
-    .neq('status', 'inactive')
+    .eq('status', 'active')
     .single()
 
   if (error && error.code === 'PGRST116') {

@@ -142,7 +142,7 @@ export async function updateDailyProductionSummary(farmId: string, date: string)
 
     if (dailyRecords.length === 0) {
       // Delete summary if no records
-      await supabase
+      await (supabase as any)
         .from('daily_production_summary')
         .delete()
         .eq('farm_id', farmId)
@@ -166,8 +166,8 @@ export async function updateDailyProductionSummary(farmId: string, date: string)
     }
     
     // Upsert daily summary
-    await (supabase
-      .from('daily_production_summary') as any)
+    await ((supabase as any)
+      .from('daily_production_summary'))
       .upsert(summaryData, { onConflict: 'farm_id,record_date' })
     
   } catch (error) {
@@ -183,7 +183,7 @@ export async function getProductionStats(farmId: string, days: number = 30) {
   
   try {
     // Get daily summaries
-    const { data: summariesData } = await supabase
+    const { data: summariesData } = await (supabase as any)
       .from('daily_production_summary')
       .select('*')
       .eq('farm_id', farmId)

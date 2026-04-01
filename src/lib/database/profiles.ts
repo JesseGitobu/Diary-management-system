@@ -3,7 +3,7 @@ import { createServerSupabaseClient } from '@/lib/supabase/server'
 export async function getProfile(userId: string) {
   const supabase = await createServerSupabaseClient()
   
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from('profiles')
     .select('*')
     .eq('id', userId)
@@ -23,8 +23,8 @@ export async function updateProfile(userId: string, updates: {
 }) {
   const supabase = await createServerSupabaseClient()
   
-  const { data, error } = await (supabase
-    .from('profiles') as any)
+  const { data, error } = await ((supabase as any)
+    .from('profiles'))
     .update({
       ...updates,
       updated_at: new Date().toISOString()
@@ -44,8 +44,8 @@ export async function updateProfile(userId: string, updates: {
 export async function createProfile(userId: string, email: string, fullName?: string) {
   const supabase = await createServerSupabaseClient()
   
-  const { data, error } = await (supabase
-    .from('profiles') as any)
+  const { data, error } = await ((supabase as any)
+    .from('profiles'))
     .insert({
       id: userId,
       email,
@@ -65,7 +65,7 @@ export async function createProfile(userId: string, email: string, fullName?: st
 export async function getAllProfiles() {
   const supabase = await createServerSupabaseClient()
   
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from('profiles')
     .select('*')
     .order('created_at', { ascending: false })

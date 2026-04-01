@@ -201,7 +201,7 @@ export async function PUT(
       }
     }
     
-    // ===== BREEDING RECORDS HANDLING (breeding_records, animal_categories) =====
+    // ===== BREEDING RECORDS HANDLING (service_records, animal_categories) =====
     if (body.gender === 'female' && currentAnimal.birth_date) {
       const ageInMonths = differenceInMonths(new Date(), new Date(currentAnimal.birth_date))
       
@@ -237,7 +237,7 @@ export async function PUT(
       if (isBreedingAge && hasBreedingData) {
         // Check if breeding record already exists
         const { data: existingRecord } = await (supabase as any)
-          .from('breeding_records')
+          .from('service_records')
           .select('id')
           .eq('animal_id', animalId)
           .single()
@@ -269,7 +269,7 @@ export async function PUT(
           if (body.sire_registration_number) breedingRecordData.sire_registration_number = body.sire_registration_number
           
           const { error: breedingError } = await (supabase as any)
-            .from('breeding_records')
+            .from('service_records')
             .insert(breedingRecordData)
           
           if (breedingError) {

@@ -19,7 +19,7 @@ export default async function AdminInquiriesPage() {
 
   // Fetch inquiries
   const supabase = await createServerSupabaseClient()
-  const { data: inquiries, error } = await supabase
+  const { data: inquiries, error } = await (supabase as any)
     .from('contact_inquiries')
     .select('*')
     .order('created_at', { ascending: false })

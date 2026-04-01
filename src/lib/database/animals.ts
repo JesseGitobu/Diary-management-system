@@ -107,19 +107,19 @@ export async function getFarmAnimals(
   
   // Rest of your filtering logic...
   if (options.animalSource) {
-    query = query.eq('animal_source', options.animalSource)
+    query = (query as any).eq('animal_source', options.animalSource)
   }
   
   if (options.productionStatus) {
-    query = query.eq('production_status', options.productionStatus)
+    query = (query as any).eq('production_status', options.productionStatus)
   }
   
   if (options.healthStatus) {
-    query = query.eq('health_status', options.healthStatus)
+    query = (query as any).eq('health_status', options.healthStatus)
   }
   
   if (options.gender) {
-    query = query.eq('gender', options.gender)
+    query = (query as any).eq('gender', options.gender)
   }
   
   // Apply pagination
@@ -393,7 +393,7 @@ export async function getAnimalByTagNumber(
       .select('id, tag_number')
       .eq('farm_id', farmId)
       .eq('tag_number', tagNumber)
-      .neq('status', 'inactive') // Don't check against deleted animals
+      .neq('status', 'deceased') // Don't check against deleted animals
     
     // Exclude current animal for updates
     if (excludeAnimalId) {
@@ -1372,19 +1372,19 @@ export async function searchAnimals(
   
   // Apply filters
   if (filters.animalSource) {
-    query = query.eq('animal_source', filters.animalSource)
+    query = (query as any).eq('animal_source', filters.animalSource)
   }
   
   if (filters.productionStatus) {
-    query = query.eq('production_status', filters.productionStatus)
+    query = (query as any).eq('production_status', filters.productionStatus)
   }
   
   if (filters.healthStatus) {
-    query = query.eq('health_status', filters.healthStatus)
+    query = (query as any).eq('health_status', filters.healthStatus)
   }
   
   if (filters.gender) {
-    query = query.eq('gender', filters.gender)
+    query = (query as any).eq('gender', filters.gender)
   }
   
   query = query.order('tag_number', { ascending: true })
@@ -1506,7 +1506,7 @@ export async function getAnimalsByProductionStatus(
         .limit(1)
     `)
     .eq('farm_id', farmId)
-    .eq('production_status', productionStatus)
+    .eq('production_status', productionStatus as any)
     .eq('status', 'active')
     .order('tag_number', { ascending: true })
   
@@ -1760,8 +1760,8 @@ export async function getReleaseStats(farmId: string): Promise<{
 }> {
   const supabase = await createServerSupabaseClient()
   
-  const { data: releasesData, error } = await supabase
-    .from('animal_releases')
+  const { data: releasesData, error } = await (supabase as any)
+    .from('animal_release_records')
     .select('release_reason, release_date, sale_price')
     .eq('farm_id', farmId)
   

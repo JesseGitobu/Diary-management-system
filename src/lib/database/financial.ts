@@ -4,7 +4,6 @@ import { Database } from '@/lib/supabase/types'
 type FinancialTransaction = Database['public']['Tables']['financial_transactions']['Row']
 type FinancialTransactionInsert = Database['public']['Tables']['financial_transactions']['Insert']
 type MilkSale = Database['public']['Tables']['milk_sales']['Row']
-type AnimalSale = Database['public']['Tables']['animal_sales']['Row']
 
 export async function createFinancialTransaction(
   farmId: string, 
@@ -192,8 +191,8 @@ export async function createAnimalSale(farmId: string, animalSaleData: any) {
   
   try {
     // Create animal sale record
-    // FIXED: Cast to any
-    const { data: animalSale, error: animalSaleError } = await (supabase
+    // FIXED: Cast to any to bypass unregistered table type
+    const { data: animalSale, error: animalSaleError } = await ((supabase as any)
       .from('animal_sales') as any)
       .insert({
         ...animalSaleData,
@@ -232,8 +231,8 @@ export async function createAnimalSale(farmId: string, animalSaleData: any) {
       .eq('id', animalSaleData.animal_id)
     
     // Link the animal sale to the transaction
-    // FIXED: Cast to any
-    await (supabase
+    // FIXED: Cast to any to bypass unregistered table type
+    await ((supabase as any)
       .from('animal_sales') as any)
       .update({ transaction_id: transaction.id })
       .eq('id', animalSale.id)

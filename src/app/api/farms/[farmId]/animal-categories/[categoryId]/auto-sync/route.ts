@@ -41,7 +41,7 @@ export async function POST(
     }
 
     // Get all animals that match the characteristics
-    const matchingAnimals = await getMatchingAnimals(farmId, category, 1000)
+    const matchingAnimals = await getMatchingAnimals(farmId, category as any, 1000)
     const matchingAnimalIds = matchingAnimals.map(a => a.id)
 
     // Get currently assigned animals

@@ -75,21 +75,21 @@ export async function GET(request: NextRequest) {
         .order('tag_number', { ascending: true }),
 
       // Get breeding records for all animals at once
-      supabase
-        .from('breeding_records')
+      (supabase as any)
+        .from('service_records')
         .select('animal_id, record_type, recording_date')
         .eq('farm_id', farmId)
         .order('recording_date', { ascending: false }),
 
       // Get animals requiring weight updates
-      supabase
+      (supabase as any)
         .from('animals_requiring_weight_update')
         .select('id, animal_id, reason, due_date, is_resolved')
         .eq('farm_id', farmId)
         .eq('is_resolved', false),  // Only unresolved requirements
 
       // Get latest health status changes
-      supabase
+      (supabase as any)
         .from('health_status_changes')
         .select('animal_id, health_status, recorded_at')
         .eq('farm_id', farmId)
@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
         .limit(200), // Recent status changes
 
       // Get incomplete health records
-      supabase
+      (supabase as any)
         .from('health_records')
         .select('animal_id, record_date, health_status')
         .eq('farm_id', farmId)

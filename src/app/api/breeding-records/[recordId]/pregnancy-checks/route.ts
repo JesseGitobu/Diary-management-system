@@ -25,7 +25,7 @@ export async function POST(
     const supabase = await createServerSupabaseClient()
 
     const { data: breedingResult } = await supabase
-      .from('breeding_records')
+      .from('service_records')
       .select('animal_id, farm_id')
       .eq('id', recordId)
       .single()

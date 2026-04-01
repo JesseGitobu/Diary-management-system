@@ -79,7 +79,7 @@ export async function getDiseaseOutbreaks(farmId: string, status?: string) {
     .order('outbreak_date', { ascending: false })
   
   if (status) {
-    query = query.eq('status', status)
+    query = (query as any).eq('status', status)
   }
   
   const { data, error } = await query
@@ -140,8 +140,8 @@ export async function addAnimalToDiseaseOutbreak(
 export async function createAnimalDiseaseRecord(record: AnimalDiseaseRecord) {
   const supabase = await createServerSupabaseClient()
   
-  const { data, error } = await (supabase
-    .from('animal_disease_records') as any)
+  const { data, error } = await (supabase as any)
+    .from('animal_disease_records') 
     .insert(record)
     .select(`
       *,
@@ -167,7 +167,7 @@ export async function createAnimalDiseaseRecord(record: AnimalDiseaseRecord) {
 export async function getAnimalDiseaseHistory(animalId: string) {
   const supabase = await createServerSupabaseClient()
   
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from('animal_disease_records')
     .select(`
       *,
@@ -240,7 +240,7 @@ export async function getActiveDiseaseAlerts(farmId: string) {
 export async function getAllDiseases() {
   const supabase = await createServerSupabaseClient()
   
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from('diseases_conditions')
     .select('*')
     .order('name')

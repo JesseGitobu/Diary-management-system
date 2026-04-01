@@ -42,11 +42,11 @@ export interface AuditLogFilter {
 export async function getAuditLogs(filter: AuditLogFilter): Promise<AuditLog[]> {
   const supabase = await createServerSupabaseClient()
 
-  let query = supabase
+  let query = ((supabase as any)
     .from('animal_audit_logs_with_user')
     .select('*')
     .eq('farm_id', filter.farmId)
-    .order('created_at', { ascending: false })
+    .order('created_at', { ascending: false })) as any
 
   if (filter.animalId) {
     query = query.eq('animal_id', filter.animalId)
@@ -97,13 +97,13 @@ export async function getAnimalAuditHistory(
 ): Promise<AuditLog[]> {
   const supabase = await createServerSupabaseClient()
 
-  const { data, error } = await supabase
+  const { data, error } = await ((supabase as any)
     .from('animal_audit_logs_with_user')
     .select('*')
     .eq('farm_id', farmId)
     .eq('animal_id', animalId)
     .order('created_at', { ascending: false })
-    .limit(limit)
+    .limit(limit)) as any
 
   if (error) {
     console.error('Error fetching animal audit history:', error)
@@ -123,13 +123,13 @@ export async function getAuditLogsByAction(
 ): Promise<AuditLog[]> {
   const supabase = await createServerSupabaseClient()
 
-  const { data, error } = await supabase
+  const { data, error } = await ((supabase as any)
     .from('animal_audit_logs_with_user')
     .select('*')
     .eq('farm_id', farmId)
     .eq('action', action)
     .order('created_at', { ascending: false })
-    .limit(limit)
+    .limit(limit)) as any
 
   if (error) {
     console.error('Error fetching audit logs by action:', error)
@@ -150,14 +150,14 @@ export async function getAuditLogsByDateRange(
 ): Promise<AuditLog[]> {
   const supabase = await createServerSupabaseClient()
 
-  const { data, error } = await supabase
+  const { data, error } = await ((supabase as any)
     .from('animal_audit_logs_with_user')
     .select('*')
     .eq('farm_id', farmId)
     .gte('created_at', startDate)
     .lte('created_at', endDate)
     .order('created_at', { ascending: false })
-    .limit(limit)
+    .limit(limit)) as any
 
   if (error) {
     console.error('Error fetching audit logs by date range:', error)
@@ -185,12 +185,12 @@ export async function getAuditLogStatistics(
   startDate.setDate(startDate.getDate() - days)
 
   // Get all logs in the date range
-  const { data, error } = await supabase
+  const { data, error } = await ((supabase as any)
     .from('animal_audit_logs_with_user')
     .select('*')
     .eq('farm_id', farmId)
     .gte('created_at', startDate.toISOString())
-    .order('created_at', { ascending: false })
+    .order('created_at', { ascending: false })) as any
 
   if (error) {
     console.error('Error fetching audit log statistics:', error)
@@ -234,21 +234,28 @@ export async function logAnimalEvent(
 ): Promise<string | null> {
   const supabase = await createServerSupabaseClient()
 
-  const { data, error } = await supabase.rpc('log_animal_event', {
-    p_farm_id: farmId,
-    p_animal_id: animalId,
-    p_action: action,
-    p_reason: options?.reason || null,
-    p_notes: options?.notes || null,
-    p_changes: options?.changes ? JSON.stringify(options.changes) : null,
-  } as any)
+  const { data, error } = await ((supabase as any)
+    .from('animal_audit_logs')
+    .insert({
+      farm_id: farmId,
+      animal_id: animalId,
+      action: action,
+      entity_type: 'animal',
+      entity_id: animalId,
+      reason: options?.reason || null,
+      notes: options?.notes || null,
+      changes: options?.changes || null,
+      performed_by: (await supabase.auth.getUser()).data.user?.id || null,
+    })
+    .select('id')
+    .single()) as any
 
   if (error) {
     console.error('Error logging animal event:', error)
     return null
   }
 
-  return data
+  return data?.id || null
 }
 
 /**

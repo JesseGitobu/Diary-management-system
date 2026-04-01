@@ -138,12 +138,12 @@ export async function generateHealthReminders(farmId: string) {
     })
 
     // Get medications expiring soon
-    const { data: expiringMedicationsData, error: medicationError } = await supabase
+    const { data: expiringMedicationsData, error: medicationError } = await ((supabase as any)
       .from('medications')
       .select('*')
       .eq('farm_id', farmId)
       .lte('expiry_date', format(addDays(today, 30), 'yyyy-MM-dd'))
-      .gt('quantity_available', 0)
+      .gt('quantity_available', 0)) as any
 
     if (medicationError) {
       console.error('Error fetching expiring medications:', medicationError)
@@ -295,7 +295,7 @@ export async function checkWithdrawalPeriods(farmId: string) {
     const animalIds = animals.map(animal => animal.id)
     
     // Get animals with active withdrawal periods
-    const { data: withdrawalAnimalsData, error: withdrawalError } = await supabase
+    const { data: withdrawalAnimalsData, error: withdrawalError } = await ((supabase as any)
       .from('medication_administrations')
       .select(`
         *,
@@ -304,7 +304,7 @@ export async function checkWithdrawalPeriods(farmId: string) {
       `)
       .in('animal_id', animalIds)
       .gte('withdrawal_end_date', format(today, 'yyyy-MM-dd'))
-      .order('withdrawal_end_date')
+      .order('withdrawal_end_date')) as any
     
     if (withdrawalError) {
       console.error('Error checking withdrawal periods:', withdrawalError)

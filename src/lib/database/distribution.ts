@@ -168,7 +168,7 @@ export async function getDistributionRecords(
 
     // Apply filters
     if (filters?.status) {
-      query = query.eq('distribution_status', filters.status)
+      query = (query as any).eq('distribution_status', filters.status)
     }
     
     if (filters?.dateFrom) {

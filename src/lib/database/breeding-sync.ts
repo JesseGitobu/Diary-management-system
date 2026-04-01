@@ -399,7 +399,6 @@ export async function recordCalvingUnified(
       .from('animals') as any)
       .update({
         production_status: 'lactating',
-        lactation_number: (await supabase.rpc('increment_lactation', { animal_id: animalId } as any)).data,
         expected_calving_date: null,
         days_in_milk: 0,  // ✅ NEW: Reset days_in_milk to 0 at calving
         service_date: null,  // ✅ NEW: Clear service_date after calving

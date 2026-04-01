@@ -72,11 +72,11 @@ export interface SubscriptionSettings {
 export async function getSubscriptionSettings(farmId: string): Promise<SubscriptionSettings | null> {
   const supabase = await createServerSupabaseClient()
   
-  const { data, error } = await supabase
+  const { data, error } = await ((supabase as any)
     .from('farm_subscriptions')
     .select('*')
     .eq('farm_id', farmId)
-    .single()
+    .single()) as any
   
   if (error && error.code !== 'PGRST116') throw error
   if (!data) return null
@@ -87,12 +87,12 @@ export async function getSubscriptionSettings(farmId: string): Promise<Subscript
 export async function getPaymentHistory(farmId: string, limit = 10) {
   const supabase = await createServerSupabaseClient()
   
-  const { data, error } = await supabase
+  const { data, error } = await ((supabase as any)
     .from('subscription_payment_history')
     .select('*')
     .eq('farm_id', farmId)
     .order('payment_date', { ascending: false })
-    .limit(limit)
+    .limit(limit)) as any
   
   if (error) throw error
   return data || []
@@ -103,10 +103,10 @@ export async function updateSubscription(farmId: string, updates: Partial<Subscr
   
   const dbUpdates = transformSubscriptionToDb(updates)
   
-  const { error } = await (supabase
-    .from('farm_subscriptions') as any)
+  const { error } = await ((supabase as any)
+    .from('farm_subscriptions')
     .update(dbUpdates)
-    .eq('farm_id', farmId)
+    .eq('farm_id', farmId)) as any
   
   if (error) throw error
   return { success: true }

@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('contact_inquiries')
       .insert([
         {

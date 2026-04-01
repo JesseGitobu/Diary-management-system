@@ -413,8 +413,7 @@ export async function getNotificationSettings(farmId: string, userId: string) {
   const supabase = await createServerSupabaseClient()
 
   // FIXED: Cast to any
-  const { data: settingsData, error } = await (supabase
-    .from('notification_settings') as any)
+  const { data: settingsData, error } = await ((supabase as any).from('notification_settings'))
     .select('*')
     .eq('farm_id', farmId)
     .eq('user_id', userId)

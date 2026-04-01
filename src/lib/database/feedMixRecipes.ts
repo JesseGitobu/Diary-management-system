@@ -93,7 +93,7 @@ export async function getApplicableRecipes(
     if (recipesError) throw recipesError
 
     // Filter recipes based on animal profile conditions
-    const applicableRecipes = (recipes as FeedMixRecipe[] || []).filter(recipe => {
+    const applicableRecipes = ((recipes as unknown as FeedMixRecipe[]) || []).filter(recipe => {
       const conditions = recipe.applicable_conditions
 
       // Check production status
@@ -292,14 +292,13 @@ export async function createFeedRecommendation(
   try {
     const supabase = await createServerSupabaseClient()
 
-    const { data, error } = await (supabase
-      .from('feed_mix_recommendations') as any)
+    const { data, error } = await ((supabase as any).from('feed_mix_recommendations')
       .insert({
         ...recommendation,
         created_at: new Date().toISOString()
       })
       .select()
-      .single()
+      .single()) as any
 
     if (error) throw error
     return { success: true, data }

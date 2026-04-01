@@ -1,6 +1,5 @@
 // src/lib/database/onboarding.ts
 import { createServerSupabaseClient } from '@/lib/supabase/server'
-import { FarmProfileUpdate, FarmUpdate } from '@/lib/supabase/types'
 
 export async function saveOnboardingStep(userId: string, stepData: any) {
   const supabase = await createServerSupabaseClient()
@@ -17,7 +16,7 @@ export async function saveOnboardingStep(userId: string, stepData: any) {
     if (profileError) throw profileError
     
     // Prepare profile update object
-    const profileUpdate: FarmProfileUpdate = {
+    const profileUpdate: any = {
       updated_at: new Date().toISOString()
     }
     
@@ -31,7 +30,7 @@ export async function saveOnboardingStep(userId: string, stepData: any) {
         
         // Update farm table for farm-specific data
         if (stepData.farm_name || stepData.location || stepData.farm_type) {
-          const farmUpdate: FarmUpdate = {}
+          const farmUpdate: any = {}
           
           if (stepData.farm_name) farmUpdate.name = stepData.farm_name
           if (stepData.location) farmUpdate.location = stepData.location

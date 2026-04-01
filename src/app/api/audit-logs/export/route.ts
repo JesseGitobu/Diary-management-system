@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
     // Verify user has access to this farm
     const supabase = await createServerSupabaseClient()
     const { data: farmAccess } = await supabase
-      .from('farm_users')
+      .from('user_roles')
       .select('id')
       .eq('farm_id', farmId)
       .single()

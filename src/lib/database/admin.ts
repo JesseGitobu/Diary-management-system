@@ -16,7 +16,7 @@ export async function getSystemOverview() {
     let openTicketsResult = { count: 0 }
     
     try {
-      const { count: activeSubscriptionsCount } = await adminSupabase.from('billing_subscriptions').select('*', { count: 'exact', head: true }).eq('status', 'active')
+      const { count: activeSubscriptionsCount } = await (adminSupabase as any).from('billing_subscriptions').select('*', { count: 'exact', head: true }).eq('status', 'active')
       activeSubscriptionsResult = { count: activeSubscriptionsCount ?? 0 }
     } catch (error) {
       console.warn('billing_subscriptions table not found:', error)
@@ -53,7 +53,7 @@ export async function getSystemOverview() {
     }
     let subscriptions: BillingSubscription[] = []
     try {
-      const subscriptionsResult = await adminSupabase
+      const subscriptionsResult = await (adminSupabase as any)
         .from('billing_subscriptions')
         .select('monthly_price, status')
         .eq('status', 'active')
@@ -339,7 +339,7 @@ export async function getAllTickets(status?: string, priority?: string) {
   const adminSupabase = createAdminClient()
   
   try {
-    let query = adminSupabase
+    let query = (adminSupabase as any)
       .from('support_tickets')
       .select(`
         *,
@@ -349,8 +349,8 @@ export async function getAllTickets(status?: string, priority?: string) {
       `)
       .order('created_at', { ascending: false })
 
-    if (status) query = query.eq('status', status)
-    if (priority) query = query.eq('priority', priority)
+    if (status) query = query.eq('status', status as any)
+    if (priority) query = query.eq('priority', priority as any)
 
     const { data, error } = await query
 
@@ -379,7 +379,7 @@ export async function getBillingOverview() {
     }
     let subscriptions: BillingSubscription[] = []
     try {
-      const subscriptionsResult = await adminSupabase
+      const subscriptionsResult = await (adminSupabase as any)
         .from('billing_subscriptions')
         .select('plan_type, status, monthly_price')
       
@@ -453,7 +453,7 @@ export async function getSystemMetrics(metricType?: string, hours = 24) {
   try {
     const sinceTime = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString()
     
-    let query = adminSupabase
+    let query = (adminSupabase as any)
       .from('system_metrics')
       .select('*')
       .gte('recorded_at', sinceTime)
@@ -567,7 +567,7 @@ export async function getAnalyticsData(timeRange: string = '30d') {
     }
 
     // Get revenue data
-    const { data: subscriptionsData } = await adminSupabase
+    const { data: subscriptionsData } = await (adminSupabase as any)
       .from('billing_subscriptions')
       .select('monthly_price, status')
       .eq('status', 'active')
@@ -813,7 +813,7 @@ export async function getPlatformStats(days: number = 30) {
       adminSupabase.from('farms').select('*', { count: 'exact', head: true }),
       adminSupabase.from('user_roles').select('*', { count: 'exact', head: true }),
       adminSupabase.from('animals').select('*', { count: 'exact', head: true }),
-      adminSupabase.from('billing_subscriptions').select('monthly_price, status')
+      (adminSupabase as any).from('billing_subscriptions').select('monthly_price, status')
     ])
 
     const subscriptions = (subscriptionsData || []) as any[]

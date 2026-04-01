@@ -172,11 +172,10 @@ async function getExpectedCalvingsThisMonth(farmId: string) {
   
   // 1. Get animals theoretically due this month
   const { data: dueData } = await supabase
-    .from('breeding_events')
-    .select('animal_id, estimated_due_date, event_date')
+    .from('pregnancy_records')
+    .select('animal_id, estimated_due_date')
     .eq('farm_id', farmId)
-    .eq('event_type', 'pregnancy_check')
-    .eq('pregnancy_result', 'pregnant')
+    .eq('pregnancy_status', 'confirmed')
     .gte('estimated_due_date', startOfMonth.toISOString().split('T')[0])
     .lte('estimated_due_date', endOfMonth.toISOString().split('T')[0])
     .not('estimated_due_date', 'is', null)
@@ -260,16 +259,15 @@ export async function getBreedingAlerts(farmId: string): Promise<BreedingAlert[]
 
     if (pregnantIds.length > 0) {
       const { data: dueSoonData } = await supabase
-        .from('breeding_events')
+        .from('pregnancy_records')
         .select(`
           animal_id,
           estimated_due_date,
           animals (tag_number, name)
         `)
         .eq('farm_id', farmId)
-        .in('animal_id', pregnantIds) // Only check currently pregnant
-        .eq('event_type', 'pregnancy_check') 
-        .eq('pregnancy_result', 'pregnant')
+        .in('animal_id', pregnantIds) // Only check currently pregnant 
+        .eq('pregnancy_status', 'confirmed')
         .not('estimated_due_date', 'is', null)
         .lte('estimated_due_date', addDays(new Date(), 14).toISOString().split('T')[0])
         .gte('estimated_due_date', new Date().toISOString().split('T')[0])

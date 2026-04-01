@@ -147,7 +147,7 @@ export async function getFarmFeedingSchedulesForAnimal(
     const supabase = await createServerSupabaseClient()
 
     // Get all active feeding schedules for the farm
-    const { data: schedules, error } = await supabase
+    const { data: schedules, error } = await (supabase as any)
       .from('feeding_schedules')
       .select('*')
       .eq('farm_id', farmId)
@@ -288,7 +288,7 @@ export async function getAnimalNutritionTargets(
   try {
     const supabase = await createServerSupabaseClient()
 
-    const { data: targets, error } = await supabase
+    const { data: targets, error } = await (supabase as any)
       .from('animal_nutrition_targets')
       .select('*')
       .eq('farm_id', farmId)

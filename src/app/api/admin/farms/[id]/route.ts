@@ -27,7 +27,7 @@ export async function GET(
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
     
-    const { data: farm, error } = await adminSupabase
+    const { data: farm, error } = await (adminSupabase as any)
       .from('farms')
       .select(`
         *,

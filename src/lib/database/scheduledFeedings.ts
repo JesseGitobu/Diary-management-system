@@ -50,8 +50,8 @@ export async function createScheduledFeeding(
             }
 
             // FIXED: Cast to any
-            const { data: scheduledFeeding, error: scheduledError } = await (supabase
-                .from('scheduled_feedings') as any)
+            const { data: scheduledFeeding, error: scheduledError } = await ((supabase as any)
+                .from('scheduled_feedings'))
                 .insert(scheduledFeedingData)
                 .select()
                 .single()
@@ -72,8 +72,8 @@ export async function createScheduledFeeding(
                 }))
 
                 // FIXED: Cast to any
-                const { error: animalError } = await (supabase
-                    .from('scheduled_feeding_animals') as any)
+                const { error: animalError } = await ((supabase as any)
+                    .from('scheduled_feeding_animals'))
                     .insert(animalRecords)
 
                 if (animalError) {
@@ -104,16 +104,13 @@ export async function getAnimalScheduledFeedings(
     const supabase = await createServerSupabaseClient()
 
     try {
-        let query = supabase
+        let query = (supabase as any)
             .from('scheduled_feedings')
             .select(`
         *,
         feed_types (
           name,
           category_id
-        ),
-        consumption_batches (
-          batch_name
         ),
         scheduled_feeding_animals!inner (
           animal_id
@@ -153,7 +150,7 @@ export async function completeScheduledFeeding(
 
   try {
     // Get the scheduled feeding details
-    const { data: scheduledFeeding, error: fetchError } = await supabase
+    const { data: scheduledFeeding, error: fetchError } = await (supabase as any)
       .from('scheduled_feedings')
       .select(`
         *,
@@ -231,8 +228,8 @@ export async function completeScheduledFeeding(
     }
 
     // FIXED: Cast to any
-    const { data: feedingRecord, error: feedingError } = await (supabase
-      .from('feed_consumption') as any)
+    const { data: feedingRecord, error: feedingError } = await ((supabase as any)
+      .from('feed_consumption_records'))
       .insert(feedingData)
       .select()
       .single()
@@ -250,8 +247,8 @@ export async function completeScheduledFeeding(
       }))
 
       // FIXED: Cast to any
-      const { error: animalLinkError } = await (supabase
-        .from('feed_consumption_animals') as any)
+      const { error: animalLinkError } = await ((supabase as any)
+        .from('feed_consumption_animals'))
         .insert(animalRecords)
 
       if (animalLinkError) {
@@ -262,8 +259,8 @@ export async function completeScheduledFeeding(
 
     // Update the scheduled feeding status with enhanced tracking
     // FIXED: Cast to any
-    const { error: updateError } = await (supabase
-      .from('scheduled_feedings') as any)
+    const { error: updateError } = await ((supabase as any)
+      .from('scheduled_feedings'))
       .update({
         status: 'completed',
         completed_at: now.toISOString(), // When it was recorded as complete
@@ -321,8 +318,8 @@ export async function cancelScheduledFeeding(
 
     try {
         // FIXED: Cast to any
-        const { error } = await (supabase
-            .from('scheduled_feedings') as any)
+        const { error } = await ((supabase as any)
+            .from('scheduled_feedings'))
             .update({
                 status: 'cancelled',
                 notes: reason ? `Cancelled: ${reason}` : 'Cancelled',
@@ -353,8 +350,8 @@ export async function updateOverdueScheduledFeedings(farmId: string): Promise<vo
 
         // Mark feedings as overdue if they're 30 minutes past scheduled time and still pending
         // FIXED: Cast to any
-        await (supabase
-            .from('scheduled_feedings') as any)
+        await ((supabase as any)
+            .from('scheduled_feedings'))
             .update({
                 status: 'overdue',
                 updated_at: now.toISOString()
@@ -397,8 +394,8 @@ async function updateFeedInventory(farmId: string, feedTypeId: string, quantityC
             const newQuantity = item.quantity_kg - deductFromThisItem
 
             // FIXED: Cast to any
-            await (supabase
-                .from('feed_inventory') as any)
+            await ((supabase as any)
+                .from('feed_inventory'))
                 .update({ quantity_kg: newQuantity })
                 .eq('id', item.id)
 
@@ -419,7 +416,7 @@ export async function deleteScheduledFeeding(
 
   try {
     // First verify the scheduled feeding exists and belongs to the farm
-    const { data: scheduledFeeding, error: fetchError } = await supabase
+    const { data: scheduledFeeding, error: fetchError } = await (supabase as any)
       .from('scheduled_feedings')
       .select('id, status, farm_id, feed_type_id, quantity_kg')
       .eq('id', scheduledFeedingId)
@@ -440,8 +437,8 @@ export async function deleteScheduledFeeding(
 
     // Delete associated animal records first (foreign key constraint)
     // FIXED: Cast to any
-    const { error: deleteAnimalsError } = await (supabase
-      .from('scheduled_feeding_animals') as any)
+    const { error: deleteAnimalsError } = await ((supabase as any)
+      .from('scheduled_feeding_animals'))
       .delete()
       .eq('scheduled_feeding_id', scheduledFeedingId)
 
@@ -452,8 +449,8 @@ export async function deleteScheduledFeeding(
 
     // Delete the scheduled feeding record
     // FIXED: Cast to any
-    const { error: deleteError } = await (supabase
-      .from('scheduled_feedings') as any)
+    const { error: deleteError } = await ((supabase as any)
+      .from('scheduled_feedings'))
       .delete()
       .eq('id', scheduledFeedingId)
       .eq('farm_id', farmId)

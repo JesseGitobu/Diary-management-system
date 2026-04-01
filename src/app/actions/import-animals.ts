@@ -305,13 +305,17 @@ export async function importAnimalsActionWithAuth(
 
   } catch (error) {
     console.error('💥 Server action error:', error)
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    const errorStack = error instanceof Error ? error.stack : ''
+    console.error('Error stack:', errorStack)
+    
     return {
       success: false,
       imported: 0,
       skipped: 0,
       animals: [],
-      errors: [`Server error: ${error}`],
-      message: 'Import failed due to server error'
+      errors: [errorMessage || 'Unknown error occurred'],
+      message: `Import failed: ${errorMessage || 'An unexpected error occurred'}`
     }
   }
 }

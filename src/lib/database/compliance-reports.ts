@@ -94,12 +94,12 @@ export async function generateComplianceReport(
     const farm: { id: string; name: string } | null = farmRaw as { id: string; name: string } | null
 
     // Get audit logs
-    const { data: auditLogsRaw } = await supabase
+    const { data: auditLogsRaw } = await ((supabase as any)
       .from('animal_audit_logs_with_user')
       .select('*')
       .eq('farm_id', farmId)
       .eq('animal_id', animalId)
-      .order('created_at', { ascending: true })
+      .order('created_at', { ascending: true })) as any
 
     const auditLogs: AuditLog[] = (auditLogsRaw || []) as AuditLog[]
 
@@ -113,12 +113,12 @@ export async function generateComplianceReport(
     const healthRecords = (healthRecordsRaw || []) as any[]
 
     // Get production records
-    const { data: productionRecords } = await supabase
+    const { data: productionRecords } = await ((supabase as any)
       .from('animal_production_records')
       .select('*')
       .eq('animal_id', animalId)
       .order('created_at', { ascending: false })
-      .limit(1)
+      .limit(1)) as any
 
     // Determine compliance issues
     const missingRecords: string[] = []
