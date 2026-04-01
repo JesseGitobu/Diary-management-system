@@ -224,7 +224,7 @@ export async function importAnimalsActionWithAuth(
     // ═══════════════════════════════════════════════════════════════════════════════
     // CRITICAL FIX: Two-phase global processing to ensure calves exist before PASS 2
     // ═══════════════════════════════════════════════════════════════════════════════
-    const batchSize = 10
+    const batchSize = 5  // REDUCED from 10 to prevent Cloudflare 524 timeouts
     const results = {
       imported: 0,
       skipped: 0,
@@ -245,8 +245,14 @@ export async function importAnimalsActionWithAuth(
     let globalParentTagMap = new Map<string, string>()
     const globalOriginalTagToGenerated = new Map<string, string>()
 
+    // FIXED: Process with delays to avoid timeout
     for (let i = 0; i < globalSortedAnimals.length; i += batchSize) {
       const batch = globalSortedAnimals.slice(i, i + batchSize)
+      const batchNum = Math.floor(i / batchSize) + 1
+      const totalBatches = Math.ceil(globalSortedAnimals.length / batchSize)
+      
+      console.log(`📊 Processing batch ${batchNum}/${totalBatches} (${batch.length} animals)`)
+      
       const pass1Result = await processBatchPass1(
         supabase, 
         farmId, 
@@ -262,6 +268,11 @@ export async function importAnimalsActionWithAuth(
       results.animals.push(...pass1Result.animals)
       results.errors.push(...pass1Result.errors)
       allInsertedAnimals.push(...pass1Result.insertedAnimals)
+      
+      // Add delay between batches to avoid overwhelming server
+      if (i + batchSize < globalSortedAnimals.length) {
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
     }
     console.log(`✅ GLOBAL PASS 1 COMPLETE: ${results.imported} animals inserted, ${results.skipped} skipped`)
     console.log(`📊 parentTagMap now contains ${globalParentTagMap.size} animals for calf resolution`)
@@ -272,7 +283,9 @@ export async function importAnimalsActionWithAuth(
     console.log('\n🔄 STARTING GLOBAL PASS 2: Creating related records...')
     const pass2Errors: string[] = []
 
-    for (const entry of allInsertedAnimals) {
+    for (let idx = 0; idx < allInsertedAnimals.length; idx++) {
+      const entry = allInsertedAnimals[idx]
+      
       await processSingleAnimalPass2(
         supabase,
         farmId,
@@ -283,6 +296,11 @@ export async function importAnimalsActionWithAuth(
         globalOriginalTagToGenerated,
         pass2Errors
       )
+      
+      // Add small delay every 10 records to prevent overwhelming
+      if ((idx + 1) % 10 === 0 && idx + 1 < allInsertedAnimals.length) {
+        await new Promise(resolve => setTimeout(resolve, 50))
+      }
     }
     console.log(`✅ GLOBAL PASS 2 COMPLETE`)
     results.errors.push(...pass2Errors)
