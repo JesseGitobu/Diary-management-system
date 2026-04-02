@@ -516,79 +516,93 @@ async function processSingleAnimalPass2(
 
     // Create purchase record if purchased animal
     if (animal.animal_source === 'purchased_animal') {
-      await supabase
-        .from('animal_purchases')
-        .insert({
-          farm_id: farmId,
-          animal_id: newAnimal.id,
-          previous_farm_tag: animal.previous_farm_tag_number || null,
-          dam_tag_at_origin: animal.mother_dam_tag || null,
-          dam_name_at_origin: animal.mother_dam_name || null,
-          sire_tag_or_semen_code: animal.father_sire_semen_tag || null,
-          sire_name_or_semen_source: animal.father_sire_name_semen_source || null,
-          farm_seller_name: animal.farm_seller_name || null,
-          farm_seller_contact: animal.farm_seller_contact || null,
-          purchase_date: animal.purchase_date || null,
-          purchase_price: animal.purchase_price || null,
-          created_at: new Date().toISOString()
-        })
-        .then(() => console.log(`✅ Purchase record created for ${animal.tag_number}`))
-        .catch((e: any) => console.warn(`⚠️ Purchase record failed for ${animal.tag_number}:`, e.message))
+      try {
+        await supabase
+          .from('animal_purchases')
+          .insert({
+            farm_id: farmId,
+            animal_id: newAnimal.id,
+            previous_farm_tag: animal.previous_farm_tag_number || null,
+            dam_tag_at_origin: animal.mother_dam_tag || null,
+            dam_name_at_origin: animal.mother_dam_name || null,
+            sire_tag_or_semen_code: animal.father_sire_semen_tag || null,
+            sire_name_or_semen_source: animal.father_sire_name_semen_source || null,
+            farm_seller_name: animal.farm_seller_name || null,
+            farm_seller_contact: animal.farm_seller_contact || null,
+            purchase_date: animal.purchase_date || null,
+            purchase_price: animal.purchase_price || null,
+            created_at: new Date().toISOString()
+          })
+        console.log(`✅ Purchase record created for ${animal.tag_number}`)
+      } catch (e: any) {
+        console.error(`❌ Purchase record failed for ${animal.tag_number}:`, e.message)
+        errors.push(`Purchase record failed for ${animal.tag_number}: ${e.message}`)
+      }
     }
 
     // Create weight record
     if (animal.current_weight_kg && animal.weighing_date) {
-      await supabase
-        .from('animal_weight_records')
-        .insert({
-          farm_id: farmId,
-          animal_id: newAnimal.id,
-          weight_date: animal.weighing_date,
-          weight_kg: Number(animal.current_weight_kg),
-          weight_unit: 'kg',
-          measurement_purpose: 'import - current weight at import time',
-          created_at: new Date().toISOString()
-        })
-        .then(() => console.log(`✅ Weight record created for ${animal.tag_number}`))
-        .catch((e: any) => console.warn(`⚠️ Weight record failed for ${animal.tag_number}:`, e.message))
+      try {
+        await supabase
+          .from('animal_weight_records')
+          .insert({
+            farm_id: farmId,
+            animal_id: newAnimal.id,
+            weight_date: animal.weighing_date,
+            weight_kg: Number(animal.current_weight_kg),
+            weight_unit: 'kg',
+            measurement_purpose: 'import - current weight at import time',
+            created_at: new Date().toISOString()
+          })
+        console.log(`✅ Weight record created for ${animal.tag_number}`)
+      } catch (e: any) {
+        console.error(`❌ Weight record failed for ${animal.tag_number}:`, e.message)
+        errors.push(`Weight record failed for ${animal.tag_number}: ${e.message}`)
+      }
     }
 
     // Create release record if needed
     if (shouldCreateReleaseRecord && releaseReason) {
       const deathCause = releaseReason === 'deceased' ? 'imported - cause unknown' : null
       
-      await supabase
-        .from('animal_release_records')
-        .insert({
-          farm_id: farmId,
-          animal_id: newAnimal.id,
-          release_date: new Date().toISOString().split('T')[0],
-          release_reason: releaseReason,
-          death_cause: deathCause,
-          veterinarian_notes: null,
-          notes: `Animal imported with release status: ${releaseReason}. Status set to ${newAnimal.status}.`,
-          created_at: new Date().toISOString(),
-          created_by: userId
-        })
-        .then(() => console.log(`✅ Release record created for ${animal.tag_number} (reason: ${releaseReason})`))
-        .catch((e: any) => console.warn(`⚠️ Release record failed for ${animal.tag_number}:`, e.message))
+      try {
+        await supabase
+          .from('animal_release_records')
+          .insert({
+            farm_id: farmId,
+            animal_id: newAnimal.id,
+            release_date: new Date().toISOString().split('T')[0],
+            release_reason: releaseReason,
+            death_cause: deathCause,
+            veterinarian_notes: null,
+            notes: `Animal imported with release status: ${releaseReason}. Status set to ${newAnimal.status}.`,
+            created_at: new Date().toISOString(),
+            created_by: userId
+          })
+        console.log(`✅ Release record created for ${animal.tag_number} (reason: ${releaseReason})`)
+      } catch (e: any) {
+        console.error(`❌ Release record failed for ${animal.tag_number}:`, e.message)
+        errors.push(`Release record failed for ${animal.tag_number}: ${e.message}`)
+      }
     }
 
     // Create production cycles
     if (animal.service_date_1) {
-      await createProductionCycles(
-        supabase,
-        farmId,
-        newAnimal.id,
-        animal,
-        userId,
-        parentTagMap,
-        allAnimals,
-        originalTagToGenerated
-      ).catch(e => {
-        console.warn(`⚠️ Production cycles failed for ${animal.tag_number}:`, e.message)
+      try {
+        await createProductionCycles(
+          supabase,
+          farmId,
+          newAnimal.id,
+          animal,
+          userId,
+          parentTagMap,
+          allAnimals,
+          originalTagToGenerated
+        )
+      } catch (e: any) {
+        console.error(`❌ Production cycles failed for ${animal.tag_number}:`, e.message)
         errors.push(`Production cycles failed for ${animal.tag_number}: ${e.message}`)
-      })
+      }
     }
 
     console.log(`✅ Records created for: ${animal.tag_number}`)
@@ -808,17 +822,21 @@ async function createProductionCycles(
       if (!serviceRecord) continue
 
       // Create insemination event
-      await supabase
-        .from('breeding_events')
-        .insert({
-          farm_id: farmId,
-          animal_id: animalId,
-          event_type: 'insemination',
-          event_date: serviceDate,
-          service_record_id: serviceRecord.id,
-          created_at: new Date().toISOString()
-        })
-        .catch((e: any) => console.warn(`Insemination event cycle ${cycleNum}:`, e.message))
+      try {
+        await supabase
+          .from('breeding_events')
+          .insert({
+            farm_id: farmId,
+            animal_id: animalId,
+            event_type: 'insemination',
+            event_date: serviceDate,
+            service_record_id: serviceRecord.id,
+            created_at: new Date().toISOString()
+          })
+        console.log(`✅ Insemination event created for cycle ${cycleNum}`)
+      } catch (e: any) {
+        console.error(`❌ Insemination event cycle ${cycleNum}:`, e.message)
+      }
 
       // Skip pregnancy/calving if failed
       if (outcome === 'failed') continue
@@ -933,31 +951,30 @@ async function createProductionCycles(
             continue
           }
 
-          await supabase
-            .from('calf_records')
-            .insert({
-              farm_id: farmId,
-              calving_record_id: calvingRecord.id,
-              animal_id: calfAnimalId,
-              dam_id: animalId,
-              birth_date: normalizedCalvingDate,
-              gender: calfAnimal.gender || null,
-              birth_weight: calfAnimal.birth_weight_kg
-                ? Number(calfAnimal.birth_weight_kg)
-                : null,
-              breed: calfAnimal.breed || animal.breed || null,
-              sire_tag: animal[`bull_tag_semen_code_${cycleNum}` as keyof ImportAnimal] as string || null,
-              sire_name: animal[`bull_name_semen_source_${cycleNum}` as keyof ImportAnimal] as string || null,
-              health_status: mapToCalfHealthStatus(calfAnimal.health_status),
-              notes: calfAnimal.notes || null,
-              created_at: new Date().toISOString()
-            })
-            .then(() => {
-              console.log(`  ✅ Calf record created for ${calfAnimal.tag_number} from cycle ${cycleNum}`)
-            })
-            .catch((e: any) => {
-              console.warn(`  ⚠️ Calf record failed for ${calfAnimal.tag_number}:`, e.message)
-            })
+          try {
+            await supabase
+              .from('calf_records')
+              .insert({
+                farm_id: farmId,
+                calving_record_id: calvingRecord.id,
+                animal_id: calfAnimalId,
+                dam_id: animalId,
+                birth_date: normalizedCalvingDate,
+                gender: calfAnimal.gender || null,
+                birth_weight: calfAnimal.birth_weight_kg
+                  ? Number(calfAnimal.birth_weight_kg)
+                  : null,
+                breed: calfAnimal.breed || animal.breed || null,
+                sire_tag: animal[`bull_tag_semen_code_${cycleNum}` as keyof ImportAnimal] as string || null,
+                sire_name: animal[`bull_name_semen_source_${cycleNum}` as keyof ImportAnimal] as string || null,
+                health_status: mapToCalfHealthStatus(calfAnimal.health_status),
+                notes: calfAnimal.notes || null,
+                created_at: new Date().toISOString()
+              })
+            console.log(`  ✅ Calf record created for ${calfAnimal.tag_number} from cycle ${cycleNum}`)
+          } catch (e: any) {
+            console.error(`  ❌ Calf record failed for ${calfAnimal.tag_number}:`, e.message)
+          }
         }
 
         // Note: If no calves found in import, do NOT create placeholder calf_records
@@ -967,17 +984,21 @@ async function createProductionCycles(
         }
 
         // Create calving event
-        await supabase
-          .from('breeding_events')
-          .insert({
-            farm_id: farmId,
-            animal_id: animalId,
-            event_type: 'calving',
-            event_date: new Date(actualCalvingDate).toISOString(),
-            calving_record_id: calvingRecord.id,
-            created_at: new Date().toISOString()
-          })
-          .catch((e: any) => console.warn(`Calving event cycle ${cycleNum}:`, e.message))
+        try {
+          await supabase
+            .from('breeding_events')
+            .insert({
+              farm_id: farmId,
+              animal_id: animalId,
+              event_type: 'calving',
+              event_date: new Date(actualCalvingDate).toISOString(),
+              calving_record_id: calvingRecord.id,
+              created_at: new Date().toISOString()
+            })
+          console.log(`✅ Calving event created for cycle ${cycleNum}`)
+        } catch (e: any) {
+          console.error(`❌ Calving event cycle ${cycleNum}:`, e.message)
+        }
       }
 
       // ✅ NEW: Collect lactation cycle data for post-processing
@@ -994,20 +1015,24 @@ async function createProductionCycles(
       }
 
       // Create pregnancy check event
-      const pregnancyCheckDate = new Date(serviceDate)
-      pregnancyCheckDate.setDate(pregnancyCheckDate.getDate() + 60)
-      
-      await supabase
-        .from('breeding_events')
-        .insert({
-          farm_id: farmId,
-          animal_id: animalId,
-          event_type: 'pregnancy_check',
-          event_date: pregnancyCheckDate.toISOString(),
-          pregnancy_record_id: pregnancyRecord.id,
-          created_at: new Date().toISOString()
-        })
-        .catch((e: any) => console.warn(`Pregnancy check event cycle ${cycleNum}:`, e.message))
+      try {
+        const pregnancyCheckDate = new Date(serviceDate)
+        pregnancyCheckDate.setDate(pregnancyCheckDate.getDate() + 60)
+        
+        await supabase
+          .from('breeding_events')
+          .insert({
+            farm_id: farmId,
+            animal_id: animalId,
+            event_type: 'pregnancy_check',
+            event_date: pregnancyCheckDate.toISOString(),
+            pregnancy_record_id: pregnancyRecord.id,
+            created_at: new Date().toISOString()
+          })
+        console.log(`✅ Pregnancy check event created for cycle ${cycleNum}`)
+      } catch (e: any) {
+        console.error(`❌ Pregnancy check event cycle ${cycleNum}:`, e.message)
+      }
 
     } catch (cycleError) {
       console.warn(`Cycle ${cycleNum} error:`, cycleError)
@@ -1088,28 +1113,29 @@ async function createProductionCycles(
         calculatedDaysInMilk = Math.floor((endDateObj.getTime() - startDateObj.getTime()) / (1000 * 60 * 60 * 24))
       }
 
-      await supabase
-        .from('lactation_cycle_records')
-        .insert({
-          farm_id: farmId,
-          animal_id: animalId,
-          calving_record_id: calvingRecord.id,
-          lactation_number: cycleNum,
-          start_date: actualCalvingDate,
-          expected_end_date: expectedEndDate.toISOString().split('T')[0],
-          actual_end_date: actualEndDate,
-          status: lactationStatus,
-          dry_off_reason: dryOffReason,
-          notes: lactationNotes,
-          days_in_milk: calculatedDaysInMilk,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .then(() => {
-          const dimInfo = calculatedDaysInMilk !== null ? `, DIM=${calculatedDaysInMilk}` : ''
-          console.log(`✅ Lactation record created: cycle=${cycleNum}, status=${lactationStatus}, end_date=${actualEndDate}${dimInfo}`)
-        })
-        .catch((e: any) => console.warn(`Lactation record cycle ${cycleNum}:`, e.message))
+      try {
+        await supabase
+          .from('lactation_cycle_records')
+          .insert({
+            farm_id: farmId,
+            animal_id: animalId,
+            calving_record_id: calvingRecord.id,
+            lactation_number: cycleNum,
+            start_date: actualCalvingDate,
+            expected_end_date: expectedEndDate.toISOString().split('T')[0],
+            actual_end_date: actualEndDate,
+            status: lactationStatus,
+            dry_off_reason: dryOffReason,
+            notes: lactationNotes,
+            days_in_milk: calculatedDaysInMilk,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+        const dimInfo = calculatedDaysInMilk !== null ? `, DIM=${calculatedDaysInMilk}` : ''
+        console.log(`✅ Lactation record created: cycle=${cycleNum}, status=${lactationStatus}, end_date=${actualEndDate}${dimInfo}`)
+      } catch (e: any) {
+        console.error(`❌ Lactation record cycle ${cycleNum}:`, e.message)
+      }
     }
   }
 }
