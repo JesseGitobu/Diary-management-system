@@ -252,35 +252,106 @@ async function processImport(supabase: any, request: NextRequest, user: any) {
     console.log(`✅ GLOBAL PASS 1 COMPLETE: ${results.imported} animals inserted, ${results.skipped} skipped`)
     console.log(`📊 parentTagMap now contains ${globalParentTagMap.size} animals for calf resolution`)
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // GLOBAL PASS 2: Create all related records (now all animals exist!)
-    // ─────────────────────────────────────────────────────────────────────────────
-    console.log('\n🔄 STARTING GLOBAL PASS 2: Creating related records...')
-    const pass2Errors: string[] = []
-
-    for (let idx = 0; idx < allInsertedAnimals.length; idx++) {
-      const entry = allInsertedAnimals[idx]
-      
-      await processSingleAnimalPass2(
-        supabase,
-        farmId,
-        globalSortedAnimals,
-        entry,
-        user.id,
-        globalParentTagMap,
-        globalOriginalTagToGenerated,
-        pass2Errors
-      )
-      
-      // Add 50ms delay every 10 records to prevent overwhelming database connection pool
-      if ((idx + 1) % 10 === 0 && idx + 1 < allInsertedAnimals.length) {
-        await new Promise(resolve => setTimeout(resolve, 50))
-      }
+    // 🚀 CRITICAL OPTIMIZATION: Return success immediately after PASS 1
+    // All animals are in the database. PASS 2 runs asynchronously in the background.
+    // This prevents Cloudflare timeout while ensuring client sees immediate success.
+    
+    // Generate import session ID for tracking
+    const importSessionId = `import-${farmId}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+    
+    // Record import start in tracking table
+    try {
+      await supabase
+        .from('import_status_logs')
+        .insert({
+          farm_id: farmId,
+          user_id: user.id,
+          import_session_id: importSessionId,
+          status: 'pass_1_complete',
+          animals_imported: results.imported,
+          animals_skipped: results.skipped,
+          message: `PASS 1 complete: ${results.imported} animals imported`,
+          created_at: new Date().toISOString()
+        })
+    } catch (logError: any) {
+      console.warn('⚠️ Could not log import status:', logError?.message)
     }
-    console.log(`✅ GLOBAL PASS 2 COMPLETE`)
-    results.errors.push(...pass2Errors)
 
-    return NextResponse.json(results)
+    // 🔄 BACKGROUND: Start PASS 2 processing WITHOUT awaiting
+    // This happens after response is sent, so Cloudflare won't timeout
+    void (async () => {
+      try {
+        console.log('\n🔄 BACKGROUND: STARTING PASS 2: Creating related records...')
+        const pass2Errors: string[] = []
+
+        for (let idx = 0; idx < allInsertedAnimals.length; idx++) {
+          const entry = allInsertedAnimals[idx]
+          
+          await processSingleAnimalPass2(
+            supabase,
+            farmId,
+            globalSortedAnimals,
+            entry,
+            user.id,
+            globalParentTagMap,
+            globalOriginalTagToGenerated,
+            pass2Errors
+          )
+          
+          // Add 50ms delay every 10 records to prevent overwhelming database connection pool
+          if ((idx + 1) % 10 === 0 && idx + 1 < allInsertedAnimals.length) {
+            await new Promise(resolve => setTimeout(resolve, 50))
+          }
+        }
+        console.log(`✅ BACKGROUND: PASS 2 COMPLETE`)
+        if (pass2Errors.length > 0) {
+          console.log(`⚠️  BACKGROUND: ${pass2Errors.length} errors during PASS 2:`, pass2Errors)
+        }
+        
+        // Update tracking table: PASS 2 complete
+        try {
+          await supabase
+            .from('import_status_logs')
+            .insert({
+              farm_id: farmId,
+              user_id: user.id,
+              import_session_id: importSessionId,
+              status: 'pass_2_complete',
+              animals_imported: results.imported,
+              animals_skipped: results.skipped,
+              error_count: pass2Errors.length,
+              message: `PASS 2 complete: ${pass2Errors.length > 0 ? pass2Errors.length + ' errors' : 'No errors'}`,
+              created_at: new Date().toISOString()
+            })
+        } catch (logError: any) {
+          console.warn('⚠️ Could not log completion:', logError?.message)
+        }
+      } catch (error) {
+        console.error('❌ BACKGROUND: PASS 2 failed:', error)
+        
+        // Log failure
+        try {
+          await supabase
+            .from('import_status_logs')
+            .insert({
+              farm_id: farmId,
+              user_id: user.id,
+              import_session_id: importSessionId,
+              status: 'pass_2_failed',
+              message: `PASS 2 failed: ${error}`,
+              created_at: new Date().toISOString()
+            })
+        } catch (logError: any) {
+          console.warn('⚠️ Could not log error:', logError?.message)
+        }
+      }
+    })()
+
+    return NextResponse.json({
+      ...results,
+      importSessionId,
+      message: 'Animals imported successfully. Related records being created in background...'
+    })
   } catch (error) {
     console.error('Process import error:', error)
     return NextResponse.json(
