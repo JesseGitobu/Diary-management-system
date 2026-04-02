@@ -277,45 +277,40 @@ export async function importAnimalsActionWithAuth(
     console.log(`✅ GLOBAL PASS 1 COMPLETE: ${results.imported} animals inserted, ${results.skipped} skipped`)
     console.log(`📊 parentTagMap now contains ${globalParentTagMap.size} animals for calf resolution`)
 
-    // 🚀 CRITICAL OPTIMIZATION: Return success immediately after PASS 1
-    // All animals are in the database. PASS 2 runs asynchronously in the background.
-    // This prevents server timeout while ensuring client sees immediate success.
-    
-    // Start PASS 2 in background (fire and forget)
-    void (async () => {
-      try {
-        console.log('\n🔄 BACKGROUND: STARTING PASS 2: Creating related records...')
-        const pass2Errors: string[] = []
+    // ─────────────────────────────────────────────────────────────────────────────
+    // GLOBAL PASS 2: Create all related records (now all animals exist!)
+    // ─────────────────────────────────────────────────────────────────────────────
+    console.log('\n🔄 STARTING GLOBAL PASS 2: Creating related records...')
+    const pass2Errors: string[] = []
 
-        for (let idx = 0; idx < allInsertedAnimals.length; idx++) {
-          const entry = allInsertedAnimals[idx]
-          
-          await processSingleAnimalPass2(
-            supabase,
-            farmId,
-            globalSortedAnimals,
-            entry,
-            user.id,
-            globalParentTagMap,
-            globalOriginalTagToGenerated,
-            pass2Errors
-          )
-          
-          // Add small delay every 10 records to prevent overwhelming
-          if ((idx + 1) % 10 === 0 && idx + 1 < allInsertedAnimals.length) {
-            await new Promise(resolve => setTimeout(resolve, 50))
-          }
-        }
-        console.log(`✅ BACKGROUND: PASS 2 COMPLETE`)
-        if (pass2Errors.length > 0) {
-          console.log(`⚠️  BACKGROUND: ${pass2Errors.length} errors during PASS 2:`, pass2Errors)
-        }
-        // Note: Cannot call revalidatePath here - background tasks run after response sent
-        // Client will refresh data on next page load or via manual refetch
-      } catch (error) {
-        console.error('❌ BACKGROUND: PASS 2 failed:', error)
+    for (let idx = 0; idx < allInsertedAnimals.length; idx++) {
+      const entry = allInsertedAnimals[idx]
+      
+      await processSingleAnimalPass2(
+        supabase,
+        farmId,
+        globalSortedAnimals,
+        entry,
+        user.id,
+        globalParentTagMap,
+        globalOriginalTagToGenerated,
+        pass2Errors
+      )
+      
+      // Add small delay every 10 records to prevent overwhelming
+      if ((idx + 1) % 10 === 0 && idx + 1 < allInsertedAnimals.length) {
+        await new Promise(resolve => setTimeout(resolve, 50))
       }
-    })()
+    }
+    console.log(`✅ GLOBAL PASS 2 COMPLETE`)
+    results.errors.push(...pass2Errors)
+
+    revalidatePath(`/farms/${farmId}/animals`)
+
+    console.log('🎉 Import completed:', {
+      imported: results.imported,
+      skipped: results.skipped
+    })
 
     return {
       success: true,
@@ -323,7 +318,7 @@ export async function importAnimalsActionWithAuth(
       skipped: results.skipped,
       animals: results.animals,
       errors: results.errors,
-      message: `Successfully imported ${results.imported} animals. Related records being created in background...`
+      message: `Successfully imported ${results.imported} animals`
     }
 
   } catch (error) {
