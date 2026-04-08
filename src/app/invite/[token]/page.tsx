@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { InvitationLanding } from '@/components/auth/InvitationLanding'
-import { validateInvitationToken, getInvitationDetails } from '@/lib/database/team'
+import { validateInvitationToken, getInvitationDetails } from '@/lib/database/team-invitation'
 
 interface InvitePageProps {
   params: Promise<{

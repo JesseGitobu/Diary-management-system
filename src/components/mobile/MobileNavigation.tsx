@@ -33,7 +33,7 @@ const mobileNavItems = [
   { icon: Warehouse, label: 'Inventory', href: '/dashboard/inventory' },
   { icon: Tractor, label: 'Equipment', href: '/dashboard/equipment' },
   { icon: BarChart3, label: 'Reports', href: '/dashboard/reports' },
-  { icon: Users, label: 'Team', href: '/dashboard/settings/team' },
+  { icon: Users, label: 'Team', href: '/dashboard/teams' },
   { icon: Settings, label: 'Settings', href: '/dashboard/settings' },
 ]
 

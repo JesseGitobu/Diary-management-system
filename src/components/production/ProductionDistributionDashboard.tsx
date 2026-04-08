@@ -54,6 +54,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { ProductionSettings, DistributionSettings } from '@/types/production-distribution-settings'
+import { type FarmPermissions, FULL_ACCESS_PERMISSIONS } from '@/lib/utils/permissions'
 
 interface ProductionDistributionDashboardProps {
   farmId: string
@@ -67,6 +68,7 @@ interface ProductionDistributionDashboardProps {
   availableVolume: number
   distributionSettings: DistributionSettings | null
   userRole: string
+  permissions?: FarmPermissions
 }
 
 export function ProductionDistributionDashboard({
@@ -80,7 +82,8 @@ export function ProductionDistributionDashboard({
   channels,
   availableVolume,
   distributionSettings,
-  userRole
+  userRole,
+  permissions = FULL_ACCESS_PERMISSIONS,
 }: ProductionDistributionDashboardProps) {
   const { isMobile } = useDeviceInfo()
 
@@ -213,8 +216,8 @@ export function ProductionDistributionDashboard({
     }
   }, [])
   
-  const canAddRecords = ['farm_owner', 'farm_manager', 'worker'].includes(userRole)
-  const canManageDistribution = ['farm_owner', 'farm_manager'].includes(userRole)
+  const canAddRecords = permissions.canCreateProduction
+  const canManageDistribution = permissions.canManageProduction
   
   // Helper function to get session name from ID
   const getSessionName = (sessionId?: string) => {

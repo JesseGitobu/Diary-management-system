@@ -1,0 +1,219 @@
+// src/components/teams-roles/TeamRolesStatsCards.tsx
+'use client'
+
+import { useState } from 'react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
+import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
+import { cn } from '@/lib/utils/cn'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
+
+interface TeamRolesStatsCardsProps {
+  stats: Array<{
+    title: string
+    icon: React.ComponentType<any>
+    color: string
+    bgColor: string
+    items: Array<{
+      label: string
+      value: string | number
+      description: string
+    }>
+  }>
+}
+
+export function TeamRolesStatsCards({ stats }: TeamRolesStatsCardsProps) {
+  const { isMobile } = useDeviceInfo()
+  const [currentItemIndex, setCurrentItemIndex] = useState<Record<string, number>>({})
+
+  // Initialize current item index for each card
+  const getCurrentItemIndex = (cardTitle: string) => {
+    if (!(cardTitle in currentItemIndex)) {
+      currentItemIndex[cardTitle] = 0
+    }
+    return currentItemIndex[cardTitle]
+  }
+
+  // Navigate through items in a card
+  const goToItem = (cardTitle: string, direction: 'prev' | 'next', totalItems: number) => {
+    const currentIndex = getCurrentItemIndex(cardTitle)
+    let newIndex = currentIndex
+
+    if (direction === 'next') {
+      newIndex = (currentIndex + 1) % totalItems
+    } else {
+      newIndex = (currentIndex - 1 + totalItems) % totalItems
+    }
+
+    setCurrentItemIndex({
+      ...currentItemIndex,
+      [cardTitle]: newIndex
+    })
+  }
+
+  if (isMobile) {
+    return (
+      <div className="w-full space-y-4">
+        {/* Header */}
+        <h2 className="font-semibold text-gray-900 text-base">Team Overview</h2>
+
+        {/* Stack cards in single column on mobile for better spacing */}
+        <div className="grid grid-cols-1 gap-3">
+          {stats.map((card) => {
+            const IconComponent = card.icon
+            const currentIndex = getCurrentItemIndex(card.title)
+            const currentItem = card.items[currentIndex]
+            const totalItems = card.items.length
+            
+            return (
+              <Card
+                key={card.title}
+                className="shadow-sm"
+              >
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+                  <CardTitle className="font-semibold text-sm line-clamp-1">
+                    {card.title}
+                  </CardTitle>
+                  <div className={cn(
+                    "w-6 h-6 rounded-lg text-white flex-shrink-0 flex items-center justify-center",
+                    card.color
+                  )}>
+                    <IconComponent className="w-4 h-4" />
+                  </div>
+                </CardHeader>
+
+                <CardContent className="space-y-3">
+                  {/* Metric Label */}
+                  <p className="text-xs text-gray-600 font-medium uppercase tracking-wide">{currentItem?.label}</p>
+                  
+                  {/* Large Value */}
+                  <p className="text-3xl font-bold text-gray-900">{currentItem?.value}</p>
+                  
+                  {/* Description */}
+                  <p className="text-xs text-gray-500 bg-gray-50 px-2 py-1 rounded w-fit">{currentItem?.description}</p>
+
+                  {/* Navigation Arrows */}
+                  {totalItems > 1 && (
+                    <div className="flex items-center justify-between pt-3 border-t">
+                      <button
+                        onClick={() => goToItem(card.title, 'prev', totalItems)}
+                        className="p-1 rounded hover:bg-gray-100 transition-colors"
+                        aria-label="Previous metric"
+                      >
+                        <ChevronLeft className="w-3 h-3 text-gray-600" />
+                      </button>
+                      
+                      <div className="flex gap-1">
+                        {card.items.map((_, idx) => (
+                          <div
+                            key={idx}
+                            className={cn(
+                              "w-1 h-1 rounded-full",
+                              idx === currentIndex ? "bg-gray-900" : "bg-gray-300"
+                            )}
+                          />
+                        ))}
+                      </div>
+
+                      <button
+                        onClick={() => goToItem(card.title, 'next', totalItems)}
+                        className="p-1 rounded hover:bg-gray-100 transition-colors"
+                        aria-label="Next metric"
+                      >
+                        <ChevronRight className="w-3 h-3 text-gray-600" />
+                      </button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  // Desktop View - responsive grid (2 on tablet, 4 on desktop)
+  return (
+    <div className="w-full space-y-4">
+      {/* Header */}
+      <h2 className="font-semibold text-gray-900 text-lg">Teams Overview</h2>
+
+      {/* Grid Layout - responsive columns */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {stats.map((card) => {
+          const IconComponent = card.icon
+          const currentIndex = getCurrentItemIndex(card.title)
+          const currentItem = card.items[currentIndex]
+          const totalItems = card.items.length
+          
+          return (
+            <Card
+              key={card.title}
+              className="shadow-sm hover:shadow-md transition-shadow"
+            >
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 border-b">
+                <CardTitle className="font-semibold text-sm">{card.title}</CardTitle>
+                <div className={cn(
+                  "w-6 h-6 rounded-lg text-white flex items-center justify-center",
+                  card.color
+                )}>
+                  <IconComponent className="w-3 h-3" />
+                </div>
+              </CardHeader>
+
+              <CardContent className="pt-4 space-y-3">
+                {/* Metric Label */}
+                <p className="text-xs text-gray-600 font-medium">{currentItem?.label}</p>
+                
+                {/* Large Value */}
+                <p className="text-3xl font-bold text-gray-900">{currentItem?.value}</p>
+                
+                {/* Description */}
+                <p className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded w-fit">
+                  {currentItem?.description}
+                </p>
+
+                {/* Navigation Controls */}
+                {totalItems > 1 && (
+                  <div className="flex items-center justify-between pt-2 border-t">
+                    <button
+                      onClick={() => goToItem(card.title, 'prev', totalItems)}
+                      className="p-1.5 rounded hover:bg-gray-100 transition-colors"
+                      aria-label="Previous metric"
+                    >
+                      <ChevronLeft className="w-4 h-4 text-gray-600" />
+                    </button>
+                    
+                    <div className="flex gap-1.5">
+                      {card.items.map((_, idx) => (
+                        <div
+                          key={idx}
+                          className={cn(
+                            "w-1.5 h-1.5 rounded-full transition-colors cursor-pointer",
+                            idx === currentIndex ? "bg-gray-900" : "bg-gray-300"
+                          )}
+                          onClick={() => setCurrentItemIndex({
+                            ...currentItemIndex,
+                            [card.title]: idx
+                          })}
+                        />
+                      ))}
+                    </div>
+
+                    <button
+                      onClick={() => goToItem(card.title, 'next', totalItems)}
+                      className="p-1.5 rounded hover:bg-gray-100 transition-colors"
+                      aria-label="Next metric"
+                    >
+                      <ChevronRight className="w-4 h-4 text-gray-600" />
+                    </button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )
+        })}
+      </div>
+    </div>
+  )
+}

@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { createFarmOwnerProfile } from '@/lib/database/auth'
-import { acceptInvitation } from '@/lib/database/team'
+import { acceptInvitation } from '@/lib/database/team-invitation'
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
@@ -25,6 +25,33 @@ export async function GET(request: NextRequest) {
   const supabase = await createServerSupabaseClient()
   
   try {
+    // If a session already exists, skip OTP verification and route the user.
+    const { data: currentSession, error: sessionError } = await supabase.auth.getUser()
+
+    if (sessionError && !sessionError.message?.includes('AuthSessionMissingError')) {
+      console.warn('⚠️ [CALLBACK] Error checking existing session:', sessionError.message)
+    }
+
+    if (currentSession?.user) {
+      console.log('🔍 [CALLBACK] Existing session found, skipping OTP verification')
+      const tokenToUse = invitationToken || currentSession.user.user_metadata?.invitation_token
+      console.log('🔍 [CALLBACK] Looking for invitation token from existing session:', {
+        urlToken: !!invitationToken,
+        metadataToken: !!currentSession.user.user_metadata?.invitation_token,
+      })
+
+      const userRole = await ensureUserHasRole(currentSession.user, tokenToUse, supabase)
+      if (!userRole) {
+        console.error('❌ [CALLBACK] Failed to assign user role for existing session')
+        return NextResponse.redirect(`${origin}/auth?error=role_assignment_failed`)
+      }
+
+      console.log('✅ [CALLBACK] User role assigned for existing session:', userRole)
+      const redirectUrl = routeUserBasedOnStatus(currentSession.user, userRole, origin)
+      console.log('🔍 [CALLBACK] Redirecting to:', redirectUrl.toString())
+      return redirectUrl
+    }
+
     // Email verification
     console.log('🔍 [CALLBACK] Attempting email verification...')
     const { data, error } = await supabase.auth.verifyOtp({

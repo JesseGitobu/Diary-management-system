@@ -11,6 +11,7 @@ import { getProductionSettings } from '@/lib/database/production-settings'
 import { getDistributionSettings } from '@/lib/database/distribution-settings'
 import { redirect } from 'next/navigation'
 import { ProductionDistributionDashboard } from '@/components/production/ProductionDistributionDashboard'
+import { getUserPermissions } from '@/lib/database/user-permissions'
 
 export const metadata: Metadata = {
   title: 'Production & Distribution | DairyTrack Pro',
@@ -42,7 +43,8 @@ export default async function ProductionPage() {
     distributionRecords,
     channels,
     availableVolume,
-    distributionSettings
+    distributionSettings,
+    permissions,
   ] = await Promise.all([
     // Production queries
     getProductionStats(userRole.farm_id, 30),
@@ -54,7 +56,8 @@ export default async function ProductionPage() {
     getDistributionRecords(userRole.farm_id, undefined, undefined, undefined),
     getDistributionChannels(userRole.farm_id),
     getAvailableVolume(userRole.farm_id),
-    getDistributionSettings(userRole.farm_id)
+    getDistributionSettings(userRole.farm_id),
+    getUserPermissions(userRole.id, userRole.farm_id, userRole.role_type),
   ])
   
   // Note: Don't filter animals here - let the component filter based on eligibleProductionStatuses settings
@@ -103,6 +106,7 @@ export default async function ProductionPage() {
         availableVolume={availableVolume}
         distributionSettings={distributionSettings}
         userRole={userRole.role_type}
+        permissions={permissions}
       />
       
       {/* Info message for no eligible animals is now handled in the dashboard component. */}

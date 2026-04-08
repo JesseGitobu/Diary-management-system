@@ -4,6 +4,7 @@ import { getUserRole } from '@/lib/database/auth'
 import { getEquipment, getEquipmentStats } from '@/lib/database/equipment'
 import { redirect } from 'next/navigation'
 import { EquipmentManagement } from '@/components/equipment/EquipmentManagement'
+import { getUserPermissions } from '@/lib/database/user-permissions'
 
 export const metadata: Metadata = {
   title: 'Equipment Management | DairyTrack Pro',
@@ -23,9 +24,10 @@ export default async function EquipmentPage() {
     redirect('/dashboard')
   }
   
-  const [equipment, equipmentStats] = await Promise.all([
+  const [equipment, equipmentStats, permissions] = await Promise.all([
     getEquipment(userRole.farm_id),
-    getEquipmentStats(userRole.farm_id)
+    getEquipmentStats(userRole.farm_id),
+    getUserPermissions(userRole.id, userRole.farm_id, userRole.role_type),
   ])
   
   return (
@@ -34,7 +36,7 @@ export default async function EquipmentPage() {
         farmId={userRole.farm_id}
         equipment={equipment}
         equipmentStats={equipmentStats}
-        canManage={['farm_owner', 'farm_manager'].includes(userRole.role_type)}
+        canManage={permissions.canManageEquipment}
       />
     </div>
   )

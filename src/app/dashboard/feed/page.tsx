@@ -6,6 +6,7 @@ import { getFeedStats, getFeedTypes, getFeedInventory, getFeedConsumptionRecords
 import { getFarmAnimals } from '@/lib/database/animals'
 import { redirect } from 'next/navigation'
 import { FeedManagementDashboard } from '@/components/feed/FeedManagementDashboard'
+import { getUserPermissions } from '@/lib/database/user-permissions'
 import { getWeightConversions, getFeedTypeCategories, getAnimalCategories, getConsumptionBatches } from '@/lib/database/feedManagementSettings'
 
 export const metadata: Metadata = {
@@ -27,7 +28,7 @@ export default async function FeedPage() {
   }
   
   // Get feed management data including consumption records and animals
-  const [feedStats, feedTypes, inventory, consumptionRecords, animals, feedTypeCategories, animalCategories, weightConversions, consumptionBatches] = await Promise.all([
+  const [feedStats, feedTypes, inventory, consumptionRecords, animals, feedTypeCategories, animalCategories, weightConversions, consumptionBatches, permissions] = await Promise.all([
   getFeedStats(userRole.farm_id, 30),
   getFeedTypes(userRole.farm_id),
   getFeedInventory(userRole.farm_id),
@@ -37,6 +38,7 @@ export default async function FeedPage() {
   getAnimalCategories(userRole.farm_id),
   getWeightConversions(userRole.farm_id),
   getConsumptionBatches(userRole.farm_id),
+  getUserPermissions(userRole.id, userRole.farm_id, userRole.role_type),
 ])
   
   return (

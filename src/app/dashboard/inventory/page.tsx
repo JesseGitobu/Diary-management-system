@@ -11,6 +11,7 @@ import {
 } from '@/lib/database/inventory'
 import { redirect } from 'next/navigation'
 import { UnifiedInventoryDashboard } from '@/components/inventory/InventoryDashboard'
+import { getUserPermissions } from '@/lib/database/user-permissions'
 
 export const metadata: Metadata = {
   title: 'Inventory & Equipment | DairyTrack Pro',
@@ -31,18 +32,13 @@ export default async function InventoryPage() {
   }
   
   // Fetch both inventory and supplier data
-  const [
-    inventoryItems, 
-    inventoryStats, 
-    inventoryAlerts,
-    suppliers,
-    supplierStats
-  ] = await Promise.all([
+  const [inventoryItems, inventoryStats, inventoryAlerts, suppliers, supplierStats, permissions] = await Promise.all([
     getInventoryItems(userRole.farm_id),
     getInventoryStats(userRole.farm_id),
     getInventoryAlerts(userRole.farm_id),
     getSuppliers(userRole.farm_id),
-    getSupplierStats(userRole.farm_id)
+    getSupplierStats(userRole.farm_id),
+    getUserPermissions(userRole.id, userRole.farm_id, userRole.role_type),
   ])
   
   return (
@@ -54,7 +50,7 @@ export default async function InventoryPage() {
         inventoryAlerts={inventoryAlerts}
         suppliers={suppliers}
         supplierStats={supplierStats}
-        canManage={['farm_owner', 'farm_manager'].includes(userRole.role_type)}
+        canManage={permissions.canManageInventory}
       />
     </div>
   )

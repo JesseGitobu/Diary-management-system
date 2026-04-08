@@ -11,7 +11,6 @@ import { ImportAnimalsModal } from '@/components/animals/ImportAnimalsModal'
 import { MobileStatsCarousel } from '@/components/mobile/MobileStatsCarousel'
 import { QuickActionButton } from '@/components/mobile/QuickActionButton'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
-import { HealthNotificationBanner } from '@/components/health/HealthNotificationBanner'
 import CompleteHealthRecordModal from '@/components/health/CompleteHealthRecordModal'
 import { AnimalCategoriesManager } from './AnimalCategoriesManager'
 import {
@@ -34,6 +33,7 @@ import { GiCow } from 'react-icons/gi'
 import { Animal } from '@/types/database'
 import { HealthStatusNotification } from '../health/HealthStatusChangeNotification'
 import { EditAnimalModal } from './EditAnimalModal'
+import { type FarmPermissions, FULL_ACCESS_PERMISSIONS } from '@/lib/utils/permissions'
 
 interface AnimalsClientPageProps {
   initialAnimals: Animal[]
@@ -60,8 +60,9 @@ interface AnimalsClientPageProps {
   }
   farmId: string
   userRole: string
-  enrichedDataMap?: Record<string, any>  // ✅ Enriched data from batch endpoint
-  weightRequirementsData?: Array<{  // ✅ NEW: Weight requirements from batch endpoint
+  permissions?: FarmPermissions
+  enrichedDataMap?: Record<string, any>
+  weightRequirementsData?: Array<{
     animal_id: string
     tag_number: string
     name?: string
@@ -77,8 +78,9 @@ export function AnimalsClientPage({
   initialStats,
   farmId,
   userRole,
-  enrichedDataMap = {},  // ✅ Accept enriched data with default empty object
-  weightRequirementsData = []  // ✅ Accept weight data from server
+  permissions = FULL_ACCESS_PERMISSIONS,
+  enrichedDataMap = {},
+  weightRequirementsData = []
 }: AnimalsClientPageProps) {
   const [animals, setAnimals] = useState(initialAnimals)
   const [stats, setStats] = useState(initialStats)
@@ -91,11 +93,29 @@ export function AnimalsClientPage({
 
   const { isMobile } = useDeviceInfo()
 
-  const canAddAnimals = ['farm_owner', 'farm_manager', 'worker', 'veterinarian'].includes(userRole)
-  const canManageAnimals = ['farm_owner', 'farm_manager', 'worker', 'veterinarian'].includes(userRole)
-  const canExportData = ['farm_owner', 'farm_manager'].includes(userRole)
-  const canImportData = ['farm_owner', 'farm_manager'].includes(userRole)
-  const canManageCategories = ['farm_owner', 'farm_manager'].includes(userRole)
+  const canAddAnimals       = permissions.canCreateAnimals
+  const canManageAnimals    = permissions.canCreateAnimals || permissions.canEditAnimals
+  const canExportData       = permissions.canExportAnimals
+  const canImportData       = permissions.canCreateAnimals
+  const canManageCategories = permissions.canManageAnimals
+
+  // 🔍 DEBUG: Permission trace for Quick Actions visibility
+  console.log('🐄 [AnimalsClientPage] userRole:', userRole)
+  console.log('🐄 [AnimalsClientPage] permissions received:', {
+    canCreateAnimals: permissions.canCreateAnimals,
+    canEditAnimals: permissions.canEditAnimals,
+    canExportAnimals: permissions.canExportAnimals,
+    canManageAnimals: permissions.canManageAnimals,
+    canDeleteAnimals: permissions.canDeleteAnimals,
+    canViewAnimals: permissions.canViewAnimals,
+  })
+  console.log('🐄 [AnimalsClientPage] derived flags:', {
+    canAddAnimals,
+    canManageAnimals,
+    canExportData,
+    canImportData,
+    canManageCategories,
+  })
 
   // Load categories when modal opens
   const handleOpenCategoriesModal = async () => {
@@ -122,8 +142,6 @@ export function AnimalsClientPage({
 
   const [showHealthRecordModal, setShowHealthRecordModal] = useState(false)
   const [selectedHealthRecord, setSelectedHealthRecord] = useState<any>(null)
-  const [healthRecordsNeedingCompletion, setHealthRecordsNeedingCompletion] = useState<any[]>([])
-  const [loadingIncompleteRecords, setLoadingIncompleteRecords] = useState(true)
 
   // ✅ Initialize weight requirements from server-passed data (animals_requiring_weight_update table)
   const [animalsNeedingWeight, setAnimalsNeedingWeight] = useState<any[]>(
@@ -132,24 +150,6 @@ export function AnimalsClientPage({
   const [loadingWeightRequirements, setLoadingWeightRequirements] = useState(false)  // ✅ Set to false since data is already server-side
 
 
-  useEffect(() => {
-    const loadMissingRecords = async () => {
-      try {
-        const response = await fetch(`/api/health/records/incomplete?farmId=${farmId}`);
-        if (response.ok) {
-          const data = await response.json();
-          // The API returns { records: [...] }, so we set the state with data.records
-          setHealthRecordsNeedingCompletion(data.records || []);
-        }
-      } catch (error) {
-        console.error('Error loading animals requiring health records:', error);
-      } finally {
-        setLoadingIncompleteRecords(false);
-      }
-    };
-
-    loadMissingRecords();
-  }, [farmId]);
 
 useEffect(() => {
   const handleMobileNavAction = (event: Event) => {
@@ -219,9 +219,7 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
   setShowAddModal(false)
 }
 
-  const handleHealthRecordCreated = (healthRecord: any, updatedAnimal?: any) => {
-    // Add to the list of records needing completion
-    setHealthRecordsNeedingCompletion(prev => [healthRecord, ...prev])
+  const handleHealthRecordCreated = (_healthRecord: any, updatedAnimal?: any) => {
 
     // If the animal's health status was updated, update the animals list
     if (updatedAnimal) {
@@ -245,23 +243,8 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
     // This will be handled by the HealthNotificationBanner component
   }
 
-  const handleHealthRecordClick = (recordId: string) => {
-    // Find the record and open completion modal
-    const record = healthRecordsNeedingCompletion.find(r => r.id === recordId)
-    if (record) {
-      setSelectedHealthRecord(record)
-      setShowHealthRecordModal(true)
-    } else {
-      console.error('Health record not found:', recordId)
-    }
-  }
 
   const handleHealthRecordCompleted = async (completedRecord: any, followUpData?: any) => {
-    // Remove from incomplete list
-    setHealthRecordsNeedingCompletion(prev =>
-      prev.filter(r => r.id !== completedRecord.id)
-    )
-
     // CRITICAL: If follow-up was resolved, update animal health status
     if (followUpData?.animalHealthStatusUpdated || followUpData?.is_resolved) {
       // Fetch updated animal data
@@ -511,14 +494,13 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
     `}>
       {/* Scrollable content area with banners and main content */}
       <div className="flex-1 overflow-y-auto pb-20 lg:pb-6">
-        {/* Health Notifications - Show at the top */}
-        <HealthNotificationBanner
+        {/* Health Notifications - temporarily disabled */}
+        {/* <HealthNotificationBanner
           farmId={farmId}
           onRecordClick={handleHealthRecordClick}
-          missingRecords={healthRecordsNeedingCompletion} // Pass the state down
+          missingRecords={healthRecordsNeedingCompletion}
           loading={loadingIncompleteRecords}
-
-        />
+        /> */}
 
         {/* Weight Update Notifications */}
       {!loadingWeightRequirements && animalsNeedingWeight.length > 0 && (

@@ -32,6 +32,8 @@ export async function GET(request: NextRequest) {
         priority_rank
       `)
       .eq('farm_id', userRole.farm_id)
+      .eq('attention_required', true)
+      .lt('priority_rank', 4)
       .order('priority_rank', { ascending: true })
       .order('last_health_check', { ascending: true })
     

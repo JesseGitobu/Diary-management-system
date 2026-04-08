@@ -5,12 +5,28 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils/cn'
 import { GiCow } from 'react-icons/gi'
-import { Home, LogOut, Settings, BarChart3, Warehouse, Tractor, Heart, Droplets, Wheat, Coins, CalendarFold } from 'lucide-react'
+import { Home, LogOut, Settings, BarChart3, Warehouse, Tractor, Heart, Droplets, Wheat, Coins, CalendarFold, Users } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { SupportButton } from '../support/SupportButton'
+import type { FarmPermissions } from '@/lib/utils/permissions'
+
+// Permission flag required to show each nav route
+const NAV_PERMISSION_KEY: Record<string, keyof FarmPermissions> = {
+  '/dashboard/animals':    'canViewAnimals',
+  '/dashboard/breeding':   'canViewBreeding',
+  '/dashboard/health':     'canViewHealth',
+  '/dashboard/production': 'canViewProduction',
+  '/dashboard/feed':       'canViewFeed',
+  '/dashboard/financial':  'canViewFinancial',
+  '/dashboard/inventory':  'canViewInventory',
+  '/dashboard/equipment':  'canViewEquipment',
+  '/dashboard/reports':    'canViewReports',
+  '/dashboard/teams':      'canViewTeam',
+  '/dashboard/settings':   'canViewSettings',
+}
 
 // Map database feature IDs to Navigation paths
 const featureToRouteMap: Record<string, string> = {
@@ -18,6 +34,7 @@ const featureToRouteMap: Record<string, string> = {
   'health_records': '/dashboard/health',
   'milk_tracking': '/dashboard/production',
   'feed_tracking': '/dashboard/feed',
+  'teams_roles_management': '/dashboard/teams',
   'finance_tracking': '/dashboard/financial',
   'inventory_equipment': '/dashboard/inventory', // Maps to both inventory and equipment
   'performance_analysis_reporting_tools': '/dashboard/reports',
@@ -33,6 +50,7 @@ const allNavigationItems = [
   { name: 'Health', href: '/dashboard/health', icon: Heart },
   { name: 'Production', href: '/dashboard/production', icon: Droplets },
   { name: 'Feed', href: '/dashboard/feed', icon: Wheat },
+  { name: 'Teams & Roles', href: '/dashboard/teams', icon: Users, alwaysVisible: true },
   { name: 'Finance', href: '/dashboard/financial', icon: Coins },
   { name: 'Inventory', href: '/dashboard/inventory', icon: Warehouse },
   { name: 'Equipment', href: '/dashboard/equipment', icon: Tractor },
@@ -47,12 +65,14 @@ interface DashboardSidebarProps {
   trackingFeatures?: string[] | null
   animalCount?: number
   farmId?: string | null
+  permissions?: FarmPermissions | null
 }
 
-export function DashboardSidebar({ 
-  trackingFeatures = [], 
-  animalCount = 0, 
-  farmId 
+export function DashboardSidebar({
+  trackingFeatures = [],
+  animalCount = 0,
+  farmId,
+  permissions,
 }: DashboardSidebarProps) {
   const { signOut } = useAuth()
   const pathname = usePathname()
@@ -71,29 +91,27 @@ export function DashboardSidebar({
   }
 
   const visibleNavigation = allNavigationItems.filter(item => {
-    if (!farmId) {
-        return item.href === '/dashboard';
-    }
+    if (!farmId) return item.href === '/dashboard'
+    if (item.href === '/dashboard') return true
 
-    if (item.href === '/dashboard') return true;
+    // Permission gate — if resolved permissions exist, enforce them
+    const permKey = NAV_PERMISSION_KEY[item.href]
+    if (permissions && permKey && !permissions[permKey]) return false
 
-    if (animalCount === 0) {
-      return item.name === 'Herd Management';
-    }
+    // Always show items marked as alwaysVisible
+    if (item.alwaysVisible) return true
 
-    if (item.alwaysVisible) return true;
+    if (animalCount === 0) return item.name === 'Herd Management'
 
-    if (!trackingFeatures || trackingFeatures.length === 0) return true;
+    // Farm-plan feature gate (existing behaviour)
+    if (!trackingFeatures || trackingFeatures.length === 0) return true
 
-    const isEnabled = Object.entries(featureToRouteMap).some(([feature, route]) => {
-      if (trackingFeatures.includes(feature)) {
-         if (route === item.href) return true;
-         if (feature === 'inventory_equipment' && item.href === equipmentRoute) return true;
-      }
-      return false;
-    });
-
-    return isEnabled;
+    return Object.entries(featureToRouteMap).some(([feature, route]) => {
+      if (!trackingFeatures.includes(feature)) return false
+      if (route === item.href) return true
+      if (feature === 'inventory_equipment' && item.href === equipmentRoute) return true
+      return false
+    })
   })
   
   const renderNavItem = (item: typeof allNavigationItems[0]) => {

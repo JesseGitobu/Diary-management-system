@@ -11,14 +11,18 @@ import { useState, useEffect } from 'react'
 interface OnboardingBannerProps {
     userName: string
     farmId?: string
+    userRole?: string | null
     completionPercentage: number
 }
 
-export function OnboardingBanner({ userName, farmId, completionPercentage }: OnboardingBannerProps) {
+export function OnboardingBanner({ userName, farmId, userRole, completionPercentage }: OnboardingBannerProps) {
     const router = useRouter()
     const [isDismissed, setIsDismissed] = useState(false)
     const [isNavigating, setIsNavigating] = useState(false)
     const [isLoaded, setIsLoaded] = useState(false)
+
+    // Only display banner for farm owners
+    const isFarmOwner = userRole === 'farm_owner'
 
     // Check dismissal status on client side only
     useEffect(() => {
@@ -115,7 +119,7 @@ export function OnboardingBanner({ userName, farmId, completionPercentage }: Onb
         localStorage.setItem('onboarding-banner-dismissed', JSON.stringify(dismissalData))
     }
 
-    if (!isLoaded || isDismissed) return null
+    if (!isLoaded || isDismissed || !isFarmOwner) return null
 
     return (
         <Card className="mb-6 border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50">

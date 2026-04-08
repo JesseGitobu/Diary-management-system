@@ -7,6 +7,8 @@ import { DashboardSidebar } from '@/components/layout/DashboardSidebar'
 import { MobileHeaderWrapper } from '@/components/mobile/MobileHeaderWrapper'
 import { MobileBottomNav } from '@/components/mobile/MobileBottomNav'
 import { GlobalModalWrapper } from '@/components/layout/GlobalModalWrapper'
+import { getUserPermissions } from '@/lib/database/user-permissions'
+import { FULL_ACCESS_PERMISSIONS } from '@/lib/utils/permissions'
 
 // Import database functions (keep your existing imports)
 import { getFarmAnimals } from '@/lib/database/animals'
@@ -39,14 +41,34 @@ export default async function DashboardLayout({ children }: { children: React.Re
     )
   }
 
-  // 2. Fetch critical layout data (Features & Counts)
+  // 2. Fetch critical layout data (Features, Counts, Permissions)
   const [
-    animals, 
-    { data: farmProfile }
+    animals,
+    farmProfileResult,
+    permissions,
   ] = await Promise.all([
     getFarmAnimals(userRole.farm_id),
-    supabase.from('farm_profiles').select('tracking_features').eq('user_id', user.id).single()
+    // Farm owners have a farm_profiles row keyed by user_id.
+    // Team members (farm_manager, worker, etc.) do not — fall back to farm_id lookup.
+    supabase
+      .from('farm_profiles')
+      .select('tracking_features')
+      .eq('user_id', user.id)
+      .maybeSingle()
+      .then(async (res) => {
+        if (res.data) return res
+        return supabase
+          .from('farm_profiles')
+          .select('tracking_features')
+          .eq('farm_id', userRole.farm_id)
+          .maybeSingle()
+      }),
+    userRole.id
+      ? getUserPermissions(userRole.id, userRole.farm_id, userRole.role_type)
+      : Promise.resolve(FULL_ACCESS_PERMISSIONS),
   ])
+
+  const farmProfile = (farmProfileResult as any)?.data ?? null
   
   // Cast to specific types for safety
   const trackingFeatures = (farmProfile as any)?.tracking_features as string[] | undefined
@@ -105,10 +127,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <div className="flex flex-1 overflow-hidden">
         <div className="hidden md:block">
           {/* Pass props to DashboardSidebar */}
-          <DashboardSidebar 
-             trackingFeatures={trackingFeatures}
-             animalCount={animalCount}
-             farmId={userRole.farm_id}
+          <DashboardSidebar
+            trackingFeatures={trackingFeatures}
+            animalCount={animalCount}
+            farmId={userRole.farm_id}
+            permissions={permissions}
           />
         </div>
         

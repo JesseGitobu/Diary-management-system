@@ -4,6 +4,7 @@ import { getUserRole } from '@/lib/database/auth'
 import { getReportingKPIs } from '@/lib/database/reports'
 import { redirect } from 'next/navigation'
 import { ReportsDashboard } from '@/components/reports/ReportsDashboard'
+import { getUserPermissions } from '@/lib/database/user-permissions'
 
 export const metadata: Metadata = {
   title: 'Reports & Analytics | DairyTrack Pro',
@@ -24,7 +25,10 @@ export default async function ReportsPage() {
   }
   
   // Get initial KPI data
-  const kpis = await getReportingKPIs(userRole.farm_id)
+  const [kpis, permissions] = await Promise.all([
+    getReportingKPIs(userRole.farm_id),
+    getUserPermissions(userRole.id, userRole.farm_id, userRole.role_type),
+  ])
   
   return (
     <div className="dashboard-container">

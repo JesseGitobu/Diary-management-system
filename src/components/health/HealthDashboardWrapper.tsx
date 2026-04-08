@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { HealthRecordsContent } from '@/components/health/HealthDashboard'
+import { type FarmPermissions, FULL_ACCESS_PERMISSIONS } from '@/lib/utils/permissions'
 
 interface HealthDashboardWrapperProps {
   farmId: string
@@ -19,6 +20,7 @@ interface HealthDashboardWrapperProps {
     upcomingTasks: number
   }
   upcomingTasks?: any[]
+  permissions?: FarmPermissions
 }
 
 export function HealthDashboardWrapper({
@@ -28,7 +30,8 @@ export function HealthDashboardWrapper({
   animals: initialAnimals,
   healthRecords,
   initialHealthStats,
-  upcomingTasks
+  upcomingTasks,
+  permissions = FULL_ACCESS_PERMISSIONS,
 }: HealthDashboardWrapperProps) {
   const [healthStats, setHealthStats] = useState(initialHealthStats)
   const [animals, setAnimals] = useState(initialAnimals ?? [])

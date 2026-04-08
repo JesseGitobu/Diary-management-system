@@ -5,6 +5,7 @@ import { getUserRole } from '@/lib/database/auth'
 import { getBreedingStats, getUpcomingBreedingEvents, getBreedingAlerts } from '@/lib/database/breeding-stats'
 import { redirect } from 'next/navigation'
 import { BreedingDashboardWrapper } from '@/components/breeding/BreedingDashboardWrapper'
+import { getUserPermissions } from '@/lib/database/user-permissions'
 
 export const metadata: Metadata = {
   title: 'Breeding Management | DairyTrack Pro',
@@ -25,10 +26,11 @@ export default async function BreedingPage() {
   }
   
   // Load initial data server-side for faster initial load
-  const [breedingStats, upcomingEvents, breedingAlerts] = await Promise.all([
+  const [breedingStats, upcomingEvents, breedingAlerts, permissions] = await Promise.all([
     getBreedingStats(userRole.farm_id),
     getUpcomingBreedingEvents(userRole.farm_id),
-    getBreedingAlerts(userRole.farm_id)
+    getBreedingAlerts(userRole.farm_id),
+    getUserPermissions(userRole.id, userRole.farm_id, userRole.role_type),
   ])
   
   // Transform upcoming events to calendar format
@@ -51,6 +53,7 @@ export default async function BreedingPage() {
         initialBreedingStats={breedingStats}
         initialCalendarEvents={calendarEvents}
         initialBreedingAlerts={breedingAlerts}
+        permissions={permissions}
       />
     </div>
   )

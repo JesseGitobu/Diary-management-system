@@ -4,6 +4,7 @@ import { getUserRole } from '@/lib/database/auth'
 import { getFinancialSummary, getMonthlyFinancialData, getCostPerAnimal } from '@/lib/database/financial'
 import { redirect } from 'next/navigation'
 import { FinancialDashboard } from '@/components/financial/FinancialDashboard'
+import { getUserPermissions } from '@/lib/database/user-permissions'
 
 export const metadata: Metadata = {
   title: 'Financial Management | DairyTrack Pro',
@@ -23,22 +24,19 @@ export default async function FinancialPage() {
     redirect('/dashboard')
   }
   
-  // Only farm owners and managers can access financial data
-  if (!['farm_owner', 'farm_manager'].includes(userRole.role_type)) {
-    redirect('/dashboard')
-  }
-  
   const currentYear = new Date().getFullYear()
-  
-  const [
-    financialSummary,
-    monthlyData,
-    costPerAnimal
-  ] = await Promise.all([
+
+  const [financialSummary, monthlyData, costPerAnimal, permissions] = await Promise.all([
     getFinancialSummary(userRole.farm_id, currentYear),
     getMonthlyFinancialData(userRole.farm_id, currentYear),
-    getCostPerAnimal(userRole.farm_id, currentYear)
+    getCostPerAnimal(userRole.farm_id, currentYear),
+    getUserPermissions(userRole.id, userRole.farm_id, userRole.role_type),
   ])
+
+  // Gate: only users with financial view permission can access this page
+  if (!permissions.canViewFinancial) {
+    redirect('/dashboard')
+  }
   
   return (
     <div className="dashboard-container">

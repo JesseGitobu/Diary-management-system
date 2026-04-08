@@ -267,7 +267,7 @@ export async function getUserRole(userId: string) {
   // 🎯 UPDATED: Now selects status as well
   const { data, error } = await supabase
     .from('user_roles')
-    .select('role_type, farm_id, status')
+    .select('id, role_type, farm_id, status')
     .eq('user_id', userId)
     .maybeSingle()
 

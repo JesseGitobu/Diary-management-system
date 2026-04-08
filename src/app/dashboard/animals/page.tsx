@@ -5,6 +5,7 @@ import { getUserRole } from '@/lib/database/auth'
 import { getFarmAnimals, getEnhancedAnimalStats } from '@/lib/database/animals'
 import { redirect } from 'next/navigation'
 import { AnimalsClientPage } from '@/components/animals/AnimalsClientPage'
+import { getUserPermissions } from '@/lib/database/user-permissions'
 
 export const metadata: Metadata = {
   title: 'Herd Management | DairyTrack Pro',
@@ -24,10 +25,10 @@ export default async function AnimalsPage() {
     redirect('/dashboard')
   }
 
-  console.log('Fetching animals for farm:', userRole.farm_id)
+  console.log('🔍 [AnimalsPage] userRole object:', { id: userRole.id, farm_id: userRole.farm_id, role_type: userRole.role_type, status: userRole.status })
   
-  // Get animals and enhanced statistics in parallel
-  const [animals, stats, enrichedDataResponse] = await Promise.all([
+  // Get animals, stats, enriched data and permissions in parallel
+  const [animals, stats, enrichedDataResponse, permissions] = await Promise.all([
     getFarmAnimals(userRole.farm_id),
     getEnhancedAnimalStats(userRole.farm_id),
     // Fetch enriched data (breeding records, weight requirements, health status) in ONE call
@@ -36,7 +37,8 @@ export default async function AnimalsPage() {
       .catch(err => {
         console.error('Failed to fetch enriched data:', err)
         return { success: false, animals: [] }
-      })
+      }),
+    getUserPermissions(userRole.id, userRole.farm_id, userRole.role_type),
   ])
 
   // Build enriched data map for fast lookup by animal ID
@@ -60,6 +62,7 @@ export default async function AnimalsPage() {
       initialStats={stats}
       farmId={userRole.farm_id}
       userRole={userRole.role_type}
+      permissions={permissions}
       enrichedDataMap={Object.fromEntries(enrichedDataMap)}
       weightRequirementsData={weightRequirementsData}
     />

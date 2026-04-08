@@ -63,7 +63,7 @@ export function SettingsMainPage({ farmId, userRole, farmData }: SettingsMainPag
       title: 'Users & Roles',
       description: 'Manage team members and their permissions',
       icon: <Users className="h-5 w-5" />,
-      href: `/dashboard/settings/team?farmId=${farmId}`,
+      href: `/dashboard/teams`,
       permissions: ['farm_owner', 'farm_manager']
     },
     {

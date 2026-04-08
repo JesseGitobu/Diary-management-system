@@ -111,7 +111,7 @@ const handleSubmit = async (data: FarmBasicsFormData) => {
                 id="farm_name"
                 {...form.register('farm_name')}
                 error={form.formState.errors.farm_name?.message}
-                placeholder="e.g., Sunny Acres Farm"
+                placeholder="e.g., Kipchoge Dairy Farm"
               />
             </div>
             
@@ -121,7 +121,7 @@ const handleSubmit = async (data: FarmBasicsFormData) => {
                 id="location"
                 {...form.register('location')}
                 error={form.formState.errors.location?.message}
-                placeholder="e.g., California, USA"
+                placeholder="e.g., Nakuru, Kenya"
               />
             </div>
             

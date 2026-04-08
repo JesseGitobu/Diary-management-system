@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react'
 import { BreedingDashboard } from './BreedingDashboard'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import type { BreedingAlert } from '@/lib/database/breeding-stats'
+import { type FarmPermissions, FULL_ACCESS_PERMISSIONS } from '@/lib/utils/permissions'
 
 interface BreedingDashboardWrapperProps {
   userRole: string
@@ -18,6 +19,7 @@ interface BreedingDashboardWrapperProps {
   }
   initialCalendarEvents: any[]
   initialBreedingAlerts: BreedingAlert[]
+  permissions?: FarmPermissions
 }
 
 export function BreedingDashboardWrapper({
@@ -25,7 +27,8 @@ export function BreedingDashboardWrapper({
   farmId,
   initialBreedingStats,
   initialCalendarEvents,
-  initialBreedingAlerts
+  initialBreedingAlerts,
+  permissions = FULL_ACCESS_PERMISSIONS,
 }: BreedingDashboardWrapperProps) {
   const [breedingStats, setBreedingStats] = useState(initialBreedingStats)
   const [calendarEvents, setCalendarEvents] = useState(initialCalendarEvents)

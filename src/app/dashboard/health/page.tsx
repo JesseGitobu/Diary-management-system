@@ -8,7 +8,7 @@ import { getFarmAnimals } from '@/lib/database/animals'
 import { getAnimalHealthRecords, getHealthStats, getUpcomingHealthTasks } from '@/lib/database/health'
 import { redirect } from 'next/navigation'
 import { HealthDashboardWrapper } from '@/components/health/HealthDashboardWrapper'
-// import { HealthRecordsContent } from '@/components/health/HealthDashboard'
+import { getUserPermissions } from '@/lib/database/user-permissions'
 
 export const metadata: Metadata = {
   title: 'Health Management | DairyTrack Pro',
@@ -28,12 +28,12 @@ export default async function HealthRecordsPage() {
     redirect('/dashboard')
   }
   
-  // Get all necessary data
-  const [animals, healthRecords, healthStats, upcomingTasks] = await Promise.all([
+  const [animals, healthRecords, healthStats, upcomingTasks, permissions] = await Promise.all([
     getFarmAnimals(userRole.farm_id, { includeInactive: true }),
     getAnimalHealthRecords(userRole.farm_id, { limit: 100 }),
     getHealthStats(userRole.farm_id),
-    getUpcomingHealthTasks(userRole.farm_id, 30)
+    getUpcomingHealthTasks(userRole.farm_id, 30),
+    getUserPermissions(userRole.id, userRole.farm_id, userRole.role_type),
   ])
   
   return (
@@ -49,6 +49,7 @@ export default async function HealthRecordsPage() {
           protocolsRecorded: healthStats.protocolsRecorded,
         }}
         upcomingTasks={upcomingTasks}
+        permissions={permissions}
       />
     </div>
   )

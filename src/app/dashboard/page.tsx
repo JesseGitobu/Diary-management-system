@@ -3,6 +3,8 @@ import { Metadata } from 'next'
 import { getCurrentUser, createServerSupabaseClient } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { getDashboardStats } from '@/lib/database/dashboard'
+import { getUserPermissions } from '@/lib/database/user-permissions'
+import { FULL_ACCESS_PERMISSIONS } from '@/lib/utils/permissions'
 import { redirect } from 'next/navigation'
 
 export const metadata: Metadata = {
@@ -20,7 +22,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Progress } from '@/components/ui/Progress'
 import {
   Users, BarChart3, Heart, Milk, Wheat, DollarSign, Package, Wrench,
-  TrendingUp, AlertCircle, Clock, ArrowRight, Activity, Zap, Shield, MapPin, Baby,
+  TrendingUp, AlertCircle, Clock, ArrowRight, Activity, Zap, Shield, MapPin, Baby, Settings,
 } from 'lucide-react' // Note: GiCow is usually react-icons, fixed below
 import { GiCow as GiCowIcon } from 'react-icons/gi'
 import Link from 'next/link'
@@ -36,18 +38,34 @@ export default async function DashboardPage() {
   const needsOnboarding = userRole.status === 'pending_setup' || !userRole.farm_id
 
   const supabase = await createServerSupabaseClient()
-  const { data: farmProfileResult } = await supabase
+
+  // Try by user_id first, fall back to farm_id (handles users set up via migration or DB directly)
+  let { data: farmProfileResult } = await supabase
     .from('farm_profiles')
     .select('onboarding_completed, completion_percentage, farm_name')
     .eq('user_id', user.id)
     .maybeSingle()
 
-  const farmProfile = farmProfileResult as any
-  const isOnboardingIncomplete = !farmProfile?.onboarding_completed || needsOnboarding
+  if (!farmProfileResult && userRole.farm_id) {
+    const { data: fallback } = await (supabase as any)
+      .from('farm_profiles')
+      .select('onboarding_completed, completion_percentage, farm_name')
+      .eq('farm_id', userRole.farm_id)
+      .maybeSingle()
+    farmProfileResult = fallback
+  }
 
-  const dashboardStats = (userRole.farm_id
-    ? await getDashboardStats(userRole.farm_id)
-    : null) as any
+  const farmProfile = farmProfileResult as any
+  // Only treat as incomplete if: needsOnboarding is true, OR a farm_profiles record
+  // explicitly has onboarding_completed = false. A missing record is NOT incomplete.
+  const isOnboardingIncomplete = needsOnboarding || (!!farmProfile && farmProfile.onboarding_completed === false)
+
+  const [dashboardStats, permissions] = await Promise.all([
+    userRole.farm_id ? getDashboardStats(userRole.farm_id) : Promise.resolve(null),
+    userRole.id && userRole.farm_id
+      ? getUserPermissions(userRole.id, userRole.farm_id, userRole.role_type)
+      : Promise.resolve(FULL_ACCESS_PERMISSIONS),
+  ]) as [any, typeof FULL_ACCESS_PERMISSIONS]
 
   // 🎯 DETERMINE STATES
   const hasFarm = !!userRole.farm_id;
@@ -66,8 +84,16 @@ export default async function DashboardPage() {
   // Helper style for inactive/blurred elements
   const inactiveStyle = "opacity-40 blur-[2px] pointer-events-none select-none grayscale-[0.5]";
 
-  const canManageTeam = ['farm_owner', 'farm_manager'].includes(userRole.role_type)
-  const canManageAnimals = ['farm_owner', 'farm_manager', 'worker'].includes(userRole.role_type)
+  // Derive UI flags from resolved policy permissions
+  const canAddAnimal      = permissions.canCreateAnimals
+  const canRecordMilk     = permissions.canCreateProduction
+  const canViewHealth     = permissions.canViewHealth
+  const canViewReports    = permissions.canViewReports
+  const canViewTeam       = permissions.canViewTeam
+  const canViewFeed       = permissions.canViewFeed
+  const canViewFinancial  = permissions.canViewFinancial
+  const canViewInventory  = permissions.canViewInventory
+  const canViewEquipment  = permissions.canViewEquipment
 
   const checkBannerDismissed = () => {
     if (typeof window === 'undefined') return false
@@ -92,6 +118,7 @@ export default async function DashboardPage() {
             <OnboardingBanner
               userName={user.user_metadata?.full_name || user.email || 'there'}
               farmId={userRole.farm_id ?? undefined}
+              userRole={userRole.role_type}
               completionPercentage={farmProfile?.completion_percentage || 0}
             />
           </div>
@@ -190,7 +217,7 @@ export default async function DashboardPage() {
               Welcome to your new farm!
             </h2>
             <p className="text-gray-500 max-w-lg mx-auto mb-8 text-lg leading-relaxed">
-              Your farm profile is ready. The next step is to add your first animal to start tracking production, health, and more.
+              Your farm profile is ready. Here are the next steps to get started: add your first animal to begin tracking production and health, create a team and assign responsibilities, and configure your system settings for a personalized experience.
             </p>
             {/* BIG BUTTON: Links to Modal */}
             <AddAnimalButton />
@@ -214,16 +241,34 @@ export default async function DashboardPage() {
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
 
-              {/* ADD ANIMAL - Active if farm exists (Scenario B or C) */}
-              {canManageAnimals && (
+              {/* ADD ANIMAL */}
+              {canAddAnimal && (
                 <QuickAddAnimalButton
                   isActive={!isSkipped}
                   isHighlighted={isSetupButEmpty}
                 />
               )}
 
-              {/* OTHER ACTIONS - Active ONLY if we have animals (Scenario C) */}
-              {canManageAnimals && (
+              {/* TEAMS & ROLES */}
+              {canViewTeam && (
+                <Button asChild variant="outline" className={cn("h-auto py-4 flex-col space-y-2 transition-all", isSetupButEmpty ? "ring-2 ring-green-400 bg-green-50" : (!isActiveMode && inactiveStyle))}>
+                  <Link href="/dashboard/teams">
+                    <Users className="w-5 h-5 text-indigo-600" />
+                    <span className="text-xs">Teams & Roles</span>
+                  </Link>
+                </Button>
+              )}
+
+              {/* CONFIGURE SETTINGS */}
+              <Button asChild variant="outline" className={cn("h-auto py-4 flex-col space-y-2 transition-all", isSetupButEmpty ? "ring-2 ring-green-400 bg-green-50" : (!isActiveMode && inactiveStyle))}>
+                <Link href="/dashboard/settings">
+                  <Settings className="w-5 h-5 text-gray-600" />
+                  <span className="text-xs">Settings</span>
+                </Link>
+              </Button>
+
+              {/* RECORD MILK */}
+              {canRecordMilk && (
                 <Button asChild variant="outline" className={cn("h-auto py-4 flex-col space-y-2", !isActiveMode && inactiveStyle)}>
                   <Link href="/dashboard/production">
                     <Milk className="w-5 h-5 text-blue-600" />
@@ -232,19 +277,25 @@ export default async function DashboardPage() {
                 </Button>
               )}
 
-              <Button asChild variant="outline" className={cn("h-auto py-4 flex-col space-y-2", !isActiveMode && inactiveStyle)}>
-                <Link href="/dashboard/health/">
-                  <Heart className="w-5 h-5 text-red-500" />
-                  <span className="text-xs">Health Check</span>
-                </Link>
-              </Button>
+              {/* HEALTH CHECK */}
+              {canViewHealth && (
+                <Button asChild variant="outline" className={cn("h-auto py-4 flex-col space-y-2", !isActiveMode && inactiveStyle)}>
+                  <Link href="/dashboard/health/">
+                    <Heart className="w-5 h-5 text-red-500" />
+                    <span className="text-xs">Health Check</span>
+                  </Link>
+                </Button>
+              )}
 
-              <Button asChild variant="outline" className={cn("h-auto py-4 flex-col space-y-2", !isActiveMode && inactiveStyle)}>
-                <Link href="/dashboard/reports">
-                  <BarChart3 className="w-5 h-5 text-purple-600" />
-                  <span className="text-xs">View Reports</span>
-                </Link>
-              </Button>
+              {/* VIEW REPORTS */}
+              {canViewReports && (
+                <Button asChild variant="outline" className={cn("h-auto py-4 flex-col space-y-2", !isActiveMode && inactiveStyle)}>
+                  <Link href="/dashboard/reports">
+                    <BarChart3 className="w-5 h-5 text-purple-600" />
+                    <span className="text-xs">View Reports</span>
+                  </Link>
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -368,46 +419,54 @@ export default async function DashboardPage() {
 
           {/* Other Management Cards */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-6">
-            <Card className="hover:shadow-lg transition-shadow cursor-pointer">
-              <Link href="/dashboard/feed">
-                <CardContent className="p-4 text-center">
-                  <Wheat className="w-8 h-8 mx-auto mb-2 text-yellow-600" />
-                  <h3 className="font-medium text-sm mb-1">Feed</h3>
-                  <p className="text-xs text-gray-600">${dashboardStats?.feed?.monthlyCost || '0'}/month</p>
-                  <Badge variant="outline" className="mt-2 text-xs">{dashboardStats?.feed?.daysRemaining || '0'} days left</Badge>
-                </CardContent>
-              </Link>
-            </Card>
-            <Card className="hover:shadow-lg transition-shadow cursor-pointer">
-              <Link href="/dashboard/finance">
-                <CardContent className="p-4 text-center">
-                  <DollarSign className="w-8 h-8 mx-auto mb-2 text-green-600" />
-                  <h3 className="font-medium text-sm mb-1">Finance</h3>
-                  <p className="text-xs text-gray-600">${dashboardStats?.financial?.monthlyProfit || '0'} profit</p>
-                  <Badge variant="outline" className="mt-2 text-xs">{dashboardStats?.financial?.profitMargin || '0'}% margin</Badge>
-                </CardContent>
-              </Link>
-            </Card>
-            <Card className="hover:shadow-lg transition-shadow cursor-pointer">
-              <Link href="/dashboard/inventory">
-                <CardContent className="p-4 text-center">
-                  <Package className="w-8 h-8 mx-auto mb-2 text-purple-600" />
-                  <h3 className="font-medium text-sm mb-1">Inventory</h3>
-                  <p className="text-xs text-gray-600">{dashboardStats?.inventory?.totalItems || '0'} items</p>
-                  <Badge variant="outline" className="mt-2 text-xs">{dashboardStats?.inventory?.lowStockCount || '0'} low stock</Badge>
-                </CardContent>
-              </Link>
-            </Card>
-            <Card className="hover:shadow-lg transition-shadow cursor-pointer">
-              <Link href="/dashboard/equipment">
-                <CardContent className="p-4 text-center">
-                  <Wrench className="w-8 h-8 mx-auto mb-2 text-gray-600" />
-                  <h3 className="font-medium text-sm mb-1">Equipment</h3>
-                  <p className="text-xs text-gray-600">{dashboardStats?.equipment?.totalCount || '0'} machines</p>
-                  <Badge variant="outline" className="mt-2 text-xs">{dashboardStats?.equipment?.maintenanceDue || '0'} due</Badge>
-                </CardContent>
-              </Link>
-            </Card>
+            {canViewFeed && (
+              <Card className="hover:shadow-lg transition-shadow cursor-pointer">
+                <Link href="/dashboard/feed">
+                  <CardContent className="p-4 text-center">
+                    <Wheat className="w-8 h-8 mx-auto mb-2 text-yellow-600" />
+                    <h3 className="font-medium text-sm mb-1">Feed</h3>
+                    <p className="text-xs text-gray-600">${dashboardStats?.feed?.monthlyCost || '0'}/month</p>
+                    <Badge variant="outline" className="mt-2 text-xs">{dashboardStats?.feed?.daysRemaining || '0'} days left</Badge>
+                  </CardContent>
+                </Link>
+              </Card>
+            )}
+            {canViewFinancial && (
+              <Card className="hover:shadow-lg transition-shadow cursor-pointer">
+                <Link href="/dashboard/financial">
+                  <CardContent className="p-4 text-center">
+                    <DollarSign className="w-8 h-8 mx-auto mb-2 text-green-600" />
+                    <h3 className="font-medium text-sm mb-1">Finance</h3>
+                    <p className="text-xs text-gray-600">${dashboardStats?.financial?.monthlyProfit || '0'} profit</p>
+                    <Badge variant="outline" className="mt-2 text-xs">{dashboardStats?.financial?.profitMargin || '0'}% margin</Badge>
+                  </CardContent>
+                </Link>
+              </Card>
+            )}
+            {canViewInventory && (
+              <Card className="hover:shadow-lg transition-shadow cursor-pointer">
+                <Link href="/dashboard/inventory">
+                  <CardContent className="p-4 text-center">
+                    <Package className="w-8 h-8 mx-auto mb-2 text-purple-600" />
+                    <h3 className="font-medium text-sm mb-1">Inventory</h3>
+                    <p className="text-xs text-gray-600">{dashboardStats?.inventory?.totalItems || '0'} items</p>
+                    <Badge variant="outline" className="mt-2 text-xs">{dashboardStats?.inventory?.lowStockCount || '0'} low stock</Badge>
+                  </CardContent>
+                </Link>
+              </Card>
+            )}
+            {canViewEquipment && (
+              <Card className="hover:shadow-lg transition-shadow cursor-pointer">
+                <Link href="/dashboard/equipment">
+                  <CardContent className="p-4 text-center">
+                    <Wrench className="w-8 h-8 mx-auto mb-2 text-gray-600" />
+                    <h3 className="font-medium text-sm mb-1">Equipment</h3>
+                    <p className="text-xs text-gray-600">{dashboardStats?.equipment?.totalCount || '0'} machines</p>
+                    <Badge variant="outline" className="mt-2 text-xs">{dashboardStats?.equipment?.maintenanceDue || '0'} due</Badge>
+                  </CardContent>
+                </Link>
+              </Card>
+            )}
           </div>
 
           {/* Recent Activity & Team */}
@@ -448,7 +507,7 @@ export default async function DashboardPage() {
 
             {/* Team & Weather */}
             <div className="space-y-8">
-              {canManageTeam && (
+              {canViewTeam && (
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center justify-between">
@@ -457,7 +516,7 @@ export default async function DashboardPage() {
                         Team
                       </div>
                       <Button asChild size="sm" variant="ghost">
-                        <Link href="/dashboard/settings/team">
+                        <Link href="/dashboard/teams">
                           Manage <ArrowRight className="w-3 h-3 ml-1" />
                         </Link>
                       </Button>

@@ -1,8 +1,9 @@
 // src/lib/database/dashboard.ts
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { getAnimalStats } from '@/lib/database/animals'
-import { getTeamStats } from '@/lib/database/team'
+
 import { withCache } from '@/lib/cache/query-cache'
+
 
 export async function getDashboardStats(farmId: string) {
   return withCache(
@@ -560,6 +561,38 @@ export async function getInventoryStats(farmId: string) {
     return {
       totalItems: 0,
       lowStockCount: 0
+    }
+  }
+}
+
+// Team management statistics
+export async function getTeamStats(farmId: string) {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    // Get total team members (active roles)
+    const { count: totalMembers } = await supabase
+      .from('user_roles')
+      .select('id', { count: 'exact', head: true })
+      .eq('farm_id', farmId)
+      .eq('status', 'active')
+    
+    // Get pending invitations
+    const { count: pendingInvitations } = await supabase
+      .from('farm_invitations')
+      .select('*', { count: 'exact', head: true })
+      .eq('farm_id', farmId)
+      .is('accepted_at', null)
+    
+    return {
+      total: totalMembers || 0,
+      pending: pendingInvitations || 0
+    }
+  } catch (error) {
+    console.error('Error getting team stats:', error)
+    return {
+      total: 0,
+      pending: 0
     }
   }
 }

@@ -1,9 +1,7 @@
 // app/actions/import-animals.ts (Mapped to your database schema)
 'use server'
 
-import { createServerActionClient } from '@supabase/auth-helpers-nextjs'
-import { createClient } from '@supabase/supabase-js'
-import { cookies } from 'next/headers'
+import { createServerSupabaseClient, getCurrentUser } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
 interface ImportAnimal {
@@ -69,93 +67,20 @@ export async function importAnimalsActionWithAuth(
   try {
     console.log('🚀 Starting authenticated import for farm:', farmId)
 
-    // Authentication logic (same as before)
-    let user = null
-    let supabase = null
-
-    try {
-      const cookieStore = await cookies()
-      supabase = createServerActionClient({ cookies: () => Promise.resolve(cookieStore) })
-      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser()
-      
-      if (authUser && !authError) {
-        user = authUser
-        console.log('✅ Authentication successful via server action client:', user.id)
-      } else {
-        console.log('⚠️ Server action auth failed:', authError?.message)
-      }
-    } catch (serverActionError) {
-      console.log('⚠️ Server action client error:', serverActionError)
-    }
-
-    // Fallback authentication method
+    const user = await getCurrentUser()
     if (!user) {
-      console.log('🔄 Trying fallback authentication method...')
-      
-      try {
-        const cookieStore = await cookies()
-        const allCookies = cookieStore.getAll()
-        
-        const authCookies = allCookies.filter(cookie => 
-          cookie.name.includes('auth-token') || 
-          cookie.name.includes('supabase') ||
-          cookie.name.includes('sb-')
-        )
-        
-        let accessToken = null
-        for (const cookie of authCookies) {
-          try {
-            if (cookie.value.startsWith('base64-')) {
-              const decoded = Buffer.from(cookie.value.substring(7), 'base64').toString()
-              const parsed = JSON.parse(decoded)
-              if (parsed.access_token) {
-                accessToken = parsed.access_token
-                break
-              }
-            } else if (cookie.value.includes('access_token')) {
-              const parsed = JSON.parse(cookie.value)
-              if (parsed.access_token) {
-                accessToken = parsed.access_token
-                break
-              }
-            }
-          } catch (parseError) {
-            console.log(`⚠️ Could not parse cookie ${cookie.name}:`, parseError)
-          }
-        }
-        
-        if (accessToken && process.env.SUPABASE_SERVICE_ROLE_KEY) {
-          const serviceSupabase = createClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.SUPABASE_SERVICE_ROLE_KEY!,
-            {
-              auth: { autoRefreshToken: false, persistSession: false }
-            }
-          )
-          
-          const { data: { user: tokenUser }, error: tokenError } = await serviceSupabase.auth.getUser(accessToken)
-          
-          if (tokenUser && !tokenError) {
-            user = tokenUser
-            supabase = serviceSupabase
-            console.log('✅ Token verification successful:', user.id)
-          }
-        }
-      } catch (fallbackError) {
-        console.log('❌ Fallback authentication error:', fallbackError)
-      }
-    }
-
-    if (!user || !supabase) {
       return {
         success: false,
         imported: 0,
         skipped: 0,
         animals: [],
-        errors: ['Authentication failed. Please log out and log back in.'],
-        message: 'Authentication required'
+        errors: ['Authentication failed. Please log in and try again.'],
+        message: 'Authentication required',
       }
     }
+
+    const supabase = await createServerSupabaseClient()
+    console.log('✅ Authentication successful:', user.id)
 
     // Verify farm access
     const { data: farmAccess, error: farmError } = await supabase

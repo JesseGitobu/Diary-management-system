@@ -48,7 +48,7 @@ const allNavItems = [
   { icon: Warehouse, label: 'Inventory', href: '/dashboard/inventory', feature: 'inventory_equipment' },
   { icon: Tractor, label: 'Equipment', href: '/dashboard/equipment', feature: 'inventory_equipment' },
   { icon: BarChart3, label: 'Reports', href: '/dashboard/reports', feature: 'performance_analysis_reporting_tools' },
-  { icon: Users, label: 'Team', href: '/dashboard/settings/team' },
+  { icon: Users, label: 'Team', href: '/dashboard/teams' },
   { icon: Settings, label: 'Settings', href: '/dashboard/settings' },
 ]
 

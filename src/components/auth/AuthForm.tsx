@@ -126,6 +126,15 @@ export function AuthForm({ mode = 'signin' }: AuthFormProps) {
     setError(null)
     setSuccess(null)
 
+    // Validate email matches invitation if signing up with invitation
+    if (invitationToken && invitationData) {
+      if (data.email.toLowerCase() !== invitationData.email.toLowerCase()) {
+        setError(`You must sign up with the email address in your invitation: ${invitationData.email}`)
+        setLoading(false)
+        return
+      }
+    }
+
     const { error } = await signUp(data.email, data.password, data.fullName, invitationToken || undefined)
 
     if (error) {
