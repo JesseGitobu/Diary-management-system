@@ -1,5 +1,6 @@
-import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { createServerSupabaseClient, getUserIdFromSession } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { cookies } from 'next/headers'
 
 export async function GET(
   req: NextRequest,
@@ -9,15 +10,42 @@ export async function GET(
     const supabase = await createServerSupabaseClient()
     const { farmId } = await params
 
+    // Get user ID with fallback
+    let userId: string | null = null
+    try {
+      const { data: { user }, error } = await supabase.auth.getUser()
+      if (error || !user) throw error || new Error('User is null')
+      userId = user.id
+      console.log(`✅ [milking-groups GET] Got user via getUser(): ${userId}`)
+    } catch (authErr) {
+      console.log(`⚠️ [milking-groups GET] getUser() failed, attempting session fallback...`)
+      try {
+        userId = await getUserIdFromSession()
+        if (userId) {
+          console.log(`✅ [milking-groups GET] User authenticated via session-cookie: ${userId}`)
+        }
+      } catch (sessionErr) {
+        console.error(`❌ [milking-groups GET] Both auth methods failed:`, authErr, sessionErr)
+      }
+    }
+
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'Unauthorized access to farm' },
+        { status: 401 }
+      )
+    }
+
     // Verify user has access to this farm by checking user_roles
     const { data: userRole, error: roleError } = await supabase
       .from('user_roles')
       .select('id')
       .eq('farm_id', farmId)
-      .not('farm_id', 'is', null)
-      .single()
+      .eq('user_id', userId)
+      .maybeSingle()
 
     if (roleError || !userRole) {
+      console.warn(`⚠️ [milking-groups GET] No user role found for farm ${farmId}:`, roleError)
       return NextResponse.json(
         { error: 'Unauthorized access to farm' },
         { status: 403 }
@@ -75,15 +103,42 @@ export async function POST(
       )
     }
 
+    // Get user ID with fallback
+    let userId: string | null = null
+    try {
+      const { data: { user }, error } = await supabase.auth.getUser()
+      if (error || !user) throw error || new Error('User is null')
+      userId = user.id
+      console.log(`✅ [milking-groups POST] Got user via getUser(): ${userId}`)
+    } catch (authErr) {
+      console.log(`⚠️ [milking-groups POST] getUser() failed, attempting session fallback...`)
+      try {
+        userId = await getUserIdFromSession()
+        if (userId) {
+          console.log(`✅ [milking-groups POST] User authenticated via session-cookie: ${userId}`)
+        }
+      } catch (sessionErr) {
+        console.error(`❌ [milking-groups POST] Both auth methods failed:`, authErr, sessionErr)
+      }
+    }
+
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'Unauthorized access to farm' },
+        { status: 401 }
+      )
+    }
+
     // Verify user has access to this farm by checking user_roles
     const { data: userRole, error: roleError } = await supabase
       .from('user_roles')
       .select('id, role_type')
       .eq('farm_id', farmId)
-      .not('farm_id', 'is', null)
-      .single()
+      .eq('user_id', userId)
+      .maybeSingle()
 
     if (roleError || !userRole) {
+      console.warn(`⚠️ [milking-groups POST] No user role found for farm ${farmId}:`, roleError)
       return NextResponse.json(
         { error: 'Unauthorized access to farm' },
         { status: 403 }

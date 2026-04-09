@@ -323,12 +323,22 @@ export function ProductionDistributionDashboard({
     const isLate = (currentTimeMinutes - activeSession.minutes) > lateThreshold;
 
     const todayStr = new Date().toISOString().split('T')[0];
-    const totalEligible = animals.length;
 
-    // Count unique animals milked today for this specific session
+    // Only lactating and served animals are eligible for milking sessions
+    const eligibleAnimals = animals.filter(a =>
+      a.production_status === 'lactating' || a.production_status === 'served'
+    )
+    const totalEligible = eligibleAnimals.length;
+
+    // Count unique eligible animals milked today for this specific session
+    const eligibleIds = new Set(eligibleAnimals.map(a => a.id))
     const uniqueMilkedAnimals = new Set(
       productionRecords
-        .filter(r => r.record_date === todayStr && r.milking_session_id === activeSession!.name)
+        .filter(r =>
+          r.record_date === todayStr &&
+          r.milking_session_id === activeSession!.name &&
+          eligibleIds.has(r.animal_id)
+        )
         .map(r => r.animal_id)
     ).size;
 

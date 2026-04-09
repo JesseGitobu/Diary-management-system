@@ -5,6 +5,7 @@ import { UseFormReturn } from 'react-hook-form'
 import { Label } from '@/components/ui/Label'
 import { Input } from '@/components/ui/Input'
 import { ProductionSettings } from '@/types/production-distribution-settings'
+import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { AlertTriangle, Thermometer } from 'lucide-react'
 
 interface ProductionHealthSectionProps {
@@ -23,6 +24,7 @@ export function ProductionHealthSection({
   form,
   settings
 }: ProductionHealthSectionProps) {
+  const { isMobile } = useDeviceInfo()
   const temperature = form.watch('temperature')
   const mastitis_test_performed = form.watch('mastitis_test_performed')
   const mastitis_result = form.watch('mastitis_result')
@@ -48,7 +50,7 @@ export function ProductionHealthSection({
     <div className="space-y-4 p-4 bg-stone-50 rounded-lg border border-stone-200">
       <h4 className="font-medium text-stone-900">Health & Safety Checks</h4>
 
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {/* Left Column — Health Checks */}
         <div className="space-y-4">
           {/* Temperature */}

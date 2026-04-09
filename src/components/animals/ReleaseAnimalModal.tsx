@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
+import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Modal } from '@/components/ui/Modal'
@@ -53,6 +54,7 @@ export function ReleaseAnimalModal({
   onClose, 
   onAnimalReleased 
 }: ReleaseAnimalModalProps) {
+  const { isMobile } = useDeviceInfo()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -124,21 +126,21 @@ export function ReleaseAnimalModal({
   }
   
   return (
-    <Modal isOpen={isOpen} onClose={onClose} className="max-w-2xl">
-      <div className="p-6">
-        <div className="flex items-center justify-between mb-6">
+    <Modal isOpen={isOpen} onClose={onClose} size="2xl">
+      <div className={isMobile ? 'p-4' : 'p-6'}>
+        <div className={`flex items-start justify-between mb-5 ${isMobile ? 'gap-3' : 'mb-6'}`}>
           <div className="flex items-center space-x-3">
-            <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
-              <AlertTriangle className="w-6 h-6 text-red-600" />
+            <div className={`bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0 ${isMobile ? 'w-10 h-10' : 'w-12 h-12'}`}>
+              <AlertTriangle className={`text-red-600 ${isMobile ? 'w-5 h-5' : 'w-6 h-6'}`} />
             </div>
             <div>
-              <h2 className="text-2xl font-bold text-gray-900">Release Animal</h2>
-              <p className="text-gray-600">
+              <h2 className={`font-bold text-gray-900 ${isMobile ? 'text-xl' : 'text-2xl'}`}>Release Animal</h2>
+              <p className="text-gray-600 text-sm sm:text-base">
                 Remove {animal.name || animal.tag_number} from active herd
               </p>
             </div>
           </div>
-          <Button variant="ghost" size="sm" onClick={onClose}>
+          <Button variant="ghost" size="sm" onClick={onClose} className="flex-shrink-0">
             <X className="w-4 h-4" />
           </Button>
         </div>
@@ -395,7 +397,7 @@ export function ReleaseAnimalModal({
           </div>
           
           {/* Form Actions */}
-          <div className="flex justify-end space-x-4 pt-6 border-t">
+          <div className={`flex gap-3 pt-6 border-t ${isMobile ? 'flex-col-reverse' : 'justify-end'}`}>
             <Button
               type="button"
               variant="outline"

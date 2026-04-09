@@ -64,8 +64,10 @@ export function MilkingGroupsManager({
   farmId,
   animals,
   onClose,
-  isMobile = false
+  isMobile: isMobileProp = false
 }: MilkingGroupsManagerProps) {
+  const { isMobile: isMobileDevice, isTablet } = useDeviceInfo()
+  const isMobile = isMobileDevice || isMobileProp
   const [loading, setLoading] = useState(true)
   const [categories, setCategories] = useState<AnimalCategory[]>([])
   const [milkingGroups, setMilkingGroups] = useState<MilkingGroup[]>([])
@@ -341,7 +343,7 @@ export function MilkingGroupsManager({
                         {/* Milking Times */}
                         <div className="space-y-2">
                           <p className="text-sm font-medium text-gray-700">Milking Times:</p>
-                          <div className="grid grid-cols-2 gap-2">
+                          <div className={`grid gap-2 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                             {schedule.times.map((time, idx) => (
                               <div
                                 key={idx}
@@ -399,7 +401,7 @@ export function MilkingGroupsManager({
                               No animals match this category
                             </div>
                           ) : (
-                            <div className="max-h-60 overflow-y-auto">
+                            <div className={`overflow-y-auto ${isMobile ? 'max-h-48' : 'max-h-60'}`}>
                               <div className="space-y-1">
                                 {animals.map((animal) => (
                                   <div
@@ -490,7 +492,7 @@ export function MilkingGroupsManager({
         ) : (
           <div className={cn(
             'grid gap-3',
-            isMobile ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-2'
+            isMobile ? 'grid-cols-1' : isTablet ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-2'
           )}>
             {availableCategories.map((category) => {
               const schedule = category.characteristics?.milking_schedules?.[0]

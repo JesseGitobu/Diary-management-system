@@ -69,7 +69,8 @@ export function MobileFilterDrawer({
       { value: 'heifer', label: 'Heifer' },
       { value: 'served', label: 'Served' },
       { value: 'lactating', label: 'Lactating' },
-      { value: 'dry', label: 'Dry' }
+      { value: 'open_culling_dry_cows', label: 'Open Dry' },
+      { value: 'steaming_dry_cows', label: 'Steaming Dry' }
     ],
     healthStatus: [
       { value: 'all', label: 'All Health' },

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
 
 interface HistoricalData {
@@ -39,6 +40,7 @@ export function ProductionHistoricalContext({
   currentSessionName,
   sessions
 }: ProductionHistoricalContextProps) {
+  const { isMobile } = useDeviceInfo()
   const [historicalData, setHistoricalData] = useState<HistoricalData | null>(null)
   const [loading, setLoading] = useState(true)
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -132,9 +134,13 @@ export function ProductionHistoricalContext({
   }
 
   return (
-    <div className="grid grid-cols-3 gap-3 p-4 bg-stone-50 rounded-lg border border-stone-200">
+    <div className={`p-3 sm:p-4 bg-stone-50 rounded-lg border border-stone-200 ${
+      isMobile
+        ? 'flex overflow-x-auto gap-3 snap-x snap-mandatory scrollbar-hide'
+        : 'grid grid-cols-3 gap-3'
+    }`}>
       {/* Yesterday's Total */}
-      <div className="flex flex-col space-y-1">
+      <div className="flex flex-col space-y-1 flex-shrink-0 snap-start min-w-[140px] sm:min-w-0">
         <p className="text-xs font-medium text-stone-600 uppercase tracking-wide">Yesterday Total</p>
         <div className="flex items-baseline space-x-2">
           <span className="text-2xl font-bold text-stone-900">
@@ -148,7 +154,7 @@ export function ProductionHistoricalContext({
       </div>
 
       {/* Previous Session */}
-      <div className="flex flex-col space-y-1">
+      <div className="flex flex-col space-y-1 flex-shrink-0 snap-start min-w-[140px] sm:min-w-0">
         <p className="text-xs font-medium text-stone-600 uppercase tracking-wide">Previous Session</p>
         <div className="flex items-baseline space-x-2">
           {historicalData.previousSessionVolume ? (
@@ -170,7 +176,7 @@ export function ProductionHistoricalContext({
       </div>
 
       {/* Same Time Yesterday */}
-      <div className="flex flex-col space-y-1">
+      <div className="flex flex-col space-y-1 flex-shrink-0 snap-start min-w-[140px] sm:min-w-0">
         <p className="text-xs font-medium text-stone-600 uppercase tracking-wide">Same Time Yesterday</p>
         <div className="flex items-center space-x-2">
           <div className="flex items-baseline space-x-2">

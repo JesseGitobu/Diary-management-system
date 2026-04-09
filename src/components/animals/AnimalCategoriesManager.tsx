@@ -509,15 +509,23 @@ export function AnimalCategoriesManager({
     setAssignmentData(null)
 
     try {
-      const response = await fetch(
-        `/api/farms/${farmId}/animal-categories/${category.id}/assignments`
-      )
+      console.log('🐛 Debug: Fetching assignments for category:', category.id, 'farmId:', farmId)
+      const url = `/api/farms/${farmId}/animal-categories/${category.id}/assignments`
+      console.log('🐛 Debug: Fetch URL:', url)
+
+      const response = await fetch(url)
+      console.log('🐛 Debug: Response status:', response.status, response.statusText)
+      console.log('🐛 Debug: Response headers:', Object.fromEntries(response.headers.entries()))
 
       if (!response.ok) {
-        throw new Error('Failed to fetch assignments')
+        const errorText = await response.text()
+        console.error('🐛 Debug: Response error text:', errorText)
+        throw new Error(`Failed to fetch assignments: ${response.status} ${response.statusText} - ${errorText}`)
       }
 
       const result = await response.json()
+      console.log('🐛 Debug: Response data:', result)
+
       setAssignmentData(result.data)
       setMatchingAnimals(result.data.matchingAnimals || [])
       setAssignmentMode('auto')

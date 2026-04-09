@@ -624,7 +624,7 @@ export async function getMatchingAnimals(
         .from('pregnancy_records')
         .select('animal_id, expected_calving_date')
         .in('animal_id', animalIds)
-        .is('expected_calving_date', false) // Get active pregnancies
+        .not('expected_calving_date', 'is', null) // Get active pregnancies with a set calving date
       
       const pregnancyMap = new Map()
       ;(pregnancyData as any[] || []).forEach(rec => {

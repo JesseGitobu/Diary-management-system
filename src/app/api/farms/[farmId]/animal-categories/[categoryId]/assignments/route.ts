@@ -7,7 +7,7 @@ import { getMatchingAnimals } from '@/lib/database/feedManagementSettings'
 
 // GET: Fetch assignment data for a category (current, suggested, and to-remove animals)
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   props: { params: Promise<{ farmId: string; categoryId: string }> }
 ) {
   try {
@@ -15,12 +15,20 @@ export async function GET(
     const { farmId, categoryId } = params
     const supabase = await createServerSupabaseClient()
 
-    // Verify user has access to this farm
+    // Get the current user's ID
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Verify current user has access to this farm (filter by user_id to avoid
+    // .single() failing when there are multiple team members for the same farm)
     const { data: userFarm } = await supabase
       .from('user_roles')
       .select('id')
       .eq('farm_id', farmId)
-      .single()
+      .eq('user_id', user.id)
+      .maybeSingle()
 
     if (!userFarm) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
@@ -106,7 +114,7 @@ export async function GET(
         const animalIds = (baseAnimals as any[]).map(a => a.id)
         const { data: lactationData } = await supabase
           .from('lactation_cycle_records')
-          .select('animal_id, days_in_milk, current_daily_production, current_average_production')
+          .select('animal_id, days_in_milk, current_average_production')
           .in('animal_id', animalIds)
           .is('actual_end_date', null) // Get active lactation records
 
@@ -125,7 +133,7 @@ export async function GET(
             ...animal,
             status: animal.status || 'active',
             days_in_milk: lactRec?.days_in_milk || null,
-            current_daily_production: lactRec?.current_daily_production || lactRec?.current_average_production || null,
+            current_daily_production: lactRec?.current_average_production || null,
             age_days: animal.birth_date
               ? Math.floor((today.getTime() - new Date(animal.birth_date).getTime()) / (1000 * 60 * 60 * 24))
               : null
@@ -183,14 +191,77 @@ export async function POST(
     const body = await request.json()
     const { animal_id, assignment_method = 'manual', notes } = body
 
-    // Verify user has access to this farm
-    const { data: userFarm } = await supabase
+    // Get the current user's ID from session (with fallback to cookies)
+    let userId: string | undefined
+    let authMethod = 'unknown'
+    
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      
+      if (authError) {
+        console.log('⚠️ getUser() returned error:', authError.message.slice(0, 50))
+        throw authError
+      }
+      
+      if (!user) {
+        console.log('⚠️ getUser() succeeded but user is null - trying session cookie fallback')
+        throw new Error('User is null')
+      }
+      
+      userId = user.id
+      authMethod = 'getUser'
+      console.log('✅ Current user (via getUser):', userId)
+    } catch (authErr) {
+      console.log('🔄 Fallback: Extracting from session cookies...')
+      
+      // Fallback: Try to get from cookies
+      const cookieStore = await (await import('next/headers')).cookies()
+      
+      // Try multiple cookie names
+      const cookieNames = ['sb-auth-token', 'sb:token', 'auth-token']
+      let sessionCookie = null
+      
+      for (const name of cookieNames) {
+        sessionCookie = cookieStore.get(name)
+        if (sessionCookie?.value) {
+          console.log(`📦 Found session cookie: ${name}`)
+          break
+        }
+      }
+      
+      if (sessionCookie?.value) {
+        try {
+          const decoded = JSON.parse(Buffer.from(sessionCookie.value, 'base64').toString())
+          userId = decoded?.user?.id
+          authMethod = 'session-cookie'
+          console.log('✅ Current user (via session cookie):', userId)
+        } catch (parseErr) {
+          console.log('❌ Could not parse session cookie:', (parseErr as Error).message.slice(0, 50))
+        }
+      } else {
+        console.log('❌ No session cookie found in:', cookieNames.join(', '))
+      }
+    }
+    
+    if (!userId) {
+      console.log('❌ No authenticated user found via any method')
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    
+    console.log(`✅ User authenticated via ${authMethod}: ${userId}`)
+
+    // Verify user has access to this farm (filter by user_id to avoid single() failing)
+    const { data: userFarm, error: userFarmError } = await supabase
       .from('user_roles')
       .select('id')
       .eq('farm_id', farmId)
-      .single()
+      .eq('user_id', userId)
+      .maybeSingle()
+    
+    console.log('🔍 User farm access check:', { userFarm, error: userFarmError?.message })
 
     if (!userFarm) {
+      console.log('❌ User does not have access to this farm')
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
 
@@ -287,14 +358,79 @@ export async function DELETE(
     const body = await request.json()
     const { animal_id, notes } = body
 
-    // Verify user has access to this farm
-    const { data: userFarm } = await supabase
+    console.log('🔍 DELETE assignments - Debug:', { farmId, categoryId, animal_id })
+
+    // Get the current user's ID from session (with fallback to cookies)
+    let userId: string | undefined
+    let authMethod = 'unknown'
+    
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      
+      if (authError) {
+        console.log('⚠️ getUser() returned error:', authError.message.slice(0, 50))
+        throw authError
+      }
+      
+      if (!user) {
+        console.log('⚠️ getUser() succeeded but user is null - trying session cookie fallback')
+        throw new Error('User is null')
+      }
+      
+      userId = user.id
+      authMethod = 'getUser'
+      console.log('✅ Current user (via getUser):', userId)
+    } catch (authErr) {
+      console.log('🔄 Fallback: Extracting from session cookies...')
+      
+      // Fallback: Try to get from cookies
+      const cookieStore = await (await import('next/headers')).cookies()
+      
+      // Try multiple cookie names
+      const cookieNames = ['sb-auth-token', 'sb:token', 'auth-token']
+      let sessionCookie = null
+      
+      for (const name of cookieNames) {
+        sessionCookie = cookieStore.get(name)
+        if (sessionCookie?.value) {
+          console.log(`📦 Found session cookie: ${name}`)
+          break
+        }
+      }
+      
+      if (sessionCookie?.value) {
+        try {
+          const decoded = JSON.parse(Buffer.from(sessionCookie.value, 'base64').toString())
+          userId = decoded?.user?.id
+          authMethod = 'session-cookie'
+          console.log('✅ Current user (via session cookie):', userId)
+        } catch (parseErr) {
+          console.log('❌ Could not parse session cookie:', (parseErr as Error).message.slice(0, 50))
+        }
+      } else {
+        console.log('❌ No session cookie found in:', cookieNames.join(', '))
+      }
+    }
+    
+    if (!userId) {
+      console.log('❌ No authenticated user found via any method')
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    
+    console.log(`✅ User authenticated via ${authMethod}: ${userId}`)
+
+    // Verify user has access to this farm (filter by user_id to avoid single() failing)
+    const { data: userFarm, error: userFarmError } = await supabase
       .from('user_roles')
       .select('id')
       .eq('farm_id', farmId)
-      .single()
+      .eq('user_id', userId)
+      .maybeSingle()
+    
+    console.log('🔍 User farm access check:', { userFarm, error: userFarmError?.message })
 
     if (!userFarm) {
+      console.log('❌ User does not have access to this farm')
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
 

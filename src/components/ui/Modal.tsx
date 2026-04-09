@@ -9,7 +9,7 @@ interface ModalProps {
   onClose: () => void
   children: React.ReactNode
   className?: string
-  size?: 'sm' | 'md' | 'lg' | 'xl'
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl'
   closeOnOverlayClick?: boolean
   showCloseButton?: boolean
 }
@@ -42,10 +42,13 @@ export function Modal({
   const hasInitializedRef = React.useRef(false)
   
   const sizeClasses = {
-    sm: 'max-w-sm',
-    md: 'max-w-md',
-    lg: 'max-w-lg',
-    xl: 'max-w-xl'
+    sm:   'max-w-sm',
+    md:   'max-w-md',
+    lg:   'max-w-lg',
+    xl:   'max-w-xl',
+    '2xl': 'max-w-2xl',
+    '3xl': 'max-w-3xl',
+    '4xl': 'max-w-4xl',
   }
   
   React.useEffect(() => {
@@ -84,19 +87,23 @@ export function Modal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
       {/* Backdrop */}
-      <div 
+      <div
         className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-in fade-in-0"
         onClick={handleOverlayClick}
       />
-      
-      {/* Modal */}
-      <div 
+
+      {/* Modal — slides up from bottom on mobile, centered on sm+ */}
+      <div
         ref={modalRef}
         className={cn(
-          "relative bg-white rounded-lg shadow-xl w-full mx-4 max-h-[90vh] overflow-hidden",
-          "animate-in fade-in-0 zoom-in-95 duration-200",
+          "relative bg-white w-full shadow-xl overflow-hidden",
+          // Mobile: full-width, rounded top corners, slides from bottom
+          "rounded-t-2xl max-h-[92vh]",
+          // sm+: centered with margins, all corners rounded, capped height
+          "sm:rounded-lg sm:mx-4 sm:max-h-[90vh]",
+          "animate-in fade-in-0 slide-in-from-bottom-4 sm:zoom-in-95 duration-200",
           sizeClasses[size],
           className
         )}
@@ -104,6 +111,11 @@ export function Modal({
         role="dialog"
         aria-modal="true"
       >
+        {/* Drag handle indicator on mobile */}
+        <div className="sm:hidden flex justify-center pt-2 pb-1">
+          <div className="w-10 h-1 bg-gray-300 rounded-full" />
+        </div>
+
         {showCloseButton && (
           <button
             onClick={onClose}
@@ -113,7 +125,7 @@ export function Modal({
             <span className="sr-only">Close</span>
           </button>
         )}
-        
+
         <div className="max-h-[90vh] overflow-auto">
           {children}
         </div>

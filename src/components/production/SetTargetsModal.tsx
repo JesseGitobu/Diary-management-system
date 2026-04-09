@@ -7,6 +7,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
 import { AlertCircle, Check } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
+import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 
 interface Animal {
   id: string
@@ -20,7 +21,7 @@ interface SetTargetsModalProps {
   onClose: () => void
   animals: Animal[]
   farmId: string
-  isMobile?: boolean
+  isMobile?: boolean  // kept for backward compat; hook used internally
   onSuccess?: () => void
 }
 
@@ -37,9 +38,9 @@ export function SetTargetsModal({
   onClose,
   animals,
   farmId,
-  isMobile = false,
   onSuccess
 }: SetTargetsModalProps) {
+  const { isMobile } = useDeviceInfo()
   const [targetType, setTargetType] = useState<'animal' | 'group'>('animal')
   const [selectedEntity, setSelectedEntity] = useState<string>('')
   const [dailyTarget, setDailyTarget] = useState<string>('')
@@ -141,8 +142,8 @@ export function SetTargetsModal({
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} className={`${isMobile ? 'max-w-full mx-4 my-4 max-h-[90vh] overflow-y-auto' : 'max-w-2xl'}`}>
-      <div className={`${isMobile ? 'p-4' : 'p-6'}`}>
+    <Modal isOpen={isOpen} onClose={onClose} size="2xl">
+      <div className={isMobile ? 'p-4' : 'p-6'}>
         <div className="space-y-6">
           {/* Header */}
           <div>

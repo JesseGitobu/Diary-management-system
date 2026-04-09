@@ -205,7 +205,7 @@ export function AnimalsList({
         served: 'Served',
         lactating: 'Lactating',
         steaming_dry_cows: 'Steaming Dry',
-        open_culling_dry_cows: 'Open Culling'
+        open_culling_dry_cows: 'Open Dry'
       },
       healthStatus: {
         healthy: 'Healthy',
@@ -381,7 +381,7 @@ export function AnimalsList({
                     <SelectItem value="served">Served</SelectItem>
                     <SelectItem value="lactating">Lactating</SelectItem>
                     <SelectItem value="steaming_dry_cows">Steaming Dry</SelectItem>
-                    <SelectItem value="open_culling_dry_cows">Open Culling</SelectItem>
+                    <SelectItem value="open_culling_dry_cows">Open Dry</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

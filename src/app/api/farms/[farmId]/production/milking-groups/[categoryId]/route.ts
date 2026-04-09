@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { createServerSupabaseClient, getUserIdFromSession } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function DELETE(
@@ -9,15 +9,42 @@ export async function DELETE(
     const supabase = await createServerSupabaseClient()
     const { farmId, categoryId } = await params
 
+    // Get user ID with fallback
+    let userId: string | null = null
+    try {
+      const { data: { user }, error } = await supabase.auth.getUser()
+      if (error || !user) throw error || new Error('User is null')
+      userId = user.id
+      console.log(`✅ [milking-groups DELETE] Got user via getUser(): ${userId}`)
+    } catch (authErr) {
+      console.log(`⚠️ [milking-groups DELETE] getUser() failed, attempting session fallback...`)
+      try {
+        userId = await getUserIdFromSession()
+        if (userId) {
+          console.log(`✅ [milking-groups DELETE] User authenticated via session-cookie: ${userId}`)
+        }
+      } catch (sessionErr) {
+        console.error(`❌ [milking-groups DELETE] Both auth methods failed:`, authErr, sessionErr)
+      }
+    }
+
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'Unauthorized access to farm' },
+        { status: 401 }
+      )
+    }
+
     // Verify user has access to this farm by checking user_roles
     const { data: userRole, error: roleError } = await supabase
       .from('user_roles')
       .select('id, role_type')
       .eq('farm_id', farmId)
-      .not('farm_id', 'is', null)
-      .single()
+      .eq('user_id', userId)
+      .maybeSingle()
 
     if (roleError || !userRole) {
+      console.warn(`⚠️ [milking-groups DELETE] No user role found for farm ${farmId}:`, roleError)
       return NextResponse.json(
         { error: 'Unauthorized access to farm' },
         { status: 403 }

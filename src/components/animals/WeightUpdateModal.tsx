@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { Weight, Calendar, AlertTriangle, Info } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 
@@ -34,6 +35,7 @@ export function WeightUpdateModal({
   onWeightUpdated,
   onRefreshData  // ✅ NEW: Destructure callback
 }: WeightUpdateModalProps) {
+  const { isMobile } = useDeviceInfo()
   const [weight, setWeight] = useState('')
   const [measurementDate, setMeasurementDate] = useState(
     new Date().toISOString().split('T')[0]
@@ -100,8 +102,8 @@ export function WeightUpdateModal({
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} className="max-w-lg">
-      <div className="p-6">
+    <Modal isOpen={isOpen} onClose={onClose} size="lg">
+      <div className={isMobile ? 'p-4' : 'p-6'}>
         <div className="flex items-center space-x-3 mb-4">
           <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
             <Weight className="w-5 h-5 text-orange-600" />
@@ -187,7 +189,7 @@ export function WeightUpdateModal({
             </div>
           </div>
 
-          <div className="flex justify-end space-x-3 pt-4">
+          <div className={`flex pt-4 gap-3 ${isMobile ? 'flex-col-reverse' : 'justify-end'}`}>
             <Button
               type="button"
               variant="outline"

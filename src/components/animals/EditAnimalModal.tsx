@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
+import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Modal } from '@/components/ui/Modal'
@@ -75,6 +76,7 @@ export function EditAnimalModal({
   weightUpdateReason,
   onRefreshData
 }: EditAnimalModalProps) {
+  const { isMobile } = useDeviceInfo()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [availableMothers, setAvailableMothers] = useState<any[]>([])
@@ -264,8 +266,8 @@ export function EditAnimalModal({
 }
   
   return (
-    <Modal isOpen={isOpen} onClose={onClose} className="max-w-4xl">
-      <div className="p-6">
+    <Modal isOpen={isOpen} onClose={onClose} className="sm:max-w-4xl">
+      <div className={isMobile ? 'p-4' : 'p-6'}>
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center space-x-3">
             <div className={cn(
@@ -651,7 +653,7 @@ export function EditAnimalModal({
           </div>
           
           {/* Form Actions */}
-          <div className="flex justify-end space-x-4 pt-6 border-t">
+          <div className={`flex gap-3 pt-6 border-t ${isMobile ? 'flex-col-reverse' : 'justify-end'}`}>
             <Button
               type="button"
               variant="outline"

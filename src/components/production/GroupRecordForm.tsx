@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/Label'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { IndividualRecordForm } from './IndividualRecordForm'
 import { ProductionSettings } from '@/types/production-distribution-settings'
+import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { CheckCircle2, AlertCircle } from 'lucide-react'
 
 interface AnimalRecord {
@@ -52,6 +53,7 @@ export function GroupRecordForm({
   onSuccess,
   sessionName,
 }: GroupRecordFormProps) {
+  const { isMobile } = useDeviceInfo()
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
   const [selectedAnimalId, setSelectedAnimalId] = useState<string | null>(null)
   const [recordedAnimalIds, setRecordedAnimalIds] = useState<Set<string>>(new Set())
@@ -341,7 +343,7 @@ export function GroupRecordForm({
                   </div>
 
                   {/* Progress Bar */}
-                  <div className="flex-shrink-0 w-32">
+                  <div className={`flex-shrink-0 ${isMobile ? 'w-20' : 'w-32'}`}>
                     <div className="h-2 bg-stone-200 rounded-full overflow-hidden">
                       <div
                         className={`h-full transition-all ${isComplete ? 'bg-green-600' : 'bg-blue-500'}`}
@@ -420,7 +422,7 @@ export function GroupRecordForm({
         </div>
 
         {/* Animals List */}
-        <div className="space-y-2 max-h-96 overflow-y-auto border border-stone-200 rounded-lg p-2">
+        <div className={`space-y-2 overflow-y-auto border border-stone-200 rounded-lg p-2 ${isMobile ? 'max-h-64' : 'max-h-96'}`}>
           {filteredPendingAnimals.length === 0 ? (
             <div className="text-center py-8 text-stone-500">
               <p className="text-sm">

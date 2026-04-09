@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
+import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Label } from '@/components/ui/Label'
@@ -74,6 +75,7 @@ export function ImportAnimalsModal({
   onClose,
   onAnimalsImported
 }: ImportAnimalsModalProps) {
+  const { isMobile } = useDeviceInfo()
   const [step, setStep] = useState<'upload' | 'preview' | 'importing' | 'complete'>('upload')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [parsedData, setParsedData] = useState<ParsedAnimal[]>([])
@@ -501,7 +503,7 @@ export function ImportAnimalsModal({
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} className="max-w-2xl max-h-[90vh] overflow-y-auto">
+    <Modal isOpen={isOpen} onClose={handleClose} size="2xl">
       <div className="p-4 md:p-6">
         {step === 'upload' && (
           <div className="space-y-6">

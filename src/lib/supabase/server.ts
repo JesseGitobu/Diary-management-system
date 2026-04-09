@@ -70,9 +70,56 @@ export const createAdminClient = () => {
   )
 }
 
-// ✅ FIXED: Wrap getUser() with proper error handling
+// ✅ FIXED: Get user ID directly from session cookies without calling Supabase auth service
+// This avoids network timeouts when Supabase auth endpoint is unreachable
+export const getUserIdFromSession = async () => {
+  try {
+    const cookieStore = await cookies()
+    const sessionCookie = cookieStore.get('sb-auth-token')
+    
+    if (!sessionCookie?.value) {
+      console.log('🔍 No session cookie found')
+      return null
+    }
+
+    // Session cookie format: base64 encoded JSON
+    try {
+      const decoded = JSON.parse(Buffer.from(sessionCookie.value, 'base64').toString())
+      const userId = decoded?.user?.id
+      
+      if (userId) {
+        console.log('🔍 User ID from session cookie:', userId)
+        return userId
+      }
+    } catch (parseErr) {
+      console.log('🔍 Could not parse session cookie - trying legacy format')
+      // Try alternative cookie name
+      const legacySb = cookieStore.get('sb:token')
+      if (legacySb?.value) {
+        try {
+          const decoded = JSON.parse(legacySb.value)
+          const userId = decoded?.user?.id
+          if (userId) {
+            console.log('🔍 User ID from legacy session cookie:', userId)
+            return userId
+          }
+        } catch {
+          // Continue to fallback
+        }
+      }
+    }
+    
+    return null
+  } catch (err) {
+    console.error('🔍 Error extracting user ID from session:', err)
+    return null
+  }
+}
+
+// ✅ FIXED: Wrap getUser() with proper error handling and fallback to session cookies
 export const getCurrentUser = async () => {
   try {
+    console.log('🔍 Attempting to get user via getUser()')
     const supabase = await createServerSupabaseClient()
     const { data: { user }, error } = await supabase.auth.getUser()
     
@@ -80,6 +127,7 @@ export const getCurrentUser = async () => {
       // Check if it's the expected AuthSessionMissingError
       if (error.message?.includes('AuthSessionMissingError')) {
         // Expected for unauthenticated users - don't log it
+        console.log('🔍 No authenticated session (AuthSessionMissingError)')
         return null
       }
       // Log unexpected errors only
@@ -87,14 +135,33 @@ export const getCurrentUser = async () => {
       return null
     }
     
-    return user
-  } catch (err) {
-    // Handle any runtime exceptions
-    if (err instanceof Error && err.message.includes('AuthSessionMissingError')) {
-      // Expected for unauthenticated users
-      return null
+    if (user) {
+      console.log('✅ Got user via getUser():', user.id)
+      return user
     }
-    console.error('Exception getting user:', err)
+    
+    return null
+  } catch (err) {
+    // Handle any runtime exceptions (like network timeouts)
+    if (err instanceof Error) {
+      if (err.message.includes('AuthSessionMissingError')) {
+        console.log('🔍 No authenticated session (caught exception)')
+        return null
+      }
+      
+      // Network timeout or connectivity issue - this is expected in some environments
+      console.log('⚠️ getUser() failed (likely network/timeout):', err.message.slice(0, 50))
+      
+      // Try fallback: get user ID from session cookies
+      console.log('🔍 Attempting fallback: extracting user ID from session cookies')
+      const userId = await getUserIdFromSession()
+      if (userId) {
+        return { id: userId } as any // Minimal user object with just the ID
+      }
+    } else {
+      console.error('Exception getting user:', err)
+    }
+    
     return null
   }
 }

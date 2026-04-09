@@ -9,6 +9,7 @@ import { MobileBottomNav } from '@/components/mobile/MobileBottomNav'
 import { GlobalModalWrapper } from '@/components/layout/GlobalModalWrapper'
 import { getUserPermissions } from '@/lib/database/user-permissions'
 import { FULL_ACCESS_PERMISSIONS } from '@/lib/utils/permissions'
+import { DashboardSessionGuard } from '@/components/auth/DashboardSessionGuard'
 
 // Import database functions (keep your existing imports)
 import { getFarmAnimals } from '@/lib/database/animals'
@@ -31,13 +32,15 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // 1. SCENARIO A: No Farm ID (Skipped Onboarding)
   if (!userRole?.farm_id) {
     return (
-      <div className="flex flex-col h-screen overflow-hidden bg-gray-50">
-        <MobileHeaderWrapper farmId={null} />
-        <main className="flex-1 hide-scrollbar overflow-y-auto overflow-x-hidden pb-20 md:pb-0">
-          <div className="py-4 md:py-6">{children}</div>
-        </main>
-        {/* Hide bottom nav if no farm */}
-      </div>
+      <DashboardSessionGuard>
+        <div className="flex flex-col h-screen overflow-hidden bg-gray-50">
+          <MobileHeaderWrapper farmId={null} />
+          <main className="flex-1 hide-scrollbar overflow-y-auto overflow-x-hidden pb-20 md:pb-0">
+            <div className="py-4 md:py-6">{children}</div>
+          </main>
+          {/* Hide bottom nav if no farm */}
+        </div>
+      </DashboardSessionGuard>
     )
   }
 
@@ -110,6 +113,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   }))
 
   return (
+    <DashboardSessionGuard>
     <div className="h-screen bg-gray-50 flex flex-col">
       <div className="hidden md:block">
         <DashboardHeader />
@@ -145,7 +149,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       {/* Hide Bottom Nav if 0 animals or apply restrictions */}
       {animalCount > 0 && <MobileBottomNav />}
       
-      <GlobalModalWrapper 
+      <GlobalModalWrapper
         farmId={userRole.farm_id}
         animals={animals}
         feedTypes={feedTypes}
@@ -160,5 +164,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
         distributionSettings={distributionSettings}
       />
     </div>
+    </DashboardSessionGuard>
   )
 }

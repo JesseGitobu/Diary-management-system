@@ -64,7 +64,7 @@ export function ProductionSessionBanner({
         {/* Right Side: Progress & Action */}
         <div className="flex items-center gap-6 w-full md:w-auto">
           <div className="flex-1 md:flex-none min-w-[200px]">
-            <div className="flex justify-between text-sm font-medium mb-1">
+            <div className="flex justify-between gap-4 text-sm font-medium mb-1">
               <span className="text-gray-600">Milking Progress</span>
               <span className={isLate ? 'text-amber-700' : 'text-blue-700'}>
                 {remainingAnimals} remaining

@@ -22,7 +22,7 @@ interface ProductionStatsCardsProps {
 }
 
 export function ProductionStatsCards({ stats }: ProductionStatsCardsProps) {
-  const { isMobile } = useDeviceInfo()
+  const { isMobile, isSmallMobile, isTablet } = useDeviceInfo()
   const [currentItemIndex, setCurrentItemIndex] = useState<Record<string, number>>({})
 
   // Initialize current item index for each card
@@ -56,8 +56,8 @@ export function ProductionStatsCards({ stats }: ProductionStatsCardsProps) {
         {/* Header */}
         <h2 className="font-semibold text-gray-900 text-sm px-4">Production</h2>
 
-        {/* Stack cards in 2x2 grid on mobile */}
-        <div className="grid grid-cols-2 gap-2 px-4">
+        {/* Stack cards — 1 col on very small phones, 2 col on larger phones */}
+        <div className={`grid gap-2 px-4 ${isSmallMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
           {stats.map((card) => {
             const IconComponent = card.icon
             const currentIndex = getCurrentItemIndex(card.title)
@@ -138,8 +138,8 @@ export function ProductionStatsCards({ stats }: ProductionStatsCardsProps) {
       {/* Header */}
       <h2 className="font-semibold text-gray-900 text-lg">Production Overview</h2>
 
-      {/* Grid Layout - 4 columns */}
-      <div className="grid grid-cols-4 gap-3">
+      {/* Grid Layout — 2 cols on tablet, 4 cols on desktop */}
+      <div className={`grid gap-3 ${isTablet ? 'grid-cols-2' : 'grid-cols-4'}`}>
         {stats.map((card) => {
           const IconComponent = card.icon
           const currentIndex = getCurrentItemIndex(card.title)

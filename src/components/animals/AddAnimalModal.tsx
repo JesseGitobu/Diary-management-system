@@ -3,6 +3,7 @@ import React, { useState } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Label } from '@/components/ui/Label'
+import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { NewbornCalfForm } from './NewbornCalfForm'
 import { PurchasedAnimalForm } from './PurchasedAnimalForm'
 import { ImportAnimalsModal } from './ImportAnimalsModal'
@@ -30,6 +31,7 @@ export default function AddAnimalModal({
   onHealthRecordCreated,
   onRefreshWeightsList  // ✅ NEW: Destructure callback
 }: AddAnimalModalProps) {
+  const { isMobile } = useDeviceInfo()
   const [animalSource, setAnimalSource] = useState<'newborn_calf' | 'purchased_animal' | null>(null)
   const [showSourceSelection, setShowSourceSelection] = useState(true)
   const [showImportModal, setShowImportModal] = useState(false)
@@ -156,9 +158,9 @@ export default function AddAnimalModal({
       <Modal
         isOpen={isOpen && !showHealthRecordModal}
         onClose={handleModalClose}
-        className="max-w-5xl max-h-[90vh] "
+        className="sm:max-w-5xl"
       >
-        <div className="p-6">
+        <div className={isMobile ? 'p-4' : 'p-6'}>
           {showSourceSelection ? (
             // Source Selection Screen
             <div className="space-y-6">
