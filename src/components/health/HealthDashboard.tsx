@@ -52,6 +52,17 @@ import { EditVetVisitModal } from '@/components/health/EditVetVisitModal'
 import { RecordTypeSelectionModal } from '@/components/health/RecordTypeSelectionModal'
 
 import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from '@/components/ui/AlertDialog'
+
+import {
   Plus,
   Search,
   Filter,
@@ -181,6 +192,8 @@ export function HealthRecordsContent({
   const [showFollowUpModal, setShowFollowUpModal] = useState(false)
   const [followUpRecord, setFollowUpRecord] = useState<any>(null)
   const [deletingRecordId, setDeletingRecordId] = useState<string | null>(null)
+  const [showDeleteRecordDialog, setShowDeleteRecordDialog] = useState(false)
+  const [recordToDelete, setRecordToDelete] = useState<any>(null)
 
   const [editingVeterinarian, setEditingVeterinarian] = useState<any>(null)
   const [showEditVeterinarianModal, setShowEditVeterinarianModal] = useState(false)
@@ -582,15 +595,20 @@ export function HealthRecordsContent({
     await refreshHealthData()
   }
 
-  const handleDeleteRecord = async (recordId: string) => {
-    if (!confirm('Are you sure you want to delete this health record? This action cannot be undone.')) {
-      return
-    }
+  const handleDeleteRecord = (recordId: string) => {
+    const record = healthRecords.find(r => r.id === recordId)
+    setRecordToDelete(record || { id: recordId })
+    setShowDeleteRecordDialog(true)
+  }
 
-    setDeletingRecordId(recordId)
+  const confirmDeleteRecord = async () => {
+    if (!recordToDelete) return
+
+    setShowDeleteRecordDialog(false)
+    setDeletingRecordId(recordToDelete.id)
 
     try {
-      const response = await fetch(`/api/health/records/${recordId}`, {
+      const response = await fetch(`/api/health/records/${recordToDelete.id}`, {
         method: 'DELETE',
       })
 
@@ -600,7 +618,7 @@ export function HealthRecordsContent({
         throw new Error(result.error || 'Failed to delete health record')
       }
 
-      setHealthRecords(prev => prev.filter(record => record.id !== recordId))
+      setHealthRecords(prev => prev.filter(record => record.id !== recordToDelete.id))
       toast.success('Health record deleted successfully!')
       await refreshHealthData()
     } catch (error) {
@@ -608,6 +626,7 @@ export function HealthRecordsContent({
       toast.error(error instanceof Error ? error.message : 'Failed to delete health record')
     } finally {
       setDeletingRecordId(null)
+      setRecordToDelete(null)
     }
   }
 
@@ -2054,6 +2073,32 @@ export function HealthRecordsContent({
           preSelectedHealthIssue={selectedHealthIssueForRecord}
         />
       )}
+
+      {/* Delete Health Record Confirmation Dialog */}
+      <AlertDialog open={showDeleteRecordDialog} onOpenChange={setShowDeleteRecordDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Health Record</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this health record? This action cannot be undone.
+              {recordToDelete?.follow_ups && recordToDelete.follow_ups.length > 0 && (
+                <span className="block mt-2 text-amber-600 font-medium">
+                  Warning: This record has {recordToDelete.follow_ups.length} follow-up record{recordToDelete.follow_ups.length > 1 ? 's' : ''} linked to it. The follow-up relationships will also be removed.
+                </span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setRecordToDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteRecord}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              Delete Record
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {showEditModal && editingRecord && (
         <EditHealthRecordModal

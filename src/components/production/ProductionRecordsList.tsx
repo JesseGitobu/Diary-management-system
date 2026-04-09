@@ -59,6 +59,7 @@ interface ProductionRecord {
 
 interface GroupData {
   milking_group_id: string | null
+  groupName: string
   totalMilkVolume: number
   recordCount: number
   mostRecentSession: ProductionRecord | null
@@ -225,12 +226,14 @@ export function ProductionRecordsList({
       })
 
     const groups: GroupData[] = Array.from(groupMap.entries()).map(([groupId, records]) => {
-      const sortedByDate = [...records].sort((a, b) => 
+      const sortedByDate = [...records].sort((a, b) =>
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       )
-      
+      const resolvedName = groupId !== 'default' ? milkingGroups.get(groupId as string) : undefined
+
       return {
         milking_group_id: groupId === 'default' ? null : groupId,
+        groupName: resolvedName || (groupId === 'default' ? 'Default Group' : 'Milking Group'),
         totalMilkVolume: records.reduce((sum, r) => sum + (r.milk_volume || 0), 0),
         recordCount: records.length,
         mostRecentSession: sortedByDate[0] || null,
@@ -244,7 +247,7 @@ export function ProductionRecordsList({
       const dateB = b.mostRecentSession?.created_at || ''
       return new Date(dateB).getTime() - new Date(dateA).getTime()
     })
-  }, [filteredRecords])
+  }, [filteredRecords, milkingGroups])
 
   // Reset to page 1 when filters change
   const resetPagination = () => {
@@ -483,11 +486,11 @@ export function ProductionRecordsList({
         const uniqueAnimals = new Set(groupRecords.map(r => r.animal_id)).size
         const actualGroupId = groupId === 'default' ? null : (groupId as string)
         const groupName = groupId !== 'default' ? milkingGroups.get(groupId as string) : null
-        
+
         summaries.push({
           cycleDate,
           milking_group_id: actualGroupId,
-          groupName: groupName || (groupId === 'default' ? 'Default Group' : `Milking Group ${groupId}`),
+          groupName: groupName || (groupId === 'default' ? 'Default Group' : 'Milking Group'),
           totalMilkVolume: totalVolume,
           totalRecords: groupRecords.length,
           avgFatContent: avgFat,
@@ -1211,7 +1214,7 @@ export function ProductionRecordsList({
             const mostRecent = summary.records && summary.records.length > 0 ? summary.records[0] : null
             const recentSafety = mostRecent ? getSafetyStatusBadge(mostRecent.milk_safety_status) : null
             const RecentSafetyIcon = recentSafety?.icon
-            const displayGroupName = summary.groupName || summary.milking_group_id || `Milking Group ${index + 1}`
+            const displayGroupName = (summary as any).groupName || 'Milking Group'
             
             return (
               <Card key={`group-${index}`} className="hover:shadow-md transition-shadow overflow-hidden">

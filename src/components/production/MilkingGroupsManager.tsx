@@ -90,37 +90,25 @@ export function MilkingGroupsManager({
       if (!categoriesResponse.ok) throw new Error('Failed to fetch categories')
       const categoriesData = await categoriesResponse.json()
       
-      console.log('📊 All categories fetched:', categoriesData.data)
-      
       // Fetch existing milking groups
       const groupsResponse = await fetch(`/api/farms/${farmId}/production/milking-groups`)
       let groupsData: MilkingGroup[] = []
-      
+
       if (groupsResponse.ok) {
         const result = await groupsResponse.json()
         groupsData = result.data || []
       }
 
-      console.log('🥛 Current milking groups:', groupsData)
+      // All categories are eligible as milking groups (no milking-schedule requirement)
+      const allCategories: AnimalCategory[] = categoriesData.data || []
 
-      // Filter categories that have milking schedules
-      const categoriesWithSchedules = (categoriesData.data || []).filter(
-        (cat: AnimalCategory) => 
-          cat.characteristics?.milking_schedules && 
-          cat.characteristics.milking_schedules.length > 0
-      )
-
-      console.log('📅 Categories with milking schedules:', categoriesWithSchedules)
-
-      // Get categories not yet in groups
+      // Get categories not yet added as milking groups
       const groupedCategoryIds = groupsData.map(g => g.category_id)
-      const available = categoriesWithSchedules.filter(
+      const available = allCategories.filter(
         (cat: AnimalCategory) => !groupedCategoryIds.includes(cat.id)
       )
 
-      console.log('✅ Available categories to add:', available)
-
-      setCategories(categoriesWithSchedules)
+      setCategories(allCategories)
       setMilkingGroups(groupsData)
       setAvailableCategories(available)
     } catch (err) {
@@ -471,7 +459,7 @@ export function MilkingGroupsManager({
                       </p>
                     ) : (
                       <p className="text-sm text-gray-600 mt-1">
-                        Your animal categories don't have milking schedules assigned. Add milking schedules to categories in the Animal Categories Manager, and they will appear here.
+                        All your categories are already active as milking groups.
                       </p>
                     )}
                   </div>
@@ -481,9 +469,7 @@ export function MilkingGroupsManager({
                   <ol className="list-decimal list-inside mt-2 space-y-1">
                     <li>Go to Animal Categories Manager</li>
                     <li>Create or edit a category</li>
-                    <li>In the "Milking Schedules" section, add milking times</li>
-                    <li>Save the category</li>
-                    <li>Return here to add it to a milking group</li>
+                    <li>Return here to add it as a milking group</li>
                   </ol>
                 </div>
               </div>

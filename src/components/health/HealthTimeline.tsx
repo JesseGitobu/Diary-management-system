@@ -5,7 +5,8 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
-import { Calendar, DollarSign, User, Clock, AlertTriangle } from 'lucide-react'
+import { Button } from '@/components/ui/Button'
+import { Calendar, DollarSign, User, Clock, Edit2, Trash2 } from 'lucide-react'
 
 interface HealthTimelineProps {
   records: Array<{
@@ -20,9 +21,12 @@ interface HealthTimelineProps {
     medication?: string
     severity?: string
   }>
+  onEdit?: (record: any) => void
+  onDelete?: (recordId: string) => void
+  deletingRecordId?: string | null
 }
 
-export function HealthTimeline({ records }: HealthTimelineProps) {
+export function HealthTimeline({ records, onEdit, onDelete, deletingRecordId }: HealthTimelineProps) {
   const sortedRecords = records.sort((a, b) => 
     new Date(b.record_date).getTime() - new Date(a.record_date).getTime()
   )
@@ -80,7 +84,7 @@ export function HealthTimeline({ records }: HealthTimelineProps) {
                   <div className="flex-1 min-w-0">
                     <div className="bg-white border border-gray-200 rounded-lg p-4">
                       <div className="flex items-start justify-between mb-2">
-                        <div className="flex items-center space-x-2">
+                        <div className="flex items-center space-x-2 flex-wrap gap-y-1">
                           <Badge className={getRecordTypeColor(record.record_type)}>
                             {record.record_type.charAt(0).toUpperCase() + record.record_type.slice(1)}
                           </Badge>
@@ -94,9 +98,36 @@ export function HealthTimeline({ records }: HealthTimelineProps) {
                             </Badge>
                           )}
                         </div>
-                        <span className="text-sm text-gray-500">
-                          {new Date(record.record_date).toLocaleDateString()}
-                        </span>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-sm text-gray-500">
+                            {new Date(record.record_date).toLocaleDateString()}
+                          </span>
+                          {(onEdit || onDelete) && (
+                            <div className="flex items-center space-x-1">
+                              {onEdit && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => onEdit(record)}
+                                  className="h-7 w-7 p-0 text-gray-400 hover:text-blue-600"
+                                >
+                                  <Edit2 className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
+                              {onDelete && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => onDelete(record.id)}
+                                  disabled={deletingRecordId === record.id}
+                                  className="h-7 w-7 p-0 text-gray-400 hover:text-red-600"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
                       
                       <p className="text-gray-900 mb-3">{record.description}</p>

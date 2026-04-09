@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Baby, Calendar, Clock, AlertTriangle } from 'lucide-react'
 import Link from 'next/link'
+import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 
 interface PregnantAnimalsListProps {
   farmId: string
@@ -27,12 +28,13 @@ interface PregnantAnimal {
   pregnancy_status: string
 }
 
-export function PregnantAnimalsList({ 
-  farmId, 
-  canManage, 
+export function PregnantAnimalsList({
+  farmId,
+  canManage,
   hiddenAnimalIds = [],
   onRecordCalving
 }: PregnantAnimalsListProps) {
+  const { isMobile } = useDeviceInfo()
   const [pregnantAnimals, setPregnantAnimals] = useState<PregnantAnimal[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -154,53 +156,72 @@ export function PregnantAnimalsList({
                 
                 return (
                   <div key={animal.id} className="border border-gray-200 rounded-lg p-4 animate-in fade-in">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-4">
-                        <div className="flex-shrink-0">
-                          <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+                    {isMobile ? (
+                      /* Mobile: stacked layout */
+                      <div className="space-y-3">
+                        {/* Top row: icon + name + status badge */}
+                        <div className="flex items-center space-x-3">
+                          <div className={`w-10 h-10 rounded-lg flex-shrink-0 flex items-center justify-center ${
                             isOverdue ? 'bg-red-100' : isDueSoon ? 'bg-yellow-100' : 'bg-green-100'
                           }`}>
                             {isOverdue ? (
-                              <AlertTriangle className="w-6 h-6 text-red-600" />
+                              <AlertTriangle className="w-5 h-5 text-red-600" />
                             ) : (
-                              <Baby className="w-6 h-6 text-green-600" />
+                              <Baby className="w-5 h-5 text-green-600" />
                             )}
                           </div>
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-medium text-gray-900 truncate">
+                              {animal.name || `Animal ${animal.tag_number}`}
+                            </h4>
+                            <p className="text-sm text-gray-600">
+                              Tag: {animal.tag_number} · {animal.days_pregnant} days in calf
+                            </p>
+                          </div>
+                          <Badge className={`${getStatusColor(animal.status)} flex-shrink-0 text-xs`}>
+                            {getStatusLabel(animal)}
+                          </Badge>
                         </div>
-                        
-                        <div>
-                          <h4 className="font-medium text-gray-900">
-                            {animal.name || `Animal ${animal.tag_number}`}
-                          </h4>
-                          <p className="text-sm text-gray-600">
-                            Tag: {animal.tag_number} • {animal.days_pregnant} days in calf
-                          </p>
-                          <div className="flex items-center space-x-4 mt-1">
-                            <div className="flex items-center space-x-1 text-sm text-gray-500">
-                              <Calendar className="w-4 h-4" />
-                              <span>Due: {new Date(animal.estimated_due_date).toLocaleDateString()}</span>
-                            </div>
-                            <div className="flex items-center space-x-1 text-sm text-gray-500">
-                              <Clock className="w-4 h-4" />
-                              <span>Bred: {new Date(animal.conception_date).toLocaleDateString()}</span>
-                            </div>
+
+                        {/* Dates row */}
+                        <div className="flex flex-wrap gap-x-4 gap-y-1">
+                          <div className="flex items-center space-x-1 text-sm text-gray-500">
+                            <Calendar className="w-3.5 h-3.5" />
+                            <span>Due: {new Date(animal.estimated_due_date).toLocaleDateString()}</span>
+                          </div>
+                          <div className="flex items-center space-x-1 text-sm text-gray-500">
+                            <Clock className="w-3.5 h-3.5" />
+                            <span>Bred: {new Date(animal.conception_date).toLocaleDateString()}</span>
                           </div>
                         </div>
-                      </div>
-                      
-                      <div className="text-right">
-                        <Badge className={getStatusColor(animal.status)}>
-                          {getStatusLabel(animal)}
-                        </Badge>
-                        <div className="mt-2 space-x-2">
-                          <Button asChild size="sm" variant="outline">
+
+                        {/* Progress Bar */}
+                        <div>
+                          <div className="flex justify-between text-sm text-gray-600 mb-1">
+                            <span>Gestation Progress</span>
+                            <span>{Math.round((animal.days_pregnant / 280) * 100)}%</span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div
+                              className={`h-2 rounded-full ${
+                                isOverdue ? 'bg-red-500' : isDueSoon ? 'bg-yellow-500' : 'bg-green-500'
+                              }`}
+                              style={{ width: `${Math.min((animal.days_pregnant / 280) * 100, 100)}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Action buttons: full width */}
+                        <div className="flex gap-2">
+                          <Button asChild size="sm" variant="outline" className="flex-1">
                             <Link href={`/dashboard/animals/${animal.animal_id}`}>
                               View Animal
                             </Link>
                           </Button>
                           {canManage && (isDueSoon || isOverdue) && (
-                            <Button 
+                            <Button
                               size="sm"
+                              className="flex-1"
                               onClick={() => onRecordCalving && onRecordCalving(animal.animal_id)}
                             >
                               Record Calving
@@ -208,23 +229,82 @@ export function PregnantAnimalsList({
                           )}
                         </div>
                       </div>
-                    </div>
-                    
-                    {/* Progress Bar */}
-                    <div className="mt-4">
-                      <div className="flex justify-between text-sm text-gray-600 mb-1">
-                        <span>Gestation Progress</span>
-                        <span>{Math.round((animal.days_pregnant / 280) * 100)}%</span>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div
-                          className={`h-2 rounded-full ${
-                            isOverdue ? 'bg-red-500' : isDueSoon ? 'bg-yellow-500' : 'bg-green-500'
-                          }`}
-                          style={{ width: `${Math.min((animal.days_pregnant / 280) * 100, 100)}%` }}
-                        ></div>
-                      </div>
-                    </div>
+                    ) : (
+                      /* Desktop: side-by-side layout */
+                      <>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-4">
+                            <div className="flex-shrink-0">
+                              <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+                                isOverdue ? 'bg-red-100' : isDueSoon ? 'bg-yellow-100' : 'bg-green-100'
+                              }`}>
+                                {isOverdue ? (
+                                  <AlertTriangle className="w-6 h-6 text-red-600" />
+                                ) : (
+                                  <Baby className="w-6 h-6 text-green-600" />
+                                )}
+                              </div>
+                            </div>
+
+                            <div>
+                              <h4 className="font-medium text-gray-900">
+                                {animal.name || `Animal ${animal.tag_number}`}
+                              </h4>
+                              <p className="text-sm text-gray-600">
+                                Tag: {animal.tag_number} · {animal.days_pregnant} days in calf
+                              </p>
+                              <div className="flex items-center space-x-4 mt-1">
+                                <div className="flex items-center space-x-1 text-sm text-gray-500">
+                                  <Calendar className="w-4 h-4" />
+                                  <span>Due: {new Date(animal.estimated_due_date).toLocaleDateString()}</span>
+                                </div>
+                                <div className="flex items-center space-x-1 text-sm text-gray-500">
+                                  <Clock className="w-4 h-4" />
+                                  <span>Bred: {new Date(animal.conception_date).toLocaleDateString()}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="text-right">
+                            <Badge className={getStatusColor(animal.status)}>
+                              {getStatusLabel(animal)}
+                            </Badge>
+                            <div className="mt-2 space-x-2">
+                              <Button asChild size="sm" variant="outline">
+                                <Link href={`/dashboard/animals/${animal.animal_id}`}>
+                                  View Animal
+                                </Link>
+                              </Button>
+                              {canManage && (isDueSoon || isOverdue) && (
+                                <Button
+                                  size="sm"
+                                  onClick={() => onRecordCalving && onRecordCalving(animal.animal_id)}
+                                >
+                                  Record Calving
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Progress Bar */}
+                        <div className="mt-4">
+                          <div className="flex justify-between text-sm text-gray-600 mb-1">
+                            <span>Gestation Progress</span>
+                            <span>{Math.round((animal.days_pregnant / 280) * 100)}%</span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div
+                              className={`h-2 rounded-full ${
+                                isOverdue ? 'bg-red-500' : isDueSoon ? 'bg-yellow-500' : 'bg-green-500'
+                              }`}
+                              style={{ width: `${Math.min((animal.days_pregnant / 280) * 100, 100)}%` }}
+                            />
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                 )
               })}
