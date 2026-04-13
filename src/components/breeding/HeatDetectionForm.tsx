@@ -6,10 +6,11 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Button } from '@/components/ui/Button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
-import { getEligibleAnimals, createBreedingEvent, type HeatDetectionEvent } from '@/lib/database/breeding'
+import { getEligibleAnimals } from '@/lib/database/breeding'
 import { CheckCircle, Circle } from 'lucide-react'
 
 const heatDetectionSchema = z.object({
@@ -52,8 +53,10 @@ const actionOptions = [
 
 export function HeatDetectionForm({ farmId, onEventCreated, onCancel, preSelectedAnimalId }: HeatDetectionFormProps) {
   const [loading, setLoading] = useState(false)
-  const [animals, setAnimals] = useState<any[]>([])
+  const [animals, setAnimals] = useState<Array<{ id: string; tag_number: string; name: string | null; breed: string | null; production_status: string | null }>>([])
   const [selectedSigns, setSelectedSigns] = useState<string[]>([])
+  const [selectedAnimalDetails, setSelectedAnimalDetails] = useState<any>(null)
+  const [detailsLoading, setDetailsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   
   const form = useForm<HeatDetectionFormData>({
@@ -68,20 +71,83 @@ export function HeatDetectionForm({ farmId, onEventCreated, onCancel, preSelecte
     },
   })
   
+  const selectedAnimalId = form.watch('animal_id')
+
   useEffect(() => {
     loadEligibleAnimals()
   }, [farmId])
 
-  // Force update value if prop changes
   useEffect(() => {
     if (preSelectedAnimalId) {
       form.setValue('animal_id', preSelectedAnimalId)
     }
   }, [preSelectedAnimalId, form])
-  
+
+  useEffect(() => {
+    if (!selectedAnimalId) {
+      setSelectedAnimalDetails(null)
+      return
+    }
+
+    const controller = new AbortController()
+    loadSelectedAnimalDetails(selectedAnimalId, controller.signal)
+
+    return () => controller.abort()
+  }, [selectedAnimalId])
+
+  const loadSelectedAnimalDetails = async (animalId: string, signal?: AbortSignal) => {
+    if (!animalId) {
+      setSelectedAnimalDetails(null)
+      return
+    }
+
+    try {
+      setDetailsLoading(true)
+      console.log('[HeatDetectionForm] loading selected animal details for', animalId)
+      const response = await fetch(`/api/animals/${animalId}`, { signal })
+      const result = await response.json()
+      console.log('[HeatDetectionForm] selected animal fetch response', {
+        animalId,
+        status: response.status,
+        ok: response.ok,
+        result,
+      })
+
+      if (response.ok && result.success) {
+        setSelectedAnimalDetails(result.animal)
+      } else {
+        setSelectedAnimalDetails(null)
+      }
+    } catch (loadError) {
+      if ((loadError as any)?.name !== 'AbortError') {
+        console.error('Error loading animal details:', loadError)
+      }
+      setSelectedAnimalDetails(null)
+    } finally {
+      setDetailsLoading(false)
+    }
+  }
+
+  const formatProductionStatus = (status?: string | null) => {
+    if (!status) return 'Unknown status'
+    return status
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (char) => char.toUpperCase())
+  }
+
+  const getLatestBreedingEvent = (eventType: 'heat_detection' | 'insemination') => {
+    return selectedAnimalDetails?.breeding_events?.find((event: any) => event.event_type === eventType)?.event_date ?? null
+  }
+
   const loadEligibleAnimals = async () => {
     try {
       const eligibleAnimals = await getEligibleAnimals(farmId, 'heat_detection')
+      console.log('[HeatDetectionForm] eligibleAnimals loaded', {
+        farmId,
+        preSelectedAnimalId,
+        count: eligibleAnimals?.length,
+        sample: eligibleAnimals?.slice(0, 10),
+      })
       
       // Inject animal if pre-selected but not in list (e.g. status issue)
       if (preSelectedAnimalId) {
@@ -91,12 +157,15 @@ export function HeatDetectionForm({ farmId, onEventCreated, onCancel, preSelecte
             id: preSelectedAnimalId,
             tag_number: 'Selected Animal',
             name: '(Current)',
-            gender: 'female'
+            gender: 'female',
+            breed: null,
+            production_status: null
           })
         }
       }
       
       setAnimals(eligibleAnimals)
+      console.log('[HeatDetectionForm] animals state set', { animals: eligibleAnimals })
       
       // Re-assert value after loading
       if (preSelectedAnimalId) {
@@ -182,7 +251,7 @@ export function HeatDetectionForm({ farmId, onEventCreated, onCancel, preSelecte
             <option value="">Choose an animal...</option>
             {animals.map((animal) => (
               <option key={animal.id} value={animal.id}>
-                {animal.tag_number} - {animal.name || 'Unnamed'} (Female)
+                {animal.tag_number} - {animal.name || 'Unnamed'} • {animal.breed || 'Unknown breed'} • {formatProductionStatus(animal.production_status)}
               </option>
             ))}
             {/* Fallback option */}
@@ -196,7 +265,58 @@ export function HeatDetectionForm({ farmId, onEventCreated, onCancel, preSelecte
             </p>
           )}
         </div>
-        
+
+        {selectedAnimalId && detailsLoading && (
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
+            Loading selected animal details...
+          </div>
+        )}
+
+        {selectedAnimalDetails && !detailsLoading && (
+          <Card className="border-gray-200 bg-white">
+            <CardHeader>
+              <CardTitle>Selected animal details</CardTitle>
+              <CardDescription>Key production and breeding history for the chosen animal.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-700">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Tag</p>
+                  <p className="mt-1 font-medium">{selectedAnimalDetails.tag_number}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Name</p>
+                  <p className="mt-1 font-medium">{selectedAnimalDetails.name || 'Unnamed'}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Breed</p>
+                  <p className="mt-1 font-medium">{selectedAnimalDetails.breed || 'Unknown'}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Production status</p>
+                  <p className="mt-1 font-medium">{formatProductionStatus(selectedAnimalDetails.production_status)}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Current production</p>
+                  <p className="mt-1 font-medium">{selectedAnimalDetails.current_daily_production ? `${selectedAnimalDetails.current_daily_production} L/day` : 'Not recorded'}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Last calving</p>
+                  <p className="mt-1 font-medium">{selectedAnimalDetails.latest_calving?.calving_date ? new Date(selectedAnimalDetails.latest_calving.calving_date).toLocaleDateString() : 'No record'}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Last heat detection</p>
+                  <p className="mt-1 font-medium">{getLatestBreedingEvent('heat_detection') ? new Date(getLatestBreedingEvent('heat_detection')).toLocaleDateString() : 'No record'}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Last insemination</p>
+                  <p className="mt-1 font-medium">{getLatestBreedingEvent('insemination') ? new Date(getLatestBreedingEvent('insemination')).toLocaleDateString() : 'No record'}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Date and Time Observed */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>

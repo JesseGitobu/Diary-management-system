@@ -6,6 +6,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Button } from '@/components/ui/Button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
@@ -57,11 +58,38 @@ const commonTechnicians = [
   'Sarah Davis', 'AI Tech 1', 'AI Tech 2'
 ]
 
+type EligibleAnimal = {
+  id: string
+  tag_number: string
+  name: string | null
+  breed: string | null
+  production_status: string | null
+  birth_date: string | null
+  gender?: string | null
+  breeding_events?: Array<{ event_type: string; event_date: string | null }>
+  last_heat_detection?: string | null
+}
+
+type SelectedAnimalDetails = {
+  id: string
+  tag_number: string
+  name: string | null
+  breed: string | null
+  production_status: string | null
+  birth_date: string | null
+  current_daily_production?: number | null
+  latest_calving?: { calving_date?: string | null }
+  expected_calving_date?: string | null
+  breeding_events?: Array<{ event_type: string; event_date: string | null }>
+}
+
 export function InseminationForm({ farmId, onEventCreated, onCancel, preSelectedAnimalId }: InseminationFormProps) {
   const [loading, setLoading] = useState(false)
-  const [animals, setAnimals] = useState<any[]>([])
+  const [animals, setAnimals] = useState<EligibleAnimal[]>([])
+  const [selectedAnimal, setSelectedAnimal] = useState<EligibleAnimal | null>(null)
+  const [selectedAnimalDetails, setSelectedAnimalDetails] = useState<SelectedAnimalDetails | null>(null)
+  const [detailsLoading, setDetailsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [selectedAnimal, setSelectedAnimal] = useState<any>(null)
   
   const form = useForm<InseminationFormData>({
     resolver: zodResolver(inseminationSchema),
@@ -87,25 +115,138 @@ export function InseminationForm({ farmId, onEventCreated, onCancel, preSelected
     }
   }, [preSelectedAnimalId, form])
   
+  const selectedAnimalId = form.watch('animal_id')
+
+  useEffect(() => {
+    if (!selectedAnimalId) {
+      setSelectedAnimalDetails(null)
+      return
+    }
+
+    const controller = new AbortController()
+    loadSelectedAnimalDetails(selectedAnimalId, controller.signal)
+
+    return () => controller.abort()
+  }, [selectedAnimalId])
+
+  const loadSelectedAnimalDetails = async (animalId: string, signal?: AbortSignal) => {
+    if (!animalId) {
+      setSelectedAnimalDetails(null)
+      return
+    }
+
+    try {
+      setDetailsLoading(true)
+      const response = await fetch(`/api/animals/${animalId}`, { signal })
+      const result = await response.json()
+
+      if (response.ok && result.success) {
+        setSelectedAnimalDetails(result.animal)
+      } else {
+        setSelectedAnimalDetails(null)
+      }
+    } catch (loadError) {
+      if ((loadError as any)?.name !== 'AbortError') {
+        console.error('Error loading animal details:', loadError)
+      }
+      setSelectedAnimalDetails(null)
+    } finally {
+      setDetailsLoading(false)
+    }
+  }
+
+  const getLastHeatDetection = (animal: EligibleAnimal | SelectedAnimalDetails | null) => {
+    const events = animal?.breeding_events || []
+    const heatDates = events
+      .filter((event) => event.event_type === 'heat_detection' && event.event_date)
+      .map((event) => new Date(event.event_date as string))
+      .sort((a, b) => b.getTime() - a.getTime())
+
+    return heatDates.length > 0 ? heatDates[0].toISOString() : null
+  }
+
+  const formatDateTime = (dateTime?: string | null) => {
+    if (!dateTime) return 'No heat record'
+    return new Date(dateTime).toLocaleString([], {
+      dateStyle: 'medium',
+      timeStyle: 'short'
+    })
+  }
+
+  const formatProductionStatus = (status?: string | null) => {
+    if (!status) return 'Unknown status'
+    return status.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
+  }
+
+  const calculateAge = (birthDate?: string | null) => {
+    if (!birthDate) return 'Unknown age'
+    const birth = new Date(birthDate)
+    const now = new Date()
+    const years = now.getFullYear() - birth.getFullYear()
+    const months = now.getMonth() - birth.getMonth()
+    const normalizedMonths = years * 12 + months
+
+    if (normalizedMonths < 12) {
+      return `${normalizedMonths} months old`
+    }
+
+    const displayYears = Math.floor(normalizedMonths / 12)
+    const displayMonths = normalizedMonths % 12
+    return displayMonths === 0
+      ? `${displayYears} year${displayYears === 1 ? '' : 's'} old`
+      : `${displayYears} year${displayYears === 1 ? '' : 's'}, ${displayMonths} month${displayMonths === 1 ? '' : 's'} old`
+  }
+
+  const getServiceSummary = (animalDetails: SelectedAnimalDetails | null) => {
+    const events = animalDetails?.breeding_events || []
+    const inseminations = events.filter((event) => event.event_type === 'insemination' && event.event_date)
+    const pregnancyChecks = events.filter((event) => event.event_type === 'pregnancy_check' && event.event_date)
+    const latestCalvingDate = animalDetails?.latest_calving?.calving_date ? new Date(animalDetails.latest_calving.calving_date) : null
+
+    const serviceCountAfterLastCalving = inseminations.filter((event) => {
+      if (!event.event_date) return false
+      const eventDate = new Date(event.event_date)
+      return latestCalvingDate ? eventDate > latestCalvingDate : true
+    }).length
+
+    const successRate = inseminations.length
+      ? `${Math.round((pregnancyChecks.length / inseminations.length) * 100)}%`
+      : 'N/A'
+
+    return {
+      serviceCountAfterLastCalving,
+      successRate,
+    }
+  }
+
   const loadEligibleAnimals = async () => {
     try {
       const eligibleAnimals = await getEligibleAnimals(farmId, 'insemination')
       
+      const preparedAnimals: EligibleAnimal[] = (eligibleAnimals || []).map((animal: any) => ({
+        ...animal,
+        last_heat_detection: getLastHeatDetection(animal),
+      }))
+      
       // Inject animal if pre-selected but not in list (e.g. status issue)
       if (preSelectedAnimalId) {
-        const found = eligibleAnimals.find((a: any) => a.id === preSelectedAnimalId)
+        const found = preparedAnimals.find((a) => a.id === preSelectedAnimalId)
         if (!found) {
-          eligibleAnimals.unshift({
+          preparedAnimals.unshift({
             id: preSelectedAnimalId,
             tag_number: 'Selected Animal',
             name: '(Current)',
             gender: 'female',
-            breed: 'Unknown'
+            breed: 'Unknown',
+            production_status: null,
+            birth_date: null,
+            breeding_events: [],
+            last_heat_detection: null,
           })
         }
       }
 
-      setAnimals(eligibleAnimals)
+      setAnimals(preparedAnimals)
 
       // Re-assert value after loading
       if (preSelectedAnimalId) {
@@ -164,29 +305,12 @@ export function InseminationForm({ farmId, onEventCreated, onCancel, preSelected
   // Update selected animal when animal_id changes
   useEffect(() => {
     if (animalId) {
-      const animal = animals.find(a => a.id === animalId)
+      const animal = animals.find(a => a.id === animalId) || null
       setSelectedAnimal(animal)
     } else {
       setSelectedAnimal(null)
     }
   }, [animalId, animals])
-  
-  // Calculate age of selected animal
-  const calculateAge = (birthDate: string) => {
-    if (!birthDate) return 'Unknown age'
-    const birth = new Date(birthDate)
-    const now = new Date()
-    const years = now.getFullYear() - birth.getFullYear()
-    const months = now.getMonth() - birth.getMonth()
-    
-    if (years === 0) {
-      return `${months} months old`
-    } else if (years === 1 && months === 0) {
-      return '1 year old'
-    } else {
-      return `${years} years, ${months} months old`
-    }
-  }
   
   return (
     <div className="space-y-6">
@@ -220,7 +344,7 @@ export function InseminationForm({ farmId, onEventCreated, onCancel, preSelected
             <option value="">Choose an animal...</option>
             {animals.map((animal) => (
               <option key={animal.id} value={animal.id}>
-                {animal.tag_number} - {animal.name || 'Unnamed'} (Female, {animal.breed || 'Unknown breed'})
+                {animal.tag_number} - {animal.name || 'Unnamed'} • {animal.breed || 'Unknown breed'} • {formatProductionStatus(animal.production_status)} • {formatDateTime(animal.last_heat_detection)}
               </option>
             ))}
             {/* Fallback option */}
@@ -251,6 +375,43 @@ export function InseminationForm({ farmId, onEventCreated, onCancel, preSelected
                 </Badge>
               </div>
             </div>
+          )}
+
+          {selectedAnimalDetails && !detailsLoading && (
+            <Card className="mt-4 border-gray-200 bg-white">
+              <CardHeader>
+                <CardTitle>Animal breeding details</CardTitle>
+                <CardDescription>Age, production, calving, and service history for the selected animal.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-700">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Age</p>
+                    <p className="mt-1 font-medium">{calculateAge(selectedAnimalDetails.birth_date)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Average production</p>
+                    <p className="mt-1 font-medium">{selectedAnimalDetails.current_daily_production ? `${selectedAnimalDetails.current_daily_production} L/day` : 'Not recorded'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Last calving</p>
+                    <p className="mt-1 font-medium">{selectedAnimalDetails.latest_calving?.calving_date ? new Date(selectedAnimalDetails.latest_calving.calving_date).toLocaleDateString() : 'No record'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Last heat detection</p>
+                    <p className="mt-1 font-medium">{formatDateTime(getLastHeatDetection(selectedAnimalDetails))}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Services after last calving</p>
+                    <p className="mt-1 font-medium">{getServiceSummary(selectedAnimalDetails).serviceCountAfterLastCalving}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Estimated service success</p>
+                    <p className="mt-1 font-medium">{getServiceSummary(selectedAnimalDetails).successRate}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           )}
         </div>
         

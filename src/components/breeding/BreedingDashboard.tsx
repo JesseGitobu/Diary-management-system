@@ -21,6 +21,12 @@ import {
   ChevronUp,
 } from 'lucide-react'
 import Link from 'next/link'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/DropdownMenu'
 import { format } from 'date-fns' 
 import { BreedingCalendar } from '@/components/breeding/BreedingCalendar'
 import { PregnantAnimalsList } from '@/components/breeding/PregnantAnimalsList'
@@ -345,13 +351,57 @@ export function BreedingDashboard({
                 }
               </Button>
             ) : (
-              <Button onClick={() => {
-                setSelectedAnimal(null)
-                setActiveModal('heat_detection')
-              }}>
-                <Plus className="mr-2 h-4 w-4" />
-                Quick Record
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button className="flex items-center gap-2">
+                    <Plus className="h-4 w-4" />
+                    Quick Record
+                    <ChevronDown className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setSelectedAnimal(null)
+                      setActiveModal('heat_detection')
+                    }}
+                    className="flex items-center gap-2 cursor-pointer"
+                  >
+                    <Heart className="h-4 w-4 text-pink-500" />
+                    <span>Record Heat Detection</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setSelectedAnimal(null)
+                      setActiveModal('insemination')
+                    }}
+                    className="flex items-center gap-2 cursor-pointer"
+                  >
+                    <Syringe className="h-4 w-4 text-blue-500" />
+                    <span>Record Insemination</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setSelectedAnimal(null)
+                      setActiveModal('pregnancy_check')
+                    }}
+                    className="flex items-center gap-2 cursor-pointer"
+                  >
+                    <Stethoscope className="h-4 w-4 text-green-500" />
+                    <span>Record Pregnancy Check</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setSelectedAnimal(null)
+                      setActiveModal('calving')
+                    }}
+                    className="flex items-center gap-2 cursor-pointer"
+                  >
+                    <Baby className="h-4 w-4 text-yellow-500" />
+                    <span>Record Calving Event</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
           </div>
         )}

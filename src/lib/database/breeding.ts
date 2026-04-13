@@ -204,12 +204,31 @@ export async function getEligibleAnimals(farmId: string, eventType: BreedingEven
   // Base query: Active females in the farm
   let query = supabase
     .from('animals')
-    .select('id, tag_number, name, gender, birth_date, production_status')
+    .select(`
+      id,
+      tag_number,
+      name,
+      gender,
+      birth_date,
+      production_status,
+      breed,
+      breeding_events (
+        event_type,
+        event_date
+      )
+    `)
     .eq('farm_id', farmId)
     .eq('status', 'active')
     .eq('gender', 'female') 
   
   const { data, error } = await query.order('tag_number')
+  console.log('[getEligibleAnimals] query response', {
+    farmId,
+    eventType,
+    error,
+    count: (data || []).length,
+    sample: (data || [])?.slice(0, 10),
+  })
   
   if (error) {
     console.error('Error fetching eligible animals:', error)
@@ -255,7 +274,12 @@ export async function getAnimalsForPregnancyCheck(farmId: string) {
   const { data, error } = await supabase
     .from('animals')
     .select(`
-      id, tag_number, name, production_status,
+      id,
+      tag_number,
+      name,
+      production_status,
+      breed,
+      birth_date,
       breeding_events!inner (
         event_type,
         event_date
@@ -275,9 +299,33 @@ export async function getAnimalsForPregnancyCheck(farmId: string) {
   
   // Filter out unique animals (Supabase might return duplicates due to join)
   const animalsData = (data || []) as any[]
-  const uniqueAnimals = Array.from(new Set(animalsData.map(a => a.id)))
-    .map(id => animalsData.find(a => a.id === id))
-    .filter(Boolean) as any[]
+
+  const groupedById = animalsData.reduce((acc: Record<string, any>, row: any) => {
+    if (!acc[row.id]) {
+      acc[row.id] = {
+        ...row,
+        breeding_events: [],
+      }
+    }
+
+    if (row.breeding_events) {
+      acc[row.id].breeding_events.push(row.breeding_events)
+    }
+
+    return acc
+  }, {})
+
+  const uniqueAnimals = Object.values(groupedById).map((animal: any) => {
+    const lastInsemination = (animal.breeding_events || [])
+      .filter((event: any) => event.event_type === 'insemination' && event.event_date)
+      .map((event: any) => new Date(event.event_date))
+      .sort((a: Date, b: Date) => b.getTime() - a.getTime())[0]
+
+    return {
+      ...animal,
+      last_insemination: lastInsemination ? lastInsemination.toISOString() : null,
+    }
+  })
 
   return uniqueAnimals
 }
@@ -302,6 +350,7 @@ export async function getAnimalsForCalving(farmId: string) {
           id,
           tag_number,
           name,
+          breed,
           production_status
         )
       `)
@@ -331,6 +380,7 @@ export async function getAnimalsForCalving(farmId: string) {
         id: animal.id,
         tag_number: animal.tag_number,
         name: animal.name,
+        breed: animal.breed ?? null,
         production_status: animal.production_status,
         breeding_events: row.expected_calving_date
           ? [{ estimated_due_date: row.expected_calving_date }]

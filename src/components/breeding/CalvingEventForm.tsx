@@ -6,6 +6,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Button } from '@/components/ui/Button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
@@ -85,9 +86,52 @@ const healthStatuses = [
   'Under treatment'
 ]
 
+type EligibleAnimal = {
+  id: string
+  tag_number: string
+  name: string | null
+  breed?: string | null
+  production_status?: string | null
+  expected_calving_date?: string | null
+}
+
+type BreedingHistory = {
+  inseminationEvents: Array<{
+    event_date?: string | null
+    estimated_due_date?: string | null
+  }>
+  pregnancyChecks: Array<{
+    check_date?: string | null
+    result?: string | null
+  }>
+  calvingEvents: Array<{
+    calving_outcome?: string | null
+    event_date?: string | null
+  }>
+}
+
+type SelectedAnimalDetails = {
+  id: string
+  tag_number: string
+  name: string | null
+  breed: string | null
+  production_status: string | null
+  birth_date: string | null
+  current_daily_production?: number | null
+  latest_calving?: {
+    calving_date?: string | null
+    calving_difficulty?: string | null
+    assistance_required?: boolean | null
+    calf_alive?: boolean | null
+  }
+}
+
 export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelectedAnimalId }: CalvingEventFormProps) {
   const [loading, setLoading] = useState(false)
-  const [animals, setAnimals] = useState<any[]>([])
+  const [animals, setAnimals] = useState<EligibleAnimal[]>([])
+  const [selectedAnimalDetails, setSelectedAnimalDetails] = useState<SelectedAnimalDetails | null>(null)
+  const [breedingHistory, setBreedingHistory] = useState<BreedingHistory | null>(null)
+  const [detailsLoading, setDetailsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null) // Store current user ID
   const [loadingAnimals, setLoadingAnimals] = useState(true)
@@ -130,11 +174,81 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
     }
   }, [farmId])
 
+  const selectedAnimalId = form.watch('animal_id')
+
+  const loadSelectedAnimalDetails = async (animalId: string, signal?: AbortSignal) => {
+    if (!animalId) {
+      setSelectedAnimalDetails(null)
+      return
+    }
+
+    try {
+      setDetailsLoading(true)
+      const response = await fetch(`/api/animals/${animalId}`, { signal })
+      const result = await response.json()
+
+      if (response.ok && result.success) {
+        setSelectedAnimalDetails(result.animal)
+      } else {
+        setSelectedAnimalDetails(null)
+      }
+    } catch (loadError) {
+      if ((loadError as any)?.name !== 'AbortError') {
+        console.error('❌ CalvingEventForm: Error loading animal details:', loadError)
+      }
+      setSelectedAnimalDetails(null)
+    } finally {
+      setDetailsLoading(false)
+    }
+  }
+
+  const loadBreedingHistory = async (animalId: string, signal?: AbortSignal) => {
+    if (!animalId) {
+      setBreedingHistory(null)
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/animals/${animalId}/breeding-records`, { signal })
+      const result = await response.json()
+
+      if (response.ok && result.success) {
+        setBreedingHistory({
+          inseminationEvents: result.inseminationEvents || [],
+          pregnancyChecks: result.pregnancyChecks || [],
+          calvingEvents: result.calvingEvents || [],
+        })
+      } else {
+        setBreedingHistory(null)
+      }
+    } catch (loadError) {
+      if ((loadError as any)?.name !== 'AbortError') {
+        console.error('❌ CalvingEventForm: Error loading breeding history:', loadError)
+      }
+      setBreedingHistory(null)
+    }
+  }
+
   useEffect(() => {
     if (preSelectedAnimalId) {
       form.setValue('animal_id', preSelectedAnimalId)
     }
-  }, [preSelectedAnimalId])
+  }, [preSelectedAnimalId, form])
+
+  useEffect(() => {
+    if (!selectedAnimalId) {
+      setSelectedAnimalDetails(null)
+      setBreedingHistory(null)
+      return
+    }
+
+    const controller = new AbortController()
+
+    loadSelectedAnimalDetails(selectedAnimalId, controller.signal)
+    loadBreedingHistory(selectedAnimalId, controller.signal)
+
+    return () => controller.abort()
+  }, [selectedAnimalId])
 
   const loadEligibleAnimals = async () => {
     setLoadingAnimals(true)
@@ -149,7 +263,9 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
             id: preSelectedAnimalId,
             tag_number: 'Selected Animal',
             name: '(Current)',
-            breeding_events: []
+            breed: 'Unknown',
+            production_status: null,
+            expected_calving_date: null,
           })
         }
       }
@@ -211,7 +327,72 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
       setLoading(false)
     }
   }
-  
+
+  const formatDateTime = (dateTime?: string | null) => {
+    if (!dateTime) return 'No record'
+    return new Date(dateTime).toLocaleString([], {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    })
+  }
+
+  const calculateAge = (birthDate?: string | null) => {
+    if (!birthDate) return 'Unknown age'
+    const birth = new Date(birthDate)
+    const now = new Date()
+    const years = now.getFullYear() - birth.getFullYear()
+    let months = now.getMonth() - birth.getMonth()
+
+    if (now.getDate() < birth.getDate()) {
+      months -= 1
+    }
+
+    const totalMonths = years * 12 + months
+    if (totalMonths < 12) return `${totalMonths} months old`
+
+    const displayYears = Math.floor(totalMonths / 12)
+    const displayMonths = totalMonths % 12
+    return displayMonths === 0
+      ? `${displayYears} year${displayYears === 1 ? '' : 's'} old`
+      : `${displayYears} year${displayYears === 1 ? '' : 's'}, ${displayMonths} month${displayMonths === 1 ? '' : 's'} old`
+  }
+
+  const getLatestInsemination = () => {
+    const events = breedingHistory?.inseminationEvents || []
+    const sorted = events
+      .filter((event) => event.event_date)
+      .sort((a, b) => new Date(b.event_date!).getTime() - new Date(a.event_date!).getTime())
+
+    return sorted[0] || null
+  }
+
+  const getLatestPregnancyCheck = () => {
+    const checks = breedingHistory?.pregnancyChecks || []
+    const sorted = checks
+      .filter((check) => check.check_date)
+      .sort((a, b) => new Date(b.check_date!).getTime() - new Date(a.check_date!).getTime())
+
+    return sorted[0] || null
+  }
+
+  const getDaysSince = (dateString?: string | null) => {
+    if (!dateString) return 'N/A'
+    const diff = Math.floor((Date.now() - new Date(dateString).getTime()) / (1000 * 60 * 60 * 24))
+    return `${diff} day${diff === 1 ? '' : 's'} ago`
+  }
+
+  const getPreviousCalvingOutcome = () => {
+    const latestCalving = breedingHistory?.calvingEvents?.[0]
+    return latestCalving?.calving_outcome ? `${latestCalving.calving_outcome}` : 'No record'
+  }
+
+  const getCalvingSuccessRate = () => {
+    const events = breedingHistory?.calvingEvents || []
+    if (!events.length) return 'N/A'
+    const successCount = events.filter((event) => event.calving_outcome === 'normal').length
+    return `${Math.round((successCount / events.length) * 100)}%`
+  }
+
   const selectedOutcome = form.watch('calving_outcome')
   const selectedAnimal = form.watch('animal_id')
   const calvingDate = form.watch('event_date')
@@ -303,7 +484,7 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
             <option value="">Choose an animal...</option>
             {animals.map((animal) => (
               <option key={animal.id} value={animal.id}>
-                {animal.tag_number} - {animal.name || 'Unnamed'}
+                {animal.tag_number} - {animal.name || 'Unnamed'} • {animal.breed || 'Unknown breed'}
               </option>
             ))}
             {preSelectedAnimalId && !animals.find(a => a.id === preSelectedAnimalId) && (
@@ -314,6 +495,57 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
             <p className="text-sm text-red-600 mt-1">
               {form.formState.errors.animal_id.message}
             </p>
+          )}
+
+          {selectedAnimalDetails && !detailsLoading && (
+            <Card className="mt-4 border-gray-200 bg-white">
+              <CardHeader>
+                <CardTitle>
+                  {selectedAnimalDetails.name || 'Unnamed'} • {selectedAnimalDetails.tag_number}
+                </CardTitle>
+                <CardDescription>
+                  Breed, age, insemination, pregnancy, and previous calving context.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-700">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Breed</p>
+                    <p className="mt-1 font-medium">{selectedAnimalDetails.breed || 'Unknown breed'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Production status</p>
+                    <p className="mt-1 font-medium">{selectedAnimalDetails.production_status || 'Not available'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Age</p>
+                    <p className="mt-1 font-medium">{calculateAge(selectedAnimalDetails.birth_date)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Average production</p>
+                    <p className="mt-1 font-medium">{selectedAnimalDetails.current_daily_production ? `${selectedAnimalDetails.current_daily_production} L/day` : 'Not recorded'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Last insemination</p>
+                    <p className="mt-1 font-medium">{formatDateTime(getLatestInsemination()?.event_date)}</p>
+                    <p className="text-xs text-gray-500 mt-1">{getDaysSince(getLatestInsemination()?.event_date)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Last pregnancy check</p>
+                    <p className="mt-1 font-medium">{formatDateTime(getLatestPregnancyCheck()?.check_date)}</p>
+                    <p className="text-xs text-gray-500 mt-1">{getDaysSince(getLatestPregnancyCheck()?.check_date)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Previous calving outcome</p>
+                    <p className="mt-1 font-medium capitalize">{getPreviousCalvingOutcome()}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Calving success rate</p>
+                    <p className="mt-1 font-medium">{getCalvingSuccessRate()}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           )}
         </div>
         
