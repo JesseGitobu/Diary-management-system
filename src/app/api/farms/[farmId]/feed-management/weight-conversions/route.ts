@@ -56,23 +56,24 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     
     // Validate conversion value
-    if (!body.conversion_to_kg || body.conversion_to_kg <= 0) {
-      return NextResponse.json({ error: 'Conversion value must be greater than 0' }, { status: 400 })
+    if (!body.conversion_factor || body.conversion_factor <= 0) {
+      return NextResponse.json({ error: 'Conversion factor must be greater than 0' }, { status: 400 })
     }
     
-    // Check for duplicate unit symbols
+    // Check for duplicate conversions
     const existingConversions = await getWeightConversions(userRole.farm_id)
-    const duplicateSymbol = existingConversions.find(
-      conv => conv.unit_symbol.toLowerCase() === body.unit_symbol.toLowerCase()
+    const duplicateConversion = existingConversions.find(
+      conv => conv.from_unit.toLowerCase() === body.from_unit.toLowerCase() && 
+              conv.to_unit.toLowerCase() === body.to_unit.toLowerCase()
     )
     
-    if (duplicateSymbol) {
+    if (duplicateConversion) {
       return NextResponse.json({ 
-        error: 'A weight unit with this symbol already exists' 
+        error: 'A conversion between these units already exists' 
       }, { status: 400 })
     }
     
-    const result = await createWeightConversion(userRole.farm_id, body)
+    const result = await createWeightConversion(userRole.farm_id, body, user.id)
     
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 })

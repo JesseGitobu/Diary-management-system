@@ -59,20 +59,46 @@ type EditInventoryFormData = z.infer<typeof editInventorySchema>
 interface FeedInventoryTabProps {
   inventory: Array<{
     id: string;
+    farm_id: string;
     feed_type_id: string;
-    quantity_kg: number; // This should be the remaining quantity after consumption
-    initial_quantity_kg?: number; // Original purchase quantity
-    cost_per_kg: number;
-    purchase_date: string;
-    expiry_date?: string;
-    supplier?: string;
-    batch_number?: string;
-    notes?: string;
+    quantity_in_stock: number; // Current stock level
+    minimum_threshold?: number;
+    maximum_capacity?: number;
+    last_restocked_date?: string;
+    storage_location?: string;
+    updated_at: string;
     feed_types?: {
       id: string;
       name: string;
+      description?: string;
+      typical_cost_per_kg?: number;
       preferred_measurement_unit?: string;
       low_stock_threshold?: number;
+    };
+    // Latest purchase information
+    latest_purchase?: {
+      id: string;
+      purchase_date: string;
+      expiry_date?: string;
+      supplier?: string;
+      batch_number?: string;
+      notes?: string;
+      cost_per_kg?: number;
+      quantity_kg: number; // Original purchase quantity
+      source: string;
+    };
+    // Nutritional data from latest purchase
+    nutritional_data?: {
+      protein_pct?: number;
+      fat_pct?: number;
+      fiber_pct?: number;
+      moisture_pct?: number;
+      ash_pct?: number;
+      energy_mj_kg?: number;
+      dry_matter_pct?: number;
+      ndf_pct?: number;
+      adf_pct?: number;
+      notes?: string;
     };
   }>
   feedTypes: any[]
@@ -115,11 +141,9 @@ export function FeedInventoryTab({
   // Calculate enhanced inventory data with consumption information
   const enhancedInventory = useMemo(() => {
     return inventory.map(item => {
-      // Find consumption records for this specific inventory batch
+      // Find consumption records for this specific feed type
       const itemConsumption = consumptionRecords.filter(record => 
         record.feed_type_id === item.feed_type_id
-        // Note: In a more sophisticated system, you'd track consumption by specific inventory batch
-        // For now, we're aggregating all consumption for this feed type
       )
 
       // Calculate total consumed for this feed type
@@ -127,30 +151,35 @@ export function FeedInventoryTab({
         sum + (record.quantity_kg || 0), 0
       )
 
-      // Determine initial quantity (either stored or current + consumed)
-      // If initial_quantity_kg is not stored, calculate it
-      const initialQuantity = item.initial_quantity_kg || (item.quantity_kg + totalConsumed)
-
+      // Current stock level from inventory
+      const currentStock = item.quantity_in_stock
+      
       // Calculate consumption metrics
       const consumedQuantity = totalConsumed
-      const remainingQuantity = item.quantity_kg
-      const consumptionPercentage = initialQuantity > 0 ? (consumedQuantity / initialQuantity) * 100 : 0
-      const remainingPercentage = initialQuantity > 0 ? (remainingQuantity / initialQuantity) * 100 : 100
+      const remainingQuantity = currentStock
+      const consumptionPercentage = consumedQuantity > 0 ? (consumedQuantity / (consumedQuantity + currentStock)) * 100 : 0
+      const remainingPercentage = currentStock > 0 ? 100 : 0
 
       // Check if this inventory needs to be updated based on consumption
-      const calculatedRemainingQuantity = Math.max(0, initialQuantity - consumedQuantity)
-      const needsQuantityUpdate = Math.abs(remainingQuantity - calculatedRemainingQuantity) > 0.1
+      const needsQuantityUpdate = false // We'll handle this differently now
 
       return {
         ...item,
-        initialQuantity,
         consumedQuantity,
-        remainingQuantity,
+        remainingQuantity: currentStock,
         consumptionPercentage,
         remainingPercentage,
         needsQuantityUpdate,
-        calculatedRemainingQuantity,
-        consumptionCount: itemConsumption.length
+        consumptionCount: itemConsumption.length,
+        // Add purchase information
+        purchase_date: item.latest_purchase?.purchase_date,
+        expiry_date: item.latest_purchase?.expiry_date,
+        supplier: item.latest_purchase?.supplier,
+        batch_number: item.latest_purchase?.batch_number,
+        notes: item.latest_purchase?.notes,
+        cost_per_kg: item.latest_purchase?.cost_per_kg,
+        initial_quantity_kg: item.latest_purchase?.quantity_kg,
+        source: item.latest_purchase?.source,
       }
     })
   }, [inventory, consumptionRecords])
@@ -185,20 +214,20 @@ export function FeedInventoryTab({
 
   // Check if item is low stock
   const isLowStock = (item: any) => {
-    const threshold = item.feed_types?.low_stock_threshold
-    return threshold && item.remainingQuantity <= threshold
+    const threshold = item.minimum_threshold || item.feed_types?.low_stock_threshold
+    return threshold && item.quantity_in_stock <= threshold
   }
 
   // Check if item is expired
   const isExpired = (item: any) => {
-    if (!item.expiry_date) return false
-    return new Date(item.expiry_date) < new Date()
+    if (!item.latest_purchase?.expiry_date) return false
+    return new Date(item.latest_purchase.expiry_date) < new Date()
   }
 
   // Check if item is expiring soon (within 7 days)
   const isExpiringSoon = (item: any) => {
-    if (!item.expiry_date) return false
-    const expiryDate = new Date(item.expiry_date)
+    if (!item.latest_purchase?.expiry_date) return false
+    const expiryDate = new Date(item.latest_purchase.expiry_date)
     const sevenDaysFromNow = new Date()
     sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7)
     return expiryDate <= sevenDaysFromNow && expiryDate >= new Date()
@@ -209,20 +238,20 @@ export function FeedInventoryTab({
     setEditing(item)
     setError(null)
     
-    // Pre-populate form with existing data
+    // Pre-populate form with existing data from latest purchase
     const preferredUnit = item.feed_types?.preferred_measurement_unit
-    const preferredQuantity = preferredUnit ? convertFromKg(item.quantity_kg, preferredUnit) : item.quantity_kg
+    const preferredQuantity = preferredUnit ? convertFromKg(item.remainingQuantity, preferredUnit) : item.remainingQuantity
 
     form.reset({
-      quantity_kg: item.quantity_kg,
+      quantity_kg: item.remainingQuantity,
       quantity_in_preferred_unit: preferredQuantity,
       cost_per_kg: item.cost_per_kg,
-      total_cost: item.quantity_kg * item.cost_per_kg,
-      purchase_date: item.purchase_date,
-      expiry_date: item.expiry_date || '',
-      supplier: item.supplier || '',
-      batch_number: item.batch_number || '',
-      notes: item.notes || '',
+      total_cost: item.remainingQuantity * (item.cost_per_kg || 0),
+      purchase_date: item.latest_purchase?.purchase_date || '',
+      expiry_date: item.latest_purchase?.expiry_date || '',
+      supplier: item.latest_purchase?.supplier || '',
+      batch_number: item.latest_purchase?.batch_number || '',
+      notes: item.latest_purchase?.notes || '',
     })
   }
 
@@ -489,7 +518,7 @@ export function FeedInventoryTab({
     const preferredUnit = item.feed_types?.preferred_measurement_unit
     const unitDisplay = preferredUnit ? getUnitDisplay(preferredUnit) : null
     const remainingPreferred = preferredUnit ? convertFromKg(item.remainingQuantity, preferredUnit) : null
-    const initialPreferred = preferredUnit ? convertFromKg(item.initialQuantity, preferredUnit) : null
+    const initialPreferred = preferredUnit && item.initial_quantity_kg ? convertFromKg(item.initial_quantity_kg, preferredUnit) : null
 
     return (
       <div className="space-y-2">
@@ -498,7 +527,7 @@ export function FeedInventoryTab({
           {remainingPreferred !== null && unitDisplay && (
             <div className="text-sm">
               <span className="font-bold text-blue-700 text-lg">
-                {remainingPreferred} {unitDisplay.symbol}
+                {remainingPreferred.toFixed(1)} {unitDisplay.symbol}
               </span>
               <span className="text-gray-500 text-xs ml-1">
                 remaining
@@ -507,51 +536,67 @@ export function FeedInventoryTab({
           )}
           <div className="text-sm">
             <span className="font-bold text-lg">
-              {item.remainingQuantity} kg
+              {item.remainingQuantity.toFixed(1)} kg
             </span>
             <span className="text-gray-500 text-xs ml-1">
-              remaining
+              in stock
             </span>
           </div>
         </div>
 
-        {/* Initial vs Remaining comparison */}
+        {/* Stock level indicators */}
         <div className="space-y-1">
-          <div className="flex items-center justify-between text-xs text-gray-600">
-            <span>Initial purchased:</span>
-            <span className="font-medium">
-              {item.initialQuantity.toFixed(1)} kg
-              {initialPreferred && unitDisplay && (
-                <span className="ml-1">({initialPreferred.toFixed(1)} {unitDisplay.symbol})</span>
-              )}
-            </span>
-          </div>
+          {item.minimum_threshold && (
+            <div className="flex items-center justify-between text-xs text-gray-600">
+              <span>Minimum threshold:</span>
+              <span className="font-medium">
+                {item.minimum_threshold} kg
+                {initialPreferred && unitDisplay && (
+                  <span className="ml-1">({convertFromKg(item.minimum_threshold, preferredUnit).toFixed(1)} {unitDisplay.symbol})</span>
+                )}
+              </span>
+            </div>
+          )}
           
-          {/* Consumption progress bar */}
-          <div className="w-full bg-gray-200 rounded-full h-2">
-            <div 
-              className={`h-2 rounded-full ${
-                item.consumptionPercentage >= 80 ? 'bg-red-500' :
-                item.consumptionPercentage >= 50 ? 'bg-orange-500' :
-                'bg-green-500'
-              }`}
-              style={{ width: `${Math.min(item.consumptionPercentage, 100)}%` }}
-            />
-          </div>
+          {item.maximum_capacity && (
+            <div className="flex items-center justify-between text-xs text-gray-600">
+              <span>Maximum capacity:</span>
+              <span className="font-medium">
+                {item.maximum_capacity} kg
+                {initialPreferred && unitDisplay && (
+                  <span className="ml-1">({convertFromKg(item.maximum_capacity, preferredUnit).toFixed(1)} {unitDisplay.symbol})</span>
+                )}
+              </span>
+            </div>
+          )}
+
+          {/* Capacity percentage bar */}
+          {item.maximum_capacity && (
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div 
+                className={`h-2 rounded-full ${
+                  (item.remainingQuantity / item.maximum_capacity) >= 0.8 ? 'bg-red-500' :
+                  (item.remainingQuantity / item.maximum_capacity) >= 0.5 ? 'bg-orange-500' :
+                  'bg-green-500'
+                }`}
+                style={{ width: `${Math.min((item.remainingQuantity / item.maximum_capacity) * 100, 100)}%` }}
+              />
+            </div>
+          )}
           
           <div className="flex items-center justify-between text-xs">
             <span className="text-gray-500">
-              {item.consumptionPercentage.toFixed(1)}% consumed ({item.consumedQuantity.toFixed(1)}kg)
+              {item.consumptionCount} feeding session{item.consumptionCount !== 1 ? 's' : ''} recorded
             </span>
             <span className="text-gray-500">
-              {item.remainingPercentage.toFixed(1)}% remaining
+              Updated: {new Date(item.updated_at).toLocaleDateString()}
             </span>
           </div>
 
-          {/* Consumption details */}
-          {item.consumptionCount > 0 && (
-            <div className="text-xs text-gray-500 mt-1">
-              {item.consumptionCount} feeding session{item.consumptionCount !== 1 ? 's' : ''} recorded
+          {/* Last restocked info */}
+          {item.last_restocked_date && (
+            <div className="text-xs text-gray-500">
+              Last restocked: {new Date(item.last_restocked_date).toLocaleDateString()}
             </div>
           )}
         </div>
@@ -562,20 +607,6 @@ export function FeedInventoryTab({
             Conversion: 1 {unitDisplay.symbol} = {
               getWeightConversion(preferredUnit)?.conversion_to_kg
             } kg
-          </div>
-        )}
-
-        {/* Data sync warning */}
-        {item.needsQuantityUpdate && (
-          <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
-            <div className="flex items-center space-x-1 text-blue-700">
-              <AlertTriangle className="w-3 h-3" />
-              <span className="font-medium">Quantity mismatch detected</span>
-            </div>
-            <div className="text-blue-600 mt-1">
-              Based on consumption records, remaining should be {item.calculatedRemainingQuantity.toFixed(1)}kg. 
-              Consider updating the inventory quantity.
-            </div>
           </div>
         )}
       </div>
@@ -621,34 +652,67 @@ export function FeedInventoryTab({
 
                       {/* Purchase Info */}
                       <div className="space-y-1">
-                        <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>
-                          KSh{item.cost_per_kg}/kg
-                          {item.supplier && ` • ${item.supplier}`}
-                          {item.batch_number && ` • Batch: ${item.batch_number}`}
-                        </p>
-                        <p className={`text-gray-500 ${isMobile ? 'text-xs' : 'text-xs'}`}>
-                          Purchased: {new Date(item.purchase_date).toLocaleDateString()}
-                          {item.expiry_date && ` • Expires: ${new Date(item.expiry_date).toLocaleDateString()}`}
-                        </p>
-                        {item.notes && (
+                        {item.cost_per_kg && (
+                          <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>
+                            KSh{item.cost_per_kg}/kg
+                            {item.latest_purchase?.supplier && ` • ${item.latest_purchase.supplier}`}
+                            {item.latest_purchase?.batch_number && ` • Batch: ${item.latest_purchase.batch_number}`}
+                            {item.source && ` • ${item.source}`}
+                          </p>
+                        )}
+                        {item.latest_purchase?.purchase_date && (
+                          <p className={`text-gray-500 ${isMobile ? 'text-xs' : 'text-xs'}`}>
+                            Last purchased: {new Date(item.latest_purchase.purchase_date).toLocaleDateString()}
+                            {item.latest_purchase?.expiry_date && ` • Expires: ${new Date(item.latest_purchase.expiry_date).toLocaleDateString()}`}
+                          </p>
+                        )}
+                        {item.storage_location && (
+                          <p className={`text-gray-500 ${isMobile ? 'text-xs' : 'text-xs'}`}>
+                            Storage: {item.storage_location}
+                          </p>
+                        )}
+                        {item.latest_purchase?.notes && (
                           <p className={`text-gray-500 italic ${isMobile ? 'text-xs' : 'text-xs'}`}>
-                            {item.notes}
+                            {item.latest_purchase.notes}
                           </p>
                         )}
                       </div>
+
+                      {/* Nutritional Data */}
+                      {item.nutritional_data && (
+                        <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-xs">
+                          <div className="font-medium text-green-800 mb-1">Nutritional Profile</div>
+                          <div className="grid grid-cols-2 gap-1 text-green-700">
+                            {item.nutritional_data.protein_pct && (
+                              <span>Protein: {item.nutritional_data.protein_pct}%</span>
+                            )}
+                            {item.nutritional_data.energy_mj_kg && (
+                              <span>Energy: {item.nutritional_data.energy_mj_kg} MJ/kg</span>
+                            )}
+                            {item.nutritional_data.fiber_pct && (
+                              <span>Fiber: {item.nutritional_data.fiber_pct}%</span>
+                            )}
+                            {item.nutritional_data.fat_pct && (
+                              <span>Fat: {item.nutritional_data.fat_pct}%</span>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <div className={`${isMobile ? 'flex justify-between items-center mt-3' : 'flex items-start space-x-4 ml-4'}`}>
                       <div className="text-right">
                         <p className={`font-bold ${isMobile ? 'text-base' : 'text-lg'} text-green-700`}>
-                          KSh{(item.remainingQuantity * item.cost_per_kg).toFixed(2)}
+                          KSh{(item.remainingQuantity * (item.cost_per_kg || 0)).toFixed(2)}
                         </p>
                         <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>
                           Current Value
                         </p>
-                        <p className={`text-gray-500 ${isMobile ? 'text-xs' : 'text-xs'}`}>
-                          Original: KSh{(item.initialQuantity * item.cost_per_kg).toFixed(2)}
-                        </p>
+                        {item.initial_quantity_kg && (
+                          <p className={`text-gray-500 ${isMobile ? 'text-xs' : 'text-xs'}`}>
+                            Original: KSh{(item.initial_quantity_kg * (item.cost_per_kg || 0)).toFixed(2)}
+                          </p>
+                        )}
                       </div>
                       
                       <ActionButtons item={item} />
@@ -702,11 +766,20 @@ export function FeedInventoryTab({
             {/* Consumption Information */}
             {editing && (
               <div className="p-3 bg-gray-50 rounded-lg border">
-                <h5 className="font-medium text-gray-800 mb-2">Consumption Summary</h5>
+                <h5 className="font-medium text-gray-800 mb-2">Stock & Consumption Summary</h5>
                 <div className="text-sm text-gray-600 space-y-1">
-                  <div>Initial quantity: {editing.initialQuantity.toFixed(1)}kg</div>
-                  <div>Consumed: {editing.consumedQuantity.toFixed(1)}kg ({editing.consumptionPercentage.toFixed(1)}%)</div>
+                  <div>Current stock level: {editing.remainingQuantity.toFixed(1)} kg</div>
+                  <div>Total consumed: {editing.consumedQuantity.toFixed(1)} kg</div>
                   <div>Consumption sessions: {editing.consumptionCount}</div>
+                  {editing.minimum_threshold && (
+                    <div>Minimum threshold: {editing.minimum_threshold} kg</div>
+                  )}
+                  {editing.maximum_capacity && (
+                    <div>Maximum capacity: {editing.maximum_capacity} kg</div>
+                  )}
+                  {editing.last_restocked_date && (
+                    <div>Last restocked: {new Date(editing.last_restocked_date).toLocaleDateString()}</div>
+                  )}
                 </div>
               </div>
             )}
@@ -874,11 +947,11 @@ export function FeedInventoryTab({
             <AlertDialogDescription>
               Are you sure you want to mark "{depleting?.feed_types?.name}" as completely depleted?
               <br /><br />
-              Current remaining: {depleting?.remainingQuantity || depleting?.quantity_kg} kg
+              Current stock level: {depleting?.remainingQuantity || depleting?.quantity_in_stock} kg
               <br />
               Consumed so far: {depleting?.consumedQuantity?.toFixed(1) || 0} kg
               <br /><br />
-              This action will remove this inventory record from your active stock.
+              This action will set the stock level to zero and mark it as depleted.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

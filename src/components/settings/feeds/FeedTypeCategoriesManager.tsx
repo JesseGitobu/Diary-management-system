@@ -38,10 +38,12 @@ import {
 
 interface FeedTypeCategory {
   id: string
-  name: string
+  category_name: string
   description: string
   color: string
+  collect_nutritional_data: boolean
   is_default: boolean
+  is_active: boolean
   sort_order: number
   feed_count?: number
 }
@@ -55,9 +57,12 @@ interface FeedTypeCategoriesManagerProps {
 }
 
 interface CategoryFormData {
-  name: string
+  category_name: string
   description: string
   color: string
+  collect_nutritional_data: boolean
+  is_default: boolean
+  is_active: boolean
 }
 
 const DEFAULT_COLORS = [
@@ -76,17 +81,24 @@ export function FeedTypeCategoriesManager({
   const [editingCategory, setEditingCategory] = useState<FeedTypeCategory | null>(null)
   const [deletingCategory, setDeletingCategory] = useState<FeedTypeCategory | null>(null)
   const [loading, setLoading] = useState(false)
+  const [showNutritionalDetails, setShowNutritionalDetails] = useState(false)
   const [formData, setFormData] = useState<CategoryFormData>({
-    name: '',
+    category_name: '',
     description: '',
-    color: DEFAULT_COLORS[0]
+    color: DEFAULT_COLORS[0],
+    collect_nutritional_data: false,
+    is_default: false,
+    is_active: true
   })
 
   const resetForm = useCallback(() => {
     setFormData({
-      name: '',
+      category_name: '',
       description: '',
-      color: DEFAULT_COLORS[0]
+      color: DEFAULT_COLORS[0],
+      collect_nutritional_data: false,
+      is_default: false,
+      is_active: true
     })
   }, [])
 
@@ -97,9 +109,12 @@ export function FeedTypeCategoriesManager({
 
   const handleEdit = useCallback((category: FeedTypeCategory) => {
     setFormData({
-      name: category.name,
+      category_name: category.category_name,
       description: category.description || '',
-      color: category.color
+      color: category.color || DEFAULT_COLORS[0],
+      collect_nutritional_data: category.collect_nutritional_data || false,
+      is_default: category.is_default || false,
+      is_active: category.is_active !== false // default to true if null
     })
     setEditingCategory(category)
     setShowAddModal(true)
@@ -113,13 +128,13 @@ export function FeedTypeCategoriesManager({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!formData.name.trim()) return
+    if (!formData.category_name.trim()) return
 
     setLoading(true)
     try {
       const url = editingCategory
         ? `/api/farms/${farmId}/feed-management/feed-categories/${editingCategory.id}`
-        : '/api/farms/${farmId}/feed-management/feed-categories'
+        : `/api/farms/${farmId}/feed-management/feed-categories`
 
       const method = editingCategory ? 'PUT' : 'POST'
 
@@ -127,7 +142,12 @@ export function FeedTypeCategoriesManager({
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...formData,
+          category_name: formData.category_name,
+          description: formData.description,
+          color: formData.color,
+          collect_nutritional_data: formData.collect_nutritional_data,
+          is_default: formData.is_default,
+          is_active: formData.is_active,
           farm_id: farmId
         })
       })
@@ -186,8 +206,8 @@ export function FeedTypeCategoriesManager({
     const newOrder = direction === 'up' ? category.sort_order - 1 : category.sort_order + 1
 
     try {
-      const response = await fetch(`/api/farms/${farmId}/feed-management/feed-categories/${categoryId}/reorder`, {
-        method: 'PATCH',
+      const response = await fetch(`/api/farms/${farmId}/feed-management/feed-categories/${categoryId}`, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sort_order: newOrder })
       })
@@ -195,7 +215,7 @@ export function FeedTypeCategoriesManager({
       if (response.ok) {
         const updated = await response.json()
         onCategoriesUpdate(categories.map(cat =>
-          cat.id === categoryId ? { ...cat, sort_order: updated.data.sort_order } : cat
+          cat.id === categoryId ? updated.data : cat
         ).sort((a, b) => a.sort_order - b.sort_order))
       }
     } catch (error) {
@@ -210,11 +230,30 @@ export function FeedTypeCategoriesManager({
 
   // Memoize form change handlers to prevent recreating on each render
   const handleNameChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData(prev => ({ ...prev, name: e.target.value }))
+    setFormData(prev => ({ ...prev, category_name: e.target.value }))
   }, [])
 
   const handleDescriptionChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setFormData(prev => ({ ...prev, description: e.target.value }))
+  }, [])
+
+  const handleCollectNutritionalDataChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData(prev => ({ ...prev, collect_nutritional_data: e.target.checked }))
+    if (e.target.checked) {
+      setShowNutritionalDetails(true)
+    }
+  }, [])
+
+  const handleIsDefaultChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData(prev => ({ ...prev, is_default: e.target.checked }))
+  }, [])
+
+  const handleIsActiveChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData(prev => ({ ...prev, is_active: e.target.checked }))
+  }, [])
+
+  const toggleNutritionalDetails = useCallback(() => {
+    setShowNutritionalDetails(prev => !prev)
   }, [])
 
   const handleColorChange = useCallback((color: string) => {
@@ -320,13 +359,23 @@ export function FeedTypeCategoriesManager({
             <div className={`flex items-center space-x-3 ${isMobile ? 'self-start' : ''}`}>
               <div
                 className="w-4 h-4 rounded-full"
-                style={{ backgroundColor: category.color }}
+                style={{ backgroundColor: category.color || DEFAULT_COLORS[0] }}
               />
               <div>
                 <div className="flex items-center space-x-2">
-                  <h4 className="font-medium">{category.name}</h4>
+                  <h4 className="font-medium">{category.category_name}</h4>
                   {category.is_default && (
                     <Badge variant="secondary" className="text-xs">Default</Badge>
+                  )}
+                  {category.collect_nutritional_data && (
+                    <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
+                      Nutritional Data
+                    </Badge>
+                  )}
+                  {!category.is_active && (
+                    <Badge variant="outline" className="text-xs bg-red-50 text-red-700 border-red-200">
+                      Inactive
+                    </Badge>
                   )}
                   {category.feed_count !== undefined && (
                     <Badge variant="outline" className="text-xs">
@@ -377,8 +426,8 @@ export function FeedTypeCategoriesManager({
               <Label htmlFor="category-name">Category Name *</Label>
               <Input
                 id="category-name"
-                key={`name-${editingCategory?.id || 'new'}`}
-                value={formData.name}
+                key={`category_name-${editingCategory?.id || 'new'}`}
+                value={formData.category_name}
                 onChange={handleNameChange}
                 placeholder="e.g., Roughage, Concentrates"
                 required
@@ -397,6 +446,79 @@ export function FeedTypeCategoriesManager({
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
                 placeholder="Describe this feed category..."
               />
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="collect-nutritional-data"
+                checked={formData.collect_nutritional_data}
+                onChange={handleCollectNutritionalDataChange}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <Label htmlFor="collect-nutritional-data" className="text-sm">
+                Collect nutritional data for this category
+              </Label>
+            </div>
+
+            {formData.collect_nutritional_data && (
+              <div className="ml-6 border border-gray-200 rounded-md">
+                <button
+                  type="button"
+                  onClick={toggleNutritionalDetails}
+                  className="w-full flex items-center justify-between p-3 bg-gray-50 hover:bg-gray-100 rounded-t-md transition-colors"
+                >
+                  <span className="text-sm font-medium text-gray-700">Nutritional data that can be collected</span>
+                  {showNutritionalDetails ? (
+                    <ChevronUp className="h-4 w-4 text-gray-500" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4 text-gray-500" />
+                  )}
+                </button>
+                {showNutritionalDetails && (
+                  <div className="p-3 bg-white rounded-b-md">
+                    <ul className="text-sm text-gray-600 list-disc list-inside space-y-1">
+                      <li>Dry Matter (%)</li>
+                      <li>Crude Protein (%)</li>
+                      <li>Crude Fiber (%)</li>
+                      <li>Crude Fat (%)</li>
+                      <li>Ash (%)</li>
+                      <li>Calcium (%)</li>
+                      <li>Phosphorus (%)</li>
+                      <li>Energy (ME, kcal/kg)</li>
+                      <li>Vitamin A (IU/kg)</li>
+                      <li>Vitamin D (IU/kg)</li>
+                      <li>Vitamin E (IU/kg)</li>
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="is-default"
+                checked={formData.is_default}
+                onChange={handleIsDefaultChange}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <Label htmlFor="is-default" className="text-sm">
+                Set as default category
+              </Label>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="is-active"
+                checked={formData.is_active}
+                onChange={handleIsActiveChange}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <Label htmlFor="is-active" className="text-sm">
+                Category is active
+              </Label>
             </div>
 
             <div>
@@ -439,7 +561,7 @@ export function FeedTypeCategoriesManager({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Category</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete "{deletingCategory?.name}"? This action cannot be undone.
+              Are you sure you want to delete "{deletingCategory?.category_name}"? This action cannot be undone.
               {deletingCategory?.feed_count && deletingCategory.feed_count > 0 && (
                 <span className="block mt-2 text-amber-600 font-medium">
                   Warning: This category has {deletingCategory.feed_count} feed types.

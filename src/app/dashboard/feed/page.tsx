@@ -4,6 +4,7 @@ import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { getFeedStats, getFeedTypes, getFeedInventory, getFeedConsumptionRecords } from '@/lib/database/feed'
 import { getFarmAnimals } from '@/lib/database/animals'
+import { getFarmFeedMixRecipes } from '@/lib/database/feedMixRecipes'
 import { redirect } from 'next/navigation'
 import { FeedManagementDashboard } from '@/components/feed/FeedManagementDashboard'
 import { getUserPermissions } from '@/lib/database/user-permissions'
@@ -28,7 +29,7 @@ export default async function FeedPage() {
   }
   
   // Get feed management data including consumption records and animals
-  const [feedStats, feedTypes, inventory, consumptionRecords, animals, feedTypeCategories, animalCategories, weightConversions, consumptionBatches, permissions] = await Promise.all([
+  const [feedStats, feedTypes, inventory, consumptionRecords, animals, feedTypeCategories, animalCategories, weightConversions, consumptionBatches, permissions, feedMixRecipesResult] = await Promise.all([
   getFeedStats(userRole.farm_id, 30),
   getFeedTypes(userRole.farm_id),
   getFeedInventory(userRole.farm_id),
@@ -39,6 +40,7 @@ export default async function FeedPage() {
   getWeightConversions(userRole.farm_id),
   getConsumptionBatches(userRole.farm_id),
   getUserPermissions(userRole.id, userRole.farm_id, userRole.role_type),
+  getFarmFeedMixRecipes(userRole.farm_id),
 ])
   
   return (
@@ -55,6 +57,7 @@ export default async function FeedPage() {
         animalCategories={animalCategories}
         weightConversions={weightConversions}
         consumptionBatches={consumptionBatches}
+        feedMixRecipes={feedMixRecipesResult.success ? feedMixRecipesResult.data : []}
       />
     </div>
   )

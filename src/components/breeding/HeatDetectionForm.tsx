@@ -44,7 +44,6 @@ const heatSigns = [
 ]
 
 const actionOptions = [
-  'Marked for breeding',
   'Insemination scheduled',
   'Natural breeding arranged',
   'Monitor further',

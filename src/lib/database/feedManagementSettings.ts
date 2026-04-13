@@ -5,13 +5,17 @@ import { createServerSupabaseClient } from '@/lib/supabase/server'
 export interface FeedTypeCategory {
   id: string
   farm_id: string
-  name: string
+  category_name: string
   description: string | null
   color: string | null
+  collect_nutritional_data: boolean | null
   is_default: boolean | null
+  is_active: boolean | null
   sort_order: number | null
   created_at: string | null
   updated_at: string | null
+  created_by: string | null
+  updated_by: string | null
   feed_count?: number
 }
 
@@ -37,13 +41,13 @@ export interface AnimalCategory {
 export interface WeightConversion {
   id: string
   farm_id: string
-  unit_name: string
-  unit_symbol: string
-  conversion_to_kg: number
-  description: string | null
+  from_unit: string
+  to_unit: string
+  conversion_factor: number
+  unit_name?: string
   is_default: boolean | null
+  is_active: boolean | null
   created_at: string | null
-  updated_at: string | null
 }
 
 // Enhanced ConsumptionBatch interface
@@ -158,7 +162,8 @@ export async function getFeedTypeCategories(farmId: string): Promise<FeedTypeCat
 
 export async function createFeedTypeCategory(
   farmId: string, 
-  data: Omit<FeedTypeCategory, 'id' | 'farm_id' | 'created_at' | 'updated_at' | 'feed_count'>
+  data: Omit<FeedTypeCategory, 'id' | 'farm_id' | 'created_at' | 'updated_at' | 'created_by' | 'updated_by' | 'feed_count'>,
+  userId?: string
 ) {
   const supabase = await createServerSupabaseClient()
   
@@ -172,13 +177,19 @@ export async function createFeedTypeCategory(
   
   const nextOrder = (maxOrder?.[0]?.sort_order || 0) + 1
   
-  // FIXED: Cast to any for insert
   const { data: category, error } = await (supabase
     .from('feed_type_categories') as any)
     .insert({
-      ...data,
       farm_id: farmId,
-      sort_order: nextOrder
+      category_name: data.category_name,
+      description: data.description ?? null,
+      color: data.color ?? null,
+      collect_nutritional_data: data.collect_nutritional_data ?? false,
+      is_active: data.is_active ?? true,
+      is_default: data.is_default ?? false,
+      sort_order: nextOrder,
+      created_by: userId || null,
+      updated_by: userId || null,
     })
     .select()
     .single()
@@ -194,16 +205,25 @@ export async function createFeedTypeCategory(
 export async function updateFeedTypeCategory(
   categoryId: string,
   farmId: string,
-  data: Partial<Omit<FeedTypeCategory, 'id' | 'farm_id' | 'created_at' | 'updated_at'>>
+  data: Partial<Omit<FeedTypeCategory, 'id' | 'farm_id' | 'created_at' | 'updated_at' | 'created_by' | 'updated_by'>>,
+  userId?: string
 ) {
   const supabase = await createServerSupabaseClient()
   
+  // Build update payload with only columns that exist on the table
+  const updatePayload: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  if (data.category_name  !== undefined) updatePayload.category_name  = data.category_name
+  if (data.description    !== undefined) updatePayload.description    = data.description
+  if (data.color          !== undefined) updatePayload.color          = data.color
+  if (data.collect_nutritional_data !== undefined) updatePayload.collect_nutritional_data = data.collect_nutritional_data
+  if (data.is_active      !== undefined) updatePayload.is_active      = data.is_active
+  if (data.is_default     !== undefined) updatePayload.is_default     = data.is_default
+  if (data.sort_order     !== undefined) updatePayload.sort_order     = data.sort_order
+  if (userId) updatePayload.updated_by = userId
+  
   const { data: category, error } = await (supabase
     .from('feed_type_categories') as any)
-    .update({
-      ...data,
-      updated_at: new Date().toISOString()
-    })
+    .update(updatePayload)
     .eq('id', categoryId)
     .eq('farm_id', farmId)
     .select()
@@ -271,6 +291,90 @@ export async function reorderFeedTypeCategory(
   }
   
   return { success: true, data: category }
+}
+
+// ============ WEIGHT CONVERSIONS ============
+
+export async function createWeightConversion(
+  farmId: string, 
+  data: Omit<WeightConversion, 'id' | 'farm_id' | 'created_at'>,
+  userId?: string
+) {
+  const supabase = await createServerSupabaseClient()
+  
+  const { data: conversion, error } = await (supabase
+    .from('weight_conversions') as any)
+    .insert({
+      farm_id: farmId,
+      from_unit: data.from_unit,
+      to_unit: data.to_unit,
+      conversion_factor: data.conversion_factor,
+      unit_name: data.unit_name || null,
+      is_default: data.is_default ?? false,
+      is_active: data.is_active ?? true,
+    })
+    .select()
+    .single()
+  
+  if (error) {
+    console.error('Error creating weight conversion:', error)
+    return { success: false, error: error.message }
+  }
+  
+  return { success: true, data: conversion }
+}
+
+export async function updateWeightConversion(
+  conversionId: string,
+  farmId: string,
+  data: Partial<Omit<WeightConversion, 'id' | 'farm_id' | 'created_at'>>
+) {
+  const supabase = await createServerSupabaseClient()
+  
+  // Build update payload with only columns that exist on the table
+  const updatePayload: Record<string, unknown> = {}
+  if (data.from_unit !== undefined) updatePayload.from_unit = data.from_unit
+  if (data.to_unit !== undefined) updatePayload.to_unit = data.to_unit
+  if (data.conversion_factor !== undefined) updatePayload.conversion_factor = data.conversion_factor
+  if (data.unit_name !== undefined) updatePayload.unit_name = data.unit_name
+  if (data.is_default !== undefined) updatePayload.is_default = data.is_default
+  if (data.is_active !== undefined) updatePayload.is_active = data.is_active
+  
+  const { data: conversion, error } = await (supabase
+    .from('weight_conversions') as any)
+    .update(updatePayload)
+    .eq('id', conversionId)
+    .eq('farm_id', farmId)
+    .select()
+    .maybeSingle()
+
+  if (error) {
+    console.error('Error updating weight conversion:', error)
+    return { success: false, error: error.message }
+  }
+
+  if (!conversion) {
+    return { success: false, error: 'Weight conversion not found or insufficient permissions' }
+  }
+
+  return { success: true, data: conversion }
+}
+
+export async function deleteWeightConversion(conversionId: string, farmId: string) {
+  const supabase = await createServerSupabaseClient()
+  
+  const { error } = await (supabase
+    .from('weight_conversions') as any)
+    .delete()
+    .eq('id', conversionId)
+    .eq('farm_id', farmId)
+  
+  if (error) {
+    console.error('Error deleting weight conversion:', error)
+    return { success: false, error: error.message }
+  }
+  
+  return { success: true }
 }
 
 // ============ ANIMAL CATEGORIES ============
@@ -802,73 +906,6 @@ export async function getWeightConversions(farmId: string): Promise<WeightConver
   
   // FIXED: Cast to any[]
   return (data as any[]) || []
-}
-
-export async function createWeightConversion(
-  farmId: string,
-  data: Omit<WeightConversion, 'id' | 'farm_id' | 'created_at' | 'updated_at'>
-) {
-  const supabase = await createServerSupabaseClient()
-  
-  const { data: conversion, error } = await (supabase
-    .from('weight_conversions') as any)
-    .insert({
-      ...data,
-      farm_id: farmId
-    })
-    .select()
-    .single()
-  
-  if (error) {
-    console.error('Error creating weight conversion:', error)
-    return { success: false, error: error.message }
-  }
-  
-  return { success: true, data: conversion }
-}
-
-export async function updateWeightConversion(
-  conversionId: string,
-  farmId: string,
-  data: Partial<Omit<WeightConversion, 'id' | 'farm_id' | 'created_at' | 'updated_at'>>
-) {
-  const supabase = await createServerSupabaseClient()
-  
-  const { data: conversion, error } = await (supabase
-    .from('weight_conversions') as any)
-    .update({
-      ...data,
-      updated_at: new Date().toISOString()
-    })
-    .eq('id', conversionId)
-    .eq('farm_id', farmId)
-    .select()
-    .single()
-  
-  if (error) {
-    console.error('Error updating weight conversion:', error)
-    return { success: false, error: error.message }
-  }
-  
-  return { success: true, data: conversion }
-}
-
-export async function deleteWeightConversion(conversionId: string, farmId: string) {
-  const supabase = await createServerSupabaseClient()
-  
-  // FIXED: Cast to any
-  const { error } = await (supabase
-    .from('weight_conversions') as any)
-    .delete()
-    .eq('id', conversionId)
-    .eq('farm_id', farmId)
-  
-  if (error) {
-    console.error('Error deleting weight conversion:', error)
-    return { success: false, error: error.message }
-  }
-  
-  return { success: true }
 }
 
 // ============ ENHANCED CONSUMPTION BATCHES ============

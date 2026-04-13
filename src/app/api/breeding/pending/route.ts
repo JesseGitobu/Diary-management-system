@@ -36,8 +36,8 @@ export async function GET(request: NextRequest) {
         )
       `)
       .eq('farm_id', userRole.farm_id)
-      .gte('breeding_date', new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]) // Last 90 days
-      .order('breeding_date', { ascending: false })
+      .gte('service_date', new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]) // Last 90 days
+      .order('service_date', { ascending: false })
     
     if (error) {
       console.error('Error fetching pending breedings:', error)

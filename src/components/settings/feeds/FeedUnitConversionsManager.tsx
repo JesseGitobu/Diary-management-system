@@ -72,7 +72,7 @@ const QUANTIFIABLE_WEIGHT_UNITS = [
   { value: 'tsp', label: 'Teaspoons (tsp)' },
 ] as const
 
-interface WeightConversion {
+interface FeedUnitConversion {
   id: string
   farm_id: string
   from_unit: string
@@ -84,10 +84,10 @@ interface WeightConversion {
   created_at?: string
 }
 
-interface WeightConversionsManagerProps {
+interface FeedUnitConversionsManagerProps {
   farmId: string
-  conversions: WeightConversion[]
-  onConversionsUpdate: (conversions: WeightConversion[]) => void
+  conversions: FeedUnitConversion[]
+  onConversionsUpdate: (conversions: FeedUnitConversion[]) => void
   canEdit: boolean
   isMobile: boolean
 }
@@ -99,16 +99,16 @@ interface ConversionFormData {
   unit_name: string
 }
 
-export function WeightConversionsManager({
+export function FeedUnitConversionsManager({
   farmId,
   conversions,
   onConversionsUpdate,
   canEdit,
   isMobile
-}: WeightConversionsManagerProps) {
+}: FeedUnitConversionsManagerProps) {
   const [showAddModal, setShowAddModal] = useState(false)
-  const [editingConversion, setEditingConversion] = useState<WeightConversion | null>(null)
-  const [deletingConversion, setDeletingConversion] = useState<WeightConversion | null>(null)
+  const [editingConversion, setEditingConversion] = useState<FeedUnitConversion | null>(null)
+  const [deletingConversion, setDeletingConversion] = useState<FeedUnitConversion | null>(null)
   const [loading, setLoading] = useState(false)
   const [testQuantity, setTestQuantity] = useState<string>('100')
   const [formData, setFormData] = useState<ConversionFormData>({
@@ -132,7 +132,7 @@ export function WeightConversionsManager({
     setShowAddModal(true)
   }, [resetForm])
 
-  const handleEdit = useCallback((conversion: WeightConversion) => {
+  const handleEdit = useCallback((conversion: FeedUnitConversion) => {
     setFormData({
       from_unit: conversion.from_unit,
       to_unit: conversion.to_unit,
@@ -239,7 +239,7 @@ export function WeightConversionsManager({
 
 
 
-  const calculateConversion = (quantity: number, conversion: WeightConversion) => {
+  const calculateConversion = (quantity: number, conversion: FeedUnitConversion) => {
     return (quantity * conversion.conversion_factor).toFixed(2)
   }
 
@@ -254,7 +254,7 @@ export function WeightConversionsManager({
       return aName.localeCompare(bName)
     }), [conversions])
 
-  const ActionButtons = ({ conversion }: { conversion: WeightConversion }) => {
+  const ActionButtons = ({ conversion }: { conversion: FeedUnitConversion }) => {
     if (!canEdit) return null
 
     if (isMobile) {

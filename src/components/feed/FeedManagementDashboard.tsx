@@ -667,10 +667,10 @@ export function FeedManagementDashboard({
                   farmId={farmId}
                   availableFeeds={feedTypes.map(f => ({ id: f.id, name: f.name, category: f.category_id }))}
                   onRecipeCreated={(recipe) => {
-                    setFeedMixRecipes([...feedMixRecipes, recipe])
+                    setFeedMixRecipes(prev => [...prev, recipe])
                   }}
                   onRecipeDeleted={(recipeId) => {
-                    setFeedMixRecipes(feedMixRecipes.filter(r => r.id !== recipeId))
+                    setFeedMixRecipes(prev => prev.filter(r => r.id !== recipeId))
                   }}
                 />
               </CardContent>
@@ -693,7 +693,12 @@ export function FeedManagementDashboard({
       <AddFeedInventoryModal
         farmId={farmId}
         feedTypes={feedTypes}
+        feedTypeCategories={feedTypeCategories}
         weightConversions={weightConversions}
+        inventoryStock={inventory.map((item: any) => ({
+          feed_type_id: item.feed_type_id,
+          quantity_in_stock: item.quantity_in_stock ?? 0,
+        }))}
         isOpen={showAddInventoryModal}
         onClose={() => setShowAddInventoryModal(false)}
         onSuccess={handleInventoryAdded}

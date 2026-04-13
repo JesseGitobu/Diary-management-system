@@ -109,12 +109,16 @@ export const OPERATION_CATEGORIES: Record<string, Record<string, string>> = {
   feed: {
     // view
     view_overview: 'view', view_inventory: 'view', view_consumption: 'view', view_types: 'view',
+    view_conversions: 'view',
     // create
     record_consumption: 'create', add_feed_type: 'create', add_feeding_group: 'create',
+    add_weight_conversion: 'create',
     // edit
     edit_feed_type: 'edit', edit_feeding_group: 'edit',
+    edit_weight_conversion: 'edit',
     // delete
     delete_feed_type: 'delete', delete_feeding_group: 'delete',
+    delete_weight_conversion: 'delete',
     // export
     export: 'export',
   },

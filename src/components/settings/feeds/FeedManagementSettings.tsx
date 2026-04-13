@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { FeedTypeCategoriesManager } from '@/components/settings/feeds/FeedTypeCategoriesManager'
-import { WeightConversionsManager } from '@/components/settings/feeds/WeightConversionsManager'
+import { FeedUnitConversionsManager } from '@/components/settings/feeds/FeedUnitConversionsManager'
 import { ConsumptionBatchesManager } from '@/components/settings/feeds/ConsumptionBatchesManager'
 import {
   ArrowLeft,
@@ -221,7 +221,7 @@ export function FeedManagementSettings({
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <WeightConversionsManager
+              <FeedUnitConversionsManager
                 farmId={farmId}
                 conversions={weightConversions}
                 onConversionsUpdate={setWeightConversions}

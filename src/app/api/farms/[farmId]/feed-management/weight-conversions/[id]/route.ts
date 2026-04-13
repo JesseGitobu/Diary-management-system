@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { 
+  getWeightConversions,
   updateWeightConversion, 
   deleteWeightConversion 
 } from '@/lib/database/feedManagementSettings'
@@ -34,8 +35,24 @@ export async function PUT(
     const { id: conversionId } = await params
     
     // Validate conversion value
-    if (body.conversion_to_kg !== undefined && body.conversion_to_kg <= 0) {
-      return NextResponse.json({ error: 'Conversion value must be greater than 0' }, { status: 400 })
+    if (body.conversion_factor !== undefined && body.conversion_factor <= 0) {
+      return NextResponse.json({ error: 'Conversion factor must be greater than 0' }, { status: 400 })
+    }
+    
+    // Check for duplicate conversions (excluding current conversion)
+    if (body.from_unit && body.to_unit) {
+      const existingConversions = await getWeightConversions(userRole.farm_id)
+      const duplicateConversion = existingConversions.find(
+        conv => conv.id !== conversionId && 
+                conv.from_unit.toLowerCase() === body.from_unit.toLowerCase() && 
+                conv.to_unit.toLowerCase() === body.to_unit.toLowerCase()
+      )
+      
+      if (duplicateConversion) {
+        return NextResponse.json({ 
+          error: 'A conversion between these units already exists' 
+        }, { status: 400 })
+      }
     }
     
     const result = await updateWeightConversion(conversionId, userRole.farm_id, body)

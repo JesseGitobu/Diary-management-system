@@ -164,6 +164,7 @@ export function GlobalModalWrapper({
         <AddFeedInventoryModal
           farmId={farmId}
           feedTypes={feedTypes}
+          feedTypeCategories={feedTypeCategories}
           weightConversions={weightConversions}
           isOpen={true}
           onClose={closeModal}

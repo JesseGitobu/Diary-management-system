@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
     
     const body = await request.json()
     
-    const result = await createFeedTypeCategory(userRole.farm_id, body)
+    const result = await createFeedTypeCategory(userRole.farm_id, body, user.id)
     
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 })

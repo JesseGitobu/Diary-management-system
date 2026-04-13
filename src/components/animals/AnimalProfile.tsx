@@ -14,21 +14,21 @@ import { AnimalBreedingRecords } from '@/components/animals/AnimalBreedingRecord
 import { AnimalHistoryTab } from '@/components/animals/AnimalHistoryTab'
 import { EditAnimalModal } from '@/components/animals/EditAnimalModal'
 import { ReleaseAnimalModal } from '@/components/animals/ReleaseAnimalModal'
+import { DryOffModal } from '@/components/animals/DryOffModal'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { cn } from '@/lib/utils/cn'
-import { 
-  ArrowLeft, 
-  Edit, 
-  Calendar, 
-  Weight, 
-  MapPin,
+import {
+  ArrowLeft,
+  Edit,
+  Calendar,
+  Weight,
   Heart,
   Milk,
   FileText,
   Camera,
   AlertTriangle,
   MoreVertical,
-  Share,
+  ChevronDown,
   Utensils,
   Baby,
   Clock
@@ -67,15 +67,18 @@ export const AnimalProfile = memo(function AnimalProfile({ animal, userRole, far
   const [activeTab, setActiveTab] = useState('overview')
   const [showEditModal, setShowEditModal] = useState(false)
   const [showReleaseModal, setShowReleaseModal] = useState(false)
+  const [showDryOffModal, setShowDryOffModal] = useState(false)
   const [showActionMenu, setShowActionMenu] = useState(false)
+  const [showQuickActions, setShowQuickActions] = useState(false)
   const [animalData, setAnimalData] = useState(animal)
-  const [refreshing, setRefreshing] = useState(false)
+  const [, setRefreshing] = useState(false)
   const router = useRouter()
-  const { isMobile, isTouch } = useDeviceInfo()
+  const { isMobile } = useDeviceInfo()
   
   const canEdit = ['farm_owner', 'farm_manager'].includes(userRole)
   const canAddRecords = ['farm_owner', 'farm_manager', 'worker'].includes(userRole)
   const canRelease = ['farm_owner', 'farm_manager'].includes(userRole)
+  const canDryOff = canAddRecords && ['lactating', 'served'].includes(animalData.production_status ?? '')
   
   const getStatusBadgeColor = useCallback((status: string) => {
     switch (status) {
@@ -209,10 +212,17 @@ export const AnimalProfile = memo(function AnimalProfile({ animal, userRole, far
       label: 'Add Photo',
       icon: Camera,
       onClick: () => {
-        // Handle photo upload
         setShowActionMenu(false)
       }
     },
+    ...(canDryOff ? [{
+      label: 'Record Dry-Off',
+      icon: Milk,
+      onClick: () => {
+        setShowDryOffModal(true)
+        setShowActionMenu(false)
+      }
+    }] : []),
     ...(canRelease ? [{
       label: 'Release Animal',
       icon: AlertTriangle,
@@ -222,7 +232,7 @@ export const AnimalProfile = memo(function AnimalProfile({ animal, userRole, far
       },
       destructive: true
     }] : [])
-  ], [canEdit, canRelease])
+  ], [canEdit, canAddRecords, canRelease])
   
   // Generate tab configuration - memoized
   const tabs = useMemo(() => [
@@ -346,33 +356,67 @@ export const AnimalProfile = memo(function AnimalProfile({ animal, userRole, far
             </div>
           </div>
           
-          <div className="flex space-x-2">
-            <Button variant="outline" size="sm">
-              <Camera className="mr-2 h-4 w-4" />
-              Add Photo
+          {/* Desktop Quick Actions dropdown */}
+          <div className="relative">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowQuickActions(prev => !prev)}
+              className="flex items-center space-x-1"
+            >
+              <span>Quick Actions</span>
+              <ChevronDown className="h-4 w-4" />
             </Button>
-            
-            {canEdit && (
-              <Button 
-                size="sm"
-                onClick={() => setShowEditModal(true)}
-                className="hover:bg-blue-50 hover:text-blue-600 hover:border-blue-600"
-              >
-                <Edit className="mr-2 h-4 w-4" />
-                Edit Animal
-              </Button>
-            )}
-            
-            {canRelease && (
-              <Button 
-                variant="outline"
-                size="sm"
-                onClick={() => setShowReleaseModal(true)}
-                className="text-red-600 border-red-300 hover:bg-red-500 hover:text-white hover:border-red-600"
-              >
-                <AlertTriangle className="mr-2 h-4 w-4" />
-                Release Animal
-              </Button>
+
+            {showQuickActions && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setShowQuickActions(false)}
+                />
+                <div className="absolute right-0 top-full mt-2 w-52 bg-white rounded-lg shadow-lg border border-gray-200 z-50 py-1">
+                  <button
+                    onClick={() => { setShowQuickActions(false) }}
+                    className="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    <Camera className="w-4 h-4 mr-3 text-gray-500" />
+                    Add Photo
+                  </button>
+
+                  {canEdit && (
+                    <button
+                      onClick={() => { setShowEditModal(true); setShowQuickActions(false) }}
+                      className="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                    >
+                      <Edit className="w-4 h-4 mr-3 text-blue-500" />
+                      Edit Animal
+                    </button>
+                  )}
+
+                  {canDryOff && (
+                    <button
+                      onClick={() => { setShowDryOffModal(true); setShowQuickActions(false) }}
+                      className="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                    >
+                      <Milk className="w-4 h-4 mr-3 text-yellow-500" />
+                      Record Dry-Off
+                    </button>
+                  )}
+
+                  {canRelease && (
+                    <>
+                      <div className="my-1 border-t border-gray-100" />
+                      <button
+                        onClick={() => { setShowReleaseModal(true); setShowQuickActions(false) }}
+                        className="w-full flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                      >
+                        <AlertTriangle className="w-4 h-4 mr-3" />
+                        Release Animal
+                      </button>
+                    </>
+                  )}
+                </div>
+              </>
             )}
           </div>
         </div>
@@ -697,6 +741,20 @@ export const AnimalProfile = memo(function AnimalProfile({ animal, userRole, far
           isOpen={showReleaseModal}
           onClose={() => setShowReleaseModal(false)}
           onAnimalReleased={handleAnimalReleased}
+        />
+      )}
+
+      {/* Dry-Off Modal */}
+      {showDryOffModal && (
+        <DryOffModal
+          animal={animalData}
+          farmId={farmId}
+          isOpen={showDryOffModal}
+          onClose={() => setShowDryOffModal(false)}
+          onRecordCreated={(productionStatus) => {
+            setShowDryOffModal(false)
+            setAnimalData((prev: any) => ({ ...prev, production_status: productionStatus }))
+          }}
         />
       )}
     </div>

@@ -228,23 +228,19 @@ export async function getEligibleAnimals(farmId: string, eventType: BreedingEven
     switch (eventType) {
       case 'heat_detection':
       case 'insemination':
-        // Eligible if: Open, Heifer, or Lactating (and not confirmed pregnant)
-        // We rely on the dropdown to show them, user decides.
-        // Exclude if explicitly marked 'pregnant' in production_status
-        return animal.production_status !== 'pregnant';
+        // Eligible if open, heifer, or lactating — exclude animals already served/steaming
+        return !['served', 'steaming_dry_cows'].includes(animal.production_status)
 
       case 'pregnancy_check':
-        // Ideally should check for recent insemination, but to ensure they appear in list:
-        // Show any female that isn't already 'confirmed pregnant' or 'dry' (unless checking dry cow)
-        // Generally, we want animals that have been served.
-        return true; // We allow selecting any female, form validation handles the rest
+        // Any female that has been served is eligible for a pregnancy check
+        return true
 
       case 'calving':
-        // Show animals marked as 'pregnant' or 'dry'
-        return ['pregnant', 'dry'].includes(animal.production_status?.toLowerCase());
+        // Animals confirmed pregnant are in 'steaming_dry_cows' or 'served' production_status
+        return ['served', 'steaming_dry_cows'].includes(animal.production_status)
 
       default:
-        return true;
+        return true
     }
   })
 }
@@ -286,107 +282,73 @@ export async function getAnimalsForPregnancyCheck(farmId: string) {
   return uniqueAnimals
 }
 
-// Get pregnant animals near calving date
+// Get pregnant animals eligible for calving
 export async function getAnimalsForCalving(farmId: string) {
   const supabase = createClient()
-  
+
+  // Abort the request after 8 seconds so the form never gets permanently stuck
+  // (e.g. when Supabase fires SIGNED_IN during a token refresh mid-query)
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 8000)
+
   try {
-    console.log('🐄 getAnimalsForCalving: Starting query for farmId:', farmId)
-    
-    // Primary check: Animals explicitly marked as 'served' or 'steaming_dry_cows'
-    console.log('🐄 getAnimalsForCalving: Attempting primary query (production_status)')
-    const { data: statusBasedData, error: statusError } = await supabase
-      .from('animals')
-      .select('id, tag_number, name, production_status')
-      .eq('farm_id', farmId)
-      .in('production_status', ['served', 'steaming_dry_cows'])
-    
-    console.log('🐄 getAnimalsForCalving: Primary query completed', { statusError, dataCount: statusBasedData?.length })
-    
-    if (!statusError && statusBasedData && statusBasedData.length > 0) {
-      console.log('🐄 getAnimalsForCalving: Primary query returned animals:', statusBasedData)
-      return statusBasedData as any[]
-    }
-
-    // Fallback: Check breeding events for confirmed pregnancy
-    // Simplified version - just get all pregnant animals without inner join complexity
-    console.log('🐄 getAnimalsForCalving: Attempting fallback query (all animals on farm)')
-    const { data: allAnimals, error: allAnimalsError } = await supabase
-      .from('animals')
-      .select('id, tag_number, name, production_status')
-      .eq('farm_id', farmId)
-      .eq('gender', 'female')
-      .eq('status', 'active')
-    
-    console.log('🐄 getAnimalsForCalving: Fallback animals query completed', { allAnimalsError, dataCount: allAnimals?.length })
-    
-    if (allAnimalsError) {
-      console.error('❌ getAnimalsForCalving: Error fetching animals:', allAnimalsError)
-      return []
-    }
-
-    if (!allAnimals || allAnimals.length === 0) {
-      console.log('🐄 getAnimalsForCalving: No animals found on farm')
-      return []
-    }
-
-    // Now get animals with confirmed pregnancies (from pregnancy_records)
-    // ✅ FIX: Query pregnancy_records instead of breeding_events
-    // Only include animals with confirmed or completed pregnancies
-    console.log('🐄 getAnimalsForCalving: Fetching pregnancy records for animals')
-    const animalIds = (allAnimals as any[]).map(a => a.id)
-    const { data: pregnancies, error: pregnancyError } = await supabase
+    const { data, error } = await (supabase as any)
       .from('pregnancy_records')
-      .select('animal_id, pregnancy_status, expected_calving_date')
-      .in('animal_id', animalIds)
-      .in('pregnancy_status', ['confirmed', 'completed'])
-      .order('created_at', { ascending: false })
-    
-    console.log('🐄 getAnimalsForCalving: Pregnancy records query completed', { pregnancyError, dataCount: pregnancies?.length })
-    
-    if (pregnancyError) {
-      console.error('❌ getAnimalsForCalving: Error fetching pregnancy records:', pregnancyError)
-      // Still return all animals even if pregnancy records fail
-      return allAnimals
-    }
+      .select(`
+        animal_id,
+        pregnancy_status,
+        expected_calving_date,
+        animals!pregnancy_records_animal_id_fkey (
+          id,
+          tag_number,
+          name,
+          production_status
+        )
+      `)
+      .eq('farm_id', farmId)
+      .eq('pregnancy_status', 'confirmed')   // only confirmed — completed means already calved
+      .order('expected_calving_date', { ascending: true })
+      .abortSignal(controller.signal)
 
-    // Filter to only animals with confirmed pregnancies
-    if (!pregnancies || pregnancies.length === 0) {
-      console.log('🐄 getAnimalsForCalving: No confirmed pregnancies found')
+    if (error) {
+      console.error('❌ getAnimalsForCalving: Query error:', error)
       return []
     }
 
-    const animalsWithPregnancy = (pregnancies as any[])
-      .map(preg => {
-        const animal = (allAnimals as any[]).find(a => a.id === preg.animal_id)
-        if (animal && preg.expected_calving_date) {
-          return {
-            ...animal,
-            breeding_events: [{
-              estimated_due_date: preg.expected_calving_date
-            }]
-          }
-        }
-        return animal
+    if (!data || data.length === 0) {
+      return []
+    }
+
+    // Deduplicate by animal_id — keep the row with the nearest due date (sorted asc)
+    const seen = new Set<string>()
+    const animals: any[] = []
+
+    for (const row of data as any[]) {
+      const animal = row.animals
+      if (!animal || seen.has(animal.id)) continue
+      seen.add(animal.id)
+      animals.push({
+        id: animal.id,
+        tag_number: animal.tag_number,
+        name: animal.name,
+        production_status: animal.production_status,
+        breeding_events: row.expected_calving_date
+          ? [{ estimated_due_date: row.expected_calving_date }]
+          : [],
       })
-      .filter(Boolean) as any[]
+    }
 
-    // ✅ FIX: Deduplicate animals by ID - if an animal has multiple pregnancy records,
-    // ensure it only appears once in the returned array
-    const uniqueAnimalsMap = new Map()
-    animalsWithPregnancy.forEach(animal => {
-      if (!uniqueAnimalsMap.has(animal.id)) {
-        uniqueAnimalsMap.set(animal.id, animal)
-      }
-    })
-    const deduplicatedAnimals = Array.from(uniqueAnimalsMap.values())
+    return animals
 
-    console.log('🐄 getAnimalsForCalving: Returning animals with positive pregnancy:', deduplicatedAnimals.length, '(deduped from', animalsWithPregnancy.length, ')')
-    return deduplicatedAnimals
-
-  } catch (error) {
-    console.error('❌ getAnimalsForCalving: Unexpected error:', error)
+  } catch (error: any) {
+    if (error?.name === 'AbortError') {
+      console.error('❌ getAnimalsForCalving: Request timed out after 8s')
+    } else {
+      console.error('❌ getAnimalsForCalving: Unexpected error:', error)
+    }
     return []
+  } finally {
+    clearTimeout(timeout)
   }
 }
 
@@ -1225,30 +1187,20 @@ export async function updatePregnancyStatus(
       }
     }
 
-    // Calculate animal status based on pregnancy status
-    const animalStatus = data.pregnancy_status === 'confirmed' ? 'pregnant' :
-                        data.pregnancy_status === 'not_pregnant' ? 'open' :
-                        'bred'
+    // Map pregnancy_status to valid production_status values from the animals table constraint
+    // Valid: 'calf', 'heifer', 'bull', 'served', 'lactating', 'steaming_dry_cows', 'open_culling_dry_cows'
+    const productionStatus = data.pregnancy_status === 'confirmed' ? 'steaming_dry_cows'
+      : data.pregnancy_status === 'not_pregnant' ? 'open_culling_dry_cows'
+      : 'served' // uncertain/suspected → still treated as served
 
-    // NOTE: Previous code attempted to update 'breeding_records' table which doesn't exist.
-    // Pregnancy data should be managed through pregnancy_records table or breeding_events.
-    // For now, we update the animal record with basic pregnancy status.
-
-    // FIXED: Cast to any to bypass 'never' type on update
     const { error: animalError } = await (supabase
       .from('animals') as any)
-      .update({ 
-        status: animalStatus,
-        pregnancy_status: data.pregnancy_status,
-        estimated_due_date: data.estimated_due_date,
-        last_pregnancy_check: data.confirmation_date
-      })
+      .update({ production_status: productionStatus })
       .eq('id', animalId)
       .eq('farm_id', farmId)
 
     if (animalError) {
-      console.error('Failed to update animal status:', animalError)
-      // Don't return error as we attempted the update
+      console.error('Failed to update animal production_status:', animalError)
     }
 
     return {

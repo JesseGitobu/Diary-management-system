@@ -126,7 +126,7 @@ export async function generateFeedReport(filters: ReportFilters) {
 
     // Feed consumption by type
     const { data: feedConsumptionData } = await (supabase as any)
-      .from('feed_consumption_ records')
+      .from('feed_consumption_records')
       .select(`
         *,
         feed_types (

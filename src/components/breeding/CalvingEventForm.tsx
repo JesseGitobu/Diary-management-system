@@ -123,42 +123,39 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
   }, [])
 
   useEffect(() => {
-    console.log('🐄 CalvingEventForm: useEffect triggered with farmId:', farmId)
-    loadEligibleAnimals()
+    // Only fetch if we don't already have animals — prevents redundant re-fetches
+    // triggered by Supabase SIGNED_IN token-refresh events re-mounting parent components.
+    if (animals.length === 0) {
+      loadEligibleAnimals()
+    }
   }, [farmId])
 
   useEffect(() => {
     if (preSelectedAnimalId) {
       form.setValue('animal_id', preSelectedAnimalId)
     }
-  }, [preSelectedAnimalId]) // ✅ FIX: Remove 'form' from dependencies
-  
+  }, [preSelectedAnimalId])
+
   const loadEligibleAnimals = async () => {
     setLoadingAnimals(true)
     setError(null)
     try {
-      console.log('🐄 CalvingEventForm: Starting to load eligible animals for farmId:', farmId)
-      
       const eligibleAnimals = await getAnimalsForCalving(farmId)
-      console.log('🐄 CalvingEventForm: Successfully fetched eligible animals:', eligibleAnimals)
-      
+
       if (preSelectedAnimalId) {
-        console.log('🐄 CalvingEventForm: Pre-selected animal ID provided:', preSelectedAnimalId)
         const found = eligibleAnimals.find((a: any) => a.id === preSelectedAnimalId)
         if (!found) {
-          console.log('🐄 CalvingEventForm: Pre-selected animal not in list, adding it')
           eligibleAnimals.unshift({
             id: preSelectedAnimalId,
             tag_number: 'Selected Animal',
             name: '(Current)',
-            breeding_events: [] 
+            breeding_events: []
           })
         }
       }
 
       setAnimals(eligibleAnimals)
-      console.log('🐄 CalvingEventForm: Animals state updated')
-      
+
       if (preSelectedAnimalId) {
         form.setValue('animal_id', preSelectedAnimalId)
       }
@@ -168,7 +165,6 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
       setError(`Failed to load animals eligible for calving: ${errorMessage}`)
     } finally {
       setLoadingAnimals(false)
-      console.log('🐄 CalvingEventForm: Loading complete')
     }
   }
   

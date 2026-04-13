@@ -4,7 +4,8 @@
       "Bash(grep -rh \">.*</Button>\" /d/Project/dairy-farm-management/src/components/animals/*.tsx)",
       "Bash(git -C /d/Project/dairy-farm-management log --oneline --name-status)",
       "Bash(git -C /d/Project/dairy-farm-management show HEAD:src/lib/database/invitations.ts)",
-      "Bash(grep -l \"invitations\\\\|invitation\" /d/Project/dairy-farm-management/src/lib/database/*.ts)"
+      "Bash(grep -l \"invitations\\\\|invitation\" /d/Project/dairy-farm-management/src/lib/database/*.ts)",
+      "Bash(grep -E \"\\\\.\\(ts|tsx\\)$\")"
     ]
   }
 }

@@ -32,7 +32,7 @@ export async function PUT(
     const body = await request.json()
     const { id: categoryId } = await params
     
-    const result = await updateFeedTypeCategory(categoryId, userRole.farm_id, body)
+    const result = await updateFeedTypeCategory(categoryId, userRole.farm_id, body, user.id)
     
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 })

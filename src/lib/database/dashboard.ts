@@ -306,8 +306,8 @@ export async function getFeedStats(farmId: string) {
     let feedPurchases: any[] = []
     try {
       const { data, error } = await supabase
-        .from('feed_inventory')
-        .select('quantity_in_stock')
+        .from('feed_purchases')
+        .select('quantity_kg, cost_per_kg')
         .eq('farm_id', farmId)
         .gte('purchase_date', firstDayOfMonth)
         .lte('purchase_date', lastDayOfMonth)
@@ -315,13 +315,15 @@ export async function getFeedStats(farmId: string) {
       if (error) throw error
       feedPurchases = data || []
     } catch (err) {
-      console.warn('⚠️ Feed inventory query failed:', (err as any).message)
+      console.warn('⚠️ Feed purchases query failed:', (err as any).message)
       feedPurchases = []
     }
     
     // FIXED: Cast to any[]
     const monthlyCost = (feedPurchases as any[])?.reduce((sum, record) => {
-      const cost = (record.quantity_in_stock || 0) * 0  // No cost_per_kg in schema, using 0 for now
+      const quantity = record.quantity_kg || 0
+      const costPerKg = record.cost_per_kg || 0
+      const cost = quantity * costPerKg
       return sum + cost
     }, 0) || 0
     
@@ -368,29 +370,18 @@ export async function getFeedStats(farmId: string) {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
       .toISOString()
     
-    // Try feed_consumption_records first, then feed_consumption
+    // Fetch feed consumption records from the last 7 days
     let recentConsumption: any[] = []
     try {
       const { data, error } = await supabase
         .from('feed_consumption_records')
-        .select('feed_type_id, quantity_kg')
+        .select('feed_type_id, quantity_consumed')
         .eq('farm_id', farmId)
-        .gte('feeding_time', sevenDaysAgo)
+        .gte('consumption_date', sevenDaysAgo.split('T')[0])
       
       if (error) {
-        console.warn('⚠️ feed_consumption_records not found, trying feed_consumption:', (error as any).message)
-        const { data: fallbackData, error: fallbackError } = await supabase
-          .from('feed_consumption' as any)
-          .select('feed_type_id, quantity_kg')
-          .eq('farm_id', farmId)
-          .gte('feeding_time', sevenDaysAgo)
-        
-        if (fallbackError) {
-          console.warn('⚠️ feed_consumption also failed:', (fallbackError as any).message)
-          recentConsumption = []
-        } else {
-          recentConsumption = fallbackData || []
-        }
+        console.warn('⚠️ Feed consumption records query failed:', (error as any).message)
+        recentConsumption = []
       } else {
         recentConsumption = data || []
       }
@@ -411,7 +402,7 @@ export async function getFeedStats(farmId: string) {
         if (!acc[typeId]) {
           acc[typeId] = 0
         }
-        acc[typeId] += item.quantity_kg || 0
+        acc[typeId] += item.quantity_consumed || 0
         return acc
       }, {} as Record<string, number>)
       

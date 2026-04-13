@@ -9,13 +9,55 @@ type FeedConsumption = Database['public']['Tables']['feed_consumption_records'][
 type FeedConsumptionInsert = Database['public']['Tables']['feed_consumption_records']['Insert']
 
 // Feed Types Management
+const FEED_TYPE_ALLOWED_COLUMNS = [
+  'name',
+  'description',
+  'category_id',
+  'unit_of_measure',
+  'nutritional_value',
+  'cost_per_unit',
+  'supplier_id',
+  'notes',
+  'typical_cost_per_kg',
+  'animal_categories',
+  'low_stock_threshold',
+  'low_stock_threshold_unit',
+] as const
+
+type FeedTypeAllowedColumn = typeof FEED_TYPE_ALLOWED_COLUMNS[number]
+
+type FeedTypePayload = Partial<Record<FeedTypeAllowedColumn, any>>
+
+function sanitizeFeedTypePayload(data: any): FeedTypePayload {
+  return Object.entries(data).reduce((acc, [key, value]) => {
+    if (key === 'preferred_measurement_unit') {
+      // Convert empty string to null to avoid issues when no unit is selected
+      acc.unit_of_measure = value === '' ? null : value
+    } else if (key === 'nutritional_info') {
+      acc.nutritional_value = value
+    } else if (key === 'supplier') {
+      acc.notes = value ? `Supplier: ${value}` : null
+    } else if (key === 'category_id') {
+      // category_id is a UUID foreign key — empty string causes a DB error
+      acc.category_id = value === '' ? null : value
+    } else if (key === 'low_stock_threshold_unit') {
+      // Convert empty string to null to avoid validation errors
+      acc.low_stock_threshold_unit = value === '' ? null : value
+    } else if (FEED_TYPE_ALLOWED_COLUMNS.includes(key as FeedTypeAllowedColumn)) {
+      acc[key as FeedTypeAllowedColumn] = value
+    }
+    return acc
+  }, {} as FeedTypePayload)
+}
+
 export async function createFeedType(farmId: string, data: Omit<FeedTypeInsert, 'farm_id'>) {
   const supabase = await createServerSupabaseClient()
+  const payload = sanitizeFeedTypePayload(data)
   
   const { data: feedType, error } = await (supabase
     .from('feed_types') as any)
     .insert({
-      ...data,
+      ...payload,
       farm_id: farmId,
     })
     .select()
@@ -47,36 +89,80 @@ export async function getFeedTypes(farmId: string) {
 }
 
 // Feed Inventory Management
-export async function addFeedInventory(farmId: string, data: Omit<FeedInventoryInsert, 'farm_id'>) {
+export async function addFeedInventory(farmId: string, data: any) {
   const supabase = await createServerSupabaseClient()
-  
-  const { data: inventory, error } = await (supabase
-    .from('feed_inventory') as any)
+
+  const {
+    feed_type_id, quantity_kg, source = 'purchased',
+    cost_per_kg, purchase_date, expiry_date, supplier, batch_number, notes,
+    nutritional_data,
+  } = data
+
+  const isPurchased = source === 'purchased'
+
+  // 1. Record the feed entry (purchase or harvest)
+  const { data: purchase, error: purchaseError } = await (supabase
+    .from('feed_purchases') as any)
     .insert({
-      ...data,
-      farm_id: farmId,
+      farm_id:       farmId,
+      feed_type_id,
+      quantity_kg,
+      source,
+      cost_per_kg:   isPurchased ? (cost_per_kg ?? null) : null,
+      purchase_date: purchase_date ?? new Date().toISOString().split('T')[0],
+      expiry_date:   expiry_date ?? null,
+      supplier:      isPurchased ? (supplier ?? null) : null,
+      batch_number:  isPurchased ? (batch_number ?? null) : null,
+      notes:         notes ?? null,
     })
-    .select(`
-      *,
-      feed_types (
-        name,
-        description
-      )
-    `)
+    .select()
     .single()
-  
-  if (error) {
-    console.error('Error adding feed inventory:', error)
-    return { success: false, error: error.message }
+
+  if (purchaseError) {
+    console.error('Error recording feed entry:', purchaseError)
+    return { success: false, error: purchaseError.message }
   }
-  
-  return { success: true, data: inventory }
+
+  // 2. Save nutritional data if provided
+  if (nutritional_data) {
+    const hasValues = Object.values(nutritional_data).some(v => v !== null && v !== undefined && v !== '')
+    if (hasValues) {
+      const { error: nutritionError } = await (supabase
+        .from('feed_nutritional_records') as any)
+        .insert({
+          farm_id:          farmId,
+          feed_purchase_id: purchase.id,
+          feed_type_id,
+          ...nutritional_data,
+        })
+
+      if (nutritionError) {
+        console.error('Error saving nutritional record:', nutritionError)
+        // Non-fatal — stock still gets updated
+      }
+    }
+  }
+
+  // 3. Atomically upsert stock — inserts first row or increments existing stock
+  const { error: stockError } = await supabase.rpc('upsert_feed_stock', {
+    p_farm_id:      farmId,
+    p_feed_type_id: feed_type_id,
+    p_quantity_kg:  quantity_kg,
+  })
+
+  if (stockError) {
+    console.error('Error updating feed stock level:', stockError)
+    return { success: false, error: stockError.message }
+  }
+
+  return { success: true, data: purchase }
 }
 
 export async function getFeedInventory(farmId: string) {
   const supabase = await createServerSupabaseClient()
   
-  const { data, error } = await supabase
+  // Get inventory data with feed type information
+  const { data: inventoryData, error: inventoryError } = await supabase
     .from('feed_inventory')
     .select(`
       *,
@@ -87,14 +173,98 @@ export async function getFeedInventory(farmId: string) {
       )
     `)
     .eq('farm_id', farmId)
-    .order('purchase_date', { ascending: false })
+    .order('updated_at', { ascending: false })
   
-  if (error) {
-    console.error('Error fetching feed inventory:', error)
+  if (inventoryError) {
+    console.error('Error fetching feed inventory:', inventoryError)
     return []
   }
   
-  return data || []
+  if (!inventoryData || inventoryData.length === 0) {
+    return []
+  }
+  
+  // Get the most recent purchase for each feed type
+  const feedTypeIds = inventoryData.map(item => item.feed_type_id)
+  const { data: purchasesData, error: purchasesError } = await supabase
+    .from('feed_purchases')
+    .select(`
+      id,
+      feed_type_id,
+      quantity_kg,
+      cost_per_kg,
+      purchase_date,
+      expiry_date,
+      supplier,
+      batch_number,
+      notes,
+      source
+    `)
+    .in('feed_type_id', feedTypeIds)
+    .eq('farm_id', farmId)
+    .order('purchase_date', { ascending: false })
+  
+  if (purchasesError) {
+    console.error('Error fetching purchase data:', purchasesError)
+  }
+  
+  // Get nutritional data for the most recent purchases
+  let nutritionalData: any[] = []
+  if (purchasesData && purchasesData.length > 0) {
+    const purchaseIds = purchasesData.map(p => p.id)
+    const { data: nutritionData, error: nutritionError } = await supabase
+      .from('feed_nutritional_records')
+      .select(`
+        feed_purchase_id,
+        protein_pct,
+        fat_pct,
+        fiber_pct,
+        moisture_pct,
+        ash_pct,
+        energy_mj_kg,
+        dry_matter_pct,
+        ndf_pct,
+        adf_pct,
+        notes
+      `)
+      .in('feed_purchase_id', purchaseIds)
+      .eq('farm_id', farmId)
+    
+    if (nutritionError) {
+      console.error('Error fetching nutritional data:', nutritionError)
+    } else {
+      nutritionalData = nutritionData || []
+    }
+  }
+  
+  // Create maps for efficient lookup
+  const latestPurchases = new Map()
+  if (purchasesData) {
+    purchasesData.forEach(purchase => {
+      if (!latestPurchases.has(purchase.feed_type_id)) {
+        latestPurchases.set(purchase.feed_type_id, purchase)
+      }
+    })
+  }
+  
+  const nutritionalMap = new Map()
+  nutritionalData.forEach(nutrition => {
+    nutritionalMap.set(nutrition.feed_purchase_id, nutrition)
+  })
+  
+  // Merge all data
+  const processedData = inventoryData.map(item => {
+    const latestPurchase = latestPurchases.get(item.feed_type_id)
+    const nutrition = latestPurchase ? nutritionalMap.get(latestPurchase.id) : null
+    
+    return {
+      ...item,
+      latest_purchase: latestPurchase || null,
+      nutritional_data: nutrition || null,
+    }
+  })
+  
+  return processedData
 }
 
 export async function getCurrentFeedStock(farmId: string) {
@@ -536,10 +706,12 @@ export async function updateFeedType(
     return { success: false, error: 'Feed type not found or access denied' }
   }
   
+  const payload = sanitizeFeedTypePayload(data)
+  
   const { data: feedType, error } = await (supabase
     .from('feed_types') as any)
     .update({
-      ...data,
+      ...payload,
       updated_at: new Date().toISOString(),
     })
     .eq('id', feedTypeId)
