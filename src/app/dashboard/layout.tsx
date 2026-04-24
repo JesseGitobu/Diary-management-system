@@ -20,6 +20,8 @@ import { getDistributionChannels } from '@/lib/database/channels'
 import { getAvailableVolume } from '@/lib/database/inventory'
 import { getProductionSettings } from '@/lib/database/production-settings'
 import { getDistributionSettings } from '@/lib/database/distribution-settings'
+import { getStorageLocations } from '@/lib/database/storage'
+import { getSuppliers } from '@/lib/database/suppliers'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser()
@@ -85,6 +87,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
     feedTypeCategories,
     animalCategories,
     weightConversions,
+    storageLocations,
+    suppliers,
     channels,
     availableVolume,
     productionSettings,
@@ -96,6 +100,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
     getFeedTypeCategories(userRole.farm_id),
     getAnimalCategories(userRole.farm_id),
     getWeightConversions(userRole.farm_id),
+    getStorageLocations(userRole.farm_id),
+    getSuppliers(userRole.farm_id),
     getDistributionChannels(userRole.farm_id),
     getAvailableVolume(userRole.farm_id),
     getProductionSettings(userRole.farm_id),
@@ -157,6 +163,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
         feedTypeCategories={feedTypeCategories}
         animalCategories={animalCategories}
         weightConversions={weightConversions}
+        storageLocations={storageLocations}
+        suppliers={suppliers}
         veterinarians={veterinarians}
         channels={formattedChannels}
         availableVolume={availableVolume}

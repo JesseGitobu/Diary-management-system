@@ -12,6 +12,7 @@ interface ModalProps {
   size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl'
   closeOnOverlayClick?: boolean
   showCloseButton?: boolean
+  title?: string
 }
 
 interface ModalHeaderProps {
@@ -29,14 +30,15 @@ interface ModalFooterProps {
   className?: string
 }
 
-export function Modal({ 
-  isOpen, 
-  onClose, 
-  children, 
+export function Modal({
+  isOpen,
+  onClose,
+  children,
   className,
   size = 'md',
   closeOnOverlayClick = true,
-  showCloseButton = true
+  showCloseButton = true,
+  title,
 }: ModalProps) {
   const modalRef = React.useRef<HTMLDivElement>(null)
   const hasInitializedRef = React.useRef(false)
@@ -116,7 +118,20 @@ export function Modal({
           <div className="w-10 h-1 bg-gray-300 rounded-full" />
         </div>
 
-        {showCloseButton && (
+        {title ? (
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+            <h3 className="text-base font-semibold text-gray-900">{title}</h3>
+            {showCloseButton && (
+              <button
+                onClick={onClose}
+                className="rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              >
+                <X className="w-5 h-5" />
+                <span className="sr-only">Close</span>
+              </button>
+            )}
+          </div>
+        ) : showCloseButton ? (
           <button
             onClick={onClose}
             className="absolute top-4 right-4 z-10 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
@@ -124,7 +139,7 @@ export function Modal({
             <X className="w-5 h-5" />
             <span className="sr-only">Close</span>
           </button>
-        )}
+        ) : null}
 
         <div className="max-h-[90vh] overflow-auto">
           {children}

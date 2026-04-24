@@ -10,12 +10,11 @@ export interface AnimalFeedingRecord {
   quantity_kg: number
   cost_per_kg?: number
   total_cost?: number
-  feeding_mode: 'individual' | 'batch'
+  feeding_mode: 'individual' | 'ration' | 'feed-mix-recipe'
   animal_count?: number
   notes?: string
   recorded_by?: string
   batch_name?: string
-  consumption_batch_id?: string
   created_at: string | null
   updated_at: string | null
 }
@@ -62,7 +61,6 @@ export async function getAnimalFeedingRecords(
         feed_type_id,
         quantity_consumed,
         consumption_date,
-        batch_id,
         animal_count,
         notes,
         recorded_by,
@@ -115,7 +113,7 @@ export async function getAnimalFeedingRecords(
         quantity_kg: record.quantity_kg,
         cost_per_kg: costPerKg,
         total_cost: totalCost,
-        feeding_mode: record.feeding_mode as 'individual' | 'batch',
+        feeding_mode: record.feeding_mode as 'individual' | 'ration' | 'feed-mix-recipe',
         animal_count: record.animal_count,
         notes: cleaned_notes || undefined,
         recorded_by: record.recorded_by || undefined,

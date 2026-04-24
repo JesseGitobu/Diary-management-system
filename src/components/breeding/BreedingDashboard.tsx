@@ -663,10 +663,11 @@ export function BreedingDashboard({
               </CardHeader>
               <CardContent>
                 <BreedingEventTimeline
-                  animalId={selectedAnimal?.id} 
+                  animalId={selectedAnimal?.id}
                   animalGender={selectedAnimal?.gender || 'female'}
                   className="mt-4"
                   refreshTrigger={timelineUpdateTrigger}
+                  farmId={farmId}
                 />
               </CardContent>
             </Card>

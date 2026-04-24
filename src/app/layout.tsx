@@ -1,5 +1,5 @@
 // src/app/layout.tsx
-import type { Metadata } from "next"
+import type { Metadata, Viewport } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
 import { APP_CONFIG } from "@/lib/config/constants"
@@ -7,7 +7,6 @@ import { AuthProvider } from "@/lib/hooks/useAuth"
 import { OnlineStatusIndicator } from "@/components/common/OnlineStatusIndicator"
 import { InstallPrompt } from "@/components/pwa/InstallPrompt"
 import { PWARegister } from "@/components/pwa/PWARegister"
-import { PerformanceDebugger } from "@/lib/performance/monitoring"
 import { Toaster } from "react-hot-toast"
 import { Analytics } from "@vercel/analytics/next"
 
@@ -33,7 +32,7 @@ export const metadata: Metadata = {
   },
 }
 
-export const viewport = {
+export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
@@ -58,7 +57,6 @@ export default function RootLayout({
             <Analytics />
           </main>
           <InstallPrompt />
-          <PerformanceDebugger />
           <Toaster 
             position="top-center"
             toastOptions={{

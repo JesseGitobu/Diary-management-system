@@ -31,6 +31,8 @@ interface InseminationFormProps {
   onEventCreated: () => void
   onCancel: () => void
   preSelectedAnimalId?: string
+  initialData?: any | null
+  eventId?: string | null
 }
 
 const inseminationMethods = [
@@ -83,7 +85,7 @@ type SelectedAnimalDetails = {
   breeding_events?: Array<{ event_type: string; event_date: string | null }>
 }
 
-export function InseminationForm({ farmId, onEventCreated, onCancel, preSelectedAnimalId }: InseminationFormProps) {
+export function InseminationForm({ farmId, onEventCreated, onCancel, preSelectedAnimalId, initialData, eventId }: InseminationFormProps) {
   const [loading, setLoading] = useState(false)
   const [animals, setAnimals] = useState<EligibleAnimal[]>([])
   const [selectedAnimal, setSelectedAnimal] = useState<EligibleAnimal | null>(null)
@@ -108,12 +110,28 @@ export function InseminationForm({ farmId, onEventCreated, onCancel, preSelected
     loadEligibleAnimals()
   }, [farmId])
 
-  // Force update value if prop changes
   useEffect(() => {
     if (preSelectedAnimalId) {
       form.setValue('animal_id', preSelectedAnimalId)
     }
   }, [preSelectedAnimalId, form])
+
+  useEffect(() => {
+    if (!initialData) return
+    const raw = initialData.event_date || ''
+    const datePart = raw.includes('T') ? raw.split('T')[0] : raw
+    const timePart = raw.includes('T') ? (raw.split('T')[1] || '').slice(0, 5) : ''
+    form.reset({
+      animal_id: initialData.animal_id || '',
+      event_date: datePart,
+      event_time: timePart || new Date().toTimeString().slice(0, 5),
+      insemination_method: initialData.insemination_method || 'artificial_insemination',
+      semen_bull_code: initialData.semen_bull_code || '',
+      technician_name: initialData.technician_name || '',
+      notes: initialData.notes || '',
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialData])
   
   const selectedAnimalId = form.watch('animal_id')
 
@@ -261,36 +279,33 @@ export function InseminationForm({ farmId, onEventCreated, onCancel, preSelected
   const handleSubmit = async (data: InseminationFormData) => {
     setLoading(true)
     setError(null)
-    
+
     try {
-      // Combine date and time WITHOUT timezone conversion
-      // Format: YYYY-MM-DDTHH:MM:SS (local time, not UTC)
       const dateTime = `${data.event_date}T${data.event_time}:00`
-      
-      // Destructure to exclude event_time from API payload
       const { event_time, ...restData } = data
-      
-      const response = await fetch('/api/breeding-events', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          eventData: {
-            ...restData,
-            event_date: dateTime,
-            farm_id: farmId,
-            event_type: 'insemination',
-          }
-        }),
+
+      const payload = {
+        ...restData,
+        event_date: dateTime,
+        farm_id: farmId,
+        event_type: 'insemination',
+      }
+
+      const url = eventId ? `/api/breeding-events/${eventId}` : '/api/breeding-events'
+      const method = eventId ? 'PATCH' : 'POST'
+
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventData: payload }),
       })
-      
+
       const result = await response.json()
-      
+
       if (result.success) {
         onEventCreated()
       } else {
-        setError(result.error || 'Failed to create insemination event')
+        setError(result.error || `Failed to ${eventId ? 'update' : 'create'} insemination event`)
       }
     } catch (error) {
       setError('An unexpected error occurred')
@@ -619,12 +634,12 @@ export function InseminationForm({ farmId, onEventCreated, onCancel, preSelected
             {loading ? (
               <>
                 <LoadingSpinner size="sm" className="mr-2" />
-                Recording...
+                {eventId ? 'Saving...' : 'Recording...'}
               </>
             ) : (
               <>
                 <Syringe className="w-4 h-4 mr-2" />
-                Record Insemination
+                {eventId ? 'Save Changes' : 'Record Insemination'}
               </>
             )}
           </Button>

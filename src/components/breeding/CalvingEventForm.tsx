@@ -44,6 +44,8 @@ interface CalvingEventFormProps {
   onEventCreated: () => void
   onCancel: () => void
   preSelectedAnimalId?: string
+  initialData?: any | null
+  eventId?: string | null
 }
 
 const calvingOutcomes = [
@@ -126,7 +128,7 @@ type SelectedAnimalDetails = {
   }
 }
 
-export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelectedAnimalId }: CalvingEventFormProps) {
+export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelectedAnimalId, initialData, eventId }: CalvingEventFormProps) {
   const [loading, setLoading] = useState(false)
   const [animals, setAnimals] = useState<EligibleAnimal[]>([])
   const [selectedAnimalDetails, setSelectedAnimalDetails] = useState<SelectedAnimalDetails | null>(null)
@@ -236,6 +238,28 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
   }, [preSelectedAnimalId, form])
 
   useEffect(() => {
+    if (!initialData) return
+    const raw = initialData.event_date || ''
+    const datePart = raw.includes('T') ? raw.split('T')[0] : raw
+    const timePart = raw.includes('T') ? (raw.split('T')[1] || '').slice(0, 5) : ''
+    form.reset({
+      animal_id: initialData.animal_id || '',
+      event_date: datePart,
+      event_time: timePart || new Date().toTimeString().slice(0, 5),
+      calving_outcome: initialData.calving_outcome || 'normal',
+      calf_name: initialData.calf_name || '',
+      calf_breed: initialData.calf_breed || 'holstein',
+      calf_gender: initialData.calf_gender || 'female',
+      calf_weight: initialData.calf_weight ?? undefined,
+      calf_tag_number: initialData.calf_tag_number || '',
+      calf_health_status: initialData.calf_health_status || 'Healthy',
+      calf_father_info: initialData.calf_father_info || '',
+      notes: initialData.notes || '',
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialData])
+
+  useEffect(() => {
     if (!selectedAnimalId) {
       setSelectedAnimalDetails(null)
       setBreedingHistory(null)
@@ -292,29 +316,43 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
 
     setLoading(true)
     setError(null)
-    
+
     try {
-      // Combine date and time WITHOUT timezone conversion
-      // Format: YYYY-MM-DDTHH:MM:SS (local time, not UTC)
       const dateTime = `${data.event_date}T${data.event_time}:00`
-      
-      // Destructure to exclude event_time from API payload
       const { event_time, ...restData } = data
-      
+
+      if (eventId) {
+        const payload = {
+          ...restData,
+          event_date: dateTime,
+          farm_id: farmId,
+          event_type: 'calving',
+        }
+        const response = await fetch(`/api/breeding-events/${eventId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ eventData: payload }),
+        })
+        const result = await response.json()
+        if (response.ok && result.success) {
+          onEventCreated()
+        } else {
+          setError(result.error || 'Failed to update calving event')
+        }
+        return
+      }
+
       const eventData: CalvingEvent = {
         ...restData,
         event_date: dateTime,
         farm_id: farmId,
         event_type: 'calving',
-        created_by: userId, 
+        created_by: userId,
       }
-      
-      console.log('🐄 CalvingEventForm: Submitting calving event:', eventData)
-      const result = await processCalvingAction(eventData, farmId) // ✅ Call Server Action instead
-      
+
+      const result = await processCalvingAction(eventData, farmId)
+
       if (result.success) {
-        // Increment the calf tag number for next calf
-        console.log('🐄 CalvingEventForm: Calving event recorded, incrementing tag counter')
         await incrementCalfTagNumber(farmId)
         onEventCreated()
       } else {
@@ -794,7 +832,7 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
             ) : (
               <div className="flex items-center space-x-2">
                 <Baby className="w-4 h-4" />
-                <span>Record Calving Event</span>
+                <span>{eventId ? 'Save Changes' : 'Record Calving Event'}</span>
               </div>
             )}
           </Button>

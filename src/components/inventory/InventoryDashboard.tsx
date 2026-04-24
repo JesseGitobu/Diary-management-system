@@ -19,15 +19,21 @@ import {
   List,
   Building2,
   Phone,
-  Mail
+  Mail,
+  Archive,
+  Boxes
 } from 'lucide-react'
 import { InventoryItemCard } from '@/components/inventory/InventoryItemCard'
 import { AddInventoryModal } from '@/components/inventory/AddInventoryModal'
 import { InventoryFilters } from '@/components/inventory/InventoryFilters'
 import { AddSupplierModal } from '@/components/inventory/AddSupplierModal'
+import { EditSupplierModal } from '@/components/inventory/EditSupplierModal'
 import { SupplierCard } from '@/components/inventory/SupplierCard'
 import { InventoryStatsCards } from '@/components/inventory/InventoryStatsCards'
 import { SupplierStatsCards } from '@/components/inventory/SupplierStatsCards'
+import { AddStorageModal } from '@/components/inventory/AddStorageModal'
+import { EditStorageModal } from '@/components/inventory/EditStorageModal'
+import { StorageCard } from '@/components/inventory/StorageCard'
 
 interface UnifiedInventoryDashboardProps {
   farmId: string
@@ -36,6 +42,8 @@ interface UnifiedInventoryDashboardProps {
   inventoryAlerts: any[]
   suppliers: any[]
   supplierStats: any
+  storage?: any[]
+  storageStats?: any
   canManage: boolean
 }
 
@@ -46,12 +54,18 @@ export function UnifiedInventoryDashboard({
   inventoryAlerts,
   suppliers: initialSuppliers,
   supplierStats,
+  storage: initialStorage = [],
+  storageStats = { totalStorageLocations: 0, storageByType: {} },
   canManage 
 }: UnifiedInventoryDashboardProps) {
   const [inventoryItems, setInventoryItems] = useState(initialItems)
   const [suppliers, setSuppliers] = useState(initialSuppliers)
+  const [storageLocations, setStorageLocations] = useState(initialStorage)
   const [showAddItemModal, setShowAddItemModal] = useState(false)
   const [showAddSupplierModal, setShowAddSupplierModal] = useState(false)
+  const [showAddStorageModal, setShowAddStorageModal] = useState(false)
+  const [editingSupplier, setEditingSupplier] = useState<any | null>(null)
+  const [editingStorage, setEditingStorage]   = useState<any | null>(null)
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [showAlerts, setShowAlerts] = useState(false)
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
@@ -66,6 +80,8 @@ export function UnifiedInventoryDashboard({
     { value: 'equipment', label: 'Equipment', shortLabel: 'Equip' },
     { value: 'supplies', label: 'Supplies', shortLabel: 'Supply' },
     { value: 'chemicals', label: 'Chemicals', shortLabel: 'Chem' },
+    { value: 'machines', label: 'Machines', shortLabel: 'Mach' },
+    { value: 'construction', label: 'Construction Materials', shortLabel: 'Construct' },
     { value: 'maintenance', label: 'Maintenance', shortLabel: 'Maint' },
     { value: 'other', label: 'Other', shortLabel: 'Other' },
   ]
@@ -93,6 +109,29 @@ export function UnifiedInventoryDashboard({
   const handleSupplierAdded = (newSupplier: any) => {
     setSuppliers(prev => [newSupplier, ...prev])
     setShowAddSupplierModal(false)
+  }
+
+  const handleSupplierUpdated = (updated: any) => {
+    setSuppliers(prev => prev.map(s => s.id === updated.id ? updated : s))
+    setEditingSupplier(null)
+  }
+
+  const handleSupplierDeleted = (supplierId: string) => {
+    setSuppliers(prev => prev.filter(s => s.id !== supplierId))
+  }
+  
+  const handleStorageAdded = (newStorage: any) => {
+    setStorageLocations(prev => [newStorage, ...prev])
+    setShowAddStorageModal(false)
+  }
+
+  const handleStorageUpdated = (updated: any) => {
+    setStorageLocations(prev => prev.map(s => s.id === updated.id ? updated : s))
+    setEditingStorage(null)
+  }
+
+  const handleStorageDeleted = (storageId: string) => {
+    setStorageLocations(prev => prev.filter(s => s.id !== storageId))
   }
   
   const handleStockUpdate = (itemId: string, newStock: number) => {
@@ -175,6 +214,41 @@ export function UnifiedInventoryDashboard({
       bgColor: "bg-blue-50"
     }
   ]
+
+  const storageStatsCards = [
+    {
+      title: "Total Storage Locations",
+      value: storageStats.totalStorageLocations,
+      description: "Active storage areas",
+      icon: Archive,
+      color: "text-indigo-600",
+      bgColor: "bg-indigo-50"
+    },
+    {
+      title: "Feedstore Locations",
+      value: storageStats.storageByType?.feedstore || 0,
+      description: "Feed storage areas",
+      icon: Boxes,
+      color: "text-amber-600",
+      bgColor: "bg-amber-50"
+    },
+    {
+      title: "Climate Controlled",
+      value: storageStats.storageByType?.climateControlled || 0,
+      description: "Temperature-controlled storage",
+      icon: Package,
+      color: "text-blue-600",
+      bgColor: "bg-blue-50"
+    },
+    {
+      title: "Quarantine Areas",
+      value: storageStats.storageByType?.quarantine || 0,
+      description: "Isolated storage zones",
+      icon: AlertTriangle,
+      color: "text-red-600",
+      bgColor: "bg-red-50"
+    }
+  ]
   
   return (
     <div className="space-y-4 lg:space-y-8 pb-20 lg:pb-8">
@@ -220,13 +294,21 @@ export function UnifiedInventoryDashboard({
                   <Plus className="mr-1 lg:mr-2 h-4 w-4" />
                   {isMobile ? "Item" : "Add Item"}
                 </Button>
-              ) : (
+              ) : activeTab === 'suppliers' ? (
                 <Button 
                   onClick={() => setShowAddSupplierModal(true)}
                   size={isMobile ? "sm" : "default"}
                 >
                   <Plus className="mr-1 lg:mr-2 h-4 w-4" />
                   {isMobile ? "Supplier" : "Add Supplier"}
+                </Button>
+              ) : (
+                <Button 
+                  onClick={() => setShowAddStorageModal(true)}
+                  size={isMobile ? "sm" : "default"}
+                >
+                  <Plus className="mr-1 lg:mr-2 h-4 w-4" />
+                  {isMobile ? "Storage" : "Add Storage"}
                 </Button>
               )}
             </div>
@@ -237,7 +319,7 @@ export function UnifiedInventoryDashboard({
       {/* Main Tabs */}
       <div className="px-4 lg:px-0">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="inventory">
               <Package className="h-4 w-4 mr-2" />
               Inventory
@@ -245,6 +327,10 @@ export function UnifiedInventoryDashboard({
             <TabsTrigger value="suppliers">
               <Building2 className="h-4 w-4 mr-2" />
               Suppliers
+            </TabsTrigger>
+            <TabsTrigger value="storage">
+              <Archive className="h-4 w-4 mr-2" />
+              Storage
             </TabsTrigger>
           </TabsList>
 
@@ -445,6 +531,70 @@ export function UnifiedInventoryDashboard({
                         key={supplier.id}
                         supplier={supplier}
                         canManage={canManage}
+                        onEdit={setEditingSupplier}
+                        onDelete={handleSupplierDeleted}
+                      />
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* STORAGE TAB */}
+          <TabsContent value="storage" className="mt-4 lg:mt-6 space-y-4 lg:space-y-6">
+            {/* Storage Stats */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {storageStatsCards.map((stat, index) => (
+                <Card key={index}>
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-gray-600">{stat.title}</p>
+                        <p className="text-2xl font-bold text-gray-900 mt-1">{stat.value}</p>
+                        <p className="text-xs text-gray-500 mt-2">{stat.description}</p>
+                      </div>
+                      <div className={`p-3 rounded-lg ${stat.bgColor}`}>
+                        <stat.icon className={`h-6 w-6 ${stat.color}`} />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            {/* Storage Locations List */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Storage Locations</CardTitle>
+                <CardDescription>
+                  Define and manage your storage facilities and areas
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {storageLocations.length === 0 ? (
+                  <div className="text-center py-12">
+                    <Archive className="mx-auto h-12 w-12 text-gray-400" />
+                    <h3 className="mt-2 text-sm font-medium text-gray-900">No storage locations</h3>
+                    <p className="mt-1 text-sm text-gray-500">
+                      Get started by adding your first storage location.
+                    </p>
+                    {canManage && (
+                      <Button className="mt-4" onClick={() => setShowAddStorageModal(true)}>
+                        <Plus className="mr-2 h-4 w-4" />
+                        Add Storage Location
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {storageLocations.map((location) => (
+                      <StorageCard
+                        key={location.id}
+                        storage={location}
+                        canManage={canManage}
+                        onEdit={setEditingStorage}
+                        onDelete={handleStorageDeleted}
                       />
                     ))}
                   </div>
@@ -490,6 +640,33 @@ export function UnifiedInventoryDashboard({
           isOpen={showAddSupplierModal}
           onClose={() => setShowAddSupplierModal(false)}
           onSupplierAdded={handleSupplierAdded}
+        />
+      )}
+
+      {editingSupplier && (
+        <EditSupplierModal
+          supplier={editingSupplier}
+          isOpen={!!editingSupplier}
+          onClose={() => setEditingSupplier(null)}
+          onSupplierUpdated={handleSupplierUpdated}
+        />
+      )}
+
+      {showAddStorageModal && (
+        <AddStorageModal
+          farmId={farmId}
+          isOpen={showAddStorageModal}
+          onClose={() => setShowAddStorageModal(false)}
+          onStorageAdded={handleStorageAdded}
+        />
+      )}
+
+      {editingStorage && (
+        <EditStorageModal
+          storage={editingStorage}
+          isOpen={!!editingStorage}
+          onClose={() => setEditingStorage(null)}
+          onStorageUpdated={handleStorageUpdated}
         />
       )}
     </div>

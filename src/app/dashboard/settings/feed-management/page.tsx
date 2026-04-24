@@ -2,14 +2,13 @@
 import { redirect } from 'next/navigation'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
-import { 
+import {
   getFeedTypeCategories,
   getAnimalCategories,
   getWeightConversions,
-  getConsumptionBatches,
-  getConsumptionBatchFactors,
-  initializeFarmFeedManagementSettings
+  initializeFarmFeedManagementSettings,
 } from '@/lib/database/feedManagementSettings'
+import { getAllFeedSettings } from '@/lib/database/feedSettings'
 import { FeedManagementSettings } from '@/components/settings/feeds/FeedManagementSettings'
 
 interface FeedManagementSettingsPageProps {
@@ -17,74 +16,61 @@ interface FeedManagementSettingsPageProps {
 }
 
 export default async function FeedManagementSettingsPage({
-  searchParams
+  searchParams,
 }: FeedManagementSettingsPageProps) {
-  // Await searchParams before accessing its properties
   const { farmId } = await searchParams
-  
-  if (!farmId) {
-    redirect('/dashboard')
-  }
-  
-  // Verify user access
-  const user = await getCurrentUser() 
-  if (!user) {
-    redirect('/auth/signin')
-  }
-  
+
+  if (!farmId) redirect('/dashboard')
+
+  const user = await getCurrentUser()
+  if (!user) redirect('/auth/signin')
+
   const userRole = await getUserRole(user.id) as any
-  if (!userRole || userRole.farm_id !== farmId) {
-    redirect('/dashboard')
-  }
-  
+  if (!userRole || userRole.farm_id !== farmId) redirect('/dashboard')
+
   try {
-    // Fetch all data in parallel
     const [
       feedTypeCategories,
       animalCategories,
       weightConversions,
-      consumptionBatches,
-      batchFactors
+      feedSettings,
     ] = await Promise.all([
       getFeedTypeCategories(farmId),
       getAnimalCategories(farmId),
       getWeightConversions(farmId),
-      getConsumptionBatches(farmId),
-      getConsumptionBatchFactors(farmId)
+      getAllFeedSettings(farmId),
     ])
-    
-    // Initialize default data if no categories exist
+
+    // Seed defaults if the farm has never been configured
     if (feedTypeCategories.length === 0 && animalCategories.length === 0 && weightConversions.length === 0) {
       await initializeFarmFeedManagementSettings(farmId)
-      
-      // Refetch the data after initialization
+
       const [
-        refreshedFeedTypeCategories,
+        refreshedCategories,
         refreshedAnimalCategories,
-        refreshedWeightConversions,
-        refreshedConsumptionBatches,
-        refreshedBatchFactors
+        refreshedConversions,
+        refreshedFeedSettings,
       ] = await Promise.all([
         getFeedTypeCategories(farmId),
         getAnimalCategories(farmId),
         getWeightConversions(farmId),
-        getConsumptionBatches(farmId),
-        getConsumptionBatchFactors(farmId)
+        getAllFeedSettings(farmId),
       ])
-      
+
       return (
         <FeedManagementSettings
           farmId={farmId}
           userRole={userRole.role_type}
-          feedTypeCategories={refreshedFeedTypeCategories}
+          feedTypeCategories={refreshedCategories}
           animalCategories={refreshedAnimalCategories}
-          weightConversions={refreshedWeightConversions}
-          consumptionBatches={refreshedConsumptionBatches}
-          batchFactors={refreshedBatchFactors}
+          weightConversions={refreshedConversions}
+          timeSlots={refreshedFeedSettings.timeSlots}
+          alertSettings={refreshedFeedSettings.alertSettings}
+          frequencyDefaults={refreshedFeedSettings.frequencyDefaults}
         />
       )
     }
-    
+
     return (
       <FeedManagementSettings
         farmId={farmId}
@@ -92,15 +78,13 @@ export default async function FeedManagementSettingsPage({
         feedTypeCategories={feedTypeCategories}
         animalCategories={animalCategories}
         weightConversions={weightConversions}
-        consumptionBatches={consumptionBatches}
-        batchFactors={batchFactors}
+        timeSlots={feedSettings.timeSlots}
+        alertSettings={feedSettings.alertSettings}
+        frequencyDefaults={feedSettings.frequencyDefaults}
       />
     )
-    
   } catch (error) {
     console.error('Error loading feed management settings:', error)
-    
-    // Return empty arrays as fallback
     return (
       <FeedManagementSettings
         farmId={farmId}
@@ -108,17 +92,17 @@ export default async function FeedManagementSettingsPage({
         feedTypeCategories={[]}
         animalCategories={[]}
         weightConversions={[]}
-        consumptionBatches={[]}
-        batchFactors={[]}
+        timeSlots={[]}
+        alertSettings={[]}
+        frequencyDefaults={[]}
       />
     )
   }
 }
 
-// Generate metadata for the page
 export async function generateMetadata() {
   return {
-    title: 'Feed Management Settings - Farm Management System',
-    description: 'Configure feed types, animal categories, weight conversions, and consumption batches for your dairy farm.'
+    title: 'Feed Management Settings – Farm Management System',
+    description: 'Configure feed categories, weight conversions, feeding schedules, and alert thresholds for your dairy farm.',
   }
 }

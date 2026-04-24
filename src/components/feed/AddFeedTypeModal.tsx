@@ -84,16 +84,16 @@ const feedTypeSchema = z.object({
   name: z.string().min(2, 'Feed name must be at least 2 characters'),
   description: z.string().nullable().optional(),
   typical_cost_per_kg: z.number().min(0, 'Cost must be positive').nullable().optional(),
-  supplier: z.string().nullable().optional(),
   protein_content: z.number().min(0).max(100).nullable().optional(),
   energy_content: z.number().min(0).nullable().optional(),
   fiber_content: z.number().min(0).max(100).nullable().optional(),
   fat_content: z.number().min(0).max(100).nullable().optional(),
-  animal_categories: z.array(z.string()).min(1, 'Please select at least one animal category'),
+  animal_categories: z.array(z.string()).optional(),
   category_id: z.string().optional().transform(v => (v === '' ? undefined : v)),
   preferred_measurement_unit: z.string().optional().transform(v => (v === '' ? undefined : v)),
   low_stock_threshold: z.number().min(0, 'Threshold must be positive').nullable().optional(),
   low_stock_threshold_unit: z.string().optional(),
+  is_formulate_feed: z.boolean().optional(),
 })
 
 type FeedTypeFormData = z.infer<typeof feedTypeSchema>
@@ -103,12 +103,12 @@ interface FeedType {
   name: string
   description?: string | null
   typical_cost_per_kg?: number | null
-  supplier?: string | null
   animal_categories: string[]
   category_id?: string | null
   preferred_measurement_unit?: string | null
   low_stock_threshold?: number | null
   low_stock_threshold_unit?: string | null
+  is_formulate_feed?: boolean | null
   farm_id: string
   created_at?: string
   updated_at?: string
@@ -118,7 +118,6 @@ const defaultValues: FeedTypeFormData = {
   name: '',
   description: '',
   typical_cost_per_kg: null,
-  supplier: '',
   protein_content: null,
   energy_content: null,
   fiber_content: null,
@@ -128,12 +127,7 @@ const defaultValues: FeedTypeFormData = {
   preferred_measurement_unit: undefined,
   low_stock_threshold: null,
   low_stock_threshold_unit: undefined,
-}
-
-const parseSupplierFromNotes = (notes?: string | null) => {
-  if (!notes) return ''
-  const match = notes.match(/^Supplier:\s*(.+)$/i)
-  return match ? match[1] : notes
+  is_formulate_feed: false,
 }
 
 const getNutritionalInfo = (feedType: any) =>
@@ -164,6 +158,9 @@ export function AddFeedTypeModal({
   const isEditing = !!feedType
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Incremented each time the modal opens for editing to force Radix Select remount,
+  // since Radix Select does not update its trigger display when `value` changes after mount.
+  const [selectKey, setSelectKey] = useState(0)
 
   const form = useForm<FeedTypeFormData>({
     resolver: zodResolver(feedTypeSchema),
@@ -178,7 +175,6 @@ export function AddFeedTypeModal({
         name: feedType.name || '',
         description: feedType.description || '',
         typical_cost_per_kg: feedType.typical_cost_per_kg ?? null,
-        supplier: feedType.supplier || parseSupplierFromNotes(feedType.notes),
         protein_content: nutrition.protein_content ?? null,
         energy_content: nutrition.energy_content ?? null,
         fiber_content: nutrition.fiber_content ?? null,
@@ -189,7 +185,9 @@ export function AddFeedTypeModal({
           feedType.preferred_measurement_unit || feedType.unit_of_measure || undefined,
         low_stock_threshold: feedType.low_stock_threshold ?? null,
         low_stock_threshold_unit: feedType.low_stock_threshold_unit || undefined,
+        is_formulate_feed: feedType.is_formulate_feed ?? false,
       })
+      setSelectKey(k => k + 1)
     }
 
     if (!isOpen) {
@@ -199,7 +197,7 @@ export function AddFeedTypeModal({
   }, [isOpen, feedType, form])
 
   const handleCategoryChange = (categoryId: string, checked: boolean) => {
-    const current = form.getValues('animal_categories')
+    const current = form.getValues('animal_categories') || []
     form.setValue(
       'animal_categories',
       checked ? [...current, categoryId] : current.filter(id => id !== categoryId)
@@ -273,7 +271,7 @@ export function AddFeedTypeModal({
     }
   }
 
-  const selectedCategories = form.watch('animal_categories')
+  const selectedCategories = form.watch('animal_categories') || []
   const selectedFeedCategory = feedTypeCategories.find(cat => cat.id === form.watch('category_id'))
 
   return (
@@ -304,16 +302,6 @@ export function AddFeedTypeModal({
                   placeholder="e.g., Rhodes grass Hay, Silage, Lucerne"
                 />
               </div>
-
-              <div>
-                <Label htmlFor="supplier">Supplier</Label>
-                <Input
-                  id="supplier"
-                  {...form.register('supplier')}
-                  error={form.formState.errors.supplier?.message}
-                  placeholder="e.g., ABC Feeds Store"
-                />
-              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -327,6 +315,7 @@ export function AddFeedTypeModal({
                   </div>
                 ) : (
                   <Select
+                    key={`category-${selectKey}`}
                     value={form.watch('category_id')}
                     onValueChange={(value) => form.setValue('category_id', value, { shouldValidate: true })}
                   >
@@ -376,6 +365,7 @@ export function AddFeedTypeModal({
                     </div>
                   ) : (
                     <Select
+                      key={`pref-unit-${selectKey}`}
                       value={form.watch('preferred_measurement_unit')}
                       onValueChange={(value) => form.setValue('preferred_measurement_unit', value, { shouldValidate: true })}
                     >
@@ -468,15 +458,16 @@ export function AddFeedTypeModal({
                       placeholder="e.g., 50"
                     />
                   </div>
-                  <div className="w-32">
+                  <div className="w-48">
                     <Select
+                      key={`threshold-unit-${selectKey}`}
                       value={form.watch('low_stock_threshold_unit')}
                       onValueChange={(value) => form.setValue('low_stock_threshold_unit', value)}
                     >
                       <SelectTrigger className={form.formState.errors.low_stock_threshold_unit ? 'border-red-300' : ''}>
                         <SelectValue placeholder="Unit" />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className="min-w-[300px]">
                         {weightConversions.length > 0 && (
                           <>
                             <div className="px-2 py-1.5 text-xs font-semibold text-gray-600 bg-gray-100">
@@ -522,12 +513,31 @@ export function AddFeedTypeModal({
             </div>
           </div>
 
+          {/* Is Formulate Feed */}
+          <div className="p-4 border border-gray-200 rounded-lg bg-gray-50">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.watch('is_formulate_feed') ?? false}
+                onChange={(e) => form.setValue('is_formulate_feed', e.target.checked)}
+                className="mt-0.5 h-4 w-4 text-farm-green border-gray-300 rounded focus:ring-farm-green"
+              />
+              <div>
+                <span className="text-sm font-medium text-gray-900">Is Formulate Feed</span>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Check this if the feed is produced by mixing or blending other ingredients
+                  (e.g. dairy meal, TMR). Leave unchecked for raw purchased or farm-grown feeds.
+                </p>
+              </div>
+            </label>
+          </div>
+
           {/* Animal Categories */}
           <div className="space-y-4">
             <div>
-              <Label>Target Animal Categories *</Label>
+              <Label>Target Animal Categories</Label>
               <p className="text-sm text-gray-600 mb-3">
-                Select which animal categories this feed type is suitable for.
+                Select which animal categories this feed type is suitable for (optional).
               </p>
 
               {animalCategories.length === 0 ? (
@@ -568,7 +578,7 @@ export function AddFeedTypeModal({
             <Button type="button" variant="outline" onClick={onClose} disabled={loading}>
               Cancel
             </Button>
-            <Button type="submit" disabled={loading || animalCategories.length === 0}>
+            <Button type="submit" disabled={loading}>
               {loading ? <LoadingSpinner size="sm" /> : isEditing ? 'Update Feed Type' : 'Create Feed Type'}
             </Button>
           </div>

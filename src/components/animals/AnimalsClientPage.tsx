@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
 import { AnimalsList } from '@/components/animals/AnimalsList'
 import AddAnimalModal from '@/components/animals/AddAnimalModal'
 import { ImportAnimalsModal } from '@/components/animals/ImportAnimalsModal'
@@ -21,7 +22,17 @@ import {
   Upload,
   TrendingUp,
   Scale,
-  Tags
+  Tags,
+  Home,
+  Building2,
+  Droplets,
+  Zap,
+  Wrench,
+  Calendar,
+  Edit,
+  Eye,
+  CheckCircle,
+  UserCheck
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -33,7 +44,8 @@ import { GiCow } from 'react-icons/gi'
 import { Animal } from '@/types/database'
 import { HealthStatusNotification } from '../health/HealthStatusChangeNotification'
 import { EditAnimalModal } from './EditAnimalModal'
-import { type FarmPermissions, FULL_ACCESS_PERMISSIONS } from '@/lib/utils/permissions'
+import { Progress } from '@/components/ui/Progress'
+import { FarmPermissions, FULL_ACCESS_PERMISSIONS } from '@/lib/utils/permissions'
 
 interface AnimalsClientPageProps {
   initialAnimals: Animal[]
@@ -90,6 +102,11 @@ export function AnimalsClientPage({
   const [categories, setCategories] = useState<any[]>([])
   const [loadingCategories, setLoadingCategories] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [activeTab, setActiveTab] = useState('animals')
+  const [housingFacilities, setHousingFacilities] = useState<any[]>([])
+  const [showAddHousingModal, setShowAddHousingModal] = useState(false)
+  const [showHousingImportModal, setShowHousingImportModal] = useState(false)
+  const [selectedHousingFacility, setSelectedHousingFacility] = useState<any>(null)
 
   const { isMobile } = useDeviceInfo()
 
@@ -169,6 +186,13 @@ useEffect(() => {
     window.removeEventListener('mobileNavModalAction', handleMobileNavAction)
   }
 }, [])
+
+// Initialize housing facilities with sample data
+useEffect(() => {
+  if (housingFacilities.length === 0) {
+    setHousingFacilities(housingFacilitiesData)
+  }
+}, [housingFacilities.length])
 
 // ✅ REMOVED: loadWeightRequirements() - data now fetched server-side in batch endpoint
 
@@ -444,6 +468,82 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
 
   }
 
+  // Sample housing facilities data
+  const housingFacilitiesData = [
+    {
+      id: '1',
+      name: 'Main Dairy Barn',
+      type: 'dairy_barn',
+      capacity: 120,
+      currentOccupancy: 95,
+      animalTypes: ['cattle'],
+      conditions: {
+        ventilation: 'excellent',
+        lighting: 'automated',
+        waterAccess: true,
+        beddingType: 'rubber mats',
+        drainage: 'excellent'
+      },
+      equipment: ['12 milking units', 'automatic feeders', 'water troughs'],
+      maintenanceSchedule: 'Daily cleaning, weekly deep clean',
+      status: 'active'
+    },
+    {
+      id: '2',
+      name: 'Calving Pen A',
+      type: 'calving_pen',
+      capacity: 8,
+      currentOccupancy: 3,
+      animalTypes: ['cattle'],
+      conditions: {
+        ventilation: 'good',
+        lighting: '24/7',
+        waterAccess: true,
+        beddingType: 'straw',
+        drainage: 'good'
+      },
+      equipment: ['calving monitors', 'heat lamps', 'isolation gates'],
+      maintenanceSchedule: 'Daily bedding change, post-calving disinfection',
+      status: 'active'
+    },
+    {
+      id: '3',
+      name: 'Calf Rearing Unit',
+      type: 'calf_rearing',
+      capacity: 50,
+      currentOccupancy: 42,
+      animalTypes: ['calves'],
+      conditions: {
+        ventilation: 'excellent',
+        lighting: 'natural + supplemental',
+        waterAccess: true,
+        beddingType: 'sawdust',
+        drainage: 'excellent'
+      },
+      equipment: ['automatic milk feeders', 'individual pens', 'warming boxes'],
+      maintenanceSchedule: 'Daily cleaning, weekly pen rotation',
+      status: 'active'
+    },
+    {
+      id: '4',
+      name: 'Dry Cow Housing',
+      type: 'dry_cow_housing',
+      capacity: 60,
+      currentOccupancy: 45,
+      animalTypes: ['cattle'],
+      conditions: {
+        ventilation: 'good',
+        lighting: 'natural',
+        waterAccess: true,
+        beddingType: 'sand',
+        drainage: 'good'
+      },
+      equipment: ['feed bunks', 'water troughs', 'exercise areas'],
+      maintenanceSchedule: 'Weekly bedding refresh, monthly deep clean',
+      status: 'active'
+    }
+  ]
+
   // Prepare stats for mobile carousel
   const statsCards = [
     {
@@ -556,117 +656,116 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
       </div>
     )}
 
-      {/* Add Health Status Change Notifications */}
-      <div className="mb-4">
-        <HealthStatusNotification
-          farmId={farmId}
-          onNotificationAction={(animalId, action) => {
-            if (action === 'view') {
-              // Navigate to animal details or handle view action
-              window.location.href = `/dashboard/animals/${animalId}`
-            }
-          }}
-        />
-      </div>
-      {/* Mobile Header */}
-      {isMobile ? (
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Animals</h1>
-              <p className="text-sm text-gray-600 mt-1">
-                {stats.total} animals in your herd
-              </p>
+      {/* Main Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="grid w-full grid-cols-2 mb-6">
+          <TabsTrigger value="animals">
+            <GiCow className="h-4 w-4 mr-2" />
+            Animals
+          </TabsTrigger>
+          <TabsTrigger value="housing">
+            <Home className="h-4 w-4 mr-2" />
+            Housing & Facilities
+          </TabsTrigger>
+        </TabsList>
+
+        {/* ANIMALS TAB */}
+        <TabsContent value="animals" className="space-y-4 lg:space-y-6">
+          {/* Mobile Header vs Desktop Header */}
+          {isMobile ? (
+            /* Mobile Header */
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">Animals</h1>
+                <p className="text-sm text-gray-600 mt-1">{stats.total} animals in your herd</p>
+              </div>
+              {/* Quick Actions Menu */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm">
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  {canManageAnimals && (
+                    <DropdownMenuItem onClick={() => setShowAddModal(true)}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add Animal
+                    </DropdownMenuItem>
+                  )}
+                  {canImportData && (
+                    <DropdownMenuItem onClick={() => setShowImportModal(true)}>
+                      <Upload className="mr-2 h-4 w-4" />
+                      Import Animals
+                    </DropdownMenuItem>
+                  )}
+                  {canExportData && (
+                    <DropdownMenuItem 
+                      onClick={handleExportAnimals}
+                      disabled={animals.length === 0}
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      Export Animals
+                    </DropdownMenuItem>
+                  )}
+                  {canManageCategories && (
+                    <DropdownMenuItem onClick={handleOpenCategoriesModal}>
+                      <Tags className="mr-2 h-4 w-4" />
+                      Create Animal Categories
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
+          ) : (
+            /* Desktop Header */
+            <div className="flex items-center justify-between mb-8">
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900">Animals</h1>
+                <p className="text-gray-600 mt-2">
+                  Manage your herd and track individual animal information
+                </p>
+              </div>
 
-            {/* Quick Actions Menu */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button size="sm">
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                {canManageAnimals && (
-                  <DropdownMenuItem onClick={() => setShowAddModal(true)}>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="default">
                     <Plus className="mr-2 h-4 w-4" />
-                    Add Animal
-                  </DropdownMenuItem>
-                )}
-                {canImportData && (
-                  <DropdownMenuItem onClick={() => setShowImportModal(true)}>
-                    <Upload className="mr-2 h-4 w-4" />
-                    Import Animals
-                  </DropdownMenuItem>
-                )}
-                {canExportData && (
-                  <DropdownMenuItem 
-                    onClick={handleExportAnimals}
-                    disabled={animals.length === 0}
-                  >
-                    <Download className="mr-2 h-4 w-4" />
-                    Export Animals
-                  </DropdownMenuItem>
-                )}
-                {canManageCategories && (
-                  <DropdownMenuItem onClick={handleOpenCategoriesModal}>
-                    <Tags className="mr-2 h-4 w-4" />
-                    Create Animal Categories
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-      ) : (
-        /* Desktop Header */
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Animals</h1>
-            <p className="text-gray-600 mt-2">
-              Manage your herd and track individual animal information
-            </p>
-          </div>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="default">
-                <Plus className="mr-2 h-4 w-4" />
-                Quick Actions
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              {canManageAnimals && (
-                <DropdownMenuItem onClick={() => setShowAddModal(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Animal
-                </DropdownMenuItem>
-              )}
-              {canImportData && (
-                <DropdownMenuItem onClick={() => setShowImportModal(true)}>
-                  <Upload className="mr-2 h-4 w-4" />
-                  Import Animals
-                </DropdownMenuItem>
-              )}
-              {canExportData && (
-                <DropdownMenuItem 
-                  onClick={handleExportAnimals}
-                  disabled={animals.length === 0}
-                >
-                  <Download className="mr-2 h-4 w-4" />
-                  Export Animals
-                </DropdownMenuItem>
-              )}
-              {canManageCategories && (
-                <DropdownMenuItem onClick={handleOpenCategoriesModal}>
-                  <Tags className="mr-2 h-4 w-4" />
-                  Create Animal Categories
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      )}
+                    Quick Actions
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  {canManageAnimals && (
+                    <DropdownMenuItem onClick={() => setShowAddModal(true)}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add Animal
+                    </DropdownMenuItem>
+                  )}
+                  {canImportData && (
+                    <DropdownMenuItem onClick={() => setShowImportModal(true)}>
+                      <Upload className="mr-2 h-4 w-4" />
+                      Import Animals
+                    </DropdownMenuItem>
+                  )}
+                  {canExportData && (
+                    <DropdownMenuItem 
+                      onClick={handleExportAnimals}
+                      disabled={animals.length === 0}
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      Export Animals
+                    </DropdownMenuItem>
+                  )}
+                  {canManageCategories && (
+                    <DropdownMenuItem onClick={handleOpenCategoriesModal}>
+                      <Tags className="mr-2 h-4 w-4" />
+                      Create Animal Categories
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )}
 
       {/* Mobile Stats Carousel vs Desktop Grid */}
       {isMobile ? (
@@ -852,16 +951,27 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
         </Card>
       )}
 
-      {/* Animals List */}
-      <AnimalsList
-        animals={animals}
-        farmId={farmId}
-        userRole={userRole}
-        onAnimalUpdated={handleAnimalUpdated}
-        onExportAnimals={handleExportAnimals}
-        loading={loading}
-        enrichedDataMap={enrichedDataMap}
-      />
+          {/* Animals List */}
+          <AnimalsList
+            animals={animals}
+            farmId={farmId}
+            userRole={userRole}
+            onAnimalUpdated={handleAnimalUpdated}
+            onExportAnimals={handleExportAnimals}
+            loading={loading}
+            enrichedDataMap={enrichedDataMap}
+          />
+        </TabsContent>
+
+        {/* HOUSING & FACILITIES TAB */}
+        <TabsContent value="housing" className="space-y-4 lg:space-y-6">
+          <div className="text-center py-8">
+            <Home className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Housing & Facilities</h3>
+            <p className="text-gray-600">Coming soon...</p>
+          </div>
+        </TabsContent>
+      </Tabs>
       </div>
 
       {/* Add Animal Modal */}

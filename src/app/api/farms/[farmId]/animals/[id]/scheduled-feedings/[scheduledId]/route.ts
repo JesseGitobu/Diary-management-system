@@ -34,8 +34,6 @@ export async function DELETE(
     const result = await deleteScheduledFeeding(
       scheduledId,
       farmId,
-      user.id,
-      reason
     )
 
     if (!result.success) {

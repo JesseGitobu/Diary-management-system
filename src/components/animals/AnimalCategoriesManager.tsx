@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
@@ -26,7 +26,14 @@ import {
   MoreVertical,
   Eye,
   UserCheck,
-  Zap
+  Zap,
+  Clock,
+  Leaf,
+  ShieldAlert,
+  Activity,
+  Venus,
+  Mars,
+  VenetianMask
 } from 'lucide-react'
 import {
   Select,
@@ -56,6 +63,7 @@ interface AnimalCategory {
   assigned_animals_count?: number
   production_status?: string
   production_statuses?: string[] // Support for multiple production statuses
+  feed_ration_id?: string | null
 }
 
 interface MatchingAnimal {
@@ -153,6 +161,8 @@ interface CategoryFormData {
   // Management/Milking - now time-based schedules
   selected_milking_schedule_id?: string
   milking_schedules?: MilkingSchedule[]
+  // Feeding - feed ration assignment
+  selected_feed_ration_id?: string
   // Feeding checkboxes
   high_concentrate?: boolean
   dry_cow_ration?: boolean
@@ -230,18 +240,9 @@ const CHARACTERISTIC_GROUPS = {
     type: 'custom_schedules'
   },
   feeding: {
-    label: 'Feeding Characteristics',
-    description: 'Filter by diet and nutrition requirements',
-    type: 'checkboxes',
-    options: [
-      { key: 'high_concentrate', label: 'High Concentrate Diet', description: 'Intensive feeding, peak production' },
-      { key: 'dry_cow_ration', label: 'Dry Cow Ration', description: 'Low energy, pre-calving diet' },
-      { key: 'heifer_ration', label: 'Heifer Ration', description: 'Growth-focused nutrition' },
-      { key: 'high_forage', label: 'High Forage Diet', description: 'Pasture/hay based' },
-      { key: 'steaming_feed_ration', label: 'Steaming Feed Ration', description: 'Heated/steam-processed feed' },
-      { key: 'bull_feed_ration', label: 'Bull Feed Ration', description: 'Specialized nutrition for breeding males' },
-      { key: 'calf_feed_ration', label: 'Calf Feed Ration', description: 'Specialized young animal nutrition' }
-    ]
+    label: 'Feed Ration Assignment',
+    description: 'Assign a specific feed ration to this animal category',
+    type: 'feed_rations'
   }
 }
 
@@ -272,13 +273,6 @@ const getCommonCharacteristics = (productionStatuses: string[]): string[] => {
     allCharacteristics.every(characteristics => characteristics.includes(char))
   )
 }
-
-const CHARACTERISTIC_OPTIONS = [
-  { key: 'lactating', label: 'Lactating', description: 'Currently producing milk' },
-  { key: 'pregnant', label: 'In-Calf', description: 'Expecting offspring' },
-  { key: 'breeding_male', label: 'Breeding Male', description: 'Male used for breeding' },
-  { key: 'growth_phase', label: 'Growth Phase', description: 'Still growing/developing' }
-]
 
 const GENDER_OPTIONS = [
   { value: 'any', label: 'Any Gender' },
@@ -330,6 +324,41 @@ export function AnimalCategoriesManager({
     milking_schedules: [],
     selected_milking_schedule_id: ''
   })
+
+  const [farmMilkingSessions, setFarmMilkingSessions] = useState<Array<{ id: string; name: string; time: string; requiresTimeInput?: boolean }>>([])
+  const [feedRations, setFeedRations] = useState<Array<{ id: string; name: string; description?: string; is_active: boolean }>>([])
+
+  useEffect(() => {
+    const fetchFarmSettings = async () => {
+      try {
+        const response = await fetch(`/api/settings/production?farmId=${farmId}`)
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success) {
+            setFarmMilkingSessions(data.settings?.milkingSessions || [])
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch farm production settings:', error)
+      }
+    }
+    fetchFarmSettings()
+  }, [farmId])
+
+  useEffect(() => {
+    const fetchFeedRations = async () => {
+      try {
+        const response = await fetch(`/api/farms/${farmId}/feed-rations`)
+        if (response.ok) {
+          const data = await response.json()
+          setFeedRations(data.data || [])
+        }
+      } catch (error) {
+        console.error('Failed to fetch feed rations:', error)
+      }
+    }
+    fetchFeedRations()
+  }, [farmId])
 
   // Milking schedule management functions
   const handleFrequencyChange = useCallback((newFrequency: string) => {
@@ -436,7 +465,8 @@ export function AnimalCategoriesManager({
       production_status: 'calf', // Default to calf
       production_statuses: [], // Support multiple production statuses
       selected_milking_schedule_id: '',
-      milking_schedules: []
+      milking_schedules: [],
+      selected_feed_ration_id: ''
     })
   }, [])
 
@@ -457,9 +487,10 @@ export function AnimalCategoriesManager({
       breeding_male: category.characteristics?.breeding_male || false,
       growth_phase: category.characteristics?.growth_phase || false,
       production_status: category.production_status || 'calf',
-      production_statuses: category.production_statuses || (category.production_status ? [category.production_status] : []), // Support multiple or fallback to single
+      production_statuses: category.production_statuses || (category.production_status ? [category.production_status] : []),
       selected_milking_schedule_id: category.characteristics?.selected_milking_schedule_id || '',
-      milking_schedules: category.characteristics?.milking_schedules || []
+      milking_schedules: category.characteristics?.milking_schedules || [],
+      selected_feed_ration_id: category.feed_ration_id || category.characteristics?.selected_feed_ration_id || ''
     }
 
     // Populate range fields from characteristics
@@ -481,10 +512,9 @@ export function AnimalCategoriesManager({
       }
     })
 
-    // Populate checkbox fields from characteristics (excluding management checkboxes)
+    // Populate checkbox fields from characteristics (excluding management/milking and feeding)
     const checkboxFields = [
-      'mastitis_risk', 'under_treatment', 'vaccination_due', 'lameness_prone', 'reproductive_issue',
-      'high_concentrate', 'dry_cow_ration', 'heifer_ration', 'high_forage', 'steaming_feed_ration', 'bull_feed_ration', 'calf_feed_ration'
+      'mastitis_risk', 'under_treatment', 'vaccination_due', 'lameness_prone', 'reproductive_issue'
     ]
 
     checkboxFields.forEach(field => {
@@ -492,6 +522,47 @@ export function AnimalCategoriesManager({
       ;(newFormData as any)[key] = category.characteristics?.[field as keyof typeof category.characteristics] || false
     })
 
+    // Auto-expand groups that have existing data so the user can see pre-filled values
+    const autoExpanded: Record<string, boolean> = {}
+
+    // Expand milking group if any schedule data present
+    if (
+      (newFormData.milking_schedules && newFormData.milking_schedules.length > 0) ||
+      newFormData.selected_milking_schedule_id
+    ) {
+      autoExpanded.management = true
+    }
+
+    // Expand feeding group if a ration is assigned
+    if (newFormData.selected_feed_ration_id) {
+      autoExpanded.feeding = true
+    }
+
+    // Expand range-based groups if any field in the group has a value
+    const groupRangeMap: Record<string, string[]> = {
+      lactation: ['dim_range', 'milk_yield_range', 'lactation_number_range'],
+      pregnancy: ['days_pregnant_range', 'days_to_calving_range'],
+      growth:    ['age_days_range', 'weight_range', 'daily_gain_range'],
+      body:      ['body_condition_score_range', 'weight_kg_range'],
+      breeding:  ['services_per_conception_range', 'days_since_heat_range'],
+    }
+
+    Object.entries(groupRangeMap).forEach(([group, fields]) => {
+      const hasData = fields.some(f => {
+        const minVal = (newFormData as any)[`${f}_min`]
+        const maxVal = (newFormData as any)[`${f}_max`]
+        return (minVal && minVal !== '') || (maxVal && maxVal !== '')
+      })
+      if (hasData) autoExpanded[group] = true
+    })
+
+    // Expand health group if any checkbox is set
+    const healthFields = ['mastitis_risk', 'under_treatment', 'vaccination_due', 'lameness_prone', 'reproductive_issue']
+    if (healthFields.some(f => (newFormData as any)[f])) {
+      autoExpanded.health = true
+    }
+
+    setExpandedGroups(autoExpanded)
     setFormData(newFormData)
     setEditingCategory(category)
     setShowAddModal(true)
@@ -500,6 +571,7 @@ export function AnimalCategoriesManager({
   const handleModalClose = useCallback(() => {
     setShowAddModal(false)
     setEditingCategory(null)
+    setExpandedGroups({})
     resetForm()
   }, [resetForm])
 
@@ -578,10 +650,9 @@ export function AnimalCategoriesManager({
         }
       })
 
-      // Add checkbox characteristics (excluding management/milking)
+      // Add checkbox characteristics (excluding management/milking and feeding)
       const checkboxFields = [
-        'mastitis_risk', 'under_treatment', 'vaccination_due', 'lameness_prone', 'reproductive_issue',
-        'high_concentrate', 'dry_cow_ration', 'heifer_ration', 'high_forage', 'steaming_feed_ration', 'bull_feed_ration', 'calf_feed_ration'
+        'mastitis_risk', 'under_treatment', 'vaccination_due', 'lameness_prone', 'reproductive_issue'
       ]
 
       checkboxFields.forEach(field => {
@@ -597,6 +668,12 @@ export function AnimalCategoriesManager({
         characteristics.selected_milking_schedule_id = formData.selected_milking_schedule_id || ''
       }
 
+      // Add feed ration assignment
+      if (formData.milking_schedules && formData.milking_schedules.length > 0) {
+        characteristics.milking_schedules = formData.milking_schedules
+        characteristics.selected_milking_schedule_id = formData.selected_milking_schedule_id || ''
+      }
+
       const payload = {
         name: formData.name,
         description: formData.description,
@@ -606,7 +683,8 @@ export function AnimalCategoriesManager({
         characteristics,
         is_default: false,
         production_status: formData.production_status || null,
-        production_statuses: formData.production_statuses && formData.production_statuses.length > 0 ? formData.production_statuses : null
+        production_statuses: formData.production_statuses && formData.production_statuses.length > 0 ? formData.production_statuses : null,
+        feed_ration_id: formData.selected_feed_ration_id || null
       }
 
       const url = editingCategory
@@ -870,15 +948,6 @@ export function AnimalCategoriesManager({
     return true
   }
 
-  const getCharacteristicBadges = (characteristics: any, gender?: string) => {
-    if (!characteristics) return []
-
-    return CHARACTERISTIC_OPTIONS
-      .filter(option => characteristics[option.key])
-      .map(option => option.label)
-      .concat(gender ? [gender === 'male' ? 'Male' : 'Female'] : [])
-  }
-
   const sortedCategories = useMemo(() =>
     [...categories].sort((a, b) => a.sort_order - b.sort_order),
     [categories]
@@ -1061,12 +1130,94 @@ export function AnimalCategoriesManager({
 
     // Gender neutral - only calf is appropriate
     return [
-      { 
-        value: 'calf', 
+      {
+        value: 'calf',
         label: 'Calf',
         description: 'Young animal, gender not specified'
       }
     ]
+  }
+
+  // ── Card display helpers ──────────────────────────────────────────────────
+
+  const PRODUCTION_STATUS_META: Record<string, { label: string; pill: string; bar: string }> = {
+    calf:                  { label: 'Calf',            pill: 'bg-amber-100  text-amber-800  border border-amber-200',  bar: 'bg-amber-400'  },
+    heifer:                { label: 'Heifer',          pill: 'bg-blue-100   text-blue-800   border border-blue-200',   bar: 'bg-blue-400'   },
+    served:                { label: 'In-Calf',         pill: 'bg-purple-100 text-purple-800 border border-purple-200', bar: 'bg-purple-400' },
+    lactating:             { label: 'Lactating',       pill: 'bg-green-100  text-green-800  border border-green-200',  bar: 'bg-green-400'  },
+    steaming_dry_cows:     { label: 'Steaming Dry',    pill: 'bg-orange-100 text-orange-800 border border-orange-200', bar: 'bg-orange-400' },
+    open_culling_dry_cows: { label: 'Culling Dry',     pill: 'bg-gray-100   text-gray-700   border border-gray-200',   bar: 'bg-gray-400'   },
+    bull:                  { label: 'Bull',             pill: 'bg-teal-100   text-teal-800   border border-teal-200',   bar: 'bg-teal-400'   },
+  }
+
+  const getStatusMeta = (status: string) =>
+    PRODUCTION_STATUS_META[status] ?? { label: status, pill: 'bg-gray-100 text-gray-700 border border-gray-200', bar: 'bg-gray-400' }
+
+  const primaryBarColor = (category: AnimalCategory) => {
+    const statuses: string[] = (category as any).production_statuses?.length
+      ? (category as any).production_statuses
+      : category.production_status ? [category.production_status] : []
+    return statuses.length ? getStatusMeta(statuses[0]).bar : 'bg-gray-300'
+  }
+
+  const getRangeRows = (category: AnimalCategory) => {
+    const chars = category.characteristics as any
+    if (!chars) return []
+    const rows: { label: string; value: string }[] = []
+    const fmt = (min: any, max: any, unit: string) => {
+      if (min != null && max != null) return `${min}–${max} ${unit}`
+      if (min != null) return `≥ ${min} ${unit}`
+      if (max != null) return `≤ ${max} ${unit}`
+      return null
+    }
+    const push = (label: string, field: string, unit: string) => {
+      const r = chars[field]
+      if (!r) return
+      const v = fmt(r.min, r.max, unit)
+      if (v) rows.push({ label, value: v })
+    }
+    push('DIM',         'dim_range',               'days')
+    push('Milk',        'milk_yield_range',         'L/d')
+    push('Lactation',   'lactation_number_range',   '#')
+    push('Pregnant',    'days_pregnant_range',      'days')
+    push('To calving',  'days_to_calving_range',    'days')
+    push('Age',         'age_days_range',            'days')
+    push('Weight',      'weight_range',             'kg')
+    push('Gain',        'daily_gain_range',         'kg/d')
+    push('BCS',         'body_condition_score_range','')
+    push('Services',    'services_per_conception_range', '')
+    return rows
+  }
+
+  const HEALTH_FLAGS: { key: string; label: string }[] = [
+    { key: 'mastitis_risk',     label: 'Mastitis Risk'    },
+    { key: 'under_treatment',   label: 'Under Treatment'  },
+    { key: 'vaccination_due',   label: 'Vaccination Due'  },
+    { key: 'lameness_prone',    label: 'Lameness Prone'   },
+    { key: 'reproductive_issue',label: 'Repro Issue'      },
+  ]
+
+  const getHealthFlags = (category: AnimalCategory) =>
+    HEALTH_FLAGS.filter(f => (category.characteristics as any)?.[f.key])
+
+  const getMilkingInfo = (category: AnimalCategory): string | null => {
+    const chars = category.characteristics as any
+    if (!chars) return null
+    const schedId = chars.selected_milking_schedule_id
+    if (!schedId) return null
+    if (schedId === 'farm_default') {
+      if (farmMilkingSessions.length === 0) return 'Farm default schedule'
+      const times = farmMilkingSessions.map((s: any) => s.time).join(', ')
+      return `${farmMilkingSessions.length}× daily · ${times}`
+    }
+    const sched = (chars.milking_schedules ?? []).find((s: any) => s.id === schedId)
+    if (!sched) return null
+    return `${sched.frequency}× daily · ${(sched.times ?? []).slice(0, sched.frequency).join(', ')}`
+  }
+
+  const getFeedRationName = (rationId: string): string => {
+    const ration = feedRations.find(r => r.id === rationId)
+    return ration ? ration.name : 'Assigned ration'
   }
 
   return (
@@ -1089,50 +1240,129 @@ export function AnimalCategoriesManager({
 
       {/* Categories List */}
       <div className="space-y-3">
-        {sortedCategories.map((category) => (
-          <div
-            key={category.id}
-            className={`flex items-center justify-between p-4 border rounded-lg ${isMobile ? 'flex-col space-y-3' : 'flex-row'
-              }`}
-          >
-            <div className={`flex-1 ${isMobile ? 'self-start w-full' : ''}`}>
-              <div className="flex items-center space-x-2 mb-2">
-                <h4 className="font-medium">{category.name}</h4>
-                {category.is_default && (
-                  <Badge variant="secondary" className="text-xs">Default</Badge>
-                )}
-                {category.assigned_animals_count !== undefined && (
-                  <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700">
-                    <UserCheck className="w-3 h-3 mr-1" />
-                    {category.assigned_animals_count} animals
-                  </Badge>
-                )}
+        {sortedCategories.map((category) => {
+          const statuses: string[] = (category as any).production_statuses?.length
+            ? (category as any).production_statuses
+            : category.production_status ? [category.production_status] : []
+          const rangeRows   = getRangeRows(category)
+          const healthFlags = getHealthFlags(category)
+          const milkingInfo = getMilkingInfo(category)
+          const rationId    = category.feed_ration_id || (category.characteristics as any)?.selected_feed_ration_id as string | undefined
+          const barColor    = primaryBarColor(category)
 
+          return (
+            <div key={category.id} className="border rounded-xl bg-white overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+
+              {/* Colour accent bar */}
+              <div className={`h-1 w-full ${barColor}`} />
+
+              {/* Header */}
+              <div className="flex items-start justify-between gap-3 px-4 pt-3 pb-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center flex-wrap gap-2">
+                    <h4 className="font-semibold text-gray-900 text-base">{category.name}</h4>
+                    {category.is_default && (
+                      <Badge variant="secondary" className="text-xs">Default</Badge>
+                    )}
+                    {category.assigned_animals_count !== undefined && (
+                      <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                        <UserCheck className="w-3 h-3" />
+                        {category.assigned_animals_count} animals
+                      </span>
+                    )}
+                  </div>
+                  {category.description && (
+                    <p className="text-sm text-gray-500 mt-0.5 line-clamp-2">{category.description}</p>
+                  )}
+                </div>
+                <div className="flex-shrink-0">
+                  <ActionButtons category={category} />
+                </div>
               </div>
 
-              {category.description && (
-                <p className="text-sm text-gray-600 mb-2">{category.description}</p>
-              )}
+              {/* Body */}
+              <div className="px-4 pb-4 space-y-2.5">
 
-              <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500">
-                <div className="flex items-center space-x-1">
-                  <Calendar className="w-3 h-3" />
-                  <span>{formatAge(category.min_age_days, category.max_age_days)}</span>
+                {/* Row 1 — production statuses + gender + age */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {statuses.length > 0
+                    ? statuses.map(s => (
+                        <span key={s} className={`inline-flex items-center text-xs font-medium px-2.5 py-0.5 rounded-full ${getStatusMeta(s).pill}`}>
+                          {getStatusMeta(s).label}
+                        </span>
+                      ))
+                    : <span className="text-xs text-gray-400 italic">No production status</span>
+                  }
+
+                  {category.gender && category.gender !== 'any' && (
+                    <span className="inline-flex items-center gap-1 text-xs text-gray-600 bg-gray-100 border border-gray-200 px-2.5 py-0.5 rounded-full">
+                      {category.gender === 'female'
+                        ? <Venus className="w-3 h-3 text-pink-500" />
+                        : <Mars  className="w-3 h-3 text-blue-500" />}
+                      {category.gender === 'female' ? 'Female' : 'Male'}
+                    </span>
+                  )}
+                  {category.gender === 'any' && (
+                    <span className="inline-flex items-center gap-1 text-xs text-gray-600 bg-gray-100 border border-gray-200 px-2.5 py-0.5 rounded-full">
+                      <VenetianMask className="w-3 h-3 text-gray-400" />
+                      Any gender
+                    </span>
+                  )}
+
+                  <span className="inline-flex items-center gap-1 text-xs text-gray-500">
+                    <Calendar className="w-3 h-3" />
+                    {formatAge(category.min_age_days, category.max_age_days)}
+                  </span>
                 </div>
 
-                {getCharacteristicBadges(category.characteristics, category.gender).map((badge, index) => (
-                  <Badge key={index} variant="outline" className="text-xs">
-                    {badge}
-                  </Badge>
-                ))}
+                {/* Row 2 — milking schedule + feed ration */}
+                {(milkingInfo || rationId) && (
+                  <div className="flex flex-wrap gap-3">
+                    {milkingInfo && (
+                      <span className="inline-flex items-center gap-1.5 text-xs text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-lg">
+                        <Clock className="w-3.5 h-3.5 flex-shrink-0" />
+                        <span className="font-medium">Milking:</span>
+                        {milkingInfo}
+                      </span>
+                    )}
+                    {rationId && (
+                      <span className="inline-flex items-center gap-1.5 text-xs text-green-700 bg-green-50 border border-green-200 px-2.5 py-1 rounded-lg">
+                        <Leaf className="w-3.5 h-3.5 flex-shrink-0" />
+                        <span className="font-medium">Ration:</span>
+                        {getFeedRationName(rationId)}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Row 3 — range characteristics */}
+                {rangeRows.length > 0 && (
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <Activity className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                    {rangeRows.map(row => (
+                      <span key={row.label} className="inline-flex items-center gap-1 text-xs text-gray-600 bg-gray-50 border border-gray-200 px-2 py-0.5 rounded">
+                        <span className="font-medium text-gray-500">{row.label}</span>
+                        {row.value}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Row 4 — health flags */}
+                {healthFlags.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 items-center">
+                    <ShieldAlert className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+                    {healthFlags.map(f => (
+                      <span key={f.key} className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">
+                        {f.label}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
-
-            <div className={isMobile ? 'self-end' : ''}>
-              <ActionButtons category={category} />
-            </div>
-          </div>
-        ))}
+          )
+        })}
 
         {categories.length === 0 && (
           <div className="text-center py-8 text-gray-500">
@@ -1310,60 +1540,102 @@ export function AnimalCategoriesManager({
                             {group.type === 'custom_schedules' ? (
                               // Custom Milking Schedules UI
                               <div className="space-y-4">
-                                {/* List of Existing Schedules */}
-                                {formData.milking_schedules && formData.milking_schedules.length > 0 ? (
-                                  <div className="space-y-2">
-                                    <p className="text-sm font-medium text-gray-900">Defined Schedules:</p>
-                                    {formData.milking_schedules.map((schedule) => (
-                                      <div
-                                        key={schedule.id}
-                                        className="p-3 bg-blue-50 border border-blue-200 rounded-lg"
-                                      >
-                                        <div className="flex items-start justify-between mb-2">
-                                          <div className="flex-1">
-                                            <p className="font-medium text-sm text-gray-900">{schedule.name}</p>
-                                            <p className="text-xs text-gray-600 mt-1">
-                                              {schedule.frequency}x daily at {schedule.times.join(', ')}
-                                            </p>
-                                          </div>
-                                          <div className="flex items-center space-x-2 ml-2">
-                                            <label className="flex items-center space-x-2 cursor-pointer">
-                                              <input
-                                                type="radio"
-                                                name="selected_schedule"
-                                                checked={formData.selected_milking_schedule_id === schedule.id}
-                                                onChange={() =>
-                                                  setFormData(prev => ({
-                                                    ...prev,
-                                                    selected_milking_schedule_id: schedule.id
-                                                  }))
-                                                }
-                                                className="h-4 w-4 text-farm-green"
-                                              />
-                                              <span className="text-xs text-gray-600">Select</span>
-                                            </label>
-                                            <button
-                                              type="button"
-                                              onClick={() => handleEditMilkingSchedule(schedule)}
-                                              className="text-blue-600 hover:text-blue-900 text-xs font-medium"
-                                            >
-                                              Edit
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={() => handleRemoveMilkingSchedule(schedule.id)}
-                                              className="text-red-600 hover:text-red-900 text-xs font-medium"
-                                            >
-                                              Remove
-                                            </button>
-                                          </div>
+                                {/* Available Schedules */}
+                                <div className="space-y-2">
+                                  <p className="text-sm font-medium text-gray-900">Available Schedules:</p>
+                                  
+                                  {/* Farm Milking Session */}
+                                  {farmMilkingSessions.length > 0 && (
+                                    <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                                      <div className="flex items-start justify-between mb-2">
+                                        <div className="flex-1">
+                                          <p className="font-medium text-sm text-gray-900">Farm Milking Session (Settings)</p>
+                                          <p className="text-xs text-gray-600 mt-1">
+                                            {farmMilkingSessions.length}x daily at {farmMilkingSessions.map(s => s.time).join(', ')}
+                                          </p>
+                                        </div>
+                                        <div className="flex items-center space-x-2 ml-2">
+                                          <label className="flex items-center space-x-2 cursor-pointer">
+                                            <input
+                                              type="checkbox"
+                                              checked={formData.selected_milking_schedule_id === 'farm_default'}
+                                              onChange={() => {
+                                                setFormData(prev => ({ 
+                                                  ...prev, 
+                                                  selected_milking_schedule_id: 
+                                                    prev.selected_milking_schedule_id === 'farm_default' 
+                                                      ? undefined 
+                                                      : 'farm_default' 
+                                                }));
+                                              }}
+                                              className="h-4 w-4 text-farm-green"
+                                            />
+                                            <span className="text-xs text-gray-600">Select</span>
+                                          </label>
                                         </div>
                                       </div>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <p className="text-sm text-gray-500 italic">No schedules defined yet</p>
-                                )}
+                                    </div>
+                                  )}
+                                  
+                                  {/* Custom Schedules */}
+                                  {formData.milking_schedules && formData.milking_schedules.length > 0 && (
+                                    <>
+                                      <p className="text-sm font-medium text-gray-900 mt-4">Custom Schedules:</p>
+                                      {formData.milking_schedules.map((schedule) => (
+                                        <div
+                                          key={schedule.id}
+                                          className="p-3 bg-blue-50 border border-blue-200 rounded-lg"
+                                        >
+                                          <div className="flex items-start justify-between mb-2">
+                                            <div className="flex-1">
+                                              <p className="font-medium text-sm text-gray-900">{schedule.name}</p>
+                                              <p className="text-xs text-gray-600 mt-1">
+                                                {schedule.frequency}x daily at {schedule.times.join(', ')}
+                                              </p>
+                                            </div>
+                                            <div className="flex items-center space-x-2 ml-2">
+                                              <label className="flex items-center space-x-2 cursor-pointer">
+                                                <input
+                                                  type="checkbox"
+                                                  checked={formData.selected_milking_schedule_id === schedule.id}
+                                                  onChange={() => {
+                                                    setFormData(prev => ({
+                                                      ...prev,
+                                                      selected_milking_schedule_id: 
+                                                        prev.selected_milking_schedule_id === schedule.id 
+                                                          ? undefined 
+                                                          : schedule.id
+                                                    }));
+                                                  }}
+                                                  className="h-4 w-4 text-farm-green"
+                                                />
+                                                <span className="text-xs text-gray-600">Select</span>
+                                              </label>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleEditMilkingSchedule(schedule)}
+                                                className="text-blue-600 hover:text-blue-900 text-xs font-medium"
+                                              >
+                                                Edit
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleRemoveMilkingSchedule(schedule.id)}
+                                                className="text-red-600 hover:text-red-900 text-xs font-medium"
+                                              >
+                                                Remove
+                                              </button>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </>
+                                  )}
+                                  
+                                  {(!farmMilkingSessions.length && (!formData.milking_schedules || formData.milking_schedules.length === 0)) && (
+                                    <p className="text-sm text-gray-500 italic">No schedules available. Configure milking sessions in farm settings or create custom schedules below.</p>
+                                  )}
+                                </div>
 
                                 {/* Schedule Form */}
                                 {showScheduleForm ? (
@@ -1453,6 +1725,63 @@ export function AnimalCategoriesManager({
                                     + Create New Schedule
                                   </button>
                                 )}
+                              </div>
+                            ) : group.type === 'feed_rations' ? (
+                              // Feed Rations Assignment UI
+                              <div className="space-y-4">
+                                {/* Available Feed Rations */}
+                                <div className="space-y-2">
+                                  <p className="text-sm font-medium text-gray-900">Available Feed Rations:</p>
+                                  
+                                  {/* Feed Rations List */}
+                                  {feedRations.length > 0 ? (
+                                    feedRations.map((ration) => (
+                                      <div
+                                        key={ration.id}
+                                        className="p-3 bg-orange-50 border border-orange-200 rounded-lg"
+                                      >
+                                        <div className="flex items-start justify-between mb-2">
+                                          <div className="flex-1">
+                                            <p className="font-medium text-sm text-gray-900">{ration.name}</p>
+                                            {ration.description && (
+                                              <p className="text-xs text-gray-600 mt-1">{ration.description}</p>
+                                            )}
+                                            {!ration.is_active && (
+                                              <span className="text-xs text-orange-600 mt-1">(Inactive)</span>
+                                            )}
+                                          </div>
+                                          <div className="flex items-center space-x-2 ml-2">
+                                            <label className="flex items-center space-x-2 cursor-pointer">
+                                              <input
+                                                type="checkbox"
+                                                checked={formData.selected_feed_ration_id === ration.id}
+                                                onChange={() => {
+                                                  setFormData(prev => ({
+                                                    ...prev,
+                                                    selected_feed_ration_id: 
+                                                      prev.selected_feed_ration_id === ration.id 
+                                                        ? undefined 
+                                                        : ration.id
+                                                  }));
+                                                }}
+                                                className="h-4 w-4 text-farm-green"
+                                              />
+                                              <span className="text-xs text-gray-600">Select</span>
+                                            </label>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))
+                                  ) : (
+                                    <p className="text-sm text-gray-500 italic">No feed rations available. Create feed rations in the Feed Management section.</p>
+                                  )}
+                                  
+                                  {formData.selected_feed_ration_id && (
+                                    <div className="mt-3 p-2 bg-green-50 border border-green-200 rounded text-xs text-green-700">
+                                      Selected ration will be assigned to animals in this category
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             ) : (group as any).options ? (
                               // Regular Characteristics (ranges/checkboxes)

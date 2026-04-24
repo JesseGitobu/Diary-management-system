@@ -1,23 +1,23 @@
 // src/components/settings/feeds/FeedManagementSettings.tsx
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
-import { Badge } from '@/components/ui/Badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { FeedTypeCategoriesManager } from '@/components/settings/feeds/FeedTypeCategoriesManager'
 import { FeedUnitConversionsManager } from '@/components/settings/feeds/FeedUnitConversionsManager'
-import { ConsumptionBatchesManager } from '@/components/settings/feeds/ConsumptionBatchesManager'
+import { FeedSettingsManager } from '@/components/settings/feeds/FeedSettingsManager'
+import type { FeedTimeSlot, FeedAlertSetting, FeedFrequencyDefault } from '@/lib/database/feedSettingsConstants'
 import {
   ArrowLeft,
   Wheat,
   Tags,
   Scale,
-  Utensils,
-  Info
+  Settings,
+  Info,
 } from 'lucide-react'
 
 interface FeedManagementSettingsProps {
@@ -26,9 +26,10 @@ interface FeedManagementSettingsProps {
   feedTypeCategories: any[]
   feedTypes?: any[]
   weightConversions: any[]
-  consumptionBatches: any[]
-  batchFactors: any[]
   animalCategories: any[]
+  timeSlots: FeedTimeSlot[]
+  alertSettings: FeedAlertSetting[]
+  frequencyDefaults: FeedFrequencyDefault[]
 }
 
 export function FeedManagementSettings({
@@ -37,47 +38,41 @@ export function FeedManagementSettings({
   feedTypeCategories: initialFeedTypeCategories,
   feedTypes: initialFeedTypes = [],
   weightConversions: initialWeightConversions,
-  consumptionBatches: initialConsumptionBatches,
-  batchFactors: initialBatchFactors,
-  animalCategories: initialAnimalCategories
+  animalCategories: initialAnimalCategories,
+  timeSlots: initialTimeSlots,
+  alertSettings: initialAlertSettings,
+  frequencyDefaults: initialFrequencyDefaults,
 }: FeedManagementSettingsProps) {
   const router = useRouter()
   const { isMobile } = useDeviceInfo()
   const [activeTab, setActiveTab] = useState('feed-categories')
 
-  // State for managing data
   const [feedTypeCategories, setFeedTypeCategories] = useState(initialFeedTypeCategories)
-  const [feedTypes, setFeedTypes] = useState(initialFeedTypes)
+  const [feedTypes] = useState(initialFeedTypes)
   const [weightConversions, setWeightConversions] = useState(initialWeightConversions)
-  const [consumptionBatches, setConsumptionBatches] = useState(initialConsumptionBatches)
-  const [batchFactors, setBatchFactors] = useState(initialBatchFactors)
-  const [animalCategories, setAnimalCategories] = useState(initialAnimalCategories)
+  const [animalCategories] = useState(initialAnimalCategories)
+  const [timeSlots, setTimeSlots] = useState<FeedTimeSlot[]>(initialTimeSlots)
+  const [alertSettings, setAlertSettings] = useState<FeedAlertSetting[]>(initialAlertSettings)
+  const [frequencyDefaults, setFrequencyDefaults] = useState<FeedFrequencyDefault[]>(initialFrequencyDefaults)
 
   const canManageSettings = ['farm_owner', 'farm_manager'].includes(userRole)
-
-  const handleBack = () => {
-    router.push(`/dashboard/settings?farmId=${farmId}`)
-  }
 
   const tabConfig = [
     {
       id: 'feed-categories',
-      label: isMobile ? 'Feed Types' : 'Feed Type Categories',
+      label: isMobile ? 'Categories' : 'Feed Type Categories',
       icon: <Tags className="w-4 h-4" />,
-      description: 'Organize feed types into categories'
     },
     {
       id: 'weight-conversions',
       label: isMobile ? 'Weights' : 'Weight Conversions',
       icon: <Scale className="w-4 h-4" />,
-      description: 'Custom weight units and conversions'
     },
     {
-      id: 'consumption-batches',
-      label: isMobile ? 'Batches' : 'Consumption Batches',
-      icon: <Utensils className="w-4 h-4" />,
-      description: 'Feeding batch templates and rules'
-    }
+      id: 'feed-settings',
+      label: isMobile ? 'Settings' : 'Feed Settings',
+      icon: <Settings className="w-4 h-4" />,
+    },
   ]
 
   return (
@@ -87,11 +82,11 @@ export function FeedManagementSettings({
         <div className={`${isMobile ? 'mb-4' : 'flex items-center space-x-4 mb-4'}`}>
           <Button
             variant="ghost"
-            onClick={handleBack}
+            onClick={() => router.push(`/dashboard/settings?farmId=${farmId}`)}
             className={`flex items-center space-x-2 ${isMobile ? 'w-full justify-start' : ''}`}
           >
             <ArrowLeft className="w-4 h-4" />
-            <span className={`${isMobile ? 'ml-2' : ''}`}>Back to Settings</span>
+            <span className={isMobile ? 'ml-2' : ''}>Back to Settings</span>
           </Button>
         </div>
 
@@ -104,7 +99,7 @@ export function FeedManagementSettings({
               Feed Management Settings
             </h1>
             <p className={`text-gray-600 ${isMobile ? 'text-sm' : 'text-base'}`}>
-              Configure feed type categories, weight conversions, and consumption settings
+              Configure feed categories, weight conversions, feeding schedules, and alerts
             </p>
           </div>
         </div>
@@ -115,9 +110,9 @@ export function FeedManagementSettings({
               <div className="flex items-start space-x-3">
                 <Info className="w-5 h-5 text-amber-600 mt-0.5" />
                 <div>
-                  <h4 className="font-medium text-amber-800">Limited Access</h4>
+                  <h4 className="font-medium text-amber-800">Read-Only Access</h4>
                   <p className="text-sm text-amber-700">
-                    You have read-only access to these settings. Contact your farm manager to make changes.
+                    Contact your farm owner or manager to make changes to these settings.
                   </p>
                 </div>
               </div>
@@ -126,33 +121,30 @@ export function FeedManagementSettings({
         )}
       </div>
 
-      {/* Settings Overview Stats */}
+      {/* Overview stats */}
       <div className={`grid gap-4 mb-6 ${isMobile ? 'grid-cols-2' : 'grid-cols-4'}`}>
         <Card>
           <CardContent className="p-4">
             <div className="text-2xl font-bold text-green-600">{feedTypeCategories.length}</div>
-            <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>Categories</p>
+            <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>Feed Categories</p>
           </CardContent>
         </Card>
-
         <Card>
           <CardContent className="p-4">
             <div className="text-2xl font-bold text-blue-600">{feedTypes.length}</div>
             <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>Feed Types</p>
           </CardContent>
         </Card>
-
         <Card>
           <CardContent className="p-4">
-            <div className="text-2xl font-bold text-orange-600">{weightConversions.length}</div>
-            <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>Units</p>
+            <div className="text-2xl font-bold text-orange-600">{timeSlots.filter(s => s.is_active).length}</div>
+            <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>Feeding Slots</p>
           </CardContent>
         </Card>
-
         <Card>
           <CardContent className="p-4">
-            <div className="text-2xl font-bold text-indigo-600">{consumptionBatches.length}</div>
-            <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>Batches</p>
+            <div className="text-2xl font-bold text-indigo-600">{frequencyDefaults.length}</div>
+            <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>Category Defaults</p>
           </CardContent>
         </Card>
       </div>
@@ -165,16 +157,15 @@ export function FeedManagementSettings({
             : 'h-12 w-auto inline-flex gap-2 justify-start'
           }
         `}>
-          {tabConfig.map((tab) => (
+          {tabConfig.map(tab => (
             <TabsTrigger
               key={tab.id}
               value={tab.id}
-              className={`
-                ${isMobile
+              className={
+                isMobile
                   ? 'text-xs px-2 py-2 h-10'
-                  : 'text-sm px-6 py-2 h-10 min-w-[140px] flex items-center space-x-2'
-                }
-              `}
+                  : 'text-sm px-6 py-2 h-10 min-w-[160px] flex items-center space-x-2'
+              }
             >
               {tab.icon}
               <span>{tab.label}</span>
@@ -182,7 +173,7 @@ export function FeedManagementSettings({
           ))}
         </TabsList>
 
-        {/* Feed Type Categories Tab */}
+        {/* Feed Type Categories */}
         <TabsContent value="feed-categories">
           <Card>
             <CardHeader>
@@ -191,8 +182,7 @@ export function FeedManagementSettings({
                 <span>Feed Type Categories</span>
               </CardTitle>
               <CardDescription>
-                Organize your feed types into categories for better organization and reporting.
-                Categories help group similar feeds and make inventory management easier.
+                Organise your feed types into categories for better reporting and inventory management.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -207,7 +197,7 @@ export function FeedManagementSettings({
           </Card>
         </TabsContent>
 
-        {/* Weight Conversions Tab */}
+        {/* Weight Conversions */}
         <TabsContent value="weight-conversions">
           <Card>
             <CardHeader>
@@ -216,8 +206,8 @@ export function FeedManagementSettings({
                 <span>Weight Conversions</span>
               </CardTitle>
               <CardDescription>
-                Set up custom weight units and conversions for feed measurements.
-                This helps when you don't have scales and need to use containers or local measurements.
+                Set up custom weight units and conversions so you can record feed quantities using
+                containers or local measurements instead of scales.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -232,28 +222,29 @@ export function FeedManagementSettings({
           </Card>
         </TabsContent>
 
-        {/* Consumption Batches Tab */}
-        <TabsContent value="consumption-batches">
+        {/* Feed Settings – replaces Consumption Batches */}
+        <TabsContent value="feed-settings">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">
-                <Utensils className="w-5 h-5" />
-                <span>Consumption Batches</span>
+                <Settings className="w-5 h-5" />
+                <span>Feed Settings</span>
               </CardTitle>
               <CardDescription>
-                Create feeding batch templates based on animal characteristics like age, breeding status,
-                and milk production. This speeds up daily feeding records and ensures consistent nutrition.
+                Define feeding time slots, configure alert thresholds for low stock and waste, and set
+                default feeding frequencies per animal category.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <ConsumptionBatchesManager
+              <FeedSettingsManager
                 farmId={farmId}
-                batches={consumptionBatches}
-                feedTypeCategories={feedTypeCategories}
-                batchFactors={batchFactors}
+                timeSlots={timeSlots}
+                alertSettings={alertSettings}
+                frequencyDefaults={frequencyDefaults}
                 animalCategories={animalCategories}
-                onBatchesUpdate={setConsumptionBatches}
-                onFactorsUpdate={setBatchFactors}
+                onTimeSlotsUpdate={setTimeSlots}
+                onAlertSettingsUpdate={setAlertSettings}
+                onFrequencyDefaultsUpdate={setFrequencyDefaults}
                 canEdit={canManageSettings}
                 isMobile={isMobile}
               />
@@ -262,7 +253,7 @@ export function FeedManagementSettings({
         </TabsContent>
       </Tabs>
 
-      {/* Help Text */}
+      {/* Help text */}
       <Card className="mt-6 border-blue-200 bg-blue-50">
         <CardContent className="p-4">
           <div className="flex items-start space-x-3">
@@ -270,11 +261,11 @@ export function FeedManagementSettings({
             <div>
               <h4 className="font-medium text-blue-800 mb-1">How These Settings Work Together</h4>
               <ul className="text-sm text-blue-700 space-y-1">
-                <li>• <strong>Feed Type Categories</strong> organize your feeds into logical groups</li>
-                <li>• <strong>Weight Conversions</strong> let you use local measurements instead of scales</li>
-                <li>• <strong>Consumption Batches</strong> create feeding templates for animal groups</li>
-                <li>• <strong>Nutritional Data</strong> and <strong>Feed Mix Recipes</strong> tabs are now in Feed Management dashboard</li>
-                <li>• All changes are reflected in daily feed management and recommendations</li>
+                <li>• <strong>Feed Type Categories</strong> organise feeds into logical groups for reporting</li>
+                <li>• <strong>Weight Conversions</strong> let you record quantities using local measurements</li>
+                <li>• <strong>Feeding Time Slots</strong> define named windows (Morning, Afternoon, Evening) used when logging consumption</li>
+                <li>• <strong>Alert Thresholds</strong> control when the system notifies you about low stock, expiry, or excess waste</li>
+                <li>• <strong>Frequency Defaults</strong> set the baseline feedings-per-day and quantity per animal category, used in planning and ration recommendations</li>
               </ul>
             </div>
           </div>

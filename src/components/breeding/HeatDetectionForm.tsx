@@ -29,6 +29,8 @@ interface HeatDetectionFormProps {
   onEventCreated: () => void
   onCancel: () => void
   preSelectedAnimalId?: string
+  initialData?: any | null
+  eventId?: string | null
 }
 
 const heatSigns = [
@@ -51,7 +53,7 @@ const actionOptions = [
   'Vet consultation needed'
 ]
 
-export function HeatDetectionForm({ farmId, onEventCreated, onCancel, preSelectedAnimalId }: HeatDetectionFormProps) {
+export function HeatDetectionForm({ farmId, onEventCreated, onCancel, preSelectedAnimalId, initialData, eventId }: HeatDetectionFormProps) {
   const [loading, setLoading] = useState(false)
   const [animals, setAnimals] = useState<Array<{ id: string; tag_number: string; name: string | null; breed: string | null; production_status: string | null }>>([])
   const [selectedSigns, setSelectedSigns] = useState<string[]>([])
@@ -82,6 +84,24 @@ export function HeatDetectionForm({ farmId, onEventCreated, onCancel, preSelecte
       form.setValue('animal_id', preSelectedAnimalId)
     }
   }, [preSelectedAnimalId, form])
+
+  useEffect(() => {
+    if (!initialData) return
+    const raw = initialData.event_date || ''
+    const datePart = raw.includes('T') ? raw.split('T')[0] : raw
+    const timePart = raw.includes('T') ? (raw.split('T')[1] || '').slice(0, 5) : ''
+    const signs: string[] = initialData.heat_signs || []
+    setSelectedSigns(signs)
+    form.reset({
+      animal_id: initialData.animal_id || '',
+      event_date: datePart,
+      event_time: timePart || new Date().toTimeString().slice(0, 5),
+      heat_signs: signs,
+      heat_action_taken: initialData.heat_action_taken || '',
+      notes: initialData.notes || '',
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialData])
 
   useEffect(() => {
     if (!selectedAnimalId) {
@@ -189,37 +209,37 @@ export function HeatDetectionForm({ farmId, onEventCreated, onCancel, preSelecte
   const handleSubmit = async (data: HeatDetectionFormData) => {
     setLoading(true)
     setError(null)
-    
+
     try {
-      // Combine date and time WITHOUT timezone conversion
-      // Format: YYYY-MM-DDTHH:MM:SS (local time, not UTC)
       const dateTime = `${data.event_date}T${data.event_time}:00`
-      
-      // Destructure to exclude event_time from API payload
       const { event_time, ...restData } = data
-      
-      const response = await fetch('/api/breeding-events', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          eventData: {
-            ...restData,
-            event_date: dateTime,
-            farm_id: farmId,
-            event_type: 'heat_detection',
-            heat_signs: selectedSigns,
-          }
-        }),
+
+      const payload = {
+        ...restData,
+        event_date: dateTime,
+        farm_id: farmId,
+        event_type: 'heat_detection',
+        heat_signs: selectedSigns,
+      }
+
+      const url = eventId ? `/api/breeding-events/${eventId}` : '/api/breeding-events'
+      const method = eventId ? 'PATCH' : 'POST'
+      const body = eventId
+        ? JSON.stringify({ eventData: payload })
+        : JSON.stringify({ eventData: payload })
+
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body,
       })
-      
+
       const result = await response.json()
-      
+
       if (response.ok && result.success) {
         onEventCreated()
       } else {
-        setError(result.error || 'Failed to create heat detection event')
+        setError(result.error || `Failed to ${eventId ? 'update' : 'create'} heat detection event`)
       }
     } catch (error) {
       console.error('Error submitting form:', error)
@@ -364,7 +384,7 @@ export function HeatDetectionForm({ farmId, onEventCreated, onCancel, preSelecte
         
         <div className="flex justify-end space-x-3 pt-4">
           <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
-          <Button type="submit" disabled={loading}>{loading ? <LoadingSpinner size="sm" /> : 'Record Heat Detection'}</Button>
+          <Button type="submit" disabled={loading}>{loading ? <LoadingSpinner size="sm" /> : eventId ? 'Save Changes' : 'Record Heat Detection'}</Button>
         </div>
       </form>
     </div>

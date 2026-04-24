@@ -720,15 +720,31 @@ export type EquipmentStatus = 'operational' | 'maintenance_due' | 'in_maintenanc
 export interface Supplier {
   id: string
   farm_id: string
+  // Basic info
   name: string
-  contact_person?: string
-  email?: string
-  phone?: string
-  address?: string
   supplier_type?: string
-  payment_terms?: string
-  notes?: string
   status: string
+  kra_pin?: string
+  // Contact
+  contact_person?: string
+  phone?: string
+  alternative_phone?: string
+  email?: string
+  website?: string
+  // Location
+  address?: string          // physical street / P.O. Box
+  town?: string
+  county?: string
+  // Business terms
+  payment_terms?: string | null
+  credit_limit_ksh?: number | null
+  minimum_order_kg?: number | null
+  lead_time_days?: number | null
+  // Misc
+  notes?: string
+  // Audit
+  created_by?: string
+  updated_by?: string
   created_at: string
   updated_at: string
 }

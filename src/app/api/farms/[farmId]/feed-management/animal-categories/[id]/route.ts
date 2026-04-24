@@ -3,10 +3,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
-import { 
-  updateAnimalCategory, 
+import {
+  updateAnimalCategory,
   deleteAnimalCategory,
-  AnimalCategory 
+  AnimalCategory
 } from '@/lib/database/feedManagementSettings'
 import {
   validateAnimalCategoryData,
@@ -70,21 +70,22 @@ export async function PUT(
       max_age_days: body.max_age_days || null,
       gender: body.gender || null,
       production_status: body.production_status || null,
-      production_statuses: body.production_statuses && Array.isArray(body.production_statuses) && body.production_statuses.length > 0 
-        ? body.production_statuses 
+      production_statuses: body.production_statuses && Array.isArray(body.production_statuses) && body.production_statuses.length > 0
+        ? body.production_statuses
         : null,
       characteristics: characteristicsResult.data || {},
-      is_default: body.is_default || false
+      is_default: body.is_default || false,
+      feed_ration_id: body.characteristics?.selected_feed_ration_id ?? body.feed_ration_id ?? null,
     }
-    
+
     const result = await updateAnimalCategory(categoryId, userRole.farm_id, updateData)
-    
+
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 })
     }
-    
-    return NextResponse.json({ 
-      success: true, 
+
+    return NextResponse.json({
+      success: true,
       data: result.data,
       message: 'Animal category updated successfully'
     })

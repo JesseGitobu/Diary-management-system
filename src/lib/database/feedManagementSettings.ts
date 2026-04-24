@@ -32,6 +32,7 @@ export interface AnimalCategory {
   sort_order: number | null
   production_status?: 'calf' | 'heifer' | 'bull' | 'served' | 'lactating' | 'dry' | 'steaming_dry_cows' | 'open_culling_dry_cows' | null
   production_statuses?: string[] // Support for multiple production statuses
+  feed_ration_id?: string | null  // Direct FK to feed_rations(id)
   created_at: string | null
   updated_at: string | null
   matching_animals_count?: number  // Animals matching category criteria

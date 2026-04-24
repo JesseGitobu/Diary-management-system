@@ -75,41 +75,62 @@ export async function PUT(
     }
 
     const body = await request.json()
-    const { 
-      feedTypeId, 
-      quantityKg, 
-      animalIds = [], 
-      animalCount,
-      feedingTime, 
-      notes,
-      feedingMode,
-      batchId
-    } = body
-
     const recordId = params.id
-    
+
+    const feedingMode: string = body.mode ?? body.feedingMode ?? 'individual'
+    const isMultiFeedMode = feedingMode === 'feed-mix-recipe' || feedingMode === 'ration'
+
+    // For multi-feed modes (recipe/ration), entries drive the feed line items
+    // For individual mode, support both flat fields and entries[0]
+    const firstEntry = body.entries?.[0]
+    const feedTypeId = isMultiFeedMode ? (firstEntry?.feedTypeId ?? null) : (body.feedTypeId ?? firstEntry?.feedTypeId)
+    const quantityKg = isMultiFeedMode ? (firstEntry?.quantityKg ?? null) : (body.quantityKg ?? firstEntry?.quantityKg)
+    const animalIds: string[] = body.animalIds?.length
+      ? body.animalIds
+      : (firstEntry?.animalIds ?? [])
+    const feedingTime  = body.feedingTime
+    const notes        = body.notes ?? null
+    const animalCount  = body.animalCount ?? (isMultiFeedMode ? null : animalIds.length) ?? null
+    const appetiteScore        = body.appetiteScore        ?? null
+    const approximateWasteKg   = body.approximateWasteKg   ?? null
+    const observations         = body.observations         ?? null
+    const feedTimeSlotId       = body.feedTimeSlotId       ?? null
+    const slotName             = body.slotName             ?? null
+    const sessionPercentage    = body.sessionPercentage    ?? null
+    const entries              = body.entries              ?? null
+
     // Validate required fields
-    if (!feedTypeId) {
+    if (!isMultiFeedMode && !feedTypeId) {
       return NextResponse.json({ error: 'Feed type is required' }, { status: 400 })
     }
-    
-    if (!quantityKg || quantityKg <= 0) {
+
+    if (!isMultiFeedMode && (!quantityKg || quantityKg <= 0)) {
       return NextResponse.json({ error: 'Valid quantity is required' }, { status: 400 })
     }
-    
+
+    if (isMultiFeedMode && (!entries || !Array.isArray(entries) || entries.length === 0)) {
+      return NextResponse.json({ error: 'Feed entries are required for recipe/ration mode' }, { status: 400 })
+    }
+
     if (!feedingTime) {
       return NextResponse.json({ error: 'Feeding time is required' }, { status: 400 })
     }
 
     const updateData = {
-      feedTypeId,
-      quantityKg: parseFloat(quantityKg),
+      feedTypeId: feedTypeId ?? undefined,
+      quantityKg: quantityKg != null ? parseFloat(quantityKg) : undefined,
       animalIds: feedingMode === 'individual' ? animalIds : [],
-      animalCount: feedingMode === 'batch' ? parseInt(animalCount) : (animalIds?.length || 1),
+      animalCount,
       feedingTime,
-      notes: notes || null,
-      feedingMode: feedingMode || 'individual',
-      batchId: batchId || null
+      notes,
+      feedingMode,
+      appetiteScore,
+      approximateWasteKg,
+      observations,
+      feedTimeSlotId,
+      slotName,
+      sessionPercentage,
+      entries: entries ?? undefined,
     }
 
     const result = await updateFeedConsumption(userRole.farm_id, recordId, updateData)

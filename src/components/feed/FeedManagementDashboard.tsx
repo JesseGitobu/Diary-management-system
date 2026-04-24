@@ -1,7 +1,7 @@
 // src/components/feed/FeedManagementDashboard.tsx
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -17,6 +17,8 @@ import { FeedTypesTab } from '@/components/feed/FeedTypesTab'
 import { FeedStatsCards } from '@/components/feed/FeedStatsCards'
 import { FeedMixRecipeManager } from '@/components/feed/FeedMixRecipeManager'
 import { NutritionalDataManager } from '@/components/feed/NutritionalDataManager'
+import { FeedRationsTab } from '@/components/feed/FeedRationsTab'
+import { FeedWasteTab } from '@/components/feed/FeedWasteTab'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import {
   Plus,
@@ -29,7 +31,8 @@ import {
   Users,
   Lightbulb,
   Zap,
-  Leaf
+  Leaf,
+  FlaskConical
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -49,7 +52,8 @@ interface FeedManagementDashboardProps {
   feedTypeCategories: any[]
   animalCategories: any[]
   weightConversions: any[]
-  consumptionBatches: any[]
+  storageLocations?: any[]
+  suppliers?: any[]
   feedMixRecipes?: any[]
 }
 
@@ -64,7 +68,8 @@ export function FeedManagementDashboard({
   feedTypeCategories,
   animalCategories,
   weightConversions,
-  consumptionBatches,
+  storageLocations = [],
+  suppliers = [],
   feedMixRecipes: initialFeedMixRecipes = [],
 }: FeedManagementDashboardProps) {
   const [activeTab, setActiveTab] = useState('overview')
@@ -72,29 +77,76 @@ export function FeedManagementDashboard({
   const [showAddInventoryModal, setShowAddInventoryModal] = useState(false)
   const [showConsumptionModal, setShowConsumptionModal] = useState(false)
   const [showFeedingGroupsModal, setShowFeedingGroupsModal] = useState(false)
+  const [showCreateRationModal, setShowCreateRationModal] = useState(false)
+  const [showCreateTMRModal, setShowCreateTMRModal] = useState(false)
   const [feedTypes, setFeedTypes] = useState(initialFeedTypes)
   const [inventory, setInventory] = useState(initialInventory)
   const [consumptionRecords, setConsumptionRecords] = useState(initialConsumptionRecords)
   const [feedMixRecipes, setFeedMixRecipes] = useState(initialFeedMixRecipes)
   const [editingRecord, setEditingRecord] = useState<any>(null)
+  const [scheduledFeedings, setScheduledFeedings] = useState<any[]>([])
+  const [scheduledFeedingsLoaded, setScheduledFeedingsLoaded] = useState(false)
+  // Animals and mix recipes are loaded lazily to avoid blocking initial render
+  const [loadedAnimals, setLoadedAnimals] = useState<any[]>(animals)
+  const [animalsLoaded, setAnimalsLoaded] = useState(animals.length > 0)
+  const [recipesLoaded, setRecipesLoaded] = useState(initialFeedMixRecipes.length > 0)
 
-  useEffect(() => {
-    // Load feed recipes on mount if not provided
-    if (feedMixRecipes.length === 0) {
-      loadFeedMixRecipes()
+  const loadScheduledFeedings = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/farms/${farmId}/scheduled-feedings?status=pending,overdue`)
+      if (!res.ok) return
+      const json = await res.json()
+      setScheduledFeedings(json.data ?? [])
+      setScheduledFeedingsLoaded(true)
+    } catch (err) {
+      console.error('Failed to load scheduled feedings:', err)
     }
   }, [farmId])
 
-  async function loadFeedMixRecipes() {
+  const loadConsumptionRecords = useCallback(async () => {
     try {
-      const response = await fetch(`/api/farms/${farmId}/feed-recipes`)
-      if (!response.ok) throw new Error('Failed to load recipes')
-      const data = await response.json()
-      setFeedMixRecipes(data.recipes || [])
-    } catch (error) {
-      console.error('Error loading recipes:', error)
+      const res = await fetch(`/api/feed/consumption?limit=50`)
+      if (!res.ok) return
+      const json = await res.json()
+      setConsumptionRecords(json.data ?? json.records ?? [])
+    } catch (err) {
+      console.error('Failed to load consumption records:', err)
     }
-  }
+  }, [])
+
+  const handleScheduledFeedingConfirmed = useCallback(async () => {
+    // Reload both scheduled feedings and consumption records
+    await Promise.all([
+      loadScheduledFeedings(),
+      loadConsumptionRecords(),
+    ])
+  }, [loadScheduledFeedings, loadConsumptionRecords])
+
+  const ensureAnimalsLoaded = useCallback(async () => {
+    if (animalsLoaded) return
+    try {
+      const res = await fetch(`/api/farms/${farmId}/animals`)
+      if (!res.ok) return
+      const json = await res.json()
+      setLoadedAnimals(json.animals ?? json.data ?? [])
+      setAnimalsLoaded(true)
+    } catch (err) {
+      console.error('Failed to lazy-load animals:', err)
+    }
+  }, [animalsLoaded, farmId])
+
+  const ensureRecipesLoaded = useCallback(async () => {
+    if (recipesLoaded) return
+    try {
+      const res = await fetch(`/api/farms/${farmId}/feed-recipes`)
+      if (!res.ok) return
+      const json = await res.json()
+      setFeedMixRecipes(json.recipes ?? [])
+      setRecipesLoaded(true)
+    } catch (err) {
+      console.error('Failed to lazy-load recipes:', err)
+    }
+  }, [recipesLoaded, farmId])
 
   useEffect(() => {
   const handleMobileNavAction = (event: Event) => {
@@ -216,28 +268,53 @@ export function FeedManagementDashboard({
     setFeedTypes(prev => prev.filter(ft => ft.id !== feedTypeId))
   }
 
-  const handleInventoryAdded = (newInventory: any) => {
-    setInventory(prev => [...prev, newInventory])
-    window.location.reload()
+  const handleInventoryAdded = async (newInventory: any) => {
+    // Refetch the full inventory list so feed_types data (unit conversions,
+    // thresholds, is_formulate_feed) is included for every item, including
+    // newly formulated feeds that were just inserted via the ledger trigger.
+    try {
+      const res = await fetch('/api/feed/inventory')
+      if (res.ok) {
+        const json = await res.json()
+        setInventory(json.data ?? [])
+      } else {
+        // Fallback: upsert the returned item into existing state
+        setInventory(prev => {
+          const existingIdx = prev.findIndex((i: any) =>
+            i.feed_type_id === newInventory?.feed_type_id
+          )
+          if (existingIdx >= 0) {
+            const updated = [...prev]
+            updated[existingIdx] = { ...prev[existingIdx], ...newInventory }
+            return updated
+          }
+          return newInventory ? [newInventory, ...prev] : prev
+        })
+      }
+    } catch {
+      setInventory(prev =>
+        newInventory ? [newInventory, ...prev] : prev
+      )
+    }
   }
 
-  const handleConsumptionAdded = (newConsumption: any) => {
+  const handleConsumptionAdded = useCallback((newConsumption: any) => {
     if (editingRecord) {
-      // Update existing record
-      setConsumptionRecords(prev => prev.map(record => 
+      setConsumptionRecords(prev => prev.map(record =>
         record.id === editingRecord.id ? newConsumption[0] : record
       ))
       setEditingRecord(null)
     } else {
-      // Add new record
       setConsumptionRecords(prev => [...newConsumption, ...prev])
     }
     setShowConsumptionModal(false)
-    window.location.reload() // Refresh to update stats
-  }
+    window.location.reload()
+  }, [editingRecord])
 
   const handleEditRecord = (record: any) => {
     setEditingRecord(record)
+    ensureAnimalsLoaded()
+    ensureRecipesLoaded()
     setShowConsumptionModal(true)
   }
 
@@ -267,15 +344,17 @@ export function FeedManagementDashboard({
     }
   }
 
-  const handleOpenConsumptionModal = () => {
-    setEditingRecord(null) // Clear any editing state
+  const handleOpenConsumptionModal = useCallback(() => {
+    setEditingRecord(null)
+    ensureAnimalsLoaded()
+    ensureRecipesLoaded()
     setShowConsumptionModal(true)
-  }
+  }, [ensureAnimalsLoaded, ensureRecipesLoaded])
 
-  const handleCloseConsumptionModal = () => {
-    setEditingRecord(null) // Clear editing state when closing
+  const handleCloseConsumptionModal = useCallback(() => {
+    setEditingRecord(null)
     setShowConsumptionModal(false)
-  }
+  }, [])
 
   // Mobile Stats Card Component
   const MobileStatsCard = ({ title, value, subtitle, icon: Icon, className = "" }: any) => (
@@ -329,7 +408,7 @@ export function FeedManagementDashboard({
     },
     {
       title: 'Animals Fed',
-      value: enhancedStats.activeAnimalsFed || animals.length,
+      value: enhancedStats.activeAnimalsFed || loadedAnimals.length,
       icon: Users,
       color: 'bg-purple-500',
       bgColor: 'bg-purple-100',
@@ -347,7 +426,7 @@ export function FeedManagementDashboard({
       trend: enhancedStats.alertCounts.total > 0 ? 'Alert' : 'Good',
       isGood: enhancedStats.alertCounts.total === 0
     }
-  ], [feedStats, inventory, enhancedStats, animals, consumptionRecords])
+  ], [feedStats, inventory, enhancedStats, loadedAnimals, consumptionRecords])
 
   // Quick Actions Menu
   const QuickActionsMenu = () => (
@@ -377,6 +456,10 @@ export function FeedManagementDashboard({
               <Leaf className="mr-2 h-4 w-4" />
               Manage Feeding Groups
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => { setActiveTab('recipes'); ensureRecipesLoaded(); setShowCreateTMRModal(true) }}>
+              <FlaskConical className="mr-2 h-4 w-4" />
+              Create TMR Recipe
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setShowAddTypeModal(true)}>
               <Plus className="mr-2 h-4 w-4" />
               Add Feed Type
@@ -384,6 +467,10 @@ export function FeedManagementDashboard({
             <DropdownMenuItem onClick={() => setShowAddInventoryModal(true)}>
               <Package className="mr-2 h-4 w-4" />
               Add Inventory
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => { setActiveTab('rations'); setShowCreateRationModal(true) }}>
+              <FlaskConical className="mr-2 h-4 w-4" />
+              Create Feed Ration
             </DropdownMenuItem>
           </>
         )}
@@ -492,7 +579,16 @@ export function FeedManagementDashboard({
 
       {/* Horizontal Tabs - Optimized for both Mobile and Desktop */}
       <div className="px-4 lg:px-0 mb-6">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <Tabs
+        value={activeTab}
+        onValueChange={(tab) => {
+          setActiveTab(tab)
+          if (tab === 'recipes') ensureRecipesLoaded()
+          if (tab === 'rations') ensureAnimalsLoaded()
+          if (tab === 'consumption') loadScheduledFeedings()
+        }}
+        className="w-full"
+      >
           {/* Horizontal Tab Layout for both Mobile and Desktop */}
           <TabsList className={`
             ${isMobile
@@ -564,7 +660,29 @@ export function FeedManagementDashboard({
                 }
               `}
             >
-              {isMobile ? 'Recipes' : 'Mix Recipes'}
+              {isMobile ? 'TMR' : 'TMR Recipes'}
+            </TabsTrigger>
+            <TabsTrigger
+              value="rations"
+              className={`
+                ${isMobile
+                  ? 'text-xs px-2 py-2 h-10'
+                  : 'text-sm px-6 py-2 h-10 min-w-[120px]'
+                }
+              `}
+            >
+              {isMobile ? 'Rations' : 'Feed Rations'}
+            </TabsTrigger>
+            <TabsTrigger
+              value="waste"
+              className={`
+                ${isMobile
+                  ? 'text-xs px-2 py-2 h-10'
+                  : 'text-sm px-6 py-2 h-10 min-w-[120px]'
+                }
+              `}
+            >
+              Waste
             </TabsTrigger>
           </TabsList>
 
@@ -590,12 +708,15 @@ export function FeedManagementDashboard({
               weightConversions={weightConversions}
               onInventoryUpdated={setInventory}
               consumptionRecords={consumptionRecords}
+              storageLocations={storageLocations}
             />
           </TabsContent>
 
           <TabsContent value="consumption" className="mt-6">
             <FeedConsumptionTab
+              farmId={farmId}
               consumptionRecords={consumptionRecords}
+              scheduledFeedings={scheduledFeedings}
               feedStats={feedStats}
               isMobile={isMobile}
               canRecordFeeding={canRecordFeeding}
@@ -604,6 +725,7 @@ export function FeedManagementDashboard({
               onRecordFeeding={handleOpenConsumptionModal}
               onEditRecord={handleEditRecord}
               onDeleteRecord={handleDeleteRecord}
+              onScheduledFeedingConfirmed={handleScheduledFeedingConfirmed}
             />
           </TabsContent>
 
@@ -650,28 +772,54 @@ export function FeedManagementDashboard({
             </Card>
           </TabsContent>
 
+          <TabsContent value="rations" className="mt-6">
+            <FeedRationsTab
+              farmId={farmId}
+              feedTypes={feedTypes}
+              inventory={inventory}
+              animals={loadedAnimals}
+              animalCategories={animalCategories}
+              canManageFeed={canManageFeed}
+              isMobile={isMobile}
+              initialOpenCreate={showCreateRationModal}
+              onCreateModalClosed={() => setShowCreateRationModal(false)}
+            />
+          </TabsContent>
+
+          <TabsContent value="waste" className="mt-6">
+            <FeedWasteTab
+              farmId={farmId}
+              feedTypes={feedTypes}
+              canManageFeed={canManageFeed}
+              isMobile={isMobile}
+            />
+          </TabsContent>
+
           <TabsContent value="recipes" className="mt-6">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center space-x-2">
                   <Lightbulb className="w-5 h-5" />
-                  <span>Feed Mix Recipes</span>
+                  <span>TMR (Total Mixed Ration)</span>
                 </CardTitle>
                 <CardDescription>
-                  Create reusable feed mix recipes for different animal conditions. Recipes help ensure 
-                  consistent nutrition and can be applied to feeding sessions.
+                  Define Total Mixed Ration blends linking feed ingredients with their proportions.
+                  Link TMRs to feed rations for consistent, reusable nutrition planning.
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <FeedMixRecipeManager
                   farmId={farmId}
-                  availableFeeds={feedTypes.map(f => ({ id: f.id, name: f.name, category: f.category_id }))}
+                  availableFeeds={feedTypes.map(f => ({ id: f.id, name: f.name, category: f.category_id, cost_per_unit: f.typical_cost_per_kg }))}
+                  inventory={inventory}
                   onRecipeCreated={(recipe) => {
                     setFeedMixRecipes(prev => [...prev, recipe])
                   }}
                   onRecipeDeleted={(recipeId) => {
                     setFeedMixRecipes(prev => prev.filter(r => r.id !== recipeId))
                   }}
+                  initialOpenCreate={showCreateTMRModal}
+                  onCreateModalClosed={() => setShowCreateTMRModal(false)}
                 />
               </CardContent>
             </Card>
@@ -695,9 +843,11 @@ export function FeedManagementDashboard({
         feedTypes={feedTypes}
         feedTypeCategories={feedTypeCategories}
         weightConversions={weightConversions}
+        storageLocations={storageLocations}
+        suppliers={suppliers}
         inventoryStock={inventory.map((item: any) => ({
           feed_type_id: item.feed_type_id,
-          quantity_in_stock: item.quantity_in_stock ?? 0,
+          quantity_in_stock: item.quantity_kg || 0,
         }))}
         isOpen={showAddInventoryModal}
         onClose={() => setShowAddInventoryModal(false)}
@@ -707,13 +857,13 @@ export function FeedManagementDashboard({
       <FeedConsumptionModal
         farmId={farmId}
         feedTypes={feedTypes}
-        animals={animals}
+        animals={loadedAnimals}
         inventory={inventory}
         isOpen={showConsumptionModal}
         onClose={handleCloseConsumptionModal}
         onSuccess={handleConsumptionAdded}
         isMobile={isMobile}
-        consumptionBatches={consumptionBatches}
+
         feedTypeCategories={feedTypeCategories}
         animalCategories={animalCategories}
         feedMixRecipes={feedMixRecipes}
@@ -738,7 +888,7 @@ export function FeedManagementDashboard({
             <div className="p-4 lg:p-6">
               <FeedingGroupsManager
                 farmId={farmId}
-                animals={animals}
+                animals={loadedAnimals}
                 isMobile={isMobile}
                 onClose={() => setShowFeedingGroupsModal(false)}
               />

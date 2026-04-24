@@ -1,471 +1,626 @@
-// lib/database/scheduledFeedings.ts
+// src/lib/database/scheduledFeedings.ts
 import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { recordFeedTransactionRPC } from './feedInventoryTransactions'
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+export type FeedingMode = 'individual' | 'ration' | 'feed-mix-template'
+export type FeedingStatus = 'pending' | 'completed' | 'cancelled' | 'overdue' | 'skipped' | 'partial'
+export type TargetMode = 'all' | 'by_category' | 'specific'
+
+export interface ScheduledFeedingEntry {
+  id: string
+  scheduled_feeding_id: string
+  feed_type_id: string
+  quantity_kg_per_animal: number
+  cost_per_kg: number | null
+  sort_order: number
+  created_at: string
+  feed_types?: { id: string; name: string; unit_of_measure: string | null } | null
+}
 
 export interface ScheduledFeeding {
-    id: string
-    farm_id: string
-    animal_id?: string
-    feed_type_id: string
-    quantity_kg: number
-    scheduled_time: string
-    feeding_mode: 'individual' | 'batch'
-    animal_count: number
-    consumption_batch_id?: string
-    notes?: string
-    created_by: string
-    status: 'pending' | 'completed' | 'cancelled' | 'overdue'
-    completed_at?: string
-    completed_by?: string
-    late_by_minutes?: number
-    late_reason?: string
-    created_at: string
-    updated_at: string
+  id: string
+  farm_id: string
+  feeding_mode: FeedingMode
+  schedule_name: string | null
+  schedule_date_from: string   // YYYY-MM-DD
+  schedule_date_to: string     // YYYY-MM-DD
+  feeding_time: string         // HH:MM:SS
+  time_slot_id: string | null
+  slot_name: string | null
+  ration_id: string | null
+  recipe_id: string | null
+  target_mode: TargetMode
+  animal_id: string | null
+  animal_count: number
+  avg_animal_weight_kg: number | null
+  status: FeedingStatus
+  notes: string | null
+  late_by_minutes: number | null
+  late_reason: string | null
+  created_by: string
+  completed_by: string | null
+  completed_at: string | null
+  created_at: string
+  updated_at: string
+  // joined
+  scheduled_feeding_entries?: ScheduledFeedingEntry[]
+  scheduled_feeding_categories?: {
+    category_id: string
+    animal_categories?: { id: string; name: string } | null
+  }[]
+  scheduled_feeding_animals?: {
+    animal_id: string
+    animals?: { id: string; tag_number: string; name: string | null } | null
+  }[]
+  feed_rations?: { id: string; name: string } | null
+  feed_mix_recipes?: { id: string; name: string } | null
+  feed_time_slots?: { id: string; slot_name: string; scheduled_time: string } | null
 }
 
-// Create a scheduled feeding
-export async function createScheduledFeeding(
-    data: any,
-    userId: string
-): Promise<{ success: boolean; data?: any; error?: string }> {
-    const supabase = await createServerSupabaseClient()
-
-    try {
-        // FIXED: Explicitly type the array
-        const scheduledFeedings: any[] = []
-
-        for (const entry of data.entries) {
-            // Create the scheduled feeding record
-            const scheduledFeedingData = {
-                farm_id: data.farmId,
-                feed_type_id: entry.feedTypeId,
-                quantity_kg: parseFloat(entry.quantityKg.toString()),
-                scheduled_time: new Date(data.feedingTime).toISOString(),
-                feeding_mode: data.mode,
-                animal_count: data.mode === 'batch' ? entry.animalCount : (entry.animalIds?.length || 1),
-                consumption_batch_id: entry.batchId || data.batchId || null,
-                notes: entry.notes || data.globalNotes || null,
-                created_by: userId,
-                status: 'pending',
-                animal_id: entry.animalIds?.[0] || null
-            }
-
-            // FIXED: Cast to any
-            const { data: scheduledFeeding, error: scheduledError } = await ((supabase as any)
-                .from('scheduled_feedings'))
-                .insert(scheduledFeedingData)
-                .select()
-                .single()
-
-            if (scheduledError) {
-                console.error('Scheduled feeding insert error:', scheduledError)
-                return {
-                    success: false,
-                    error: `Failed to create scheduled feeding: ${scheduledError.message}`
-                }
-            }
-
-            // Link animals to the scheduled feeding
-            if (entry.animalIds && entry.animalIds.length > 0) {
-                const animalRecords = entry.animalIds.map((animalId: string) => ({
-                    scheduled_feeding_id: scheduledFeeding.id,
-                    animal_id: animalId
-                }))
-
-                // FIXED: Cast to any
-                const { error: animalError } = await ((supabase as any)
-                    .from('scheduled_feeding_animals'))
-                    .insert(animalRecords)
-
-                if (animalError) {
-                    console.error('Scheduled feeding animals insert error:', animalError)
-                    // Continue but log warning
-                }
-            }
-
-            scheduledFeedings.push(scheduledFeeding)
-        }
-
-        return { success: true, data: scheduledFeedings }
-    } catch (error) {
-        console.error('Error creating scheduled feeding:', error)
-        return {
-            success: false,
-            error: error instanceof Error ? error.message : 'Failed to create scheduled feeding'
-        }
-    }
+export interface CreateScheduledFeedingData {
+  scheduleName?: string | null
+  scheduledDateFrom: string  // YYYY-MM-DD
+  scheduledDateTo: string    // YYYY-MM-DD
+  scheduledTime: string      // HH:MM
+  feedTimeSlotId?: string | null
+  slotName?: string | null
+  feedingMode: FeedingMode
+  rationId?: string | null
+  recipeId?: string | null
+  entries: {
+    feedTypeId: string
+    quantityKgPerAnimal: number
+    costPerKg?: number | null
+    sortOrder?: number
+  }[]
+  targetMode: TargetMode
+  targetCategoryIds?: string[]
+  targetAnimalIds?: string[]
+  animalCount?: number
+  avgAnimalWeightKg?: number | null
+  notes?: string | null
 }
 
-// Get scheduled feedings for an animal
-export async function getAnimalScheduledFeedings(
-    farmId: string,
-    animalId: string,
-    status?: string
+export interface UpdateScheduledFeedingData {
+  scheduleName?: string | null
+  scheduledDateFrom?: string
+  scheduledDateTo?: string
+  scheduledTime?: string
+  feedTimeSlotId?: string | null
+  slotName?: string | null
+  status?: FeedingStatus
+  notes?: string | null
+  lateByMinutes?: number | null
+  lateReason?: string | null
+  completedAt?: string | null
+  entries?: CreateScheduledFeedingData['entries']
+  targetCategoryIds?: string[]
+  targetAnimalIds?: string[]
+}
+
+export interface ListScheduledFeedingsFilters {
+  status?: string          // comma-separated values allowed
+  dateFrom?: string
+  dateTo?: string
+  feedingMode?: FeedingMode
+}
+
+// ─── Shared SELECT fragment ───────────────────────────────────────────────────
+
+const FULL_SELECT = `
+  *,
+  scheduled_feeding_entries (
+    id, scheduled_feeding_id, feed_type_id,
+    quantity_kg_per_animal, cost_per_kg, sort_order, created_at,
+    feed_types ( id, name, unit_of_measure )
+  ),
+  scheduled_feeding_categories (
+    category_id,
+    animal_categories ( id, name )
+  ),
+  scheduled_feeding_animals (
+    animal_id,
+    animals ( id, tag_number, name )
+  ),
+  feed_rations ( id, name ),
+  feed_mix_recipes ( id, name ),
+  feed_time_slots ( id, slot_name, scheduled_time )
+`
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function normaliseTime(hhmm: string): string {
+  return hhmm.length === 5 ? `${hhmm}:00` : hhmm
+}
+
+// ─── READ ─────────────────────────────────────────────────────────────────────
+
+export async function getScheduledFeedings(
+  farmId: string,
+  filters: ListScheduledFeedingsFilters = {}
 ): Promise<ScheduledFeeding[]> {
-    const supabase = await createServerSupabaseClient()
+  const supabase = await createServerSupabaseClient()
 
-    try {
-        let query = (supabase as any)
-            .from('scheduled_feedings')
-            .select(`
-        *,
-        feed_types (
-          name,
-          category_id
-        ),
-        scheduled_feeding_animals!inner (
-          animal_id
-        )
-      `)
-            .eq('farm_id', farmId)
-            .eq('scheduled_feeding_animals.animal_id', animalId)
-            .order('scheduled_time', { ascending: true })
+  let query = supabase
+    .from('scheduled_feedings')
+    .select(FULL_SELECT)
+    .eq('farm_id', farmId)
+    .order('schedule_date_from', { ascending: true })
+    .order('feeding_time', { ascending: true })
 
-        if (status) {
-            query = query.eq('status', status)
-        }
+  if (filters.status) {
+    const statuses = filters.status.split(',').map(s => s.trim())
+    query = statuses.length === 1
+      ? query.eq('status', statuses[0] as FeedingStatus)
+      : (query as any).in('status', statuses)
+  }
+  if (filters.feedingMode) query = query.eq('feeding_mode', filters.feedingMode)
+  if (filters.dateFrom)    query = query.gte('schedule_date_from', filters.dateFrom)
+  if (filters.dateTo)      query = query.lte('schedule_date_to', filters.dateTo)
 
-        const { data, error } = await query
-
-        if (error) {
-            console.error('Error fetching scheduled feedings:', error)
-            return []
-        }
-
-        // FIXED: Cast to any to ScheduledFeeding[]
-        return (data as any) as ScheduledFeeding[] || []
-    } catch (error) {
-        console.error('Error in getAnimalScheduledFeedings:', error)
-        return []
-    }
+  const { data, error } = await query
+  if (error) throw new Error(`Failed to fetch scheduled feedings: ${error.message}`)
+  return (data ?? []) as ScheduledFeeding[]
 }
 
-// Complete a scheduled feeding (convert to actual feeding record)
+export async function getScheduledFeedingById(
+  farmId: string,
+  id: string
+): Promise<ScheduledFeeding | null> {
+  const supabase = await createServerSupabaseClient()
+  const { data, error } = await supabase
+    .from('scheduled_feedings')
+    .select(FULL_SELECT)
+    .eq('farm_id', farmId)
+    .eq('id', id)
+    .single()
+
+  if (error) {
+    if (error.code === 'PGRST116') return null
+    throw new Error(`Failed to fetch scheduled feeding: ${error.message}`)
+  }
+  return data as ScheduledFeeding | null
+}
+
+export async function getAnimalScheduledFeedings(
+  farmId: string,
+  animalId: string,
+  status?: string
+): Promise<ScheduledFeeding[]> {
+  const supabase = await createServerSupabaseClient()
+
+  let query = supabase
+    .from('scheduled_feedings')
+    .select(`${FULL_SELECT}, scheduled_feeding_animals!inner ( animal_id )`)
+    .eq('farm_id', farmId)
+    .eq('scheduled_feeding_animals.animal_id', animalId)
+    .order('schedule_date_from', { ascending: true })
+    .order('feeding_time', { ascending: true })
+
+  if (status) {
+    const statuses = status.split(',').map(s => s.trim())
+    query = statuses.length === 1
+      ? query.eq('status', statuses[0] as FeedingStatus)
+      : (query as any).in('status', statuses)
+  }
+
+  const { data, error } = await query
+  if (error) {
+    console.error('Error fetching animal scheduled feedings:', error)
+    return []
+  }
+  return (data ?? []) as ScheduledFeeding[]
+}
+
+// ─── CREATE ───────────────────────────────────────────────────────────────────
+
+export async function createScheduledFeeding(
+  farmId: string,
+  data: CreateScheduledFeedingData,
+  userId: string
+): Promise<{ success: boolean; data?: ScheduledFeeding; error?: string }> {
+  const supabase = await createServerSupabaseClient()
+
+  if (!data.entries || data.entries.length === 0) {
+    return { success: false, error: 'At least one feed entry is required' }
+  }
+
+  const { data: header, error: headerError } = await supabase
+    .from('scheduled_feedings')
+    .insert({
+      farm_id:              farmId,
+      feeding_mode:         data.feedingMode,
+      schedule_name:        data.scheduleName ?? null,
+      schedule_date_from:   data.scheduledDateFrom,
+      schedule_date_to:     data.scheduledDateTo,
+      feeding_time:         normaliseTime(data.scheduledTime),
+      // scheduled_time kept for backward compat until NOT NULL is dropped in prod
+      scheduled_time:       `${data.scheduledDateFrom}T${normaliseTime(data.scheduledTime)}Z`,
+      time_slot_id:         data.feedTimeSlotId ?? null,
+      slot_name:            data.slotName ?? null,
+      ration_id:            data.rationId ?? null,
+      recipe_id:            data.recipeId ?? null,
+      target_mode:          data.targetMode,
+      animal_count:         data.animalCount ?? 1,
+      avg_animal_weight_kg: data.avgAnimalWeightKg ?? null,
+      status:               'pending',
+      notes:                data.notes ?? null,
+      created_by:           userId,
+    })
+    .select('id')
+    .single()
+
+  if (headerError) return { success: false, error: headerError.message }
+
+  // Insert per-feed entries
+  const entryRows = data.entries.map((e, idx) => ({
+    scheduled_feeding_id:   header.id,
+    feed_type_id:           e.feedTypeId,
+    quantity_kg_per_animal: e.quantityKgPerAnimal,
+    cost_per_kg:            e.costPerKg ?? null,
+    sort_order:             e.sortOrder ?? idx,
+  }))
+
+  const { error: entryError } = await supabase
+    .from('scheduled_feeding_entries')
+    .insert(entryRows)
+
+  if (entryError) {
+    await supabase.from('scheduled_feedings').delete().eq('id', header.id)
+    return { success: false, error: `Failed to save feed entries: ${entryError.message}` }
+  }
+
+  // Insert category targets
+  if (data.targetMode === 'by_category' && data.targetCategoryIds?.length) {
+    const rows = data.targetCategoryIds.map(cid => ({
+      scheduled_feeding_id: header.id,
+      category_id:          cid,
+    }))
+    const { error: catError } = await supabase
+      .from('scheduled_feeding_categories')
+      .insert(rows)
+    if (catError) {
+      await supabase.from('scheduled_feedings').delete().eq('id', header.id)
+      return { success: false, error: `Failed to save category targets: ${catError.message}` }
+    }
+  }
+
+  // Insert specific animal targets
+  if (data.targetMode === 'specific' && data.targetAnimalIds?.length) {
+    const rows = data.targetAnimalIds.map(aid => ({
+      scheduled_feeding_id: header.id,
+      animal_id:            aid,
+    }))
+    const { error: animalError } = await supabase
+      .from('scheduled_feeding_animals')
+      .insert(rows)
+    if (animalError) {
+      await supabase.from('scheduled_feedings').delete().eq('id', header.id)
+      return { success: false, error: `Failed to save animal targets: ${animalError.message}` }
+    }
+  }
+
+  const created = await getScheduledFeedingById(farmId, header.id)
+  return { success: true, data: created ?? undefined }
+}
+
+// ─── UPDATE ───────────────────────────────────────────────────────────────────
+
+export async function updateScheduledFeeding(
+  farmId: string,
+  id: string,
+  data: UpdateScheduledFeedingData,
+  userId: string
+): Promise<{ success: boolean; data?: ScheduledFeeding; error?: string }> {
+  const supabase = await createServerSupabaseClient()
+
+  const patch: Record<string, any> = {}
+  if (data.scheduleName !== undefined)    patch.schedule_name      = data.scheduleName
+  if (data.scheduledDateFrom !== undefined) patch.schedule_date_from = data.scheduledDateFrom
+  if (data.scheduledDateTo !== undefined)   patch.schedule_date_to   = data.scheduledDateTo
+  if (data.scheduledTime !== undefined)     patch.feeding_time       = normaliseTime(data.scheduledTime)
+  if (data.feedTimeSlotId !== undefined)    patch.time_slot_id       = data.feedTimeSlotId
+  if (data.slotName !== undefined)          patch.slot_name          = data.slotName
+  if (data.notes !== undefined)             patch.notes              = data.notes
+  if (data.lateByMinutes !== undefined)     patch.late_by_minutes    = data.lateByMinutes
+  if (data.lateReason !== undefined)        patch.late_reason        = data.lateReason
+  if (data.completedAt !== undefined)       patch.completed_at       = data.completedAt
+
+  if (data.status !== undefined) {
+    patch.status = data.status
+    if (data.status === 'completed') {
+      patch.completed_at = patch.completed_at ?? new Date().toISOString()
+      patch.completed_by = userId
+    }
+  }
+
+  if (Object.keys(patch).length > 0) {
+    const { error } = await supabase
+      .from('scheduled_feedings')
+      .update(patch)
+      .eq('id', id)
+      .eq('farm_id', farmId)
+    if (error) return { success: false, error: error.message }
+  }
+
+  // Replace entries
+  if (data.entries !== undefined) {
+    if (data.entries.length === 0) {
+      return { success: false, error: 'At least one feed entry is required' }
+    }
+    await supabase.from('scheduled_feeding_entries').delete().eq('scheduled_feeding_id', id)
+    const rows = data.entries.map((e, idx) => ({
+      scheduled_feeding_id:   id,
+      feed_type_id:           e.feedTypeId,
+      quantity_kg_per_animal: e.quantityKgPerAnimal,
+      cost_per_kg:            e.costPerKg ?? null,
+      sort_order:             e.sortOrder ?? idx,
+    }))
+    const { error } = await supabase.from('scheduled_feeding_entries').insert(rows)
+    if (error) return { success: false, error: error.message }
+  }
+
+  // Replace category targets
+  if (data.targetCategoryIds !== undefined) {
+    await supabase.from('scheduled_feeding_categories').delete().eq('scheduled_feeding_id', id)
+    if (data.targetCategoryIds.length > 0) {
+      const rows = data.targetCategoryIds.map(cid => ({ scheduled_feeding_id: id, category_id: cid }))
+      const { error } = await supabase.from('scheduled_feeding_categories').insert(rows)
+      if (error) return { success: false, error: error.message }
+    }
+  }
+
+  // Replace animal targets
+  if (data.targetAnimalIds !== undefined) {
+    await supabase.from('scheduled_feeding_animals').delete().eq('scheduled_feeding_id', id)
+    if (data.targetAnimalIds.length > 0) {
+      const rows = data.targetAnimalIds.map(aid => ({ scheduled_feeding_id: id, animal_id: aid }))
+      const { error } = await supabase.from('scheduled_feeding_animals').insert(rows)
+      if (error) return { success: false, error: error.message }
+    }
+  }
+
+  const updated = await getScheduledFeedingById(farmId, id)
+  return { success: true, data: updated ?? undefined }
+}
+
+// ─── DELETE ───────────────────────────────────────────────────────────────────
+
+export async function deleteScheduledFeeding(
+  farmId: string,
+  id: string
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createServerSupabaseClient()
+
+  const { data: sf, error: fetchError } = await supabase
+    .from('scheduled_feedings')
+    .select('id, status')
+    .eq('id', id)
+    .eq('farm_id', farmId)
+    .single()
+
+  if (fetchError || !sf) {
+    return { success: false, error: 'Scheduled feeding not found or access denied' }
+  }
+  if ((sf as any).status === 'completed') {
+    return { success: false, error: 'Cannot delete a completed scheduled feeding' }
+  }
+
+  // Child rows cascade-delete via FK; explicit delete guards against missing cascade.
+  await supabase.from('scheduled_feeding_entries').delete().eq('scheduled_feeding_id', id)
+  await supabase.from('scheduled_feeding_animals').delete().eq('scheduled_feeding_id', id)
+  await supabase.from('scheduled_feeding_categories').delete().eq('scheduled_feeding_id', id)
+
+  const { error } = await supabase
+    .from('scheduled_feedings')
+    .delete()
+    .eq('id', id)
+    .eq('farm_id', farmId)
+
+  if (error) return { success: false, error: error.message }
+  return { success: true }
+}
+
+// ─── COMPLETE (convert to actual consumption record) ─────────────────────────
+// Schema: 1 session header in feed_consumption_records + N rows in feed_consumption_feeds
+
 export async function completeScheduledFeeding(
-  scheduledFeedingId: string,
+  farmId: string,
+  id: string,
   userId: string,
   actualFeedingTime?: string,
   lateReason?: string
 ): Promise<{ success: boolean; data?: any; error?: string }> {
   const supabase = await createServerSupabaseClient()
 
-  try {
-    // Get the scheduled feeding details
-    const { data: scheduledFeeding, error: fetchError } = await (supabase as any)
-      .from('scheduled_feedings')
-      .select(`
-        *,
-        scheduled_feeding_animals (
-          animal_id
-        )
-      `)
-      .eq('id', scheduledFeedingId)
-      .single()
+  const sf = await getScheduledFeedingById(farmId, id)
+  if (!sf) return { success: false, error: 'Scheduled feeding not found' }
+  if (sf.status !== 'pending' && sf.status !== 'overdue') {
+    return { success: false, error: 'Scheduled feeding is not pending or overdue' }
+  }
 
-    // FIXED: Cast to any
-    const sf = scheduledFeeding as any
+  const now = new Date()
+  const actualTime = actualFeedingTime ? new Date(actualFeedingTime) : now
+  if (actualTime > now) {
+    return { success: false, error: 'Actual feeding time cannot be in the future' }
+  }
 
-    if (fetchError || !sf) {
-      return { success: false, error: 'Scheduled feeding not found' }
+  const scheduledRef = new Date(`${sf.schedule_date_from}T${sf.feeding_time}`)
+  const lateByMinutes = Math.max(0, Math.floor((actualTime.getTime() - scheduledRef.getTime()) / 60_000))
+  const wasLate = lateByMinutes > 0
+  if (wasLate && !lateReason?.trim()) {
+    return { success: false, error: 'A late reason is required when feeding after scheduled time' }
+  }
+
+  const completionNotes = [
+    sf.notes,
+    wasLate
+      ? `Fed ${lateByMinutes} min late${lateReason ? ` — ${lateReason}` : ''}`
+      : 'Completed on time',
+  ].filter(Boolean).join('\n')
+
+  const consumptionDate = actualTime.toISOString().split('T')[0]
+  const entries: ScheduledFeedingEntry[] = sf.scheduled_feeding_entries ?? []
+
+  // Normalize mode: scheduled feedings store 'feed-mix-template'; consumption records use 'feed-mix-recipe'
+  const feedingMode: 'individual' | 'ration' | 'feed-mix-recipe' =
+    sf.feeding_mode === 'feed-mix-template' ? 'feed-mix-recipe' : sf.feeding_mode as 'individual' | 'ration'
+
+  const totalQtyKg = parseFloat(
+    entries.reduce((s, e) => s + e.quantity_kg_per_animal * sf.animal_count, 0).toFixed(3)
+  )
+
+  // ── 1. Create ONE session header ───────────────────────────────────────────
+  const { data: sessionRecord, error: sessionError } = await (supabase as any)
+    .from('feed_consumption_records')
+    .insert({
+      farm_id:           sf.farm_id,
+      consumption_date:  consumptionDate,
+      feeding_time:      actualTime.toISOString(),
+      feeding_mode:      feedingMode,
+      animal_count:      sf.animal_count,
+      ration_id:         sf.ration_id ?? null,
+      recipe_id:         sf.recipe_id ?? null,
+      notes:             completionNotes || null,
+      recorded_by:       'System (from schedule)',
+      // Legacy scalar columns kept for backward compat
+      feed_type_id:      entries[0]?.feed_type_id ?? null,
+      quantity_consumed: totalQtyKg,
+    })
+    .select()
+    .single()
+
+  if (sessionError) {
+    return { success: false, error: `Failed to create consumption record: ${sessionError.message}` }
+  }
+
+  // ── 2. Insert feed line items into feed_consumption_feeds ──────────────────
+  const feedRows = entries.map(e => ({
+    consumption_id: sessionRecord.id,
+    feed_type_id:   e.feed_type_id,
+    quantity_kg:    parseFloat((e.quantity_kg_per_animal * sf.animal_count).toFixed(3)),
+  }))
+
+  if (feedRows.length > 0) {
+    const { error: feedError } = await (supabase as any)
+      .from('feed_consumption_feeds')
+      .insert(feedRows)
+    if (feedError) {
+      return { success: false, error: `Failed to save feed details: ${feedError.message}` }
     }
+  }
 
-    if (sf.status !== 'pending' && sf.status !== 'overdue') {
-      return { success: false, error: 'Scheduled feeding is not pending or overdue' }
-    }
+  // ── 3. Link animals ────────────────────────────────────────────────────────
+  const animalIds = sf.scheduled_feeding_animals?.map(a => a.animal_id) ?? []
+  if (animalIds.length > 0) {
+    const qtyPerAnimal = parseFloat((totalQtyKg / animalIds.length).toFixed(4))
+    await (supabase as any)
+      .from('feed_consumption_animals')
+      .insert(animalIds.map(aid => ({
+        consumption_id: sessionRecord.id,
+        animal_id:      aid,
+        quantity_kg:    qtyPerAnimal,
+      })))
+  }
 
-    const now = new Date()
-    const scheduledTime = new Date(sf.scheduled_time)
-    
-    // Use provided actual feeding time or current time if not specified
-    const actualCompletionTime = actualFeedingTime ? new Date(actualFeedingTime) : now
-    
-    // Validate actual feeding time is not in the future
-    if (actualCompletionTime > now) {
-      return { success: false, error: 'Actual feeding time cannot be in the future' }
-    }
+  // ── 4. Deduct inventory via RPC (same path as direct consumption) ──────────
+  for (const feedRow of feedRows.filter(r => r.quantity_kg > 0)) {
+    await recordFeedTransactionRPC({
+      farmId:          sf.farm_id,
+      feedTypeId:      feedRow.feed_type_id,
+      transactionType: 'feeding',
+      quantityKg:      -feedRow.quantity_kg,
+      notes:           completionNotes || 'Scheduled feeding confirmed',
+      transactionDate: consumptionDate,
+      createdBy:       userId,
+    })
+  }
 
-    // Calculate lateness based on actual feeding time vs scheduled time
-    const lateByMinutes = Math.max(0, Math.floor((actualCompletionTime.getTime() - scheduledTime.getTime()) / (1000 * 60)))
-    const wasActuallyLate = lateByMinutes > 0
+  // ── 5. Mark scheduled feeding completed ───────────────────────────────────
+  await supabase
+    .from('scheduled_feedings')
+    .update({
+      status:          'completed',
+      completed_at:    now.toISOString(),
+      completed_by:    userId,
+      late_by_minutes: wasLate ? lateByMinutes : null,
+      late_reason:     wasLate ? lateReason ?? null : null,
+    })
+    .eq('id', id)
 
-    // If feeding was actually late but no reason provided, require reason
-    if (wasActuallyLate && !lateReason?.trim()) {
-      return { success: false, error: 'Late reason is required for feedings completed after scheduled time' }
-    }
+  // ── 6. Fetch the full record with all related data ────────────────────────
+  const { data: fullRecord, error: fetchError } = await (supabase as any)
+    .from('feed_consumption_records')
+    .select(`
+      *,
+      feed_consumption_feeds (
+        id,
+        feed_type_id,
+        quantity_kg,
+        percentage_of_mix,
+        cost_per_kg,
+        notes,
+        feed_types ( id, name, category_id )
+      ),
+      feed_consumption_animals (
+        id,
+        animal_id,
+        quantity_kg,
+        animals ( id, tag_number, name )
+      )
+    `)
+    .eq('id', sessionRecord.id)
+    .single()
 
-    // Prepare notes with timing information
-    let completionNotes = sf.notes || ''
-    
-    if (wasActuallyLate) {
-      const lateInfo = `Actually fed ${lateByMinutes} minutes late`
-      const reasonInfo = lateReason ? ` - Reason: ${lateReason}` : ''
-      completionNotes += completionNotes ? `\n${lateInfo}${reasonInfo}` : `${lateInfo}${reasonInfo}`
-    } else {
-      // Check if this is a late recording of an on-time feeding
-      const recordingDelay = Math.floor((now.getTime() - actualCompletionTime.getTime()) / (1000 * 60))
-      if (recordingDelay > 30) {
-        completionNotes += completionNotes 
-          ? `\nFed on time, recorded ${recordingDelay} minutes later` 
-          : `Fed on time, recorded ${recordingDelay} minutes later`
-      } else {
-        completionNotes += completionNotes ? '\nCompleted on time' : 'Completed on time'
-      }
-    }
-
-    // Create the actual feeding record using the actual feeding time
-    const feedingData = {
-      farm_id: sf.farm_id,
-      feed_type_id: sf.feed_type_id,
-      quantity_kg: sf.quantity_kg,
-      feeding_time: actualCompletionTime.toISOString(), // Use actual feeding time
-      feeding_mode: sf.feeding_mode,
-      animal_count: sf.animal_count,
-      consumption_batch_id: sf.consumption_batch_id,
-      notes: completionNotes,
-      recorded_by: actualFeedingTime 
-        ? 'System (from schedule - actual time specified)' 
-        : 'System (from schedule)',
-      created_by: userId
-    }
-
-    // FIXED: Cast to any
-    const { data: feedingRecord, error: feedingError } = await ((supabase as any)
-      .from('feed_consumption_records'))
-      .insert(feedingData)
-      .select()
-      .single()
-
-    if (feedingError) {
-      console.error('Error creating feeding record:', feedingError)
-      return { success: false, error: `Failed to create feeding record: ${feedingError.message}` }
-    }
-
-    // Link animals to the feeding record
-    if (sf.scheduled_feeding_animals && sf.scheduled_feeding_animals.length > 0) {
-      const animalRecords = sf.scheduled_feeding_animals.map((sa: any) => ({
-        consumption_id: feedingRecord.id,
-        animal_id: sa.animal_id
-      }))
-
-      // FIXED: Cast to any
-      const { error: animalLinkError } = await ((supabase as any)
-        .from('feed_consumption_animals'))
-        .insert(animalRecords)
-
-      if (animalLinkError) {
-        console.warn('Warning: Could not link animals to consumption record:', animalLinkError)
-        // Continue execution - this is not critical
-      }
-    }
-
-    // Update the scheduled feeding status with enhanced tracking
-    // FIXED: Cast to any
-    const { error: updateError } = await ((supabase as any)
-      .from('scheduled_feedings'))
-      .update({
-        status: 'completed',
-        completed_at: now.toISOString(), // When it was recorded as complete
-        completed_by: userId,
-        late_by_minutes: wasActuallyLate ? lateByMinutes : null,
-        late_reason: wasActuallyLate && lateReason ? lateReason : null,
-        updated_at: now.toISOString(),
-        // Add new fields to track the difference between actual and recorded time
-        // actual_feeding_time: actualCompletionTime.toISOString(), // Schema might not have this yet
-        // recording_delay_minutes: Math.floor((now.getTime() - actualCompletionTime.getTime()) / (1000 * 60))
-      })
-      .eq('id', scheduledFeedingId)
-
-    if (updateError) {
-      console.error('Error updating scheduled feeding:', updateError)
-      // This is not critical, continue
-    }
-
-    // Update inventory
-    try {
-      await updateFeedInventory(sf.farm_id, sf.feed_type_id, -sf.quantity_kg)
-    } catch (inventoryError) {
-      console.warn('Warning: Could not update inventory:', inventoryError)
-      // Continue - inventory update failure shouldn't fail the whole operation
-    }
-
-    return {
-      success: true,
-      data: {
-        feedingRecord,
-        lateByMinutes: wasActuallyLate ? lateByMinutes : 0,
-        wasLate: wasActuallyLate,
-        wasRecordedLate: now.getTime() - actualCompletionTime.getTime() > 30 * 60 * 1000, // More than 30 min delay
-        lateReason: wasActuallyLate ? lateReason : null,
-        actualFeedingTime: actualCompletionTime.toISOString(),
-        recordedAt: now.toISOString()
-      }
-    }
-  } catch (error) {
-    console.error('Error completing scheduled feeding:', error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to complete scheduled feeding'
-    }
+  return {
+    success: true,
+    data: {
+      consumptionRecord: fullRecord ?? sessionRecord,
+      lateByMinutes:     wasLate ? lateByMinutes : 0,
+      wasLate,
+      actualFeedingTime: actualTime.toISOString(),
+    },
   }
 }
 
-// Cancel a scheduled feeding
+// ─── CANCEL ───────────────────────────────────────────────────────────────────
+
 export async function cancelScheduledFeeding(
-    scheduledFeedingId: string,
-    userId: string,
-    reason?: string
-): Promise<{ success: boolean; error?: string }> {
-    const supabase = await createServerSupabaseClient()
-
-    try {
-        // FIXED: Cast to any
-        const { error } = await ((supabase as any)
-            .from('scheduled_feedings'))
-            .update({
-                status: 'cancelled',
-                notes: reason ? `Cancelled: ${reason}` : 'Cancelled',
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', scheduledFeedingId)
-
-        if (error) {
-            return { success: false, error: error.message }
-        }
-
-        return { success: true }
-    } catch (error) {
-        console.error('Error cancelling scheduled feeding:', error)
-        return {
-            success: false,
-            error: error instanceof Error ? error.message : 'Failed to cancel scheduled feeding'
-        }
-    }
-}
-
-// Update overdue scheduled feedings
-export async function updateOverdueScheduledFeedings(farmId: string): Promise<void> {
-    const supabase = await createServerSupabaseClient()
-
-    try {
-        const now = new Date()
-
-        // Mark feedings as overdue if they're 30 minutes past scheduled time and still pending
-        // FIXED: Cast to any
-        await ((supabase as any)
-            .from('scheduled_feedings'))
-            .update({
-                status: 'overdue',
-                updated_at: now.toISOString()
-            })
-            .eq('farm_id', farmId)
-            .eq('status', 'pending')
-            .lt('scheduled_time', new Date(now.getTime() - 30 * 60 * 1000).toISOString())
-
-    } catch (error) {
-        console.error('Error updating overdue scheduled feedings:', error)
-    }
-}
-
-// Helper function to update inventory (simplified version)
-async function updateFeedInventory(farmId: string, feedTypeId: string, quantityChange: number): Promise<void> {
-    const supabase = await createServerSupabaseClient()
-
-    try {
-        if (quantityChange >= 0) return // Only handle deductions
-
-        const { data: inventoryItems } = await supabase
-            .from('feed_inventory')
-            .select('id, quantity_kg')
-            .eq('farm_id', farmId)
-            .eq('feed_type_id', feedTypeId)
-            .gt('quantity_kg', 0)
-            .order('expiry_date', { ascending: true })
-
-        // FIXED: Cast to any[]
-        const items = (inventoryItems as any[]) || []
-
-        if (items.length === 0) return
-
-        let remainingToDeduct = Math.abs(quantityChange)
-
-        for (const item of items) {
-            if (remainingToDeduct <= 0) break
-
-            const deductFromThisItem = Math.min(remainingToDeduct, item.quantity_kg)
-            const newQuantity = item.quantity_kg - deductFromThisItem
-
-            // FIXED: Cast to any
-            await ((supabase as any)
-                .from('feed_inventory'))
-                .update({ quantity_kg: newQuantity })
-                .eq('id', item.id)
-
-            remainingToDeduct -= deductFromThisItem
-        }
-    } catch (error) {
-        console.error('Error updating feed inventory:', error)
-    }
-}
-
-export async function deleteScheduledFeeding(
-  scheduledFeedingId: string,
   farmId: string,
-  userId: string,
+  id: string,
   reason?: string
 ): Promise<{ success: boolean; error?: string }> {
   const supabase = await createServerSupabaseClient()
 
-  try {
-    // First verify the scheduled feeding exists and belongs to the farm
-    const { data: scheduledFeeding, error: fetchError } = await (supabase as any)
-      .from('scheduled_feedings')
-      .select('id, status, farm_id, feed_type_id, quantity_kg')
-      .eq('id', scheduledFeedingId)
-      .eq('farm_id', farmId)
-      .single()
-    
-    // FIXED: Cast to any
-    const sf = scheduledFeeding as any
+  const { error } = await supabase
+    .from('scheduled_feedings')
+    .update({
+      status: 'cancelled',
+      notes:  reason ? `Cancelled: ${reason}` : 'Cancelled',
+    })
+    .eq('id', id)
+    .eq('farm_id', farmId)
 
-    if (fetchError || !sf) {
-      return { success: false, error: 'Scheduled feeding not found or access denied' }
-    }
+  if (error) return { success: false, error: error.message }
+  return { success: true }
+}
 
-    // Don't allow deletion of completed feedings
-    if (sf.status === 'completed') {
-      return { success: false, error: 'Cannot delete completed scheduled feedings' }
-    }
+// ─── MARK OVERDUE ─────────────────────────────────────────────────────────────
 
-    // Delete associated animal records first (foreign key constraint)
-    // FIXED: Cast to any
-    const { error: deleteAnimalsError } = await ((supabase as any)
-      .from('scheduled_feeding_animals'))
-      .delete()
-      .eq('scheduled_feeding_id', scheduledFeedingId)
-
-    if (deleteAnimalsError) {
-      console.error('Error deleting scheduled feeding animals:', deleteAnimalsError)
-      // Continue with deletion even if this fails
-    }
-
-    // Delete the scheduled feeding record
-    // FIXED: Cast to any
-    const { error: deleteError } = await ((supabase as any)
-      .from('scheduled_feedings'))
-      .delete()
-      .eq('id', scheduledFeedingId)
-      .eq('farm_id', farmId)
-
-    if (deleteError) {
-      console.error('Error deleting scheduled feeding:', deleteError)
-      return { success: false, error: deleteError.message }
-    }
-
-    return { success: true }
-  } catch (error) {
-    console.error('Error in deleteScheduledFeeding:', error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to delete scheduled feeding'
-    }
-  }
+export async function updateOverdueScheduledFeedings(farmId: string): Promise<void> {
+  const supabase = await createServerSupabaseClient()
+  const now = new Date()
+  // Mark pending feedings overdue if their computed datetime is > 30 min ago.
+  // We compare feeding_time against the current time of day; schedule_date_from
+  // against today.  Records spanning multi-day ranges are only overdue once
+  // their start date has passed.
+  await (supabase as any)
+    .from('scheduled_feedings')
+    .update({ status: 'overdue' })
+    .eq('farm_id', farmId)
+    .eq('status', 'pending')
+    .lte('schedule_date_from', now.toISOString().split('T')[0])
+    .lte('feeding_time', new Date(now.getTime() - 30 * 60_000).toTimeString().slice(0, 8))
 }

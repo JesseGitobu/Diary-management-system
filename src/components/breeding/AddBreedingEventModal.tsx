@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -16,6 +16,7 @@ interface AddBreedingEventModalProps {
   onClose: () => void
   farmId: string
   onEventCreated: () => void
+  editingEvent?: any | null
 }
 
 const eventTypes = [
@@ -49,45 +50,58 @@ const eventTypes = [
   }
 ]
 
-export function AddBreedingEventModal({ 
-  isOpen, 
-  onClose, 
-  farmId, 
-  onEventCreated 
+export function AddBreedingEventModal({
+  isOpen,
+  onClose,
+  farmId,
+  onEventCreated,
+  editingEvent,
 }: AddBreedingEventModalProps) {
   const [selectedEventType, setSelectedEventType] = useState<BreedingEventType | null>(null)
   const [step, setStep] = useState<'select' | 'form'>('select')
-  
+
+  useEffect(() => {
+    if (editingEvent) {
+      setSelectedEventType(editingEvent.event_type as BreedingEventType)
+      setStep('form')
+    }
+  }, [editingEvent])
+
   const handleEventTypeSelect = (eventType: BreedingEventType) => {
     setSelectedEventType(eventType)
     setStep('form')
   }
-  
+
   const handleBack = () => {
     setStep('select')
     setSelectedEventType(null)
   }
-  
+
   const handleEventCreated = () => {
     onEventCreated()
     handleClose()
   }
-  
+
   const handleClose = () => {
-    setStep('select')
-    setSelectedEventType(null)
+    if (!editingEvent) {
+      setStep('select')
+      setSelectedEventType(null)
+    }
     onClose()
   }
-  
+
   const renderEventForm = () => {
     if (!selectedEventType) return null
-    
+
     const commonProps = {
       farmId,
       onEventCreated: handleEventCreated,
-      onCancel: handleBack
+      onCancel: editingEvent ? handleClose : handleBack,
+      initialData: editingEvent ?? null,
+      eventId: editingEvent?.id ?? null,
+      preSelectedAnimalId: editingEvent?.animal_id,
     }
-    
+
     switch (selectedEventType) {
       case 'heat_detection':
         return <HeatDetectionForm {...commonProps} />
@@ -155,11 +169,15 @@ export function AddBreedingEventModal({
           <>
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center space-x-3">
-                <Button variant="ghost" onClick={handleBack} size="sm">
-                  ← Back
-                </Button>
+                {!editingEvent && (
+                  <Button variant="ghost" onClick={handleBack} size="sm">
+                    ← Back
+                  </Button>
+                )}
                 <h2 className="text-xl font-bold text-gray-900">
-                  {eventTypes.find(e => e.type === selectedEventType)?.title}
+                  {editingEvent
+                    ? `Edit ${eventTypes.find(e => e.type === selectedEventType)?.title}`
+                    : eventTypes.find(e => e.type === selectedEventType)?.title}
                 </h2>
               </div>
               <Badge className={eventTypes.find(e => e.type === selectedEventType)?.color}>

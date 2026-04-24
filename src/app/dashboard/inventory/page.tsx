@@ -2,13 +2,14 @@
 import { Metadata } from 'next'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
-import { 
-  getInventoryItems, 
-  getInventoryStats, 
+import {
+  getInventoryItems,
+  getInventoryStats,
   getInventoryAlerts,
   getSuppliers,
   getSupplierStats
 } from '@/lib/database/inventory'
+import { getStorageLocations, getStorageStats } from '@/lib/database/storage'
 import { redirect } from 'next/navigation'
 import { UnifiedInventoryDashboard } from '@/components/inventory/InventoryDashboard'
 import { getUserPermissions } from '@/lib/database/user-permissions'
@@ -31,15 +32,31 @@ export default async function InventoryPage() {
     redirect('/dashboard')
   }
   
-  // Fetch both inventory and supplier data
-  const [inventoryItems, inventoryStats, inventoryAlerts, suppliers, supplierStats, permissions] = await Promise.all([
+  const [
+    inventoryItems,
+    inventoryStats,
+    inventoryAlerts,
+    suppliers,
+    supplierStats,
+    storageLocations,
+    rawStorageStats,
+    permissions,
+  ] = await Promise.all([
     getInventoryItems(userRole.farm_id),
     getInventoryStats(userRole.farm_id),
     getInventoryAlerts(userRole.farm_id),
     getSuppliers(userRole.farm_id),
     getSupplierStats(userRole.farm_id),
+    getStorageLocations(userRole.farm_id),
+    getStorageStats(userRole.farm_id),
     getUserPermissions(userRole.id, userRole.farm_id, userRole.role_type),
   ])
+
+  // Adapt stats shape to what the dashboard expects
+  const storageStats = {
+    totalStorageLocations: rawStorageStats.active,
+    storageByType:         rawStorageStats.byType,
+  }
   
   return (
     <div className="dashboard-container">
@@ -50,6 +67,8 @@ export default async function InventoryPage() {
         inventoryAlerts={inventoryAlerts}
         suppliers={suppliers}
         supplierStats={supplierStats}
+        storage={storageLocations}
+        storageStats={storageStats}
         canManage={permissions.canManageInventory}
       />
     </div>

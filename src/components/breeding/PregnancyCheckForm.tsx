@@ -32,6 +32,8 @@ interface PregnancyCheckFormProps {
   onEventCreated: () => void
   onCancel: () => void
   preSelectedAnimalId?: string
+  initialData?: any | null
+  eventId?: string | null
 }
 
 const examinationMethods = [
@@ -72,7 +74,7 @@ type SelectedAnimalDetails = {
   latest_calving?: { calving_date?: string | null }
 }
 
-export function PregnancyCheckForm({ farmId, onEventCreated, onCancel, preSelectedAnimalId }: PregnancyCheckFormProps) {
+export function PregnancyCheckForm({ farmId, onEventCreated, onCancel, preSelectedAnimalId, initialData, eventId }: PregnancyCheckFormProps) {
   const [loading, setLoading] = useState(false)
   const [animals, setAnimals] = useState<EligibleAnimal[]>([])
   const [selectedAnimalDetails, setSelectedAnimalDetails] = useState<SelectedAnimalDetails | null>(null)
@@ -98,12 +100,29 @@ export function PregnancyCheckForm({ farmId, onEventCreated, onCancel, preSelect
     loadEligibleAnimals()
   }, [farmId])
 
-  // Force update value if prop changes
   useEffect(() => {
     if (preSelectedAnimalId) {
       form.setValue('animal_id', preSelectedAnimalId)
     }
   }, [preSelectedAnimalId, form])
+
+  useEffect(() => {
+    if (!initialData) return
+    const raw = initialData.event_date || ''
+    const datePart = raw.includes('T') ? raw.split('T')[0] : raw
+    const timePart = raw.includes('T') ? (raw.split('T')[1] || '').slice(0, 5) : ''
+    form.reset({
+      animal_id: initialData.animal_id || '',
+      event_date: datePart,
+      event_time: timePart || new Date().toTimeString().slice(0, 5),
+      pregnancy_result: initialData.pregnancy_result || 'uncertain',
+      examination_method: initialData.examination_method || '',
+      veterinarian_name: initialData.veterinarian_name || '',
+      estimated_due_date: initialData.estimated_due_date || '',
+      notes: initialData.notes || '',
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialData])
   
   const selectedAnimalId = form.watch('animal_id')
 
@@ -267,38 +286,35 @@ export function PregnancyCheckForm({ farmId, onEventCreated, onCancel, preSelect
   const handleSubmit = async (data: PregnancyCheckFormData) => {
     setLoading(true)
     setError(null)
-    
+
     try {
-      // Combine date and time WITHOUT timezone conversion
-      // Format: YYYY-MM-DDTHH:MM:SS (local time, not UTC)
       const dateTime = `${data.event_date}T${data.event_time}:00`
-      
-      // Destructure to exclude event_time from API payload
       const { event_time, ...restData } = data
-      
-      const response = await fetch('/api/breeding-events', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          eventData: {
-            ...restData,
-            event_date: dateTime,
-            farm_id: farmId,
-            event_type: 'pregnancy_check',
-            pregnancy_result: data.pregnancy_result,
-            estimated_due_date: data.estimated_due_date || undefined,
-          }
-        }),
+
+      const payload = {
+        ...restData,
+        event_date: dateTime,
+        farm_id: farmId,
+        event_type: 'pregnancy_check',
+        pregnancy_result: data.pregnancy_result,
+        estimated_due_date: data.estimated_due_date || undefined,
+      }
+
+      const url = eventId ? `/api/breeding-events/${eventId}` : '/api/breeding-events'
+      const method = eventId ? 'PATCH' : 'POST'
+
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventData: payload }),
       })
-      
+
       const result = await response.json()
-      
+
       if (result.success) {
         onEventCreated()
       } else {
-        setError(result.error || 'Failed to create pregnancy check event')
+        setError(result.error || `Failed to ${eventId ? 'update' : 'create'} pregnancy check event`)
       }
     } catch (error) {
       setError('An unexpected error occurred')
@@ -549,7 +565,7 @@ export function PregnancyCheckForm({ farmId, onEventCreated, onCancel, preSelect
             Cancel
           </Button>
           <Button type="submit" disabled={loading || (animals.length === 0 && !preSelectedAnimalId)}>
-            {loading ? <LoadingSpinner size="sm" /> : 'Record Pregnancy Check'}
+            {loading ? <LoadingSpinner size="sm" /> : eventId ? 'Save Changes' : 'Record Pregnancy Check'}
           </Button>
         </div>
       </form>

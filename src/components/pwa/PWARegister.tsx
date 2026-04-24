@@ -7,7 +7,11 @@ export function PWARegister() {
   const toastIdRef = useRef<string | null>(null)
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
+    if (
+      typeof window === 'undefined' ||
+      !('serviceWorker' in navigator) ||
+      process.env.NODE_ENV !== 'production'
+    ) {
       return
     }
 

@@ -1,21 +1,34 @@
 // lib/database/feedConsumption.ts
 import { createServerSupabaseClient } from '@/lib/supabase/server'
+import {
+  recordFeedTransactionRPC,
+} from './feedInventoryTransactions'
 
 // Types
 export interface FeedConsumptionRecord {
   id: string
   farm_id: string
+  animal_id: string | null
   feed_type_id: string
-  quantity_kg: number
-  feeding_time: string
-  feeding_mode: 'individual' | 'batch'
-  animal_count: number
-  consumption_batch_id?: string
+  quantity_consumed: number
+  consumption_date: string
+  feeding_time: string | null
+  feeding_mode: 'individual' | 'ration' | 'feed-mix-recipe' | null
+  animal_count: number | null
+  ration_id: string | null
+  recipe_id: string | null
+  // TMR session columns (migration 069)
+  session_group_id: string | null
+  session_percentage: number | null
+  feed_time_slot_id: string | null
+  slot_name: string | null
   notes?: string
+  appetite_score?: number | null
+  approximate_waste_kg?: number | null
+  observations?: any
   recorded_by?: string
-  created_by: string
   created_at: string
-  updated_at: string
+  updated_at: string | null
 }
 
 export interface FeedConsumptionAnimal {
@@ -32,16 +45,15 @@ export interface FeedConsumptionEntry {
   animalIds: string[]
   animalCount?: number
   perCowQuantityKg?: number
-  batchId?: string
   notes?: string
 }
 
 export interface ConsumptionData {
   farmId: string
   feedingTime: string
-  mode: 'individual' | 'batch' | 'feed-mix-recipe'
-  batchId?: string
-  feedMixRecipeId?: string
+  mode: 'individual' | 'ration' | 'feed-mix-recipe'
+  feedMixRecipeId?: string | null
+  rationId?: string | null
   entries: FeedConsumptionEntry[]
   recordedBy?: string
   globalNotes?: string
@@ -50,6 +62,10 @@ export interface ConsumptionData {
   observationalNotes?: string
   observations?: any
   animalCount?: number
+  // TMR session fields (migration 069)
+  feedTimeSlotId?: string | null
+  slotName?: string | null
+  sessionPercentage?: number | null
 }
 
 export interface FeedConsumptionStats {
@@ -64,6 +80,10 @@ export interface FeedConsumptionStats {
 }
 
 // ============ CREATE FEED CONSUMPTION ============
+// Schema (migration 070):
+//   feed_consumption_records  – 1 row per SESSION (header)
+//   feed_consumption_feeds    – 1 row per FEED TYPE per session
+//   feed_consumption_animals  – 1 row per ANIMAL per session
 
 export async function recordFeedConsumption(
   data: ConsumptionData,
@@ -72,10 +92,9 @@ export async function recordFeedConsumption(
   const supabase = await createServerSupabaseClient()
 
   try {
-    // FIXED: Explicitly type the array
-    const consumptionRecords: any[] = []
+    console.log('📝 recordFeedConsumption called — mode:', data.mode, 'entries:', data.entries?.length)
 
-    // Create proper timestamp
+    // ── Resolve feeding timestamp ──────────────────────────────
     let feedingTimestamp: string
     if (data.feedingTime) {
       if (data.feedingTime.match(/^\d{2}:\d{2}$/)) {
@@ -89,113 +108,140 @@ export async function recordFeedConsumption(
     } else {
       feedingTimestamp = new Date().toISOString()
     }
+    const consumptionDate = feedingTimestamp.split('T')[0]
 
-    // Process each entry
-    for (const entry of data.entries) {
-      // Validate entry
-      if (!entry.feedTypeId || entry.quantityKg === undefined) {
-        return { success: false, error: 'Each entry must have feedTypeId and quantityKg' }
-      }
+    // ── Derive animal count and IDs ────────────────────────────
+    // For individual mode all entries share the same animal list.
+    const allAnimalIds: string[] = data.entries[0]?.animalIds ?? []
+    const animalCount =
+      data.animalCount ??
+      (allAnimalIds.length > 0 ? allAnimalIds.length : null)
 
-      // Mode-specific validation
-      if (data.mode === 'individual') {
-        if (!entry.animalIds || entry.animalIds.length === 0) {
-          return { success: false, error: 'Individual mode requires at least one animal ID' }
-        }
-      } else if (data.mode === 'batch') {
-        if (!entry.animalCount || entry.animalCount <= 0) {
-          return { success: false, error: 'Batch mode requires animalCount greater than 0' }
-        }
-      } else if (data.mode === 'feed-mix-recipe') {
-        if (!data.feedMixRecipeId) {
-          return { success: false, error: 'Feed mix recipe mode requires feedMixRecipeId' }
-        }
-      }
+    // ── 1. Insert the session HEADER ───────────────────────────
+    const headerData: any = {
+      farm_id:              data.farmId,
+      consumption_date:     consumptionDate,
+      feeding_time:         feedingTimestamp,
+      feeding_mode:         data.mode,
+      animal_count:         animalCount ?? undefined,
+      ration_id:            data.mode === 'ration'           ? (data.rationId        ?? null) : null,
+      recipe_id:            data.mode === 'feed-mix-recipe'  ? (data.feedMixRecipeId ?? null) : null,
+      notes:                data.globalNotes                 || undefined,
+      appetite_score:       data.appetiteScore               ?? undefined,
+      approximate_waste_kg: data.approximateWasteKg          ?? undefined,
+      observations:         data.observations                || undefined,
+      recorded_by:          data.recordedBy                  || 'Unknown',
+      // TMR session columns
+      session_percentage:   data.mode === 'feed-mix-recipe'  ? (data.sessionPercentage ?? null) : null,
+      feed_time_slot_id:    data.feedTimeSlotId              ?? null,
+      slot_name:            data.slotName                    ?? null,
+      // Legacy scalar columns kept for backward compat (deprecated by migration 070)
+      // Set to the first entry's values so old queries still work
+      feed_type_id:     data.entries[0]?.feedTypeId          ?? null,
+      quantity_consumed: data.entries.reduce((s, e) => s + (parseFloat(e.quantityKg?.toString() ?? '0') || 0), 0),
+    }
+    Object.keys(headerData).forEach(k => headerData[k] === undefined && delete headerData[k])
 
-      // Create consumption record
-      const insertData: any = {
-        farm_id: data.farmId,
-        feed_type_id: entry.feedTypeId,
-        quantity_kg: entry.quantityKg >= 0 ? parseFloat(entry.quantityKg.toString()) : 0,
-        feeding_time: feedingTimestamp,
-        feeding_mode: data.mode,
-        animal_count: data.animalCount || (data.mode === 'batch' ? entry.animalCount : (entry.animalIds?.length || 1)),
-        consumption_batch_id: data.batchId || entry.batchId || undefined,
-        feed_mix_recipe_id: data.mode === 'feed-mix-recipe' ? data.feedMixRecipeId : undefined,
-        notes: entry.notes || data.globalNotes || undefined,
-        appetite_score: data.appetiteScore || undefined,
-        approximate_waste_kg: data.approximateWasteKg || undefined,
-        observational_notes: data.observationalNotes || undefined,
-        observations: data.observations || undefined,
-        entries: data.mode === 'feed-mix-recipe' ? data.entries : undefined,
-        recorded_by: data.recordedBy || 'Unknown',
-        created_by: userId
-      }
+    const { data: sessionRecord, error: sessionError } = await (supabase
+      .from('feed_consumption_records') as any)
+      .insert(headerData)
+      .select()
+      .single()
 
-      // Remove undefined values
-      Object.keys(insertData).forEach(key => insertData[key] === undefined && delete insertData[key])
-
-      // FIXED: Cast to any to bypass 'never' type error
-      const { data: consumptionRecord, error: consumptionError } = await (supabase
-        .from('feed_consumption_records') as any)
-        .insert(insertData)
-        .select()
-        .single()
-
-      if (consumptionError) {
-        console.error('Consumption insert error:', consumptionError)
-        return {
-          success: false,
-          error: `Failed to create consumption record: ${consumptionError.message}`
-        }
-      }
-
-      // Create animal consumption records (for individual/batch modes)
-      if ((data.mode === 'individual' || data.mode === 'batch') && entry.animalIds && entry.animalIds.length > 0) {
-        // Calculate quantity per animal
-        let quantityPerAnimal: number
-        if (entry.perCowQuantityKg) {
-          quantityPerAnimal = entry.perCowQuantityKg
-        } else {
-          quantityPerAnimal = entry.quantityKg / entry.animalIds.length
-        }
-
-        const animalRecords = entry.animalIds.map(animalId => ({
-          consumption_id: consumptionRecord.id,
-          animal_id: animalId
-        }))
-
-        // FIXED: Cast to any
-        const { error: animalError } = await (supabase as any)
-          .from('feed_consumption_animals') 
-          .insert(animalRecords)
-
-        if (animalError) {
-          console.error('Animal consumption insert error:', animalError)
-          // Continue processing but log the warning
-          console.warn('Failed to link animals to consumption record, but consumption was recorded')
-        }
-      }
-
-      // Update inventory (deduct consumed feed) - only for non-zero quantities
-      if (entry.quantityKg > 0) {
-        await updateFeedInventory(data.farmId, entry.feedTypeId, -entry.quantityKg)
-      }
-
-      consumptionRecords.push(consumptionRecord)
+    if (sessionError) {
+      console.error('❌ Session header insert error:', sessionError)
+      return { success: false, error: `Failed to create consumption session: ${sessionError.message}` }
     }
 
-    return { success: true, data: consumptionRecords }
+    console.log('✅ Session header created:', sessionRecord.id)
+
+    // ── 2. Insert feed line items into feed_consumption_feeds ──
+    const feedRows = data.entries
+      .filter(e => e.feedTypeId && e.quantityKg !== undefined)
+      .map(e => ({
+        consumption_id:    sessionRecord.id,
+        feed_type_id:      e.feedTypeId,
+        quantity_kg:       Math.max(0, parseFloat(e.quantityKg.toString())),
+        percentage_of_mix: (e as any).percentage ?? null,
+        cost_per_kg:       (e as any).costPerKg  ?? null,
+        notes:             e.notes               ?? null,
+      }))
+
+    if (feedRows.length > 0) {
+      const { error: feedError } = await (supabase as any)
+        .from('feed_consumption_feeds')
+        .insert(feedRows)
+
+      if (feedError) {
+        console.error('❌ Feed line items insert error:', feedError)
+        return { success: false, error: `Failed to save feed details: ${feedError.message}` }
+      }
+      console.log('✅ Feed line items inserted:', feedRows.length)
+    }
+
+    // ── 3. Insert animal links into feed_consumption_animals ───
+    // All entries share the same animal list (the session targets
+    // a group of animals regardless of how many feed types).
+    // quantity_kg per animal = total session qty / animal count.
+    const totalQty = feedRows.reduce((s, r) => s + r.quantity_kg, 0)
+    const perAnimalQty = allAnimalIds.length > 0
+      ? parseFloat((totalQty / allAnimalIds.length).toFixed(4))
+      : null
+
+    if (allAnimalIds.length > 0) {
+      const animalRows = allAnimalIds.map(animalId => ({
+        consumption_id: sessionRecord.id,
+        animal_id:      animalId,
+        quantity_kg:    perAnimalQty,
+      }))
+
+      const { error: animalError } = await (supabase as any)
+        .from('feed_consumption_animals')
+        .insert(animalRows)
+
+      if (animalError) {
+        console.warn('⚠ Animal links insert failed (non-fatal):', animalError.message)
+      } else {
+        console.log('✅ Animal links inserted:', animalRows.length)
+      }
+    }
+
+    // ── 4. Write inventory ledger transactions ─────────────────
+    // Record each feed consumption via RPC (maintains ledger + inventory atomically)
+    for (const feedRow of feedRows.filter(r => r.quantity_kg > 0)) {
+      const result = await recordFeedTransactionRPC({
+        farmId: data.farmId,
+        feedTypeId: feedRow.feed_type_id,
+        transactionType: 'feeding',
+        quantityKg: -feedRow.quantity_kg,  // negative = out of inventory
+        animalGroupId: allAnimalIds.length > 0 ? allAnimalIds[0] : undefined, // reference to animal group
+        notes: data.globalNotes ?? `Feeding session ${sessionRecord.id}`,
+        transactionDate: consumptionDate,
+        createdBy: userId,
+      })
+
+      if (!result.success) {
+        console.error(`⚠️ Failed to record transaction for feed ${feedRow.feed_type_id}:`, result.error)
+        // Non-fatal — session is already recorded; transaction may be missed
+      }
+    }
+
+    console.log('✅ Inventory transactions recorded')
+
+    console.log('✅ recordFeedConsumption completed')
+    return { success: true, data: [sessionRecord] }
   } catch (error) {
-    console.error('Error recording feed consumption:', error)
+    console.error('❌ Error recording feed consumption:', error)
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to record consumption'
+      error: error instanceof Error ? error.message : 'Failed to record consumption',
     }
   }
 }
 
 // ============ UPDATE FEED CONSUMPTION ============
+// Updates the session header + replaces all feed line items +
+// replaces animal links.  Handles all three feeding modes.
 
 export async function updateFeedConsumption(
   recordId: string,
@@ -205,123 +251,141 @@ export async function updateFeedConsumption(
   const supabase = await createServerSupabaseClient()
 
   try {
-    // Get the original record for inventory adjustment
-    const { data: originalRecord, error: fetchError } = await supabase
-      .from('feed_consumption_records')
-      .select('*')
+    // Fetch original session for inventory delta calculation
+    const { data: original, error: fetchError } = await (supabase
+      .from('feed_consumption_records') as any)
+      .select(`*, feed_consumption_feeds ( feed_type_id, quantity_kg )`)
       .eq('id', recordId)
       .eq('farm_id', data.farmId)
       .single()
 
-    if (fetchError || !originalRecord) {
-      return { success: false, error: 'Original consumption record not found' }
+    if (fetchError || !original) {
+      return { success: false, error: 'Consumption record not found' }
     }
 
-    // Only process the first entry for updates (assuming single entry updates)
-    const entry = data.entries[0]
-    if (!entry) {
-      return { success: false, error: 'No entry data provided' }
-    }
-
-    // Create proper timestamp
+    // Resolve timestamp
     let feedingTimestamp: string
     if (data.feedingTime.match(/^\d{2}:\d{2}$/)) {
       const today = new Date()
-      const [hours, minutes] = data.feedingTime.split(':')
-      today.setHours(parseInt(hours), parseInt(minutes), 0, 0)
+      const [h, m] = data.feedingTime.split(':')
+      today.setHours(parseInt(h), parseInt(m), 0, 0)
       feedingTimestamp = today.toISOString()
     } else {
       feedingTimestamp = new Date(data.feedingTime).toISOString()
     }
+    const consumptionDate = feedingTimestamp.split('T')[0]
 
-    // Update consumption record
-    const updateData: any = {
-      feed_type_id: entry.feedTypeId,
-      quantity_kg: parseFloat(entry.quantityKg.toString()),
-      feeding_time: feedingTimestamp,
-      feeding_mode: data.mode,
-      animal_count: data.animalCount || (data.mode === 'batch' ? entry.animalCount : (entry.animalIds?.length || 1)),
-      consumption_batch_id: data.batchId || entry.batchId || undefined,
-      feed_mix_recipe_id: data.mode === 'feed-mix-recipe' ? data.feedMixRecipeId : undefined,
-      notes: entry.notes || data.globalNotes || undefined,
-      appetite_score: data.appetiteScore || undefined,
-      approximate_waste_kg: data.approximateWasteKg || undefined,
-      observational_notes: data.observationalNotes || undefined,
-      observations: data.observations || undefined,
-      entries: data.mode === 'feed-mix-recipe' ? data.entries : undefined,
-      updated_at: new Date().toISOString()
+    const allAnimalIds: string[] = data.entries[0]?.animalIds ?? []
+    const animalCount = data.animalCount ?? (allAnimalIds.length > 0 ? allAnimalIds.length : null)
+    const newTotalQty = data.entries.reduce((s, e) => s + (parseFloat(e.quantityKg?.toString() ?? '0') || 0), 0)
+    const consumptionDateForUpdate = feedingTimestamp.split('T')[0]
+
+    // ── 1. Update session header ───────────────────────────────
+    const headerUpdate: any = {
+      consumption_date:     consumptionDateForUpdate,
+      feeding_time:         feedingTimestamp,
+      feeding_mode:         data.mode,
+      animal_count:         animalCount,
+      ration_id:            data.mode === 'ration'          ? (data.rationId        ?? null) : null,
+      recipe_id:            data.mode === 'feed-mix-recipe' ? (data.feedMixRecipeId ?? null) : null,
+      notes:                data.globalNotes                ?? null,
+      appetite_score:       data.appetiteScore              ?? null,
+      approximate_waste_kg: data.approximateWasteKg         ?? null,
+      observations:         data.observations               ?? null,
+      session_percentage:   data.mode === 'feed-mix-recipe' ? (data.sessionPercentage ?? null) : null,
+      feed_time_slot_id:    data.feedTimeSlotId             ?? null,
+      slot_name:            data.slotName                   ?? null,
+      // Deprecated scalar columns kept for backward compat
+      feed_type_id:         data.entries[0]?.feedTypeId     ?? null,
+      quantity_consumed:    newTotalQty,
+      updated_at:           new Date().toISOString(),
     }
 
-    // Remove undefined values
-    Object.keys(updateData).forEach(key => updateData[key] === undefined && delete updateData[key])
-
-    // FIXED: Cast to any
     const { data: updatedRecord, error: updateError } = await (supabase
       .from('feed_consumption_records') as any)
-      .update(updateData)
+      .update(headerUpdate)
       .eq('id', recordId)
       .eq('farm_id', data.farmId)
       .select()
       .single()
 
     if (updateError) {
-      console.error('Consumption update error:', updateError)
-      return {
-        success: false,
-        error: `Failed to update consumption record: ${updateError.message}`
+      return { success: false, error: `Failed to update session: ${updateError.message}` }
+    }
+
+    // ── 2. Replace feed line items ─────────────────────────────
+    await (supabase as any)
+      .from('feed_consumption_feeds')
+      .delete()
+      .eq('consumption_id', recordId)
+
+    const newFeedRows = data.entries
+      .filter(e => e.feedTypeId && e.quantityKg !== undefined)
+      .map(e => ({
+        consumption_id:    recordId,
+        feed_type_id:      e.feedTypeId,
+        quantity_kg:       Math.max(0, parseFloat(e.quantityKg.toString())),
+        percentage_of_mix: (e as any).percentage ?? null,
+        cost_per_kg:       (e as any).costPerKg  ?? null,
+        notes:             e.notes               ?? null,
+      }))
+
+    if (newFeedRows.length > 0) {
+      const { error: feedError } = await (supabase as any)
+        .from('feed_consumption_feeds')
+        .insert(newFeedRows)
+      if (feedError) {
+        return { success: false, error: `Failed to update feed details: ${feedError.message}` }
       }
     }
 
-    // Delete existing animal records for individual/batch modes
-    if (data.mode === 'individual' || data.mode === 'batch') {
-      // FIXED: Cast to any
+    // ── 3. Replace animal links ────────────────────────────────
+    await (supabase as any)
+      .from('feed_consumption_animals')
+      .delete()
+      .eq('consumption_id', recordId)
+
+    if (allAnimalIds.length > 0) {
+      const perAnimalQty = parseFloat((newTotalQty / allAnimalIds.length).toFixed(4))
       await (supabase as any)
-        .from('feed_consumption_animals') 
-        .delete()
-        .eq('consumption_id', recordId)
-
-      // Create new animal consumption records
-      if (entry.animalIds && entry.animalIds.length > 0) {
-        let quantityPerAnimal: number
-        if (entry.perCowQuantityKg) {
-          quantityPerAnimal = entry.perCowQuantityKg
-        } else {
-          quantityPerAnimal = entry.quantityKg / entry.animalIds.length
-        }
-
-        const animalRecords = entry.animalIds.map(animalId => ({
+        .from('feed_consumption_animals')
+        .insert(allAnimalIds.map(aid => ({
           consumption_id: recordId,
-          animal_id: animalId
-        }))
-
-        // FIXED: Cast to any
-        const { error: animalError } = await (supabase as any)
-          .from('feed_consumption_animals') 
-          .insert(animalRecords)
-
-        if (animalError) {
-          console.error('Animal consumption insert error:', animalError)
-        }
-      }
+          animal_id:      aid,
+          quantity_kg:    perAnimalQty,
+        })))
     }
 
-    // Adjust inventory (restore original quantity, then deduct new quantity)
-    // Note: originalRecord needs casting if type inference is broken, but standard select usually works if table exists
-    // However, we cast to 'any' to be safe when accessing properties
-    const original = originalRecord as any;
-    
-    if (original.feed_type_id === entry.feedTypeId) {
-      // Same feed type - adjust difference
-      const quantityDifference = entry.quantityKg - original.quantity_kg
-      if (quantityDifference !== 0) {
-        await updateFeedInventory(data.farmId, entry.feedTypeId, -quantityDifference)
-      }
-    } else {
-      // Different feed type - restore original and deduct new
-      await updateFeedInventory(data.farmId, original.feed_type_id, original.quantity_kg)
-      if (entry.quantityKg > 0) {
-        await updateFeedInventory(data.farmId, entry.feedTypeId, -entry.quantityKg)
-      }
+    // ── 4. Adjust inventory ledger ─────────────────────────────
+    // Reverse every old feed line item, then write new ones
+    const oldFeeds: Array<{ feed_type_id: string; quantity_kg: number }> =
+      original.feed_consumption_feeds ?? []
+
+    // Reverse old transactions (add stock back)
+    for (const oldFeed of oldFeeds.filter(f => f.quantity_kg > 0)) {
+      await recordFeedTransactionRPC({
+        farmId: data.farmId,
+        feedTypeId: oldFeed.feed_type_id,
+        transactionType: 'adjustment',
+        quantityKg: oldFeed.quantity_kg,  // positive = add back to inventory
+        notes: `Reversal on edit: session ${recordId}`,
+        transactionDate: consumptionDate,
+        createdBy: userId,
+      })
+    }
+
+    // Record new consumption transactions
+    for (const newFeed of newFeedRows.filter(r => r.quantity_kg > 0)) {
+      await recordFeedTransactionRPC({
+        farmId: data.farmId,
+        feedTypeId: newFeed.feed_type_id,
+        transactionType: 'feeding',
+        quantityKg: -newFeed.quantity_kg,  // negative = consumption
+        animalGroupId: allAnimalIds.length > 0 ? allAnimalIds[0] : undefined,
+        notes: data.globalNotes ?? `Updated feeding session ${recordId}`,
+        transactionDate: consumptionDate,
+        createdBy: userId,
+      })
     }
 
     return { success: true, data: updatedRecord }
@@ -329,13 +393,14 @@ export async function updateFeedConsumption(
     console.error('Error updating feed consumption:', error)
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to update consumption'
+      error: error instanceof Error ? error.message : 'Failed to update consumption',
     }
   }
 }
-    
 
 // ============ DELETE FEED CONSUMPTION ============
+// Deletes the session header; CASCADE removes feed_consumption_feeds
+// and feed_consumption_animals automatically.
 
 export async function deleteFeedConsumption(
   recordId: string,
@@ -344,27 +409,13 @@ export async function deleteFeedConsumption(
   const supabase = await createServerSupabaseClient()
 
   try {
-    // Get the record for inventory restoration
-    const { data: record, error: fetchError } = await supabase
-      .from('feed_consumption_records')
-      .select('*')
-      .eq('id', recordId)
-      .eq('farm_id', farmId)
-      .single()
-
-    if (fetchError || !record) {
-      return { success: false, error: 'Consumption record not found' }
-    }
-
-    // Delete animal consumption records first (due to foreign key constraint)
-    // FIXED: Cast to any
-    await (supabase as any)
-      .from('feed_consumption_animals') 
-      .delete()
+    // Fetch feed line items before deleting (needed for inventory reversal)
+    const { data: feedLines } = await (supabase as any)
+      .from('feed_consumption_feeds')
+      .select('feed_type_id, quantity_kg')
       .eq('consumption_id', recordId)
 
-    // Delete the main consumption record
-    // FIXED: Cast to any
+    // Delete the session header (CASCADE removes children)
     const { error: deleteError } = await (supabase
       .from('feed_consumption_records') as any)
       .delete()
@@ -372,26 +423,36 @@ export async function deleteFeedConsumption(
       .eq('farm_id', farmId)
 
     if (deleteError) {
-      console.error('Consumption delete error:', deleteError)
-      return { success: false, error: `Failed to delete consumption record: ${deleteError.message}` }
+      return { success: false, error: `Failed to delete: ${deleteError.message}` }
     }
 
-    // Restore inventory (add back the consumed quantity)
-    // Cast record to any to access properties safely
-    const rec = record as any;
-    await updateFeedInventory(farmId, rec.feed_type_id, rec.quantity_kg)
+    // Restore inventory for every feed line item deleted
+    const lines: Array<{ feed_type_id: string; quantity_kg: number }> = feedLines ?? []
+    const consumptionDate = new Date().toISOString().split('T')[0]
+
+    for (const line of lines.filter(f => f.quantity_kg > 0)) {
+      await recordFeedTransactionRPC({
+        farmId,
+        feedTypeId: line.feed_type_id,
+        transactionType: 'adjustment',
+        quantityKg: line.quantity_kg,  // positive = stock back
+        notes: `Reversal: session ${recordId} deleted`,
+        transactionDate: consumptionDate,
+      })
+    }
 
     return { success: true }
   } catch (error) {
     console.error('Error deleting feed consumption:', error)
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to delete consumption'
+      error: error instanceof Error ? error.message : 'Failed to delete consumption',
     }
   }
 }
 
 // ============ GET FEED CONSUMPTION RECORDS ============
+// Returns session headers with their feed line items and animal links.
 
 export async function getFeedConsumptionRecords(
   farmId: string,
@@ -401,27 +462,28 @@ export async function getFeedConsumptionRecords(
   const supabase = await createServerSupabaseClient()
 
   try {
-    const { data, error } = await supabase
-      .from('feed_consumption_records')
+    const { data, error } = await (supabase
+      .from('feed_consumption_records') as any)
       .select(`
         *,
-        feed_types (
-          name,
-          category
-        ),
-        consumption_batches (
-          batch_name
+        feed_consumption_feeds (
+          id,
+          feed_type_id,
+          quantity_kg,
+          percentage_of_mix,
+          cost_per_kg,
+          notes,
+          feed_types ( name, category_id )
         ),
         feed_consumption_animals (
           animal_id,
-          animals (
-            tag_number,
-            name
-          )
+          quantity_kg,
+          animals ( tag_number, name )
         )
       `)
       .eq('farm_id', farmId)
-      .order('feeding_time', { ascending: false })
+      .order('consumption_date', { ascending: false })
+      .order('feeding_time',     { ascending: false })
       .range(offset, offset + limit - 1)
 
     if (error) {
@@ -429,7 +491,6 @@ export async function getFeedConsumptionRecords(
       return []
     }
 
-    // FIXED: Cast to any to FeedConsumptionRecord[]
     return (data as any) as FeedConsumptionRecord[] || []
   } catch (error) {
     console.error('Error in getFeedConsumptionRecords:', error)
@@ -531,17 +592,19 @@ export async function getAnimalConsumptionRecords(
       .from('feed_consumption_records')
       .select(`
         id,
+        consumption_date,
         feeding_time,
         feeding_mode,
         notes,
         recorded_by,
-        quantity_kg,
+        quantity_consumed,
         animal_count,
-        consumption_batch_id,
+        ration_id,
+        recipe_id,
         feed_type_id,
         appetite_score,
         approximate_waste_kg,
-        observational_notes,
+        observations,
         feed_types (
           name,
           category_id,
@@ -551,18 +614,16 @@ export async function getAnimalConsumptionRecords(
             color
           )
         ),
-        consumption_batches (
-          batch_name
-        ),
         feed_consumption_animals!inner (
           id,
           animal_id,
+          quantity_kg,
           created_at
         )
       `)
       .eq('farm_id', farmId)
       .eq('feed_consumption_animals.animal_id', animalId)
-      .order('feeding_time', { ascending: false })
+      .order('consumption_date', { ascending: false })
       .limit(limit)
 
     if (consumptionError) {
@@ -583,25 +644,25 @@ export async function getAnimalConsumptionRecords(
 
     // Transform the data to match expected format
     return records.map(record => ({
-      ...record.feed_consumption_animals[0], // Get the animal consumption record
+      ...record.feed_consumption_animals[0],
       feed_consumption: {
         id: record.id,
+        consumption_date: record.consumption_date,
         feeding_time: record.feeding_time,
         feeding_mode: record.feeding_mode,
         notes: record.notes,
         recorded_by: record.recorded_by,
-        quantity_kg: record.quantity_kg,
+        quantity_consumed: record.quantity_consumed,
         animal_count: record.animal_count,
-        consumption_batch_id: record.consumption_batch_id,
+        ration_id: record.ration_id,
+        recipe_id: record.recipe_id,
         feed_types: record.feed_types,
-        consumption_batches: record.consumption_batches,
         appetite_score: record.appetite_score,
         approximate_waste_kg: record.approximate_waste_kg,
-        observational_notes: record.observational_notes,
+        observations: record.observations,
         cost_per_kg: costMap.get(record.feed_type_id) || record.feed_types?.typical_cost_per_kg || 0,
-        total_cost: (costMap.get(record.feed_type_id) || record.feed_types?.typical_cost_per_kg || 0) * record.quantity_kg
-
-      }
+        total_cost: (costMap.get(record.feed_type_id) || record.feed_types?.typical_cost_per_kg || 0) * (record.quantity_consumed ?? 0),
+      },
     }))
 
   } catch (error) {
@@ -612,84 +673,84 @@ export async function getAnimalConsumptionRecords(
 
 // ============ INVENTORY UPDATE HELPER ============
 
-async function updateFeedInventory(
-  farmId: string,
-  feedTypeId: string,
-  quantityChange: number
-): Promise<void> {
-  const supabase = await createServerSupabaseClient()
+// async function updateFeedInventory(
+//   farmId: string,
+//   feedTypeId: string,
+//   quantityChange: number
+// ): Promise<void> {
+//   const supabase = await createServerSupabaseClient()
 
-  try {
-    if (quantityChange === 0) return
+//   try {
+//     if (quantityChange === 0) return
 
-    if (quantityChange < 0) {
-      // Deducting from inventory (consumption)
-      const { data: inventoryItemsData } = await supabase
-        .from('feed_inventory')
-        .select('id, quantity_kg')
-        .eq('farm_id', farmId)
-        .eq('feed_type_id', feedTypeId)
-        .gt('quantity_kg', 0)
-        .order('expiry_date', { ascending: true }) // Use oldest first (FIFO)
+//     if (quantityChange < 0) {
+//       // Deducting from inventory (consumption)
+//       const { data: inventoryItemsData } = await supabase
+//         .from('feed_inventory')
+//         .select('id, quantity_kg')
+//         .eq('farm_id', farmId)
+//         .eq('feed_type_id', feedTypeId)
+//         .gt('quantity_kg', 0)
+//         .order('expiry_date', { ascending: true }) // Use oldest first (FIFO)
 
-      // FIXED: Cast to any[]
-      const inventoryItems = (inventoryItemsData as any[]) || []
+//       // FIXED: Cast to any[]
+//       const inventoryItems = (inventoryItemsData as any[]) || []
 
-      if (inventoryItems.length === 0) {
-        console.warn(`No inventory available for feed type ${feedTypeId}`)
-        return
-      }
+//       if (inventoryItems.length === 0) {
+//         console.warn(`No inventory available for feed type ${feedTypeId}`)
+//         return
+//       }
 
-      let remainingToDeduct = Math.abs(quantityChange)
+//       let remainingToDeduct = Math.abs(quantityChange)
 
-      for (const item of inventoryItems) {
-        if (remainingToDeduct <= 0) break
+//       for (const item of inventoryItems) {
+//         if (remainingToDeduct <= 0) break
 
-        const deductFromThisItem = Math.min(remainingToDeduct, item.quantity_kg)
-        const newQuantity = item.quantity_kg - deductFromThisItem
+//         const deductFromThisItem = Math.min(remainingToDeduct, item.quantity_kg)
+//         const newQuantity = item.quantity_kg - deductFromThisItem
 
-        // FIXED: Cast to any
-        await (supabase
-          .from('feed_inventory') as any)
-          .update({ quantity_kg: newQuantity })
-          .eq('id', item.id)
+//         // FIXED: Cast to any
+//         await (supabase
+//           .from('feed_inventory') as any)
+//           .update({ quantity_kg: newQuantity })
+//           .eq('id', item.id)
 
-        remainingToDeduct -= deductFromThisItem
-      }
+//         remainingToDeduct -= deductFromThisItem
+//       }
 
-      if (remainingToDeduct > 0) {
-        console.warn(`Insufficient inventory to fulfill ${Math.abs(quantityChange)}kg consumption. ${remainingToDeduct}kg short.`)
-      }
-    } else {
-      // Adding to inventory (restoration after deletion/update)
-      // Find the most recent inventory item to add back to
-      const { data: recentItemData } = await supabase
-        .from('feed_inventory')
-        .select('id, quantity_kg')
-        .eq('farm_id', farmId)
-        .eq('feed_type_id', feedTypeId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single()
+//       if (remainingToDeduct > 0) {
+//         console.warn(`Insufficient inventory to fulfill ${Math.abs(quantityChange)}kg consumption. ${remainingToDeduct}kg short.`)
+//       }
+//     } else {
+//       // Adding to inventory (restoration after deletion/update)
+//       // Find the most recent inventory item to add back to
+//       const { data: recentItemData } = await supabase
+//         .from('feed_inventory')
+//         .select('id, quantity_kg')
+//         .eq('farm_id', farmId)
+//         .eq('feed_type_id', feedTypeId)
+//         .order('created_at', { ascending: false })
+//         .limit(1)
+//         .single()
 
-      // FIXED: Cast to any
-      const recentItem = recentItemData as any;
+//       // FIXED: Cast to any
+//       const recentItem = recentItemData as any;
 
-      if (recentItem) {
-        // FIXED: Cast to any
-        await (supabase
-          .from('feed_inventory') as any)
-          .update({ quantity_kg: recentItem.quantity_kg + quantityChange })
-          .eq('id', recentItem.id)
-      } else {
-        console.warn(`No inventory item found to restore ${quantityChange}kg for feed type ${feedTypeId}`)
-      }
-    }
-  } catch (error) {
-    console.error('Error updating feed inventory:', error)
-    // Don't throw error as this shouldn't fail the main operation
-  }
-}
+//       if (recentItem) {
+//         // FIXED: Cast to any
+//         await (supabase
+//           .from('feed_inventory') as any)
+//           .update({ quantity_kg: recentItem.quantity_kg + quantityChange })
+//           .eq('id', recentItem.id)
+//       } else {
+//         console.warn(`No inventory item found to restore ${quantityChange}kg for feed type ${feedTypeId}`)
+//       }
+//     }
+//   } catch (error) {
+//     console.error('Error updating feed inventory:', error)
+//     // Don't throw error as this shouldn't fail the main operation
+//   }
+// }
 
 export async function getFeedInventory(farmId: string) {
   const supabase = await createServerSupabaseClient()
@@ -759,27 +820,8 @@ export async function validateConsumptionEntry(
       .single()
 
     if (feedError || !feedType) {
+      console.error('validateConsumptionEntry: feed type not found', { farmId, feedTypeId: entry.feedTypeId, feedError })
       return { valid: false, error: 'Feed type not found' }
-    }
-
-    // Check inventory availability
-    const { data: inventoryData } = await supabase
-      .from('feed_inventory')
-      .select('quantity_kg')
-      .eq('farm_id', farmId)
-      .eq('feed_type_id', entry.feedTypeId)
-      .gt('quantity_kg', 0)
-
-    // FIXED: Cast to any[]
-    const inventory = (inventoryData as any[]) || []
-
-    const totalAvailable = inventory.reduce((sum, item) => sum + item.quantity_kg, 0) || 0
-
-    if (totalAvailable < entry.quantityKg) {
-      return {
-        valid: false,
-        error: `Insufficient inventory. Available: ${totalAvailable}kg, Required: ${entry.quantityKg}kg`
-      }
     }
 
     // Validate animals exist if provided
@@ -792,10 +834,12 @@ export async function validateConsumptionEntry(
         .eq('status', 'active')
 
       if (animalError) {
+        console.error('validateConsumptionEntry: error validating animals', animalError)
         return { valid: false, error: 'Error validating animals' }
       }
 
       if (count !== entry.animalIds.length) {
+        console.error('validateConsumptionEntry: animals mismatch', { expected: entry.animalIds.length, found: count })
         return { valid: false, error: 'Some animals not found or inactive' }
       }
     }

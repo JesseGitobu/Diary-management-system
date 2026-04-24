@@ -3,8 +3,11 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { Package, TrendingDown, AlertTriangle, Clock, Users, Percent } from 'lucide-react'
-import { useMemo } from 'react'
+import { Input } from '@/components/ui/Input'
+import { Package, TrendingDown, AlertTriangle, Clock, Percent, Search, ChevronLeft, ChevronRight } from 'lucide-react'
+import { useMemo, useState } from 'react'
+
+const PAGE_SIZE = 10
 
 interface FeedOverviewTabProps {
   feedStats: any
@@ -120,6 +123,28 @@ export function FeedOverviewTab({
     })
   }, [feedStats.stockLevels, feedTypes, consumptionRecords])
 
+  // ── Search / filter / pagination state ────────────────────────────────────
+  const [search, setSearch]       = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'good' | 'low' | 'critical'>('all')
+  const [page, setPage]           = useState(1)
+
+  const filteredStockLevels = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return enhancedStockLevels.filter((s: any) => {
+      const nameMatch = !q || (s.feedType?.name ?? '').toLowerCase().includes(q)
+      const statusMatch = statusFilter === 'all' || s.status === statusFilter
+      return nameMatch && statusMatch
+    })
+  }, [enhancedStockLevels, search, statusFilter])
+
+  const totalPages  = Math.max(1, Math.ceil(filteredStockLevels.length / PAGE_SIZE))
+  const safePage    = Math.min(page, totalPages)
+  const pagedStocks = filteredStockLevels.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+
+  // Reset to page 1 whenever filters change
+  const handleSearch = (v: string) => { setSearch(v); setPage(1) }
+  const handleFilter = (v: typeof statusFilter) => { setStatusFilter(v); setPage(1) }
+
   const getStatusBadge = (stockItem: any) => {
     if (stockItem.status === 'critical') {
       return <Badge variant="destructive" className="text-xs mt-1">Critical</Badge>
@@ -159,10 +184,37 @@ export function FeedOverviewTab({
             </div>
           )}
         </div>
+
+        {/* Search + filter bar */}
+        <div className={`flex gap-2 mt-3 ${isMobile ? 'flex-col' : 'flex-row items-center'}`}>
+          <div className="relative flex-1">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+            <Input
+              value={search}
+              onChange={e => handleSearch(e.target.value)}
+              placeholder="Search by feed name…"
+              className="pl-8 h-9 text-sm"
+            />
+          </div>
+          <select
+            value={statusFilter}
+            onChange={e => handleFilter(e.target.value as typeof statusFilter)}
+            className="h-9 rounded-md border border-gray-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-farm-green"
+          >
+            <option value="all">All statuses</option>
+            <option value="good">Good</option>
+            <option value="low">Low stock</option>
+            <option value="critical">Critical</option>
+          </select>
+          <span className="text-xs text-gray-500 whitespace-nowrap self-center">
+            {filteredStockLevels.length} result{filteredStockLevels.length !== 1 ? 's' : ''}
+          </span>
+        </div>
       </CardHeader>
+
       <CardContent>
         <div className="space-y-4">
-          {enhancedStockLevels.map((stock: any, index: number) => (
+          {pagedStocks.map((stock: any, index: number) => (
             <div 
               key={index} 
               className={`border rounded-lg ${
@@ -450,7 +502,8 @@ export function FeedOverviewTab({
             </div>
           ))}
           
-          {(!feedStats.stockLevels || feedStats.stockLevels.length === 0) && (
+          {/* Empty states */}
+          {enhancedStockLevels.length === 0 && (
             <div className="text-center py-8 text-gray-500">
               <Package className="mx-auto h-8 w-8 text-gray-400 mb-3" />
               <h3 className={`font-medium text-gray-900 ${isMobile ? 'text-sm' : 'text-base'}`}>
@@ -461,17 +514,71 @@ export function FeedOverviewTab({
               </p>
               {canManageFeed && (
                 <div className="mt-4">
-                  <Button 
-                    onClick={onAddFeedType}
-                    size={isMobile ? "sm" : "default"}
-                  >
+                  <Button onClick={onAddFeedType} size={isMobile ? 'sm' : 'default'}>
                     Add Feed Type
                   </Button>
                 </div>
               )}
             </div>
           )}
+
+          {enhancedStockLevels.length > 0 && filteredStockLevels.length === 0 && (
+            <div className="text-center py-8 text-gray-400 text-sm">
+              No stock levels match your search or filter.
+            </div>
+          )}
         </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
+            <span className="text-xs text-gray-500">
+              Page {safePage} of {totalPages} · {filteredStockLevels.length} record{filteredStockLevels.length !== 1 ? 's' : ''}
+            </span>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={safePage === 1}
+                className="h-8 w-8 p-0"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter(n => n === 1 || n === totalPages || Math.abs(n - safePage) <= 1)
+                .reduce<(number | '…')[]>((acc, n, i, arr) => {
+                  if (i > 0 && n - (arr[i - 1] as number) > 1) acc.push('…')
+                  acc.push(n)
+                  return acc
+                }, [])
+                .map((n, i) =>
+                  n === '…' ? (
+                    <span key={`ellipsis-${i}`} className="px-1 text-gray-400 text-sm">…</span>
+                  ) : (
+                    <Button
+                      key={n}
+                      variant={n === safePage ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setPage(n as number)}
+                      className="h-8 w-8 p-0 text-xs"
+                    >
+                      {n}
+                    </Button>
+                  )
+                )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={safePage === totalPages}
+                className="h-8 w-8 p-0"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   )

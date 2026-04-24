@@ -2,10 +2,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
-import { 
-  getAnimalCategories, 
+import {
+  getAnimalCategories,
   createAnimalCategory,
-  AnimalCategory 
+  AnimalCategory
 } from '@/lib/database/feedManagementSettings'
 import {
   validateAnimalCategoryData,
@@ -92,22 +92,23 @@ export async function POST(request: NextRequest) {
       max_age_days: body.max_age_days || null,
       gender: body.gender || null,
       production_status: body.production_status || null,
-      production_statuses: body.production_statuses && Array.isArray(body.production_statuses) && body.production_statuses.length > 0 
-        ? body.production_statuses 
+      production_statuses: body.production_statuses && Array.isArray(body.production_statuses) && body.production_statuses.length > 0
+        ? body.production_statuses
         : null,
       characteristics: characteristicsResult.data || {},
       is_default: body.is_default || false,
-      sort_order: body.sort_order || null
+      sort_order: body.sort_order || null,
+      feed_ration_id: body.characteristics?.selected_feed_ration_id ?? body.feed_ration_id ?? null,
     }
-    
+
     const result = await createAnimalCategory(userRole.farm_id, categoryData)
-    
+
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 })
     }
-    
-    return NextResponse.json({ 
-      success: true, 
+
+    return NextResponse.json({
+      success: true,
       data: result.data,
       message: 'Animal category created successfully'
     })

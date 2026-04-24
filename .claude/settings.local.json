@@ -5,7 +5,11 @@
       "Bash(git -C /d/Project/dairy-farm-management log --oneline --name-status)",
       "Bash(git -C /d/Project/dairy-farm-management show HEAD:src/lib/database/invitations.ts)",
       "Bash(grep -l \"invitations\\\\|invitation\" /d/Project/dairy-farm-management/src/lib/database/*.ts)",
-      "Bash(grep -E \"\\\\.\\(ts|tsx\\)$\")"
+      "Bash(grep -E \"\\\\.\\(ts|tsx\\)$\")",
+      "Bash(awk 'NR>=2362 && NR<=2800' d:/Project/dairy-farm-management/src/components/feed/FeedConsumptionModal.tsx)"
+    ],
+    "additionalDirectories": [
+      "d:\\Project\\dairy-farm-management\\src\\app\\api\\farms\\[farmId]\\scheduled-feedings\\[id]"
     ]
   }
 }

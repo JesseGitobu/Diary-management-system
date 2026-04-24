@@ -3,8 +3,9 @@
 import { useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
-import { Plus, Building2, Phone, Mail } from 'lucide-react'
+import { Plus, Building2 } from 'lucide-react'
 import { AddSupplierModal } from '@/components/inventory/AddSupplierModal'
+import { EditSupplierModal } from '@/components/inventory/EditSupplierModal'
 import { SupplierCard } from '@/components/inventory/SupplierCard'
 import { SupplierStatsCards } from '@/components/inventory/SupplierStatsCards'
 
@@ -15,20 +16,33 @@ interface SuppliersManagementProps {
   canManage: boolean
 }
 
-export function SuppliersManagement({ 
-  farmId, 
-  suppliers: initialSuppliers, 
+export function SuppliersManagement({
+  farmId,
+  suppliers: initialSuppliers,
   supplierStats,
-  canManage 
+  canManage,
 }: SuppliersManagementProps) {
-  const [suppliers, setSuppliers] = useState(initialSuppliers)
-  const [showAddModal, setShowAddModal] = useState(false)
-  
+  const [suppliers, setSuppliers]         = useState(initialSuppliers)
+  const [showAddModal, setShowAddModal]   = useState(false)
+  const [editingSupplier, setEditingSupplier] = useState<any | null>(null)
+
+  // ── Add ────────────────────────────────────────────────────────────────────
   const handleSupplierAdded = (newSupplier: any) => {
     setSuppliers(prev => [newSupplier, ...prev])
     setShowAddModal(false)
   }
-  
+
+  // ── Edit ───────────────────────────────────────────────────────────────────
+  const handleSupplierUpdated = (updated: any) => {
+    setSuppliers(prev => prev.map(s => s.id === updated.id ? updated : s))
+    setEditingSupplier(null)
+  }
+
+  // ── Delete (soft) ──────────────────────────────────────────────────────────
+  const handleSupplierDeleted = (supplierId: string) => {
+    setSuppliers(prev => prev.filter(s => s.id !== supplierId))
+  }
+
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
@@ -45,54 +59,52 @@ export function SuppliersManagement({
           </Button>
         )}
       </div>
-      
+
       {/* Stats Cards */}
       <SupplierStatsCards
         stats={[
           {
-            title: "Total Suppliers",
+            title: 'Total Suppliers',
             value: supplierStats.totalSuppliers,
-            description: "Active vendor relationships",
+            description: 'Active vendor relationships',
             icon: Building2,
-            color: "bg-purple-500",
-            bgColor: "bg-purple-100",
+            color: 'bg-purple-500',
+            bgColor: 'bg-purple-100',
           },
           {
-            title: "Feed Suppliers",
+            title: 'Feed Suppliers',
             value: supplierStats.supplierTypes.feed || 0,
-            description: "Feed vendors",
+            description: 'Feed vendors',
             icon: Building2,
-            color: "bg-green-500",
-            bgColor: "bg-green-100",
+            color: 'bg-green-500',
+            bgColor: 'bg-green-100',
           },
           {
-            title: "Medical Suppliers",
+            title: 'Medical Suppliers',
             value: supplierStats.supplierTypes.medical || 0,
-            description: "Medical vendors",
+            description: 'Medical vendors',
             icon: Building2,
-            color: "bg-red-500",
-            bgColor: "bg-red-100",
+            color: 'bg-red-500',
+            bgColor: 'bg-red-100',
           },
           {
-            title: "Equipment Suppliers",
+            title: 'Equipment Suppliers',
             value: supplierStats.supplierTypes.equipment || 0,
-            description: "Equipment vendors",
+            description: 'Equipment vendors',
             icon: Building2,
-            color: "bg-blue-500",
-            bgColor: "bg-blue-100",
-          }
+            color: 'bg-blue-500',
+            bgColor: 'bg-blue-100',
+          },
         ]}
         totalSuppliers={supplierStats.totalSuppliers}
         supplierTypes={supplierStats.supplierTypes}
       />
-      
+
       {/* Suppliers List */}
       <Card>
         <CardHeader>
           <CardTitle>All Suppliers</CardTitle>
-          <CardDescription>
-            Your vendor and supplier directory
-          </CardDescription>
+          <CardDescription>Your vendor and supplier directory</CardDescription>
         </CardHeader>
         <CardContent>
           {suppliers.length === 0 ? (
@@ -111,18 +123,20 @@ export function SuppliersManagement({
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {suppliers.map((supplier) => (
+              {suppliers.map(supplier => (
                 <SupplierCard
                   key={supplier.id}
                   supplier={supplier}
                   canManage={canManage}
+                  onEdit={setEditingSupplier}
+                  onDelete={handleSupplierDeleted}
                 />
               ))}
             </div>
           )}
         </CardContent>
       </Card>
-      
+
       {/* Add Supplier Modal */}
       {showAddModal && (
         <AddSupplierModal
@@ -130,6 +144,16 @@ export function SuppliersManagement({
           isOpen={showAddModal}
           onClose={() => setShowAddModal(false)}
           onSupplierAdded={handleSupplierAdded}
+        />
+      )}
+
+      {/* Edit Supplier Modal */}
+      {editingSupplier && (
+        <EditSupplierModal
+          supplier={editingSupplier}
+          isOpen={!!editingSupplier}
+          onClose={() => setEditingSupplier(null)}
+          onSupplierUpdated={handleSupplierUpdated}
         />
       )}
     </div>

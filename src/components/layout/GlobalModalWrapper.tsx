@@ -33,6 +33,8 @@ interface GlobalModalWrapperProps {
   feedTypeCategories?: any[]
   animalCategories?: any[]
   weightConversions?: any[]
+  storageLocations?: any[]
+  suppliers?: any[]
   feedMixRecipes?: any[]
   
   // Health props
@@ -53,6 +55,8 @@ export function GlobalModalWrapper({
   feedTypeCategories = [],
   animalCategories = [],
   weightConversions = [],
+  storageLocations = [],
+  suppliers = [],
   feedMixRecipes = [],
   veterinarians = [],
   channels = [],
@@ -166,6 +170,12 @@ export function GlobalModalWrapper({
           feedTypes={feedTypes}
           feedTypeCategories={feedTypeCategories}
           weightConversions={weightConversions}
+          storageLocations={storageLocations}
+          suppliers={suppliers}
+          inventoryStock={inventory.map(item => ({
+            feed_type_id: item.feed_type_id,
+            quantity_in_stock: item.quantity_kg || 0,
+          }))}
           isOpen={true}
           onClose={closeModal}
           onSuccess={handleSuccess}

@@ -10,11 +10,11 @@ import { useBreedingEvents } from '@/lib/hooks/useBreedingEvents'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { cn } from '@/lib/utils/cn'
 
-import { 
-  Heart, 
-  Syringe, 
-  Stethoscope, 
-  Baby, 
+import {
+  Heart,
+  Syringe,
+  Stethoscope,
+  Baby,
   Calendar,
   FileText,
   AlertCircle,
@@ -24,8 +24,11 @@ import {
   ChevronUp,
   User,
   Tag,
-  Clock
+  Clock,
+  Edit2,
+  Trash2
 } from 'lucide-react'
+import { AddBreedingEventModal } from './AddBreedingEventModal'
 
 interface BreedingEventTimelineProps {
   animalId?: string | null
@@ -93,6 +96,29 @@ export function BreedingEventTimeline({
   const [showFilters, setShowFilters] = useState(false)
   const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set())
   const [dateFilter, setDateFilter] = useState<'all' | '7days' | '30days' | '90days'>('all')
+
+  // Edit / delete state
+  const [editingEvent, setEditingEvent] = useState<any | null>(null)
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  const handleDelete = async (eventId: string) => {
+    setIsDeleting(true)
+    try {
+      const response = await fetch(`/api/breeding-events/${eventId}`, { method: 'DELETE' })
+      const result = await response.json()
+      if (response.ok && result.success) {
+        setDeleteConfirmId(null)
+        refetch?.()
+      } else {
+        console.error('Failed to delete event:', result.error)
+      }
+    } catch (err) {
+      console.error('Error deleting event:', err)
+    } finally {
+      setIsDeleting(false)
+    }
+  }
   
   // Filter events
   interface BreedingEvent {
@@ -428,26 +454,50 @@ export function BreedingEventTimeline({
                         )}
                       </div>
                       
-                      {hasDetails && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => toggleEventExpansion(event.id)}
-                          className={cn(
-                            "flex-shrink-0",
-                            isMobile && "w-full justify-between"
-                          )}
-                        >
-                          <span className="text-xs">
-                            {isExpanded ? 'Show Less' : 'Show Details'}
-                          </span>
-                          {isExpanded ? (
-                            <ChevronUp className="w-4 h-4 ml-1" />
-                          ) : (
-                            <ChevronDown className="w-4 h-4 ml-1" />
-                          )}
-                        </Button>
-                      )}
+                      <div className="flex items-center space-x-1 flex-shrink-0">
+                        {farmId && (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setEditingEvent(event)}
+                              className="text-gray-500 hover:text-farm-green"
+                              title="Edit event"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setDeleteConfirmId(event.id)}
+                              className="text-gray-500 hover:text-red-600"
+                              title="Delete event"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </>
+                        )}
+                        {hasDetails && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => toggleEventExpansion(event.id)}
+                            className={cn(
+                              "flex-shrink-0",
+                              isMobile && "w-full justify-between"
+                            )}
+                          >
+                            <span className="text-xs">
+                              {isExpanded ? 'Show Less' : 'Show Details'}
+                            </span>
+                            {isExpanded ? (
+                              <ChevronUp className="w-4 h-4 ml-1" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4 ml-1" />
+                            )}
+                          </Button>
+                        )}
+                      </div>
                     </div>
                     
                     {/* Quick Summary (Always Visible) */}
@@ -642,6 +692,32 @@ export function BreedingEventTimeline({
                     )}
                   </div>
                 </div>
+
+                {deleteConfirmId === event.id && (
+                  <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center justify-between gap-3">
+                    <p className={cn("text-red-700", isMobile ? "text-xs" : "text-sm")}>
+                      Delete this event? This cannot be undone.
+                    </p>
+                    <div className="flex items-center space-x-2 flex-shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setDeleteConfirmId(null)}
+                        disabled={isDeleting}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => handleDelete(event.id)}
+                        disabled={isDeleting}
+                        className="bg-red-600 hover:bg-red-700 text-white"
+                      >
+                        {isDeleting ? <LoadingSpinner size="sm" /> : 'Delete'}
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           )
@@ -668,6 +744,19 @@ export function BreedingEventTimeline({
             </Button>
           </CardContent>
         </Card>
+      )}
+
+      {editingEvent && farmId && (
+        <AddBreedingEventModal
+          isOpen={!!editingEvent}
+          onClose={() => setEditingEvent(null)}
+          farmId={farmId}
+          onEventCreated={() => {
+            setEditingEvent(null)
+            refetch?.()
+          }}
+          editingEvent={editingEvent}
+        />
       )}
     </div>
   )

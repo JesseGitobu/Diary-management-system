@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c ':*)",
+      "Bash(python -c ':*)",
+      "Bash(grep -l \"TRIGGER\\\\|trigger\" \"d:\\\\Project\\\\dairy-farm-management\\\\supabase\\\\migrations\"/*.sql)",
+      "Bash(xargs grep *)",
+      "Bash(iconv -f UTF-16 -t UTF-8 d:/Project/dairy-farm-management/src/lib/supabase/types.ts)",
+      "Bash(grep -A 5 \"feed_purchases\\\\|feed_inventory_transactions\" d:/Project/dairy-farm-management/src/app/api/farms/[farmId]/feed-formulate/route.ts)"
+    ],
+    "additionalDirectories": [
+      "d:\\Project\\dairy-farm-management\\src\\app\\api\\farms\\[farmId]\\concentrate-formulations",
+      "d:\\Project\\dairy-farm-management\\src\\app\\api\\suppliers",
+      "d:\\Project\\dairy-farm-management\\src\\app\\api\\suppliers\\[id]"
+    ]
+  }
+}

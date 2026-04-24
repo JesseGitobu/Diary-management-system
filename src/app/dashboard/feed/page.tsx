@@ -2,13 +2,13 @@
 import { Metadata } from 'next'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
-import { getFeedStats, getFeedTypes, getFeedInventory, getFeedConsumptionRecords } from '@/lib/database/feed'
-import { getFarmAnimals } from '@/lib/database/animals'
-import { getFarmFeedMixRecipes } from '@/lib/database/feedMixRecipes'
+import { getFeedStats, getFeedTypes, getFeedInventory } from '@/lib/database/feed'
+import { getFeedConsumptionRecords } from '@/lib/database/feedConsumption'
 import { redirect } from 'next/navigation'
 import { FeedManagementDashboard } from '@/components/feed/FeedManagementDashboard'
-import { getUserPermissions } from '@/lib/database/user-permissions'
-import { getWeightConversions, getFeedTypeCategories, getAnimalCategories, getConsumptionBatches } from '@/lib/database/feedManagementSettings'
+import { getFeedTypeCategories, getAnimalCategories, getWeightConversions } from '@/lib/database/feedManagementSettings'
+import { getStorageLocations } from '@/lib/database/storage'
+import { getSuppliers } from '@/lib/database/suppliers'
 
 export const metadata: Metadata = {
   title: 'Feed Management | DairyTrack Pro',
@@ -17,47 +17,51 @@ export const metadata: Metadata = {
 
 export default async function FeedPage() {
   const user = await getCurrentUser()
-  
+
   if (!user) {
     redirect('/auth')
   }
-  
+
   const userRole = await getUserRole(user.id) as any
-  
+
   if (!userRole?.farm_id) {
     redirect('/dashboard')
   }
-  
-  // Get feed management data including consumption records and animals
-  const [feedStats, feedTypes, inventory, consumptionRecords, animals, feedTypeCategories, animalCategories, weightConversions, consumptionBatches, permissions, feedMixRecipesResult] = await Promise.all([
-  getFeedStats(userRole.farm_id, 30),
-  getFeedTypes(userRole.farm_id),
-  getFeedInventory(userRole.farm_id),
-  getFeedConsumptionRecords(userRole.farm_id, 50),
-  getFarmAnimals(userRole.farm_id),
-  getFeedTypeCategories(userRole.farm_id),
-  getAnimalCategories(userRole.farm_id),
-  getWeightConversions(userRole.farm_id),
-  getConsumptionBatches(userRole.farm_id),
-  getUserPermissions(userRole.id, userRole.farm_id, userRole.role_type),
-  getFarmFeedMixRecipes(userRole.farm_id),
-])
-  
+
+  const farmId = userRole.farm_id
+
+  // Critical data only — everything needed to paint the first visible screen.
+  // Heavy/modal-only data (animals, feedMixRecipes, permissions) is loaded
+  // client-side on demand to avoid blocking the initial render.
+  const [feedStats, feedTypes, inventory, consumptionRecords, feedTypeCategories, animalCategories, weightConversions, storageLocations, suppliers] = await Promise.all([
+    getFeedStats(farmId, 30),
+    getFeedTypes(farmId),
+    getFeedInventory(farmId),
+    // Reduce limit: the table view shows ~20 rows; full history is paginated client-side
+    getFeedConsumptionRecords(farmId, 20),
+    getFeedTypeCategories(farmId),
+    getAnimalCategories(farmId),
+    getWeightConversions(farmId),
+    getStorageLocations(farmId),
+    getSuppliers(farmId),
+  ])
+
   return (
     <div className="dashboard-container">
       <FeedManagementDashboard
-        farmId={userRole.farm_id}
+        farmId={farmId}
         feedStats={feedStats}
         feedTypes={feedTypes}
         inventory={inventory}
         consumptionRecords={consumptionRecords}
-        animals={animals}
+        animals={[]}           // loaded client-side when modal opens
         userRole={userRole.role_type}
         feedTypeCategories={feedTypeCategories}
         animalCategories={animalCategories}
         weightConversions={weightConversions}
-        consumptionBatches={consumptionBatches}
-        feedMixRecipes={feedMixRecipesResult.success ? feedMixRecipesResult.data : []}
+        storageLocations={storageLocations}
+        suppliers={suppliers}
+        feedMixRecipes={[]}    // loaded client-side when TMR tab is activated
       />
     </div>
   )

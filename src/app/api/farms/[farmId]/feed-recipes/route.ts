@@ -61,8 +61,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const body = await request.json()
     const supabase = await createServerSupabaseClient()
 
-    // Validate required fields
-    if (!body.name || !body.ingredients || !Array.isArray(body.ingredients)) {
+    // Validate required fields (accept both 'name' and legacy 'recipe_name')
+    const recipeName = body.name ?? body.recipe_name
+    if (!recipeName || !body.ingredients || !Array.isArray(body.ingredients)) {
       return NextResponse.json(
         { error: 'Missing required fields: name, ingredients' },
         { status: 400 }
@@ -88,15 +89,23 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       .from('feed_mix_recipes')
       .insert({
         farm_id: farmId,
-        recipe_name: body.name,
-        description: body.description,
+        name: recipeName,
+        description: body.description ?? null,
         ingredients: body.ingredients,
-        nutritional_target: body.nutritional_target || {},
-        total_yield: body.total_yield || 0,
-        unit_of_measure: body.unit_of_measure || 'kg',
-        target_animals: body.target_animals || {},
-        cost_per_unit: body.cost_per_unit || 0,
-        notes: body.notes || '',
+        target_nutrition: body.target_nutrition ?? body.nutritional_target ?? null,
+        total_yield: body.total_yield ?? 0,
+        unit_of_measure: body.unit_of_measure ?? 'kg',
+        target_animals: body.target_animals ?? null,
+        applicable_conditions: body.applicable_conditions ?? null,
+        is_seasonal: body.is_seasonal ?? false,
+        applicable_seasons: body.applicable_seasons ?? null,
+        estimated_cost_per_day: body.estimated_cost_per_day ?? null,
+        estimated_milk_yield_liters: body.estimated_milk_yield_liters ?? null,
+        active: body.active ?? true,
+        start_date: body.start_date ?? null,
+        end_date: body.end_date ?? null,
+        cost_per_unit: body.cost_per_unit ?? null,
+        notes: body.notes ?? null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       } as any)

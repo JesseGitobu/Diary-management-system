@@ -112,57 +112,130 @@ export async function generateFeedReport(filters: ReportFilters) {
   const supabase = await createServerSupabaseClient()
   
   try {
-    // Feed summary data
-    const { data: feedSummaryData } = await supabase
-      .from('daily_feed_summary')
-      .select('*')
-      .eq('farm_id', filters.farmId)
-      .gte('summary_date', filters.dateRange.start)
-      .lte('summary_date', filters.dateRange.end)
-      .order('summary_date', { ascending: true })
-    
-    // FIXED: Cast to any[]
-    const feedSummary = (feedSummaryData as any[]) || []
-
-    // Feed consumption by type
-    const { data: feedConsumptionData } = await (supabase as any)
+    // Feed consumption records with full details
+    const { data: feedConsumptionData, error } = await (supabase as any)
       .from('feed_consumption_records')
       .select(`
         *,
-        feed_types (
-          name,
-          typical_cost_per_kg
+        feed_consumption_feeds (
+          id,
+          feed_type_id,
+          quantity_kg,
+          percentage_of_mix,
+          cost_per_kg,
+          feed_types ( 
+            id,
+            name,
+            typical_cost_per_kg,
+            category_id
+          )
+        ),
+        feed_consumption_animals (
+          animal_id,
+          quantity_kg,
+          animals ( id, tag_number, name )
         )
       `)
       .eq('farm_id', filters.farmId)
       .gte('consumption_date', filters.dateRange.start)
       .lte('consumption_date', filters.dateRange.end)
+      .order('consumption_date', { ascending: true })
     
+    if (error) {
+      console.error('Error fetching feed consumption:', error)
+      throw error
+    }
+
     // FIXED: Cast to any[]
     const feedConsumption = (feedConsumptionData as any[]) || []
 
-    // Calculate feed metrics
+    // Aggregate data by day to create daily summaries
+    const dailySummaryMap = new Map<string, any>()
+    
+    feedConsumption.forEach(record => {
+      const date = record.consumption_date
+      if (!dailySummaryMap.has(date)) {
+        dailySummaryMap.set(date, {
+          summary_date: date,
+          farm_id: record.farm_id,
+          total_quantity_kg: 0,
+          total_feed_cost: 0,
+          feeding_sessions: 0,
+          feeding_modes: new Set<string>(),
+          cost_per_animal: 0
+        })
+      }
+
+      const daySummary = dailySummaryMap.get(date)
+      
+      // Calculate quantities and costs
+      const feeds = record.feed_consumption_feeds || []
+      feeds.forEach((feed: any) => {
+        const qty = feed.quantity_kg || 0
+        const costPerKg = feed.cost_per_kg || feed.feed_types?.typical_cost_per_kg || 0
+        daySummary.total_quantity_kg += qty
+        daySummary.total_feed_cost += qty * costPerKg
+      })
+
+      daySummary.feeding_sessions += 1
+      if (record.feeding_mode) {
+        daySummary.feeding_modes.add(record.feeding_mode)
+      }
+
+      // Calculate cost per animal if animal count is available
+      if (record.animal_count && record.animal_count > 0) {
+        daySummary.cost_per_animal = daySummary.total_feed_cost / record.animal_count
+      }
+    })
+
+    // Convert map to array and convert Set to array
+    const feedSummary = Array.from(dailySummaryMap.values()).map(day => ({
+      ...day,
+      feeding_modes: Array.from(day.feeding_modes)
+    }))
+
+    // Feed type breakdown
+    const feedTypeBreakdown = feedConsumption.reduce((acc: { [key: string]: { name: string, totalQuantity: number, totalCost: number, recordCount: number, mode?: string } }, record) => {
+      const feeds = record.feed_consumption_feeds || []
+      feeds.forEach((feed: any) => {
+        const feedType = feed.feed_types?.name || 'Unknown'
+        if (!acc[feedType]) {
+          acc[feedType] = {
+            name: feedType,
+            totalQuantity: 0,
+            totalCost: 0,
+            recordCount: 0,
+            mode: record.feeding_mode
+          }
+        }
+        const qty = feed.quantity_kg || 0
+        const costPerKg = feed.cost_per_kg || feed.feed_types?.typical_cost_per_kg || 0
+        acc[feedType].totalQuantity += qty
+        acc[feedType].totalCost += qty * costPerKg
+        acc[feedType].recordCount += 1
+      })
+      return acc
+    }, {} as { [key: string]: { name: string, totalQuantity: number, totalCost: number, recordCount: number, mode?: string } })
+
+    // Calculate totals
     const totalFeedCost = feedSummary.reduce((sum, day) => sum + (day.total_feed_cost || 0), 0) || 0
     const totalFeedQuantity = feedSummary.reduce((sum, day) => sum + (day.total_quantity_kg || 0), 0) || 0
-    const averageCostPerDay = totalFeedCost / (feedSummary.length || 1)
-    const averageCostPerAnimal = feedSummary.reduce((sum, day) => sum + (day.cost_per_animal || 0), 0) / ((feedSummary.length || 1)) || 0
+    const averageCostPerDay = feedSummary.length > 0 ? totalFeedCost / feedSummary.length : 0
+    const totalFeedingSessions = feedConsumption.length
     
-    // Feed type breakdown
-    const feedTypeBreakdown = feedConsumption.reduce((acc: { [key: string]: { name: string, totalQuantity: number, totalCost: number, recordCount: number } }, record) => {
-      const feedType = record.feed_types?.name || 'Unknown'
-      if (!acc[feedType]) {
-        acc[feedType] = {
-          name: feedType,
-          totalQuantity: 0,
-          totalCost: 0,
-          recordCount: 0
-        }
-      }
-      acc[feedType].totalQuantity += record.quantity_kg || 0
-      acc[feedType].totalCost += (record.quantity_kg || 0) * (record.feed_types?.typical_cost_per_kg || 0)
-      acc[feedType].recordCount += 1
-      return acc
-    }, {} as { [key: string]: { name: string, totalQuantity: number, totalCost: number, recordCount: number } })
+    // Calculate average cost per animal across all records with animal count
+    const recordsWithAnimals = feedConsumption.filter(r => r.animal_count && r.animal_count > 0)
+    const averageCostPerAnimal = recordsWithAnimals.length > 0 
+      ? recordsWithAnimals.reduce((sum, r) => {
+          const feeds = r.feed_consumption_feeds || []
+          const recordCost = feeds.reduce((s: number, f: any) => {
+            const qty = f.quantity_kg || 0
+            const costPerKg = f.cost_per_kg || f.feed_types?.typical_cost_per_kg || 0
+            return s + (qty * costPerKg)
+          }, 0)
+          return sum + (recordCost / r.animal_count)
+        }, 0) / recordsWithAnimals.length
+      : 0
     
     return {
       summary: {
@@ -171,7 +244,12 @@ export async function generateFeedReport(filters: ReportFilters) {
         averageDailyCost: averageCostPerDay,
         averageCostPerAnimal,
         daysReported: feedSummary.length || 0,
-        feedTypesUsed: Object.keys(feedTypeBreakdown || {}).length
+        feedTypesUsed: Object.keys(feedTypeBreakdown || {}).length,
+        totalFeedingSessions,
+        period: {
+          start: filters.dateRange.start,
+          end: filters.dateRange.end
+        }
       },
       dailyData: feedSummary,
       feedTypeBreakdown: Object.values(feedTypeBreakdown || {}),
@@ -179,7 +257,8 @@ export async function generateFeedReport(filters: ReportFilters) {
         date: day.summary_date,
         totalCost: day.total_feed_cost,
         costPerAnimal: day.cost_per_animal,
-        quantity: day.total_quantity_kg
+        quantity: day.total_quantity_kg,
+        sessions: day.feeding_sessions
       }))
     }
   } catch (error) {

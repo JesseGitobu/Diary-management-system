@@ -111,8 +111,8 @@ SelectLabel.displayName = SelectPrimitive.Label.displayName
 
 const SelectItem = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Item>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item>
->(({ className, children, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item> & { label?: string }
+>(({ className, children, label, ...props }, ref) => (
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
@@ -127,7 +127,19 @@ const SelectItem = React.forwardRef<
       </SelectPrimitive.ItemIndicator>
     </span>
 
-    <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+    {label !== undefined ? (
+      <div className="flex flex-col gap-0.5 min-w-0">
+        <SelectPrimitive.ItemText>{label}</SelectPrimitive.ItemText>
+        {children}
+      </div>
+    ) : (
+      <>
+        <SelectPrimitive.ItemText>
+          {typeof children === 'string' ? children : ''}
+        </SelectPrimitive.ItemText>
+        {typeof children !== 'string' && children}
+      </>
+    )}
   </SelectPrimitive.Item>
 ))
 SelectItem.displayName = SelectPrimitive.Item.displayName
