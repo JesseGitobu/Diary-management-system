@@ -4,7 +4,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
-import { Badge } from '@/components/ui/Badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
 import { AddFeedTypeModal } from '@/components/feed/AddFeedTypeModal'
 import { AddFeedInventoryModal } from '@/components/feed/AddFeedInventoryModal'
@@ -168,7 +167,7 @@ export function FeedManagementDashboard({
   }
 }, [])
 
-  const { isMobile, isTablet } = useDeviceInfo()
+  const { isMobile, isTablet, isSmallMobile, isDesktop } = useDeviceInfo()
   const canManageFeed = ['farm_owner', 'farm_manager'].includes(userRole)
   const canRecordFeeding = ['farm_owner', 'farm_manager', 'worker'].includes(userRole)
   const canEditRecords = ['farm_owner', 'farm_manager'].includes(userRole)
@@ -507,75 +506,6 @@ export function FeedManagementDashboard({
         />
       </div>
 
-      {/* Enhanced Low Stock Alerts */}
-      {enhancedStats.alertCounts.total > 0 && (
-        <div className="px-4 lg:px-0">
-          <Card className="border-yellow-200 bg-yellow-50">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center space-x-2 text-yellow-800 text-base">
-                  <AlertTriangle className="h-4 w-4" />
-                  <span>Stock Alerts ({enhancedStats.alertCounts.total})</span>
-                </CardTitle>
-                {canManageFeed && !isMobile && (
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => setShowAddInventoryModal(true)}
-                    className="text-yellow-800 border-yellow-300 hover:bg-yellow-100"
-                  >
-                    <Plus className="w-4 h-4 mr-1" />
-                    Add Stock
-                  </Button>
-                )}
-              </div>
-              <CardDescription className="text-yellow-700">
-                {enhancedStats.alertCounts.critical} critical alerts, {enhancedStats.alertCounts.low} low stock warnings
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className={`${isMobile ? 'space-y-3' : 'grid grid-cols-1 md:grid-cols-3 gap-4'}`}>
-                {feedStats.stockLevels?.filter((stock: any) => {
-                  const feedType = feedTypes.find(ft => ft.id === stock.feedType?.id || ft.id === stock.feed_type_id)
-                  if (!feedType) return false
-                  const threshold = feedType.low_stock_threshold || 50
-                  return stock.currentStock < threshold
-                }).map((item: any, index: number) => {
-                  const feedType = feedTypes.find(ft => ft.id === item.feedType?.id || ft.id === item.feed_type_id)
-                  const threshold = feedType?.low_stock_threshold || 50
-                  const percentageRemaining = ((item.currentStock / threshold) * 100).toFixed(0)
-                  const isCritical = item.currentStock <= threshold * 0.2
-                  
-                  return (
-                    <div key={index} className="flex items-center justify-between p-3 bg-white rounded-lg border-l-4 border-red-400">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm truncate">{item.feedType?.name || 'Unknown Feed'}</p>
-                        <p className="text-xs text-gray-600">
-                          {item.currentStock.toFixed(1)}kg remaining of {threshold}kg threshold
-                        </p>
-                        <p className="text-xs text-red-600 font-medium">
-                          {percentageRemaining}% of minimum stock level
-                        </p>
-                      </div>
-                      <div className="ml-2 text-right">
-                        <Badge 
-                          variant="destructive" 
-                          className="text-xs mb-1"
-                        >
-                          {isCritical ? 'Critical' : 'Low Stock'}
-                        </Badge>
-                        <div className="text-xs text-gray-500">
-                          Need: {Math.max(0, threshold - item.currentStock).toFixed(1)}kg
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
 
       {/* Horizontal Tabs - Optimized for both Mobile and Desktop */}
       <div className="px-4 lg:px-0 mb-6">
@@ -589,102 +519,51 @@ export function FeedManagementDashboard({
         }}
         className="w-full"
       >
-          {/* Horizontal Tab Layout for both Mobile and Desktop */}
-          <TabsList className={`
-            ${isMobile
-              ? 'w-full h-auto p-1 flex gap-1 overflow-x-auto'
-              : 'h-12 w-auto inline-flex gap-2 justify-start'
-            }
-          `}>
-            <TabsTrigger
-              value="overview"
-              className={`
-                ${isMobile
-                  ? 'text-xs px-2 py-2 h-10'
-                  : 'text-sm px-6 py-2 h-10 min-w-[120px]'
-                }
-              `}
-            >
-              Overview
-            </TabsTrigger>
-            <TabsTrigger
-              value="inventory"
-              className={`
-                ${isMobile
-                  ? 'text-xs px-2 py-2 h-10'
-                  : 'text-sm px-6 py-2 h-10 min-w-[120px]'
-                }
-              `}
-            >
-              {isMobile ? 'Stock' : 'Inventory'}
-            </TabsTrigger>
-            <TabsTrigger
-              value="consumption"
-              className={`
-                ${isMobile
-                  ? 'text-xs px-2 py-2 h-10'
-                  : 'text-sm px-6 py-2 h-10 min-w-[120px]'
-                }
-              `}
-            >
-              {isMobile ? 'Usage' : 'Consumption'}
-            </TabsTrigger>
-            <TabsTrigger
-              value="types"
-              className={`
-                ${isMobile
-                  ? 'text-xs px-2 py-2 h-10'
-                  : 'text-sm px-6 py-2 h-10 min-w-[120px]'
-                }
-              `}
-            >
-              Types
-            </TabsTrigger>
-            <TabsTrigger
-              value="nutrition"
-              className={`
-                ${isMobile
-                  ? 'text-xs px-2 py-2 h-10'
-                  : 'text-sm px-6 py-2 h-10 min-w-[120px]'
-                }
-              `}
-            >
-              {isMobile ? 'Nutrition' : 'Nutrition Data'}
-            </TabsTrigger>
-            <TabsTrigger
-              value="recipes"
-              className={`
-                ${isMobile
-                  ? 'text-xs px-2 py-2 h-10'
-                  : 'text-sm px-6 py-2 h-10 min-w-[120px]'
-                }
-              `}
-            >
-              {isMobile ? 'TMR' : 'TMR Recipes'}
-            </TabsTrigger>
-            <TabsTrigger
-              value="rations"
-              className={`
-                ${isMobile
-                  ? 'text-xs px-2 py-2 h-10'
-                  : 'text-sm px-6 py-2 h-10 min-w-[120px]'
-                }
-              `}
-            >
-              {isMobile ? 'Rations' : 'Feed Rations'}
-            </TabsTrigger>
-            <TabsTrigger
-              value="waste"
-              className={`
-                ${isMobile
-                  ? 'text-xs px-2 py-2 h-10'
-                  : 'text-sm px-6 py-2 h-10 min-w-[120px]'
-                }
-              `}
-            >
-              Waste
-            </TabsTrigger>
-          </TabsList>
+          {/* Horizontal Tab Layout — 4-tier responsive via useDeviceInfo */}
+          {(() => {
+            const listClass = isDesktop
+              ? 'h-12 w-auto inline-flex gap-2 justify-start'
+              : isSmallMobile
+              ? 'w-full h-auto p-0.5 flex gap-0.5 justify-start overflow-x-auto'
+              : 'w-full h-auto p-1 flex gap-1 justify-start overflow-x-auto'
+
+            const triggerClass = isSmallMobile
+              ? 'text-[10px] px-1.5 py-2 h-9 flex-shrink-0'
+              : isMobile
+              ? 'text-xs px-2 py-2 h-10 flex-shrink-0'
+              : isTablet
+              ? 'text-xs px-3 py-2 h-10 flex-shrink-0'
+              : 'text-sm px-6 py-2 h-10 min-w-[120px]'
+
+            return (
+              <TabsList className={listClass}>
+                <TabsTrigger value="overview" className={triggerClass}>
+                  Overview
+                </TabsTrigger>
+                <TabsTrigger value="inventory" className={triggerClass}>
+                  {isTablet || isDesktop ? 'Inventory' : 'Stock'}
+                </TabsTrigger>
+                <TabsTrigger value="consumption" className={triggerClass}>
+                  {isTablet || isDesktop ? 'Consumption' : 'Usage'}
+                </TabsTrigger>
+                <TabsTrigger value="types" className={triggerClass}>
+                  Types
+                </TabsTrigger>
+                <TabsTrigger value="nutrition" className={triggerClass}>
+                  {isSmallMobile ? 'Nutr.' : isDesktop ? 'Nutrition Data' : 'Nutrition'}
+                </TabsTrigger>
+                <TabsTrigger value="recipes" className={triggerClass}>
+                  {isTablet || isDesktop ? 'TMR Recipes' : 'TMR'}
+                </TabsTrigger>
+                <TabsTrigger value="rations" className={triggerClass}>
+                  {isDesktop ? 'Feed Rations' : 'Rations'}
+                </TabsTrigger>
+                <TabsTrigger value="waste" className={triggerClass}>
+                  Waste
+                </TabsTrigger>
+              </TabsList>
+            )
+          })()}
 
           <TabsContent value="overview" className="space-y-4 mt-6">
             <FeedOverviewTab
@@ -695,6 +574,15 @@ export function FeedManagementDashboard({
               isMobile={isMobile}
               canManageFeed={canManageFeed}
               onAddFeedType={() => setShowAddTypeModal(true)}
+              onAddInventory={() => setShowAddInventoryModal(true)}
+              farmId={farmId}
+              feedMixRecipes={feedMixRecipes}
+              onTabChange={(tab) => {
+                setActiveTab(tab)
+                if (tab === 'recipes') ensureRecipesLoaded()
+                if (tab === 'rations') ensureAnimalsLoaded()
+                if (tab === 'consumption') loadScheduledFeedings()
+              }}
             />
           </TabsContent>
 

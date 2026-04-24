@@ -71,7 +71,7 @@ export function UnifiedInventoryDashboard({
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [showFilters, setShowFilters] = useState(false)
   const [activeTab, setActiveTab] = useState('inventory')
-  const { isMobile, isTablet } = useDeviceInfo()
+  const { isMobile, isTablet, isSmallMobile, isDesktop } = useDeviceInfo()
   
   const categories = [
     { value: 'all', label: 'All', shortLabel: 'All' },
@@ -396,53 +396,52 @@ export function UnifiedInventoryDashboard({
               </Card>
             )}
             
-            {/* Category Tabs */}
+            {/* Category Tabs — unified 4-tier responsive */}
             <Tabs value={selectedCategory} onValueChange={setSelectedCategory}>
-              {/* Mobile Horizontal Scrollable Tabs */}
-              <div className="lg:hidden">
-                <div className="flex space-x-2 overflow-x-auto pb-4">
+              <div className={isDesktop ? 'flex items-center justify-between gap-4' : 'block'}>
+                <TabsList className={
+                  isDesktop
+                    ? 'h-10 flex gap-1 justify-start'
+                    : isSmallMobile
+                    ? 'w-full h-auto p-0.5 flex gap-0.5 justify-start overflow-x-auto'
+                    : 'w-full h-auto p-1 flex gap-1 justify-start overflow-x-auto'
+                }>
                   {categories.map(category => (
-                    <button
+                    <TabsTrigger
                       key={category.value}
-                      onClick={() => setSelectedCategory(category.value)}
-                      className={`
-                        flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-colors
-                        ${selectedCategory === category.value 
-                          ? 'bg-farm-green text-white' 
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }
-                      `}
+                      value={category.value}
+                      className={
+                        isSmallMobile
+                          ? 'text-[10px] px-1.5 py-1.5 h-8 flex-shrink-0'
+                          : isMobile
+                          ? 'text-xs px-2 py-2 h-9 flex-shrink-0'
+                          : isTablet
+                          ? 'text-xs px-2.5 py-2 h-9 flex-shrink-0'
+                          : 'text-xs px-3 py-2 h-9 flex-shrink-0'
+                      }
                     >
-                      {category.shortLabel}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              
-              {/* Desktop Tabs */}
-              <div className="hidden lg:flex lg:items-center lg:justify-between">
-                <TabsList className="grid grid-cols-8">
-                  {categories.map(category => (
-                    <TabsTrigger key={category.value} value={category.value} className="text-xs">
-                      {category.label}
+                      {isMobile ? category.shortLabel : category.label}
                     </TabsTrigger>
                   ))}
                 </TabsList>
-                
-                <div className="flex items-center space-x-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
-                  >
-                    {viewMode === 'grid' ? <List className="mr-2 h-4 w-4" /> : <Grid3X3 className="mr-2 h-4 w-4" />}
-                    {viewMode === 'grid' ? 'List' : 'Grid'}
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)}>
-                    <Filter className="mr-2 h-4 w-4" />
-                    Filter
-                  </Button>
-                </div>
+
+                {/* View/filter buttons inline on desktop; mobile gets them from the page header */}
+                {isDesktop && (
+                  <div className="flex items-center space-x-2 flex-shrink-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
+                    >
+                      {viewMode === 'grid' ? <List className="mr-2 h-4 w-4" /> : <Grid3X3 className="mr-2 h-4 w-4" />}
+                      {viewMode === 'grid' ? 'List' : 'Grid'}
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)}>
+                      <Filter className="mr-2 h-4 w-4" />
+                      Filter
+                    </Button>
+                  </div>
+                )}
               </div>
               
               {/* Inventory Items Content */}
