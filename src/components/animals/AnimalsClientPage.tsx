@@ -14,6 +14,7 @@ import { QuickActionButton } from '@/components/mobile/QuickActionButton'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import CompleteHealthRecordModal from '@/components/health/CompleteHealthRecordModal'
 import { AnimalCategoriesManager } from './AnimalCategoriesManager'
+import { HousingAndFacilities } from './HousingAndFacilities'
 import {
   Plus,
   Users,
@@ -116,24 +117,6 @@ export function AnimalsClientPage({
   const canImportData       = permissions.canCreateAnimals
   const canManageCategories = permissions.canManageAnimals
 
-  // 🔍 DEBUG: Permission trace for Quick Actions visibility
-  console.log('🐄 [AnimalsClientPage] userRole:', userRole)
-  console.log('🐄 [AnimalsClientPage] permissions received:', {
-    canCreateAnimals: permissions.canCreateAnimals,
-    canEditAnimals: permissions.canEditAnimals,
-    canExportAnimals: permissions.canExportAnimals,
-    canManageAnimals: permissions.canManageAnimals,
-    canDeleteAnimals: permissions.canDeleteAnimals,
-    canViewAnimals: permissions.canViewAnimals,
-  })
-  console.log('🐄 [AnimalsClientPage] derived flags:', {
-    canAddAnimals,
-    canManageAnimals,
-    canExportData,
-    canImportData,
-    canManageCategories,
-  })
-
   // Load categories when modal opens
   const handleOpenCategoriesModal = async () => {
     setShowCategoriesModal(true)
@@ -146,7 +129,7 @@ export function AnimalsClientPage({
           setCategories(data.data || [])
         }
       } catch (error) {
-        console.error('Error loading categories:', error)
+        // Error loading categories
       } finally {
         setLoadingCategories(false)
       }
@@ -160,11 +143,8 @@ export function AnimalsClientPage({
   const [showHealthRecordModal, setShowHealthRecordModal] = useState(false)
   const [selectedHealthRecord, setSelectedHealthRecord] = useState<any>(null)
 
-  // ✅ Initialize weight requirements from server-passed data (animals_requiring_weight_update table)
-  const [animalsNeedingWeight, setAnimalsNeedingWeight] = useState<any[]>(
-    weightRequirementsData  // ✅ Use data directly - comes from animals_requiring_weight_update table with id, reason, due_date
-  )
-  const [loadingWeightRequirements, setLoadingWeightRequirements] = useState(false)  // ✅ Set to false since data is already server-side
+  const [animalsNeedingWeight, setAnimalsNeedingWeight] = useState<any[]>(weightRequirementsData)
+  const [loadingWeightRequirements, setLoadingWeightRequirements] = useState(false)
 
 
 
@@ -194,8 +174,6 @@ useEffect(() => {
   }
 }, [housingFacilities.length])
 
-// ✅ REMOVED: loadWeightRequirements() - data now fetched server-side in batch endpoint
-
 // Add handler for weight update
 const [selectedAnimalForWeight, setSelectedAnimalForWeight] = useState<any>(null)
 const [showWeightUpdateModal, setShowWeightUpdateModal] = useState(false)
@@ -214,23 +192,16 @@ const handleWeightUpdateClick = (requirement: any) => {
 }
 
 const handleWeightUpdated = (updatedAnimal: Animal) => {
-  console.log('✅ [AnimalsPage] Weight updated for animal:', updatedAnimal.id)
-  // Update animals list
   setAnimals(prev => 
     prev.map(a => a.id === updatedAnimal.id ? updatedAnimal : a)
   )
   
-  // Remove from weight requirements
   setAnimalsNeedingWeight(prev => 
     prev.filter(req => req.animal_id !== updatedAnimal.id)
   )
   
   setShowWeightUpdateModal(false)
   setSelectedAnimalForWeight(null)
-  
-  // ✅ REMOVED: loadWeightRequirements() - no longer needed as data comes from server
-
-  console.log('✅ [AnimalsPage] Weight updated successfully')
 }
 
 
@@ -290,7 +261,7 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
           recalculateHealthStats()
         }
       } catch (error) {
-        console.error('Error fetching updated animal data:', error)
+        // Error fetching updated animal data
       }
     }
 
@@ -427,15 +398,13 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
         document.body.removeChild(a)
       }
     } catch (error) {
-      console.error('Export failed:', error)
+      // Export failed
     } finally {
       setLoading(false)
     }
   }
 
   const handleAnimalUpdated = (updatedAnimal: Animal) => {
-
-    console.log('✅ [AnimalsPage] Animal updated:', updatedAnimal.id)
     // Update local state with updated animal
     setAnimals(prev =>
       prev.map(animal =>
@@ -461,11 +430,6 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
       }
       return newStats
     })
-
-    // ✅ REMOVED: loadWeightRequirements() - no longer needed as data comes from server
-  
-  console.log('✅ [AnimalsPage] Animal updated successfully')
-
   }
 
   // Sample housing facilities data
@@ -965,11 +929,7 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
 
         {/* HOUSING & FACILITIES TAB */}
         <TabsContent value="housing" className="space-y-4 lg:space-y-6">
-          <div className="text-center py-8">
-            <Home className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Housing & Facilities</h3>
-            <p className="text-gray-600">Coming soon...</p>
-          </div>
+          <HousingAndFacilities farmId={farmId} isMobile={isMobile} />
         </TabsContent>
       </Tabs>
       </div>

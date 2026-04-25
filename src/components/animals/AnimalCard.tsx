@@ -65,7 +65,6 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealth
 
   // Update animal data when prop changes
   useEffect(() => {
-    console.log('🔄 [AnimalCard] Animal prop updated:', animal.id, 'Weight:', animal.weight)
     setAnimalData(animal)
   }, [animal])
 
@@ -74,12 +73,10 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealth
     if (animalData.health_status !== animal.health_status && animalData.health_status) {
       onHealthStatusChange?.(animalData.id, animalData.health_status)
     }
-  }, [animalData.health_status])
+  }, [animalData.health_status, animal.health_status, onHealthStatusChange])
 
   // Check production status
-  // Replace the production status check useEffect in AnimalCard.tsx with this:
-
-useEffect(() => {
+  useEffect(() => {
   const checkProductionStatus = async () => {
     if (!animalData.birth_date || !animalData.id) return
 
@@ -87,10 +84,6 @@ useEffect(() => {
     if (animalData.animal_source === 'newborn_calf' && animalData.production_status === 'lactating') {
       const hasMissingProductionInfo = !animalData.current_daily_production
       setLactateMissingInfo(hasMissingProductionInfo)
-      
-      if (hasMissingProductionInfo) {
-        console.log('ℹ️ [AnimalCard] Newborn calf is lactating but missing production info:', animalData.tag_number)
-      }
     } else {
       setLactateMissingInfo(false)
     }
@@ -98,22 +91,18 @@ useEffect(() => {
     // ✅ SKIP status check for breeding-related statuses
     const breedingStatuses = ['served', 'lactating', 'steaming_dry_cows', 'open_culling_dry_cows']
     if (animalData.production_status && breedingStatuses.includes(animalData.production_status)) {
-      console.log('⏭️ [AnimalCard] Skipping status check - breeding-related status:', animalData.production_status)
       setStatusMismatch(null)
       return
     }
 
     // ✅ Use enriched data if available (from batch endpoint) - NO API CALL NEEDED
     if (enrichedData?.breedingRecords?.hasRecords) {
-      console.log('📊 [AnimalCard] Using enriched data - has breeding records (no API call)')
       setStatusMismatch(null)
       return
     }
 
     // ✅ Only check status for age-based transitions if enriched data available
     if (enrichedData?.calculatedProductionStatus) {
-      console.log('📊 [AnimalCard] Using enriched calculated status (no API call):', enrichedData.calculatedProductionStatus)
-      
       if (enrichedData.calculatedProductionStatus !== animalData.production_status) {
         const validTransitions = [
           { from: 'calf', to: 'heifer' },
@@ -139,7 +128,6 @@ useEffect(() => {
 
     // ✅ FALLBACK: Only if enriched data NOT available - make API calls (detail page scenario)
     if (!enrichedData) {
-      console.log('⏭️ [AnimalCard] No enriched data provided - skipping status check on list view')
       setStatusMismatch(null)
       return
     }
@@ -148,7 +136,7 @@ useEffect(() => {
   checkProductionStatus()
 }, [animalData, enrichedData, farmId])
 
-  // 🆕 Extract weight requirement check into a callback function
+  // Extract weight requirement check into a callback function
   const checkWeightRequirement = useCallback(async () => {
     try {
       const response = await fetch(
@@ -156,7 +144,6 @@ useEffect(() => {
       )
       
       if (!response.ok) {
-        console.warn('⚠️ [AnimalCard] Failed to check weight requirement:', response.status)
         setRequiresWeightUpdate(false)
         return
       }
@@ -167,43 +154,30 @@ useEffect(() => {
       if (data.due_date) {
         setWeightUpdateDue(new Date(data.due_date))
       }
-
-      if (data.requires_update) {
-        console.log('⚠️ [AnimalCard] Weight update required:', {
-          animal: animalData.tag_number,
-          reason: data.reason,
-          priority: data.priority
-        })
-      }
     } catch (error) {
-      console.error('❌ [AnimalCard] Error checking weight requirement:', error)
       setRequiresWeightUpdate(false)
     }
   }, [animalData.id, animalData.tag_number, farmId])
 
-  // ✅ OPTIMIZATION: Weight checks only on detail page (enableWeightCheck=true)
+  // Weight checks only on detail page (enableWeightCheck=true)
   // Disabled on list/card views to avoid N+1 queries
   useEffect(() => {
     if (!enableWeightCheck) {
-      console.log('⏭️ [AnimalCard] Weight check disabled for list view:', animalData.tag_number)
       return
     }
     
-    console.log('🔄 [AnimalCard] Weight check triggered for:', animalData.tag_number, 'Weight:', animalData.weight)
     checkWeightRequirement()
   }, [animalData.id, animalData.weight, checkWeightRequirement, enableWeightCheck])
 
   const fetchHealthStatusHistory = async () => {
-    // ✅ Use enriched data if available (from batch endpoint) - NO API CALL
+    // Use enriched data if available (from batch endpoint) - NO API CALL
     if (enrichedData?.latestHealthStatus) {
-      console.log('📊 [AnimalCard] Using enriched health status data (no API call)')
       setHealthStatusHistory([enrichedData.latestHealthStatus])
       return
     }
 
-    // ✅ FALLBACK: Only fetch if enriched data not available (detail page scenario)
+    // FALLBACK: Only fetch if enriched data not available (detail page scenario)
     if (!enrichedData) {
-      console.log('⏭️ [AnimalCard] No enriched data - skipping health history fetch on list view')
       return
     }
 
@@ -213,7 +187,6 @@ useEffect(() => {
       )
       
       if (!response.ok) {
-        console.warn('⚠️ [AnimalCard] Failed to fetch health status history:', response.status)
         setHealthStatusHistory([])
         return
       }
@@ -221,39 +194,27 @@ useEffect(() => {
       const data = await response.json()
       if (data.success && data.history) {
         setHealthStatusHistory(data.history)
-        console.log('✅ [AnimalCard] Health status history loaded:', data.history.length, 'records')
       }
     } catch (error) {
-      console.error('❌ [AnimalCard] Error fetching health status history:', error)
       setHealthStatusHistory([])
     }
   }
 
-  // 🆕 Enhanced handleAnimalUpdated
+  // Enhanced handleAnimalUpdated
   const handleAnimalUpdated = async (updatedAnimal: Animal) => {
-    console.log('✅ [AnimalCard] Animal updated callback received:', {
-      animalId: updatedAnimal.id,
-      tagNumber: updatedAnimal.tag_number,
-      oldWeight: animalData.weight,
-      newWeight: updatedAnimal.weight
-    })
-    
     // Update local animal data
     setAnimalData(updatedAnimal)
     
     // Close the edit modal
     setShowEditModal(false)
     
-    // ✅ CRITICAL: Wait a moment for DB to propagate, then re-check weight requirement
-    console.log('⏳ [AnimalCard] Waiting before weight requirement re-check...')
+    // Wait a moment for DB to propagate, then re-check weight requirement
     setTimeout(async () => {
-      console.log('🔄 [AnimalCard] Re-checking weight requirement after update...')
       await checkWeightRequirement()
     }, 500) // 500ms delay to ensure DB has updated
     
     // Notify parent component
     if (onAnimalUpdated) {
-      console.log('📢 [AnimalCard] Notifying parent of update')
       onAnimalUpdated(updatedAnimal)
     }
   }
