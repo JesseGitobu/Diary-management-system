@@ -29,6 +29,7 @@ interface TagGenerationSectionProps {
   formData: any
   onTagChange: (tagNumber: string, autoGenerate: boolean) => void
   customAttributes?: CustomAttribute[]
+  animalSource?: 'newborn_calf' | 'purchased_animal'  // ✅ NEW: Animal source for source-specific formats
 }
 
 interface TagPreviewData {
@@ -45,7 +46,8 @@ export function TagGenerationSection({
   farmId,
   formData,
   onTagChange,
-  customAttributes = []
+  customAttributes = [],
+  animalSource  // ✅ NEW: Receive animal source
 }: TagGenerationSectionProps) {
   const [autoGenerate, setAutoGenerate] = useState(true)
   const [manualTag, setManualTag] = useState('')
@@ -88,7 +90,10 @@ export function TagGenerationSection({
         },
         body: JSON.stringify({
           farmId,
-          animalData: formData,
+          animalData: {
+            ...formData,
+            animal_source: animalSource  // ✅ NEW: Include animal source
+          },
           customAttributes: customAttributes || []
         }),
       })

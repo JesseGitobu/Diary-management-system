@@ -22,8 +22,7 @@ export async function POST(request: NextRequest) {
       weight_kg,
       measurement_date,
       measurement_type,
-      notes,
-      is_required
+      notes
     } = body
 
     if (!animal_id || !weight_kg || !measurement_date) {
@@ -37,7 +36,8 @@ export async function POST(request: NextRequest) {
     console.log('📝 [Weight Record] Creating record:', {
       animal_id,
       weight_kg,
-      measurement_type
+      weight_date: measurement_date,
+      measurement_purpose: measurement_type
     })
 
     // Insert weight record
@@ -48,11 +48,11 @@ export async function POST(request: NextRequest) {
         animal_id,
         farm_id: userRole.farm_id,
         weight_kg,
-        measurement_date,
-        measurement_type: measurement_type || 'routine',
-        notes,
-        is_required,
-        recorded_by: user.id
+        weight_date: measurement_date,
+        weight_unit: 'kg',
+        measurement_purpose: measurement_type || 'routine',
+        measured_by: user.email || 'system',
+        notes
       })
       .select()
       .single()
@@ -63,51 +63,6 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('✅ [Weight Record] Created:', weightRecord.id)
-
-    // Update animal's current weight
-    // Prepare update data with null conversion for date fields
-    const updateData: any = {
-      weight: weight_kg,
-      updated_at: new Date().toISOString()
-    }
-
-    // Define date fields that might cause issues if empty
-    const dateFields = ['birth_date', 'purchase_date', 'service_date', 'expected_calving_date']
-    
-    // Ensure no empty strings in date fields
-    Object.keys(updateData).forEach(key => {
-      if (updateData[key] === '' && dateFields.includes(key)) {
-        updateData[key] = null
-      }
-    })
-
-    // Cast supabase to any here as well
-    const { error: updateError } = await (supabase as any)
-      .from('animals')
-      .update(updateData)
-      .eq('id', animal_id)
-
-    if (updateError) {
-      console.error('⚠️ [Weight Record] Animal update warning:', updateError)
-    }
-
-    // Resolve any pending weight update requirements
-    // Cast supabase to any here too
-    const { error: resolveError } = await (supabase as any)
-      .from('animals_requiring_weight_update')
-      .update({
-        is_resolved: true,
-        resolved_at: new Date().toISOString(),
-        weight_record_id: weightRecord.id
-      })
-      .eq('animal_id', animal_id)
-      .eq('is_resolved', false)
-
-    if (resolveError) {
-      console.error('⚠️ [Weight Record] Resolve warning:', resolveError)
-    } else {
-      console.log('✅ [Weight Record] Requirements resolved')
-    }
 
     return NextResponse.json({ success: true, data: weightRecord })
   } catch (error) {

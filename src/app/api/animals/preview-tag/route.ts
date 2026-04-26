@@ -70,7 +70,9 @@ export async function POST(request: NextRequest) {
         numberingSystem: taggingSettings.numberingSystem,
         tagPrefix: taggingSettings.tagPrefix,
         customFormat: taggingSettings.customFormat,
-        nextNumber: taggingSettings.nextNumber
+        nextNumber: taggingSettings.nextNumber,
+        useSourceSpecificFormats: taggingSettings.useSourceSpecificFormats,
+        sourceSpecificFormats: taggingSettings.sourceSpecificFormats
       },
       context: {
         animalSource: context.animalSource,
@@ -119,7 +121,9 @@ export async function GET(request: NextRequest) {
         tagPrefix: taggingSettings.tagPrefix,
         customFormat: taggingSettings.customFormat,
         nextNumber: taggingSettings.nextNumber,
-        enableAutoGeneration: true
+        enableAutoGeneration: true,
+        useSourceSpecificFormats: taggingSettings.useSourceSpecificFormats,
+        sourceSpecificFormats: taggingSettings.sourceSpecificFormats
       }
     })
 

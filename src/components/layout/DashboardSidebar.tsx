@@ -82,8 +82,9 @@ export function DashboardSidebar({
   const handleSignOut = async () => {
     setIsSigningOut(true)
     try {
+      // signOut() handles the redirect via window.location.replace()
+      // so we don't need to call router.push() after it
       await signOut()
-      router.push('/auth')
     } catch (error) {
       console.error('Sign out error:', error)
       setIsSigningOut(false)

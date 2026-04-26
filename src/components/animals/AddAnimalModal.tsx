@@ -21,6 +21,7 @@ interface AddAnimalModalProps {
   onAnimalAdded: (animal: Animal) => void
   onHealthRecordCreated?: (record: any) => void
   onRefreshWeightsList?: () => void  // ✅ NEW: Callback to refresh weight updates list
+  editingAnimal?: Animal | null  // ✅ NEW: Optional animal for edit mode
 }
 
 export default function AddAnimalModal({
@@ -29,11 +30,15 @@ export default function AddAnimalModal({
   onClose,
   onAnimalAdded,
   onHealthRecordCreated,
-  onRefreshWeightsList  // ✅ NEW: Destructure callback
+  onRefreshWeightsList,  // ✅ NEW: Destructure callback
+  editingAnimal  // ✅ NEW: Optional animal for edit mode
 }: AddAnimalModalProps) {
   const { isMobile } = useDeviceInfo()
   const [animalSource, setAnimalSource] = useState<'newborn_calf' | 'purchased_animal' | null>(null)
   const [showSourceSelection, setShowSourceSelection] = useState(true)
+  
+  // ✅ NEW: Determine if we're in edit mode
+  const isEditMode = !!editingAnimal
   const [showImportModal, setShowImportModal] = useState(false)
 
   // Health record completion states
@@ -44,6 +49,20 @@ export default function AddAnimalModal({
   const [pendingWeightUpdate, setPendingWeightUpdate] = useState<any>(null)
 
   const [createdAnimal, setCreatedAnimal] = useState<any>(null)
+
+  // ✅ NEW: Initialize modal state based on mode (add vs edit)
+  React.useEffect(() => {
+    if (isOpen && isEditMode && editingAnimal) {
+      // Edit mode: Skip source selection and go directly to the appropriate form
+      const source = editingAnimal.animal_source as 'newborn_calf' | 'purchased_animal'
+      setAnimalSource(source)
+      setShowSourceSelection(false)
+    } else if (isOpen && !isEditMode) {
+      // Add mode: Show source selection
+      setAnimalSource(null)
+      setShowSourceSelection(true)
+    }
+  }, [isOpen, isEditMode, editingAnimal])
 
   const handleSourceSelection = (source: 'newborn_calf' | 'purchased_animal') => {
     setAnimalSource(source)
@@ -56,11 +75,20 @@ export default function AddAnimalModal({
   }
 
   const handleSuccess = (result: any) => {
-  console.log('🎉 [Modal] Animal creation successful:', result)
+  console.log('🎉 [Modal] Animal operation successful:', result)
   
   setCreatedAnimal(result.animal)
   onAnimalAdded(result.animal)
 
+  // ✅ UPDATED: Different flow for edit vs add mode
+  if (isEditMode) {
+    // Edit mode: Just close and show success
+    toast.success('Animal updated successfully!')
+    handleModalClose()
+    return
+  }
+
+  // Add mode: Check for weight and health record requirements
   // ✅ Check weight FIRST (higher priority)
   if (result.requiresWeightUpdate) {
     setPendingWeightUpdate({
@@ -109,11 +137,14 @@ export default function AddAnimalModal({
 
 
   const handleCancel = () => {
-    if (!showSourceSelection && animalSource) {
-      // If we're in a form, go back to source selection
+    if (isEditMode) {
+      // Edit mode: Just close the modal
+      handleModalClose()
+    } else if (!showSourceSelection && animalSource) {
+      // Add mode: If we're in a form, go back to source selection
       handleBackToSelection()
     } else {
-      // If we're on source selection, close modal
+      // Add mode: If we're on source selection, close modal
       handleModalClose()
     }
   }
@@ -281,14 +312,16 @@ export default function AddAnimalModal({
             <div className="space-y-4">
               {/* Header with Back Button */}
               <div className="flex items-center space-x-4 mb-6">
-                <Button
-                  variant="ghost"
-                  onClick={handleBackToSelection}
-                  className="flex items-center space-x-2"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  <span>Back</span>
-                </Button>
+                {!isEditMode && (
+                  <Button
+                    variant="ghost"
+                    onClick={handleBackToSelection}
+                    className="flex items-center space-x-2"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    <span>Back</span>
+                  </Button>
+                )}
 
                 <div className="flex items-center space-x-3">
                   <div className="flex-shrink-0 w-8 h-8 bg-farm-green/20 rounded-lg flex items-center justify-center">
@@ -300,12 +333,15 @@ export default function AddAnimalModal({
                   </div>
                   <div>
                     <h2 className="text-xl font-semibold text-gray-900">
-                      {animalSource === 'newborn_calf' ? 'New Born Calf' : 'Purchased Animal'}
+                      {isEditMode ? 'Edit Animal' : (animalSource === 'newborn_calf' ? 'New Born Calf' : 'Purchased Animal')}
                     </h2>
                     <p className="text-sm text-gray-600">
-                      {animalSource === 'newborn_calf'
-                        ? 'Register a calf born on your farm'
-                        : 'Register an animal acquired from another source'
+                      {isEditMode 
+                        ? 'Update animal information'
+                        : (animalSource === 'newborn_calf'
+                          ? 'Register a calf born on your farm'
+                          : 'Register an animal acquired from another source'
+                        )
                       }
                     </p>
                   </div>
@@ -318,12 +354,16 @@ export default function AddAnimalModal({
                   farmId={farmId}
                   onSuccess={handleSuccess}
                   onCancel={handleCancel}
+                  editingAnimal={editingAnimal}
+                  isEditMode={isEditMode}
                 />
               ) : (
                 <PurchasedAnimalForm
                   farmId={farmId}
                   onSuccess={handleSuccess}
                   onCancel={handleCancel}
+                  editingAnimal={editingAnimal}
+                  isEditMode={isEditMode}
                 />
               )}
             </div>

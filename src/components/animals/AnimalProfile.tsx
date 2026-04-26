@@ -12,9 +12,9 @@ import { AnimalProductionRecords } from '@/components/animals/AnimalProductionRe
 import { AnimalFeedingRecords } from '@/components/animals/AnimalFeedingRecords'
 import { AnimalBreedingRecords } from '@/components/animals/AnimalBreedingRecords'
 import { AnimalHistoryTab } from '@/components/animals/AnimalHistoryTab'
-import { EditAnimalModal } from '@/components/animals/EditAnimalModal'
 import { ReleaseAnimalModal } from '@/components/animals/ReleaseAnimalModal'
 import { DryOffModal } from '@/components/animals/DryOffModal'
+import AddAnimalModal from '@/components/animals/AddAnimalModal'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { cn } from '@/lib/utils/cn'
 import {
@@ -725,12 +725,12 @@ export const AnimalProfile = memo(function AnimalProfile({ animal, userRole, far
       
       {/* Edit Animal Modal */}
       {showEditModal && (
-        <EditAnimalModal
-          animal={animalData}
+        <AddAnimalModal
           farmId={farmId}
           isOpen={showEditModal}
           onClose={() => setShowEditModal(false)}
-          onAnimalUpdated={handleAnimalUpdated}
+          onAnimalAdded={handleAnimalUpdated}
+          editingAnimal={animalData}
         />
       )}
       

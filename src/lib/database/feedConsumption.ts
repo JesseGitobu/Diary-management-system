@@ -610,7 +610,7 @@ export async function getAnimalConsumptionRecords(
           category_id,
           typical_cost_per_kg,
           feed_type_categories (
-            name,
+            category_name,
             color
           )
         ),
@@ -765,11 +765,10 @@ export async function getFeedInventory(farmId: string) {
         description,
         category_id,
         typical_cost_per_kg,
-        supplier,
-        nutritional_info,
+        nutritional_value,
         feed_type_categories (
           id,
-          name,
+          category_name,
           color,
           description
         )

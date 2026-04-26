@@ -200,7 +200,12 @@ export async function POST(request: NextRequest) {
     const cleanAnimalData = Object.keys(finalAnimalData)
       .filter(key => allowedAnimalFields.includes(key))
       .reduce((obj: any, key: string) => {
-        obj[key] = (finalAnimalData as any)[key]
+        // Map camelCase autoGenerateTag to snake_case auto_generate_tag
+        if (key === 'autoGenerateTag') {
+          obj.auto_generate_tag = (finalAnimalData as any)[key]
+        } else {
+          obj[key] = (finalAnimalData as any)[key]
+        }
         return obj
       }, {})
     
@@ -214,9 +219,8 @@ export async function POST(request: NextRequest) {
     const createdAnimal = result.data
 
     // ===== CREATE ANIMAL_PURCHASES RECORD FOR PURCHASED ANIMALS =====
-    if (animalData.animal_source === 'purchased_animal' && animalData.purchase_date && animalData.seller_info) {
-      console.log('🔍 [API] Creating animal_purchases record for purchased animal...')
-      
+    if (animalData.animal_source === 'purchased_animal' && animalData.purchase_date) {
+      console.log('🔍 [API] Creating animal_purchases record...')
       try {
         const supabase = await createServerSupabaseClient()
         const { error: purchaseError } = await (supabase as any)
@@ -226,16 +230,20 @@ export async function POST(request: NextRequest) {
             animal_id: createdAnimal.id,
             purchase_date: animalData.purchase_date,
             purchase_price: animalData.purchase_price || null,
-            farm_seller_name: animalData.seller_info,
-            farm_seller_contact: null,
+            farm_seller_name: animalData.seller_info || 'Not specified',
+            farm_seller_contact: animalData.seller_contact || null,
+            previous_farm_tag: animalData.previous_farm_tag || null,
+            dam_tag_at_origin: animalData.origin_dam_tag || null,
+            dam_name_at_origin: animalData.origin_dam_name || null,
+            sire_tag_or_semen_code: animalData.origin_sire_tag || null,
+            sire_name_or_semen_source: animalData.origin_sire_name || null,
             notes: animalData.notes || null,
-            created_by: user.id
+            created_by: user.id,
           })
-        
         if (purchaseError) {
-          console.error('❌ [API] Failed to create animal_purchases record:', purchaseError)
+          console.error('❌ [API] animal_purchases insert failed:', purchaseError)
         } else {
-          console.log('✅ [API] animal_purchases record created for purchased animal')
+          console.log('✅ [API] animal_purchases record created')
         }
       } catch (error) {
         console.error('❌ [API] Error creating animal_purchases record:', error)
@@ -243,37 +251,481 @@ export async function POST(request: NextRequest) {
     }
 
     // ===== CREATE CALF_RECORDS FOR NEWBORN CALVES =====
+    // calf_records.calving_record_id is NOT NULL — we must resolve or create a calving_record
     if (animalData.animal_source === 'newborn_calf' && animalData.mother_id) {
-      console.log('🔍 [API] Creating calf_records record for newborn calf...')
-      
+      console.log('🔍 [API] Resolving calving_record for newborn calf...')
       try {
         const supabase = await createServerSupabaseClient()
-        const { error: calfError } = await (supabase as any)
-          .from('calf_records')
-          .insert({
-            farm_id: userRole.farm_id,
-            animal_id: createdAnimal.id,
-            dam_id: animalData.mother_id,
-            birth_date: animalData.birth_date,
-            gender: animalData.gender,
-            birth_weight: animalData.birth_weight || null,
-            breed: animalData.breed || null,
-            sire_info: animalData.father_info || null,
-            notes: animalData.notes || null
-          })
-        
-        if (calfError) {
-          console.error('❌ [API] Failed to create calf_records record:', calfError)
+
+        // 1. Find existing calving_record for this mother on the birth date
+        const { data: existingCalving } = await (supabase as any)
+          .from('calving_records')
+          .select('id')
+          .eq('mother_id', animalData.mother_id)
+          .eq('calving_date', animalData.birth_date)
+          .maybeSingle()
+
+        let calvingRecordId: string | null = (existingCalving as any)?.id || null
+
+        if (!calvingRecordId) {
+          // 2. Look for an open/active pregnancy on the mother
+          const { data: openPregnancy } = await (supabase as any)
+            .from('pregnancy_records')
+            .select('id')
+            .eq('animal_id', animalData.mother_id)
+            .in('pregnancy_status', ['suspected', 'confirmed'])
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+
+          let pregnancyForCalving: string | null = (openPregnancy as any)?.id || null
+
+          if (!pregnancyForCalving) {
+            // 3. No open pregnancy — build minimal service_record → pregnancy_record chain
+            const { data: maxSvc } = await (supabase as any)
+              .from('service_records')
+              .select('service_number')
+              .eq('animal_id', animalData.mother_id)
+              .order('service_number', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+            const nextSvcNum = ((maxSvc as any)?.service_number || 0) + 1
+
+            const estimatedServiceDate = new Date(animalData.birth_date)
+            estimatedServiceDate.setDate(estimatedServiceDate.getDate() - 280)
+
+            const { data: minService } = await (supabase as any)
+              .from('service_records')
+              .insert({
+                farm_id: userRole.farm_id,
+                animal_id: animalData.mother_id,
+                service_number: nextSvcNum,
+                service_date: estimatedServiceDate.toISOString().split('T')[0],
+                service_type: 'natural',
+                notes: 'Auto-created during calf registration',
+              })
+              .select()
+              .single()
+
+            if (minService) {
+              const { data: minPreg } = await (supabase as any)
+                .from('pregnancy_records')
+                .insert({
+                  farm_id: userRole.farm_id,
+                  animal_id: animalData.mother_id,
+                  service_record_id: (minService as any).id,
+                  pregnancy_status: 'completed',
+                  expected_calving_date: animalData.birth_date,
+                  gestation_length_days: 280,
+                  pregnancy_notes: 'Auto-created during calf registration',
+                })
+                .select()
+                .single()
+              pregnancyForCalving = (minPreg as any)?.id || null
+            }
+          } else {
+            // Mark the matched open pregnancy as completed
+            await (supabase as any)
+              .from('pregnancy_records')
+              .update({ pregnancy_status: 'completed' })
+              .eq('id', pregnancyForCalving)
+          }
+
+          if (pregnancyForCalving) {
+            // 4. Create calving_record for the mother
+            const { data: newCalving } = await (supabase as any)
+              .from('calving_records')
+              .insert({
+                farm_id: userRole.farm_id,
+                mother_id: animalData.mother_id,
+                pregnancy_record_id: pregnancyForCalving,
+                calving_date: animalData.birth_date,
+                calving_difficulty: 'normal',
+                assistance_required: false,
+                calf_alive: true,
+                notes: `Calf registered: ${createdAnimal.tag_number}`,
+              })
+              .select()
+              .single()
+
+            calvingRecordId = (newCalving as any)?.id || null
+
+            // 5. Create calving breeding event for the mother
+            if (calvingRecordId) {
+              const { error: calvingEventError } = await (supabase as any)
+                .from('breeding_events')
+                .insert({
+                  farm_id: userRole.farm_id,
+                  animal_id: animalData.mother_id,
+                  event_type: 'calving',
+                  event_date: new Date(animalData.birth_date).toISOString(),
+                  calving_record_id: calvingRecordId,
+                  notes: `Calf registered: ${createdAnimal.tag_number}`,
+                  created_by: user.id,
+                })
+              if (calvingEventError) {
+                console.warn('⚠️ calving breeding_event failed:', calvingEventError.message)
+              }
+            }
+          }
+        }
+
+        if (calvingRecordId) {
+          const { error: calfError } = await (supabase as any)
+            .from('calf_records')
+            .insert({
+              farm_id: userRole.farm_id,
+              calving_record_id: calvingRecordId,
+              animal_id: createdAnimal.id,
+              dam_id: animalData.mother_id,
+              birth_date: animalData.birth_date,
+              gender: animalData.gender,
+              birth_weight: animalData.birth_weight || null,
+              breed: animalData.breed || null,
+              sire_tag: animalData.father_info || null,
+              health_status: calfHealthStatus(animalData.health_status),
+              notes: animalData.notes || null,
+            })
+          if (calfError) {
+            console.error('❌ [API] calf_records insert failed:', calfError)
+          } else {
+            console.log('✅ [API] calf_records created (calving_record_id:', calvingRecordId, ')')
+          }
         } else {
-          console.log('✅ [API] calf_records record created for newborn calf')
+          console.error('❌ [API] Could not obtain calving_record_id — calf_records skipped')
         }
       } catch (error) {
-        console.error('❌ [API] Error creating calf_records record:', error)
+        console.error('❌ [API] Error in calf_records section:', error)
       }
     }
 
-    // ===== CREATE SERVICE_RECORDS FOR SERVED ANIMALS =====
-    if (finalProductionStatus === 'served' && animalData.service_date) {
+    // ===== HOIST BREEDING RECORDS STATE =====
+    let breedingRecordsGenerated = false
+    let generatedBreedingRecord = null
+
+    // ===== DETERMINE IF USER PROVIDED EXPLICIT SERVICE RECORDS =====
+    const hasUserServiceRecords = Array.isArray(animalData.service_records) &&
+      animalData.service_records.length > 0
+
+    // ===== PROCESS USER-PROVIDED SERVICE RECORDS =====
+    if (hasUserServiceRecords) {
+      console.log('🔍 [API] Processing', animalData.service_records.length, 'user-provided service records')
+      const supabase = await createServerSupabaseClient()
+      const serviceRecordsData: any[] = animalData.service_records
+      const totalCycles = serviceRecordsData.length
+
+      // Collect calving data for lactation post-processing (mirrors import logic)
+      const lactationData: Array<{
+        cycleNum: number
+        calvingRecordId: string
+        actualCalvingDate: string
+        steaming_date: string | null
+        days_in_milk: number | null
+      }> = []
+
+      for (const record of serviceRecordsData) {
+        const isCurrent = record.cycle_number === totalCycles
+        const isPrevious = !isCurrent
+
+        // service_date is NOT NULL in the schema — skip cycles without it
+        if (!record.service_date) {
+          console.warn(`⚠️ [API] Cycle ${record.cycle_number} skipped: service_date required`)
+          continue
+        }
+
+        // Normalize service_type to valid enum values
+        const serviceType: 'natural' | 'artificial_insemination' | 'embryo_transfer' =
+          record.service_method === 'natural' ? 'natural' :
+          record.service_method === 'embryo_transfer' ? 'embryo_transfer' :
+          'artificial_insemination'
+
+        // ── 1. service_records ──────────────────────────────────────────────
+        const { data: serviceRecord, error: serviceError } = await (supabase as any)
+          .from('service_records')
+          .insert({
+            farm_id: userRole.farm_id,
+            animal_id: createdAnimal.id,
+            service_number: record.cycle_number,
+            service_date: record.service_date,
+            service_type: serviceType,
+            bull_tag_or_semen_code: record.bull_code || null,
+            bull_name_or_semen_source: record.bull_name || null,
+            technician_name: record.ai_technician || null,
+            expected_calving_date: record.expected_calving_date || null,
+            outcome: record.service_outcome || null,
+            semen_type: record.semen_type || null,
+            notes: record.semen_type ? `Semen type: ${record.semen_type}` : null,
+          })
+          .select()
+          .single()
+
+        if (serviceError) {
+          console.error(`❌ [API] service_records insert failed cycle ${record.cycle_number}:`, serviceError)
+          continue
+        }
+        console.log(`✅ [API] service_record inserted for cycle ${record.cycle_number}`)
+
+        // ── 2. insemination breeding_event (requires service_record_id) ─────
+        try {
+          await (supabase as any)
+            .from('breeding_events')
+            .insert({
+              farm_id: userRole.farm_id,
+              animal_id: createdAnimal.id,
+              event_type: 'insemination',
+              event_date: new Date(record.service_date).toISOString(),
+              service_record_id: (serviceRecord as any).id,
+              notes: `Cycle #${record.cycle_number}${record.bull_name ? ` — ${record.bull_name}` : ''}`,
+              created_by: user.id,
+            })
+        } catch (e: any) {
+          console.error(`❌ insemination event cycle ${record.cycle_number}:`, e.message)
+        }
+
+        // ── 3. pregnancy_records ─────────────────────────────────────────────
+        // Valid pregnancy_status values: suspected | confirmed | false | aborted | completed
+        let pregnancyStatus: 'suspected' | 'confirmed' | 'false' | 'aborted' | 'completed'
+        let confirmedDate: string | null = null
+        let confirmationMethod: string | null = null
+        const steamingDate: string | null = record.steaming_date || null
+        const actualCalvingDate: string | null = record.actual_calving_date || null
+
+        const cycleCalved = isPrevious
+          ? !!actualCalvingDate
+          : (finalProductionStatus === 'lactating' || finalProductionStatus === 'steaming_dry_cows') && !!actualCalvingDate
+
+        if (cycleCalved || (isPrevious && !actualCalvingDate)) {
+          // Previous cycles always treated as completed regardless
+          pregnancyStatus = 'completed'
+          if (record.service_date) {
+            const d = new Date(record.service_date)
+            d.setDate(d.getDate() + 45)
+            confirmedDate = d.toISOString().split('T')[0]
+          }
+        } else if (finalProductionStatus === 'served' && isCurrent) {
+          if (record.service_outcome === 'conceived') {
+            pregnancyStatus = 'confirmed'
+            if (record.service_date) {
+              const d = new Date(record.service_date)
+              d.setDate(d.getDate() + 45)
+              confirmedDate = d.toISOString().split('T')[0]
+            }
+            confirmationMethod = 'rectal_palpation'
+          } else if (record.service_outcome === 'not_conceived') {
+            pregnancyStatus = 'false'  // 'not_pregnant' is invalid — DB enum is 'false'
+          } else {
+            pregnancyStatus = 'suspected'
+          }
+        } else {
+          pregnancyStatus = 'suspected'
+        }
+
+        // Only set confirmation_method when status = 'confirmed' (DB constraint)
+        if (pregnancyStatus !== 'confirmed') confirmationMethod = null
+
+        let gestationDays: number | null = null
+        if (record.service_date && actualCalvingDate) {
+          const diff = Math.floor(
+            (new Date(actualCalvingDate).getTime() - new Date(record.service_date).getTime()) / 86400000
+          )
+          gestationDays = diff >= 240 && diff <= 310 ? diff : 280
+        }
+
+        const { data: pregnancyRecord, error: pregnancyError } = await (supabase as any)
+          .from('pregnancy_records')
+          .insert({
+            farm_id: userRole.farm_id,
+            animal_id: createdAnimal.id,
+            service_record_id: (serviceRecord as any).id,   // correct FK name
+            pregnancy_status: pregnancyStatus,
+            confirmed_date: confirmedDate,
+            confirmation_method: confirmationMethod,
+            expected_calving_date: record.expected_calving_date || null,
+            gestation_length_days: gestationDays,           // correct column name
+            steaming_date: steamingDate,                    // belongs here, NOT in calving_records
+            pregnancy_notes: `Cycle #${record.cycle_number} — user-provided`,
+          })
+          .select()
+          .single()
+
+        if (pregnancyError) {
+          console.error(`❌ [API] pregnancy_records insert failed cycle ${record.cycle_number}:`, pregnancyError)
+          continue
+        }
+        console.log(`✅ [API] pregnancy_record created for cycle ${record.cycle_number}`)
+
+        // ── 4. pregnancy_check breeding_event (requires pregnancy_record_id) ─
+        const checkDate = new Date(record.service_date)
+        checkDate.setDate(checkDate.getDate() + 60)
+        try {
+          await (supabase as any)
+            .from('breeding_events')
+            .insert({
+              farm_id: userRole.farm_id,
+              animal_id: createdAnimal.id,
+              event_type: 'pregnancy_check',
+              event_date: checkDate.toISOString(),
+              pregnancy_record_id: (pregnancyRecord as any).id,
+              notes: `Cycle #${record.cycle_number} pregnancy check`,
+              created_by: user.id,
+            })
+        } catch (e: any) {
+          console.error(`❌ pregnancy_check event cycle ${record.cycle_number}:`, e.message)
+        }
+
+        // ── 5. calving_record (only for cycles that have already calved) ──────
+        if (cycleCalved && actualCalvingDate) {
+          // Parse calving difficulty — handle "value - description" format from form selects
+          const rawDiff = (record.calving_outcome || 'normal').toLowerCase().trim()
+          const diffBase = rawDiff.includes(' - ') ? rawDiff.split(' - ')[0] : rawDiff
+          const validDifficulties = ['easy', 'normal', 'difficult', 'assisted', 'cesarean', 'aborted']
+          const calvingDifficulty = validDifficulties.includes(diffBase) ? diffBase : 'normal'
+          // DB constraint: assistance_required must be true when difficulty is assisted or cesarean
+          const assistanceRequired = ['assisted', 'cesarean'].includes(calvingDifficulty)
+          const calfAlive = !['aborted', 'stillbirth'].includes(rawDiff)
+
+          const colostrumVal = record.colostrum_produced !== '' && record.colostrum_produced != null
+            ? (parseFloat(String(record.colostrum_produced)) || null) : null
+
+          // Parse calving_time: convert HH:MM to HH:MM:SS format
+          let calvingTime: string | null = null
+          if (record.calving_time && record.calving_time.trim() !== '') {
+            const timeStr = record.calving_time.trim()
+            // If format is HH:MM, convert to HH:MM:SS
+            calvingTime = timeStr.includes(':') 
+              ? (timeStr.split(':').length === 2 ? `${timeStr}:00` : timeStr)
+              : null
+          }
+
+          const { data: calvingRecord, error: calvingError } = await (supabase as any)
+            .from('calving_records')
+            .insert({
+              farm_id: userRole.farm_id,
+              mother_id: createdAnimal.id,
+              pregnancy_record_id: (pregnancyRecord as any).id,
+              calving_date: actualCalvingDate,
+              calving_time: calvingTime,
+              calving_difficulty: calvingDifficulty,
+              assistance_required: assistanceRequired,
+              calf_alive: calfAlive,
+              colostrum_produced: colostrumVal,
+              // steaming_date is in pregnancy_records, not calving_records
+              notes: `Cycle #${record.cycle_number} calving — user-provided`,
+            })
+            .select()
+            .single()
+
+          if (calvingError) {
+            console.error(`❌ [API] calving_records insert failed cycle ${record.cycle_number}:`, calvingError)
+            continue
+          }
+          console.log(`✅ [API] calving_record created for cycle ${record.cycle_number}`)
+
+          // ── 6. calving breeding_event (requires calving_record_id) ──────────
+          try {
+            await (supabase as any)
+              .from('breeding_events')
+              .insert({
+                farm_id: userRole.farm_id,
+                animal_id: createdAnimal.id,
+                event_type: 'calving',
+                event_date: new Date(actualCalvingDate).toISOString(),
+                calving_record_id: (calvingRecord as any).id,
+                notes: `Cycle #${record.cycle_number} calving`,
+                created_by: user.id,
+              })
+          } catch (e: any) {
+            console.error(`❌ calving event cycle ${record.cycle_number}:`, e.message)
+          }
+
+          // Collect for lactation post-processing
+          const rawDim = record.days_in_milk
+          lactationData.push({
+            cycleNum: record.cycle_number,
+            calvingRecordId: (calvingRecord as any).id,
+            actualCalvingDate,
+            steaming_date: steamingDate,
+            days_in_milk: (rawDim !== '' && rawDim != null) ? (parseInt(String(rawDim)) || null) : null,
+          })
+        }
+      } // end for loop
+
+      // ── 7. lactation_cycle_records — post-process after all cycles done ────
+      // Mirrors import logic: lactating=active(latest)/completed(prev), steaming=completed+dry_off_reason
+      if (lactationData.length > 0) {
+        const lastIdx = lactationData.length - 1
+
+        for (let i = 0; i < lactationData.length; i++) {
+          const { cycleNum, calvingRecordId, actualCalvingDate, steaming_date, days_in_milk } = lactationData[i]
+          const isLatest = i === lastIdx
+          const nextCycle = i < lastIdx ? lactationData[i + 1] : null
+
+          const expectedEndDate = new Date(actualCalvingDate)
+          expectedEndDate.setDate(expectedEndDate.getDate() + 305)
+
+          let lactStatus: 'active' | 'completed' | 'culling dry'
+          let actualEnd: string | null = null
+          let dryOffReason: 'voluntary' | 'disease' | 'pregnancy' | 'age' | 'other' | null = null
+          let dimValue: number | null = null
+
+          if (finalProductionStatus === 'lactating') {
+            if (isLatest) {
+              lactStatus = 'active'
+              dimValue = days_in_milk
+            } else {
+              lactStatus = 'completed'
+              actualEnd = nextCycle?.actualCalvingDate || null
+              dryOffReason = 'pregnancy'
+              if (actualEnd) {
+                dimValue = Math.floor(
+                  (new Date(actualEnd).getTime() - new Date(actualCalvingDate).getTime()) / 86400000
+                )
+              }
+            }
+          } else if (finalProductionStatus === 'steaming_dry_cows') {
+            lactStatus = 'completed'
+            actualEnd = steaming_date || (nextCycle ? nextCycle.actualCalvingDate : null)
+            dryOffReason = isLatest ? 'voluntary' : 'pregnancy'
+            if (actualEnd) {
+              dimValue = Math.floor(
+                (new Date(actualEnd).getTime() - new Date(actualCalvingDate).getTime()) / 86400000
+              )
+            }
+          } else {
+            lactStatus = 'completed'
+            dryOffReason = 'other'
+          }
+
+          const { error: lactError } = await (supabase as any)
+            .from('lactation_cycle_records')
+            .insert({
+              farm_id: userRole.farm_id,
+              animal_id: createdAnimal.id,
+              calving_record_id: calvingRecordId,
+              lactation_number: cycleNum,
+              start_date: actualCalvingDate,
+              expected_end_date: expectedEndDate.toISOString().split('T')[0],
+              actual_end_date: actualEnd,
+              status: lactStatus,
+              dry_off_reason: dryOffReason,
+              days_in_milk: dimValue,
+              notes: `Cycle #${cycleNum}`,
+            })
+          if (lactError) {
+            console.error(`❌ [API] lactation_cycle_records insert failed cycle ${cycleNum}:`, lactError)
+          } else {
+            const dimInfo = dimValue != null ? `, DIM=${dimValue}` : ''
+            console.log(`✅ [API] lactation_cycle_record: cycle=${cycleNum}, status=${lactStatus}${dimInfo}`)
+          }
+        }
+      }
+
+      breedingRecordsGenerated = true
+      console.log('✅ [API] All user-provided service records processed')
+    }
+
+    // ===== CREATE SERVICE_RECORDS FOR SERVED ANIMALS (fallback when no explicit records provided) =====
+    if (!hasUserServiceRecords && finalProductionStatus === 'served' && animalData.service_date) {
       console.log('🔍 [API] Creating service_records record for served animal...')
       
       try {
@@ -301,8 +753,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ===== CREATE LACTATION_CYCLE_RECORDS FOR LACTATING/DRY ANIMALS =====
-    if ((finalProductionStatus === 'lactating' || finalProductionStatus === 'served' || finalProductionStatus === 'steaming_dry_cows' || finalProductionStatus === 'open_culling_dry_cows') && animalData.lactation_number) {
+    // ===== CREATE LACTATION_CYCLE_RECORDS FOR LACTATING/DRY ANIMALS (fallback) =====
+    if (!hasUserServiceRecords && (finalProductionStatus === 'lactating' || finalProductionStatus === 'served' || finalProductionStatus === 'steaming_dry_cows' || finalProductionStatus === 'open_culling_dry_cows') && animalData.lactation_number) {
       console.log('🔍 [API] Creating lactation_cycle_records record...')
       
       try {
@@ -350,9 +802,6 @@ export async function POST(request: NextRequest) {
     }
 
     // ===== AUTO-GENERATE BREEDING RECORDS =====
-    let breedingRecordsGenerated = false
-    let generatedBreedingRecord = null
-    
     // Check if animal is of breeding age
     if (animalData.birth_date && animalData.gender === 'female') {
       const supabase = await createServerSupabaseClient()
@@ -386,7 +835,7 @@ export async function POST(request: NextRequest) {
       console.log('🔍 [API] Has breeding data:', hasBreedingData)
       console.log('🔍 [API] Production status:', finalProductionStatus)
       
-      if (isBreedingAge && hasBreedingData) {
+      if (!hasUserServiceRecords && isBreedingAge && hasBreedingData) {
         console.log('✅ [API] Eligible for breeding record generation')
         
         const breedingResult = await autoGenerateBreedingRecords(
@@ -478,7 +927,7 @@ export async function POST(request: NextRequest) {
         }
       }
       
-      if (initialWeight && ageDays > 0) {
+      if (initialWeight && ageDays >= 0) {
         const supabase = await createServerSupabaseClient()
         const measurementPurpose = animalData.animal_source === 'newborn_calf' ? 'birth' : 'purchase'
         
@@ -503,7 +952,7 @@ export async function POST(request: NextRequest) {
         }
       }
       
-      if (hasCurrentWeight && ageDays > 0) {
+      if (hasCurrentWeight && ageDays >= 0) {
         const supabase = await createServerSupabaseClient()
         
         // Cast supabase to any
@@ -1272,7 +1721,7 @@ function getSeverityFromHealthStatus(healthStatus: string): 'low' | 'medium' | '
 
 function generateHealthDescription(healthStatus: string, animal: any): string {
   const animalName = animal.name || `Animal ${animal.tag_number}`
-  
+
   switch (healthStatus) {
     case 'sick':
       return `${animalName} registered with sick status - requires medical evaluation`
@@ -1283,4 +1732,17 @@ function generateHealthDescription(healthStatus: string, animal: any): string {
     default:
       return `Health status assessment needed for ${animalName}`
   }
+}
+
+// Map animal health_status to calf_records.health_status enum (healthy | weak | sick | deceased)
+function calfHealthStatus(status?: string): string | null {
+  const map: Record<string, string> = {
+    healthy: 'healthy',
+    sick: 'sick',
+    requires_attention: 'weak',
+    quarantined: 'sick',
+    weak: 'weak',
+    deceased: 'deceased',
+  }
+  return status ? (map[status.toLowerCase()] ?? null) : null
 }

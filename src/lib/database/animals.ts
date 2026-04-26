@@ -558,10 +558,9 @@ export async function createAnimal(
       return { success: false, error: 'Mother selection is required for newborn calves' }
     }
     
-    if (animalData.animal_source === 'purchased_animal' && !animalData.purchase_date) {
-      return { success: false, error: 'Purchase date is required for purchased animals' }
-    }
-    
+    // NOTE: purchase_date belongs in animal_purchases table, not animals table.
+    // The route handler validates and inserts purchase data separately.
+
     // Prepare the data for insertion
     const insertData: AnimalInsert = {
       farm_id: farmId,
@@ -582,6 +581,9 @@ export async function createAnimal(
       // Status fields
       health_status: animalData.health_status || 'healthy',
       production_status: animalData.production_status || 'calf',
+      
+      // Tag generation preference (defaults to true if not specified)
+      auto_generate_tag: animalData.auto_generate_tag !== undefined ? animalData.auto_generate_tag : true,
     } as any
     
     // ✅ NOTE: DO NOT include these fields here - they belong in separate tables:

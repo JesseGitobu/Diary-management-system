@@ -18,12 +18,70 @@ import {
   SelectValue,
 } from '@/components/ui/Select'
 import { Card, CardContent } from '@/components/ui/Card'
-import { Info, Heart, Calendar, Droplets, Activity, AlertTriangle } from 'lucide-react'
+import { Info, Heart, Calendar, Droplets, Activity, AlertTriangle, ChevronDown, ChevronUp, Syringe, UserCheck, Baby, CheckCircle2, XCircle, Clock } from 'lucide-react'
+import { CollapsibleFormSection } from './CollapsibleFormSection'
+import {
+  countBasicInfoFields,
+  countPurchaseInfoFields,
+  countCurrentStatusFields,
+  countHeiferFields,
+  countServedFields,
+  countLactatingFields,
+  countSteamingDryCowsFields,
+  countOpenDryCowsFields,
+  countAdditionalInfoFields,
+} from '@/lib/utils/formFieldCounters'
+
+interface ServiceRecord {
+  cycle_number: number
+  service_date: string
+  service_method: string
+  bull_name: string
+  bull_code: string
+  semen_type: string
+  ai_technician: string
+  service_outcome: string
+  steaming_date: string
+  expected_calving_date: string
+  actual_calving_date: string
+  calving_outcome: string
+  calving_time: string
+  colostrum_produced: string
+  days_in_milk: string
+}
+
+function emptyRecord(cycle: number): ServiceRecord {
+  return {
+    cycle_number: cycle,
+    service_date: '',
+    service_method: '',
+    bull_name: '',
+    bull_code: '',
+    semen_type: '',
+    ai_technician: '',
+    service_outcome: '',
+    steaming_date: '',
+    expected_calving_date: '',
+    actual_calving_date: '',
+    calving_outcome: '',
+    calving_time: '',
+    colostrum_produced: '',
+    days_in_milk: '',
+  }
+}
 import { TagGenerationSection } from './TagGenerationSection'
 import {
   getProductionStatusDisplay,
   getProductionStatusBadgeColor,
 } from '@/lib/utils/productionStatusUtils'
+import { getCustomAttributesForTag } from '@/lib/utils/animalTagAttributes'
+
+// Coerce empty string / null / NaN → undefined so optional number fields never
+// fail Zod when the HTML input is left blank (DOM value is always a string "").
+const optNum = z.preprocess(
+  (v) => (v === '' || v === null || v === undefined || (typeof v === 'number' && isNaN(v))) ? undefined : Number(v),
+  z.number().positive().optional()
+)
 
 // Updated validation schema
 const purchasedAnimalSchema = z.object({
@@ -39,22 +97,22 @@ const purchasedAnimalSchema = z.object({
     required_error: 'Health status is required',
   }),
   production_status: z.enum(['calf', 'heifer', 'served', 'lactating', 'steaming_dry_cows', 'open_culling_dry_cows', 'bull']).optional(),
-  purchase_weight: z.number().positive().optional(),
-  weight: z.number().positive().optional(),
-  purchase_price: z.number().positive().optional(),
+  purchase_weight: optNum,
+  weight: optNum,
+  purchase_price: optNum,
   seller_info: z.string().optional(),
   notes: z.string().optional(),
 
   // Conditional fields
-  mother_daily_production: z.number().positive().optional(),
-  mother_lactation_number: z.number().positive().optional(),
-  mother_peak_production: z.number().positive().optional(),
+  mother_daily_production: optNum,
+  mother_lactation_number: optNum,
+  mother_peak_production: optNum,
   service_date: z.string().optional(),
   service_method: z.string().optional(),
   expected_calving_date: z.string().optional(),
-  current_daily_production: z.number().positive().optional(),
-  days_in_milk: z.number().positive().optional(),
-  lactation_number: z.number().positive().optional(),
+  current_daily_production: optNum,
+  days_in_milk: optNum,
+  lactation_number: optNum,
 
   autoGenerateTag: z.boolean().optional(),
 }).refine(
@@ -83,18 +141,54 @@ const purchasedAnimalSchema = z.object({
   }
 )
 
-type PurchasedAnimalFormData = z.infer<typeof purchasedAnimalSchema>
+// Explicit type avoids the TypeScript issue that z.preprocess creates (its input
+// type is `unknown`, which breaks zodResolver's generic inference).
+type PurchasedAnimalFormData = {
+  tag_number?: string
+  name?: string
+  breed: string
+  gender: 'male' | 'female'
+  birth_date?: string
+  purchase_date: string
+  health_status: 'healthy' | 'sick' | 'requires_attention' | 'quarantined'
+  production_status?: 'calf' | 'heifer' | 'served' | 'lactating' | 'steaming_dry_cows' | 'open_culling_dry_cows' | 'bull'
+  purchase_weight?: number
+  weight?: number
+  purchase_price?: number
+  seller_info?: string
+  notes?: string
+  mother_daily_production?: number
+  mother_lactation_number?: number
+  mother_peak_production?: number
+  service_date?: string
+  service_method?: string
+  expected_calving_date?: string
+  current_daily_production?: number
+  days_in_milk?: number
+  lactation_number?: number
+  autoGenerateTag?: boolean
+}
 
 interface PurchasedAnimalFormProps {
   farmId: string
   onSuccess: (animal: any) => void
   onCancel: () => void
+  editingAnimal?: any  // ✅ NEW: Optional animal for edit mode
+  isEditMode?: boolean  // ✅ NEW: Flag indicating edit mode
 }
 
-export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAnimalFormProps) {
+export function PurchasedAnimalForm({ farmId, onSuccess, onCancel, editingAnimal, isEditMode = false }: PurchasedAnimalFormProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [productionStatus, setProductionStatus] = useState<string>('')
+
+  // ✅ NEW: Section expansion state
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set([
+    'basic-info',
+    'purchase-info',
+    'current-status',
+    'additional-info'
+  ]))
 
   // ✅ NEW: Auto-calculation states
   const [calculatedProductionStatus, setCalculatedProductionStatus] = useState<string>('')
@@ -108,15 +202,49 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
   const [breedingSettings, setBreedingSettings] = useState<{ default_gestation: number } | null>(null)
   const [gestationPeriodError, setGestationPeriodError] = useState<string | null>(null)
 
+  // Service records — one entry per breeding cycle
+  const [serviceRecords, setServiceRecords] = useState<ServiceRecord[]>([])
+  const [expandedCycles, setExpandedCycles] = useState<Set<number>>(new Set())
+
+  // ✅ NEW: Production-status-specific state
+  const [currentMilkProduction, setCurrentMilkProduction] = useState<number | ''>('')
+  const [currentLactationNumber, setCurrentLactationNumber] = useState<number | ''>('')
+  const [breedingCycleNumber, setBreedingCycleNumber] = useState<number | ''>('')
+  const [lastBreedingCycleNumber, setLastBreedingCycleNumber] = useState<number | ''>('')
+
   const form = useForm<PurchasedAnimalFormData>({
-    resolver: zodResolver(purchasedAnimalSchema),
-    defaultValues: {
+    resolver: zodResolver(purchasedAnimalSchema)  as any,
+    defaultValues: isEditMode && editingAnimal ? {
+      tag_number: editingAnimal.tag_number || '',
+      name: editingAnimal.name || '',
+      breed: editingAnimal.breed || 'holstein',
+      gender: editingAnimal.gender || 'female',
+      health_status: editingAnimal.health_status || 'healthy',
+      production_status: editingAnimal.production_status || undefined,
+      purchase_date: editingAnimal.purchase_date || new Date().toISOString().split('T')[0],
+      birth_date: editingAnimal.birth_date || '',
+      purchase_weight: editingAnimal.purchase_weight || undefined,
+      weight: editingAnimal.weight || undefined,
+      purchase_price: editingAnimal.purchase_price || undefined,
+      seller_info: editingAnimal.seller_info || '',
+      notes: editingAnimal.notes || '',
+      mother_daily_production: editingAnimal.mother_daily_production || undefined,
+      mother_lactation_number: editingAnimal.mother_lactation_number || undefined,
+      mother_peak_production: editingAnimal.mother_peak_production || undefined,
+      service_date: editingAnimal.service_date || '',
+      service_method: editingAnimal.service_method || '',
+      expected_calving_date: editingAnimal.expected_calving_date || '',
+      current_daily_production: editingAnimal.current_daily_production || undefined,
+      days_in_milk: editingAnimal.days_in_milk || undefined,
+      lactation_number: editingAnimal.lactation_number || undefined,
+      autoGenerateTag: false,
+    } : {
       tag_number: '',
       name: '',
       breed: 'holstein',
       gender: 'female',
       health_status: 'healthy',
-      production_status: undefined, // ✅ Start undefined
+      production_status: undefined,
       purchase_date: new Date().toISOString().split('T')[0],
       birth_date: '',
       purchase_weight: undefined,
@@ -140,20 +268,84 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
   const formData = form.watch()
   const productionStatusValue = form.watch('production_status')
 
-  // ✅ NEW: Utility function to add days to a date (maintains realistic years)
+  // ✅ NEW: Pre-populate production-specific state variables from editingAnimal when in edit mode
+  useEffect(() => {
+    if (isEditMode && editingAnimal) {
+      const status = editingAnimal.production_status || 'calf'
+
+      // Pre-populate production-specific fields based on status
+      if (status === 'lactating' || status === 'served' || status === 'steaming_dry_cows') {
+        if (editingAnimal.current_daily_production !== null && editingAnimal.current_daily_production !== undefined) {
+          setCurrentMilkProduction(editingAnimal.current_daily_production)
+        }
+        if (editingAnimal.lactation_number !== null && editingAnimal.lactation_number !== undefined) {
+          setCurrentLactationNumber(editingAnimal.lactation_number)
+        }
+      }
+
+      if (status === 'served' || status === 'steaming_dry_cows') {
+        if (editingAnimal.lactation_number !== null && editingAnimal.lactation_number !== undefined) {
+          setBreedingCycleNumber(editingAnimal.lactation_number)
+        }
+      }
+
+      if (status === 'open_culling_dry_cows') {
+        if (editingAnimal.lactation_number !== null && editingAnimal.lactation_number !== undefined) {
+          setLastBreedingCycleNumber(editingAnimal.lactation_number)
+        }
+      }
+
+      // Pre-populate service records if available
+      if (editingAnimal.service_records && Array.isArray(editingAnimal.service_records)) {
+        setServiceRecords(editingAnimal.service_records)
+        if (editingAnimal.service_records.length > 0) {
+          setExpandedCycles(new Set([editingAnimal.service_records.length]))
+        }
+      }
+    }
+  }, [isEditMode, editingAnimal])
+
+  // ✅ NEW: Utility function to add days to a date (maintains realistic years, timezone-safe)
   const addDaysToDate = (dateStr: string, days: number): string => {
     if (!dateStr) return ''
-    const date = new Date(dateStr)
+    // Parse YYYY-MM-DD string into local time components (avoiding UTC conversion)
+    const [year, month, day] = dateStr.split('-').map(Number)
+    const date = new Date(year, month - 1, day)
     date.setDate(date.getDate() + days)
-    return date.toISOString().split('T')[0]
+    // Format back to YYYY-MM-DD in local time
+    const resultYear = date.getFullYear()
+    const resultMonth = String(date.getMonth() + 1).padStart(2, '0')
+    const resultDay = String(date.getDate()).padStart(2, '0')
+    return `${resultYear}-${resultMonth}-${resultDay}`
   }
 
-  // ✅ NEW: Utility function to subtract days from a date (maintains realistic years)
+  // ✅ NEW: Utility function to subtract days from a date (maintains realistic years, timezone-safe)
   const subtractDaysFromDate = (dateStr: string, days: number): string => {
     if (!dateStr) return ''
-    const date = new Date(dateStr)
+    // Parse YYYY-MM-DD string into local time components (avoiding UTC conversion)
+    const [year, month, day] = dateStr.split('-').map(Number)
+    const date = new Date(year, month - 1, day)
     date.setDate(date.getDate() - days)
-    return date.toISOString().split('T')[0]
+    // Format back to YYYY-MM-DD in local time
+    const resultYear = date.getFullYear()
+    const resultMonth = String(date.getMonth() + 1).padStart(2, '0')
+    const resultDay = String(date.getDate()).padStart(2, '0')
+    return `${resultYear}-${resultMonth}-${resultDay}`
+  }
+
+  // ✅ NEW: Utility function to safely parse YYYY-MM-DD string to local Date for display (timezone-safe)
+  const parseLocalDate = (dateStr: string): Date => {
+    if (!dateStr) return new Date()
+    const [year, month, day] = dateStr.split('-').map(Number)
+    return new Date(year, month - 1, day)
+  }
+
+  // ✅ NEW: Utility function to format a local date string to display format
+  const formatDateDisplay = (dateStr: string, format?: Intl.DateTimeFormatOptions): string => {
+    if (!dateStr) return ''
+    const date = parseLocalDate(dateStr)
+    const defaultFormat: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'short', day: 'numeric' }
+    return date.toLocaleDateString('en-US', format || defaultFormat)
   }
 
   // ✅ NEW: Fetch breeding settings on mount
@@ -182,53 +374,68 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
     }
   }, [farmId])
 
+  // ✅ NEW: Initialize production status from editingAnimal value in edit mode
+  useEffect(() => {
+    if (isEditMode && editingAnimal?.production_status) {
+      setProductionStatus(editingAnimal.production_status)
+    }
+  }, [isEditMode, editingAnimal?.production_status])
+
   // ✅ NEW: Auto-calculate expected_calving_date when service_date changes (for 'served' animals)
   useEffect(() => {
-    const serviceDate = form.watch('service_date')
-    const currentCalvingDate = form.watch('expected_calving_date')
-    const status = form.watch('production_status')
+    const subscription = form.watch((data) => {
+      const serviceDate = data.service_date
+      const currentCalvingDate = data.expected_calving_date
+      const status = data.production_status
 
-    if (status === 'served' && serviceDate && breedingSettings) {
-      const calculatedCalvingDate = addDaysToDate(serviceDate, breedingSettings.default_gestation)
-      
-      // Only auto-fill if the expected_calving_date is empty
-      if (!currentCalvingDate || currentCalvingDate.trim() === '') {
-        form.setValue('expected_calving_date', calculatedCalvingDate, {
-          shouldValidate: false,
-          shouldDirty: true
-        })
-        console.log('✅ [Form] Auto-calculated calving date from service date:', {
-          serviceDate,
-          gestationDays: breedingSettings.default_gestation,
-          calculatedCalvingDate
-        })
+      if (status === 'served' && serviceDate && breedingSettings) {
+        const calculatedCalvingDate = addDaysToDate(serviceDate, breedingSettings.default_gestation)
+        
+        // Only auto-fill if the expected_calving_date is empty
+        if (!currentCalvingDate || currentCalvingDate.trim() === '') {
+          form.setValue('expected_calving_date', calculatedCalvingDate, {
+            shouldValidate: false,
+            shouldDirty: true
+          })
+          console.log('✅ [Form] Auto-calculated calving date from service date:', {
+            serviceDate,
+            gestationDays: breedingSettings.default_gestation,
+            calculatedCalvingDate
+          })
+        }
       }
-    }
-  }, [form.watch('service_date'), form.watch('production_status'), breedingSettings, form])
+    })
+
+    return () => subscription.unsubscribe()
+  }, [breedingSettings, form])
 
   // ✅ NEW: Auto-calculate service_date when expected_calving_date changes (for 'served' animals)
   useEffect(() => {
-    const expectedCalvingDate = form.watch('expected_calving_date')
-    const currentServiceDate = form.watch('service_date')
-    const status = form.watch('production_status')
+    const subscription = form.watch((data) => {
+      const expectedCalvingDate = data.expected_calving_date
+      const currentServiceDate = data.service_date
+      const status = data.production_status
 
-    if (status === 'served' && expectedCalvingDate && breedingSettings) {
-      const calculatedServiceDate = subtractDaysFromDate(expectedCalvingDate, breedingSettings.default_gestation)
-      
-      // Only auto-fill if the service_date is empty
-      if (!currentServiceDate || currentServiceDate.trim() === '') {
-        form.setValue('service_date', calculatedServiceDate, {
-          shouldValidate: false,
-          shouldDirty: true
-        })
-        console.log('✅ [Form] Auto-calculated service date from calving date:', {
-          expectedCalvingDate,
-          gestationDays: breedingSettings.default_gestation,
-          calculatedServiceDate
-        })
+      if (status === 'served' && expectedCalvingDate && breedingSettings) {
+        const calculatedServiceDate = subtractDaysFromDate(expectedCalvingDate, breedingSettings.default_gestation)
+        
+        // Only auto-fill if the service_date is empty
+        if (!currentServiceDate || currentServiceDate.trim() === '') {
+          form.setValue('service_date', calculatedServiceDate, {
+            shouldValidate: false,
+            shouldDirty: true
+          })
+          console.log('✅ [Form] Auto-calculated service date from calving date:', {
+            expectedCalvingDate,
+            gestationDays: breedingSettings.default_gestation,
+            calculatedServiceDate
+          })
+        }
       }
-    }
-  }, [form.watch('expected_calving_date'), form.watch('production_status'), breedingSettings, form])
+    })
+
+    return () => subscription.unsubscribe()
+  }, [breedingSettings, form])
 
   // ✅ NEW: Auto-calculate production status based on birth date and gender
   useEffect(() => {
@@ -334,15 +541,20 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
     setProductionStatus(productionStatusValue)
     
     // Clear conditional fields when production status changes
-    // ⚠️ IMPORTANT: Only clear if actually changing
     if (productionStatusValue !== 'heifer') {
       form.setValue('mother_daily_production', undefined)
       form.setValue('mother_lactation_number', undefined)
       form.setValue('mother_peak_production', undefined)
     }
     
-    const isDryOrServed = productionStatusValue === 'served' || (productionStatusValue as any) === 'steaming_dry_cows' || (productionStatusValue as any) === 'open_culling_dry_cows'
-    if (!isDryOrServed) {
+    // Reset production-status-specific state
+    setCurrentMilkProduction('')
+    setCurrentLactationNumber('')
+    setBreedingCycleNumber('')
+    setLastBreedingCycleNumber('')
+    
+    // Clear old conditional fields
+    if (productionStatusValue !== 'served' && productionStatusValue !== 'steaming_dry_cows' && productionStatusValue !== 'open_culling_dry_cows') {
       form.setValue('service_date', '')
       form.setValue('service_method', '')
       form.setValue('expected_calving_date', '')
@@ -351,12 +563,88 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
     if (productionStatusValue !== 'lactating') {
       form.setValue('current_daily_production', undefined)
       form.setValue('days_in_milk', undefined)
+    }
+    
+    // ✅ NEW: Reset lactation_number only if not needed
+    if (productionStatusValue !== 'lactating' && productionStatusValue !== 'served' && productionStatusValue !== 'steaming_dry_cows' && productionStatusValue !== 'open_culling_dry_cows') {
       form.setValue('lactation_number', undefined)
     }
     
     console.log('✅ [Form] Cleared conditional fields for:', productionStatusValue)
   }
 }, [productionStatusValue, productionStatus, form])
+
+  // Sync service records array length to lactation_number for relevant statuses
+  useEffect(() => {
+    const status = form.watch('production_status')
+    const cycleCount = form.watch('lactation_number')
+    const needsRecords = status === 'lactating' || status === 'served' || status === 'steaming_dry_cows'
+
+    if (!needsRecords || !cycleCount || cycleCount < 1) {
+      setServiceRecords([])
+      setExpandedCycles(new Set())
+      return
+    }
+
+    setServiceRecords(prev => {
+      const next: ServiceRecord[] = []
+      for (let i = 1; i <= cycleCount; i++) {
+        next.push(prev.find(r => r.cycle_number === i) ?? emptyRecord(i))
+      }
+      return next
+    })
+
+    // Auto-expand the current (last) cycle
+    setExpandedCycles(new Set([cycleCount]))
+  }, [form.watch('lactation_number'), form.watch('production_status')])
+
+  // ✅ NEW: Sync service records based on production-status-specific state variables
+  useEffect(() => {
+    const status = productionStatus
+    let cycleCount = 0
+
+    // Determine cycle count based on status and its corresponding state variable
+    if (status === 'lactating' && currentLactationNumber !== '') {
+      cycleCount = typeof currentLactationNumber === 'number' && currentLactationNumber >= 1 ? currentLactationNumber : 0
+    } else if (status === 'served' && currentLactationNumber !== '') {
+      cycleCount = typeof currentLactationNumber === 'number' && currentLactationNumber >= 1 ? currentLactationNumber : 0
+    } else if (status === 'steaming_dry_cows' && breedingCycleNumber !== '') {
+      cycleCount = typeof breedingCycleNumber === 'number' && breedingCycleNumber >= 1 ? breedingCycleNumber : 0
+    }
+
+    // If no cycle count, clear service records
+    if (!cycleCount || cycleCount < 1) {
+      setServiceRecords([])
+      setExpandedCycles(new Set())
+      return
+    }
+
+    // Generate service records based on cycle count
+    setServiceRecords(prev => {
+      const next: ServiceRecord[] = []
+      for (let i = 1; i <= cycleCount; i++) {
+        next.push(prev.find(r => r.cycle_number === i) ?? emptyRecord(i))
+      }
+      return next
+    })
+
+    // Auto-expand the current (last) cycle
+    setExpandedCycles(new Set([cycleCount]))
+  }, [productionStatus, currentLactationNumber, breedingCycleNumber])
+
+  const updateRecord = (cycle: number, field: keyof ServiceRecord, value: string) => {
+    setServiceRecords(prev =>
+      prev.map(r => r.cycle_number === cycle ? { ...r, [field]: value } : r)
+    )
+  }
+
+  const toggleCycle = (cycle: number) => {
+    setExpandedCycles(prev => {
+      const next = new Set(prev)
+      next.has(cycle) ? next.delete(cycle) : next.add(cycle)
+      return next
+    })
+  }
 
   const handleTagChange = (tagNumber: string, autoGenerate: boolean) => {
     form.setValue('tag_number', tagNumber, {
@@ -368,14 +656,16 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
     form.clearErrors('tag_number')
   }
 
-  const getCustomAttributesForTag = () => {
-    return [
-      { name: 'Breed Group', value: formData.breed || 'Unknown' },
-      { name: 'Production Stage', value: calculatedProductionStatus || formData.production_status || 'Unknown' },
-      { name: 'Source', value: 'Purchased' },
-      { name: 'Gender', value: formData.gender || 'Unknown' },
-      ...(formData.seller_info ? [{ name: 'Seller', value: formData.seller_info.substring(0, 10) }] : [])
-    ]
+  const getCustomAttributesForTagData = () => {
+    return getCustomAttributesForTag({
+      breed: formData.breed,
+      gender: formData.gender,
+      source: 'purchased',
+      productionStatus: productionStatus || calculatedProductionStatus,
+      purchaseDate: formData.purchase_date,
+      healthStatus: formData.health_status,
+      sellerInfo: formData.seller_info,
+    })
   }
 
   const handleSubmit = async (data: PurchasedAnimalFormData) => {
@@ -405,39 +695,49 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
     setError(null)
 
     try {
-      // ✅ FIX: Prepare conditional data ONLY - don't override production_status here
-      const conditionalData: any = {}
+      // ✅ UPDATED: Build production-specific fields from state variables
+      const productionSpecificData: any = {}
 
-      // Add conditional fields based on production status
       if (finalProductionStatus === 'heifer') {
         if (data.mother_daily_production || data.mother_lactation_number || data.mother_peak_production) {
-          conditionalData.mother_production_info = {
+          productionSpecificData.mother_production_info = {
             daily_production: data.mother_daily_production,
             lactation_number: data.mother_lactation_number,
             peak_production: data.mother_peak_production,
           }
         }
       } else if (finalProductionStatus === 'served') {
-        if (data.service_date) conditionalData.service_date = data.service_date
-        if (data.service_method) conditionalData.service_method = data.service_method
-        if (data.expected_calving_date) conditionalData.expected_calving_date = data.expected_calving_date
-        // ✅ NEW: Add breeding cycle number for served animals
-        if (data.lactation_number) conditionalData.lactation_number = data.lactation_number
-      } else if (finalProductionStatus === 'lactating') {
-        if (data.current_daily_production) conditionalData.current_daily_production = data.current_daily_production
-        if (data.days_in_milk) conditionalData.days_in_milk = data.days_in_milk
-        if (data.lactation_number) conditionalData.lactation_number = data.lactation_number
-      } else if (finalProductionStatus === 'steaming_dry_cows' || finalProductionStatus === 'open_culling_dry_cows') {
-        // ✅ NEW: For dry animals, add expected_calving_date AND breeding cycle number
-        if (data.expected_calving_date) {
-          conditionalData.expected_calving_date = data.expected_calving_date
+        // ✅ UPDATED: Use state variables for served animals
+        if (currentMilkProduction !== '') {
+          productionSpecificData.current_daily_production = currentMilkProduction
         }
-        if (data.lactation_number) {
-          conditionalData.lactation_number = data.lactation_number
+        if (currentLactationNumber !== '') {
+          productionSpecificData.lactation_number = currentLactationNumber
+        }
+      } else if (finalProductionStatus === 'lactating') {
+        // ✅ UPDATED: Use state variables for lactating animals
+        if (currentMilkProduction !== '') {
+          productionSpecificData.current_daily_production = currentMilkProduction
+        }
+        if (currentLactationNumber !== '') {
+          productionSpecificData.lactation_number = currentLactationNumber
+        }
+      } else if (finalProductionStatus === 'steaming_dry_cows') {
+        // ✅ UPDATED: Use state variable for steaming dry animals
+        if (data.expected_calving_date) {
+          productionSpecificData.expected_calving_date = data.expected_calving_date
+        }
+        if (breedingCycleNumber !== '') {
+          productionSpecificData.lactation_number = breedingCycleNumber
+        }
+      } else if (finalProductionStatus === 'open_culling_dry_cows') {
+        // ✅ UPDATED: Use state variable for open dry animals
+        if (lastBreedingCycleNumber !== '') {
+          productionSpecificData.lactation_number = lastBreedingCycleNumber
         }
       }
 
-      // ✅ Build request data - production_status should NOT be overridden
+      // ✅ Build request data with production-specific fields
       const requestData = {
         tag_number: data.tag_number?.trim(),
         name: data.name,
@@ -451,10 +751,11 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
         purchase_price: data.purchase_price,
         seller_info: data.seller_info,
         notes: data.notes,
-        ...conditionalData, // Add conditional fields
+        ...productionSpecificData,
+        service_records: serviceRecords.length > 0 ? serviceRecords : undefined,
         farm_id: farmId,
         animal_source: 'purchased_animal',
-        production_status: finalProductionStatus, // ✅ Use the correct final status
+        production_status: finalProductionStatus,
         status: 'active',
         autoGenerateTag: data.autoGenerateTag,
       }
@@ -462,8 +763,12 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
       console.log('📤 [Form] Final request data:', requestData)
       console.log('📤 [Form] Production status in request:', requestData.production_status)
 
-      const response = await fetch('/api/animals', {
-        method: 'POST',
+      // ✅ NEW: Use PUT for edit mode, POST for add mode
+      const method = isEditMode ? 'PUT' : 'POST'
+      const url = isEditMode ? `/api/animals/${editingAnimal.id}` : '/api/animals'
+
+      const response = await fetch(url, {
+        method: method,
         headers: {
           'Content-Type': 'application/json'
         },
@@ -474,7 +779,7 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
       console.log('📥 [Form] API Response:', result)
 
       if (!response.ok) {
-        throw new Error(result.error || 'Failed to add purchased animal')
+        throw new Error(result.error || (isEditMode ? 'Failed to update purchased animal' : 'Failed to add purchased animal'))
       }
 
       if (result.generatedTagNumber) {
@@ -494,8 +799,8 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
   return (
     <div className="space-y-6">
       <div className="text-center mb-4">
-        <h3 className="text-lg font-semibold text-gray-900">Purchased Animal Registration</h3>
-        <p className="text-sm text-gray-600">Register an animal acquired from another source</p>
+        <h3 className="text-lg font-semibold text-gray-900">{isEditMode ? 'Edit Animal' : 'Purchased Animal Registration'}</h3>
+        <p className="text-sm text-gray-600">{isEditMode ? 'Update animal information' : 'Register an animal acquired from another source'}</p>
       </div>
 
       {error && (
@@ -504,18 +809,33 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
         </div>
       )}
 
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+      <form
+        onSubmit={form.handleSubmit(handleSubmit, (zodErrors) => {
+          console.group('❌ [Form] Zod validation FAILED — handleSubmit blocked')
+          console.log('Zod errors:', JSON.stringify(zodErrors, null, 2))
+          console.log('Current form values:', form.getValues())
+          console.groupEnd()
+        })}
+        className="space-y-6"
+        noValidate
+      >
         <TagGenerationSection
           farmId={farmId}
           formData={formData}
           onTagChange={handleTagChange}
-          customAttributes={getCustomAttributesForTag()}
+          customAttributes={getCustomAttributesForTagData()}
+          animalSource="purchased_animal"  // ✅ NEW: Specify animal source
         />
 
         {/* Basic Information */}
-        <div className="space-y-4">
-          <h4 className="text-md font-medium text-gray-900 border-b pb-2">Basic Information</h4>
-
+        <CollapsibleFormSection
+          title="Basic Information"
+          icon={<Heart className="h-4 w-4" />}
+          filledFieldCount={countBasicInfoFields(formData).filled}
+          totalFieldCount={countBasicInfoFields(formData).total}
+          isRequired={true}
+          defaultExpanded={expandedSections.has('basic-info')}
+        >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="name">Animal Name (Optional)</Label>
@@ -553,7 +873,21 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
                 onValueChange={(value) => form.setValue('breed', value)}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select breed" />
+                  <SelectValue>
+                    {(() => {
+                      const breedMap: Record<string, string> = {
+                        'holstein': 'Holstein-Friesian',
+                        'jersey': 'Jersey',
+                        'guernsey': 'Guernsey',
+                        'ayrshire': 'Ayrshire',
+                        'brown_swiss': 'Brown Swiss',
+                        'crossbred': 'Crossbred',
+                        'other': 'Other',
+                      }
+                      const selectedBreed = form.watch('breed')
+                      return breedMap[selectedBreed] || 'Select breed'
+                    })()}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="holstein">Holstein-Friesian</SelectItem>
@@ -577,7 +911,16 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
                 onValueChange={(value) => form.setValue('gender', value as 'male' | 'female')}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select gender" />
+                  <SelectValue placeholder="Select gender">
+                    {(() => {
+                      const genderMap: Record<string, string> = {
+                        female: 'Female',
+                        male: 'Male',
+                      }
+                      const selectedGender = form.watch('gender')
+                      return genderMap[selectedGender] || 'Select gender'
+                    })()}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="female">Female</SelectItem>
@@ -589,7 +932,7 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
               )}
             </div>
           </div>
-        </div>
+        </CollapsibleFormSection>
 
         {/* ✅ AUTO-CALCULATED PRODUCTION STATUS DISPLAY */}
         {calculatingStatus ? (
@@ -632,9 +975,14 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
         )}
 
         {/* Purchase Information */}
-        <div className="space-y-4">
-          <h4 className="text-md font-medium text-gray-900 border-b pb-2">Purchase Information</h4>
-
+        <CollapsibleFormSection
+          title="Purchase Information"
+          icon={<Calendar className="h-4 w-4" />}
+          filledFieldCount={countPurchaseInfoFields(formData).filled}
+          totalFieldCount={countPurchaseInfoFields(formData).total}
+          isRequired={true}
+          defaultExpanded={expandedSections.has('purchase-info')}
+        >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="purchase_date">Purchase Date *</Label>
@@ -669,7 +1017,7 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
                 type="number"
                 step="0.1"
                 min="0"
-                {...form.register('purchase_weight', { valueAsNumber: true })}
+                {...form.register('purchase_weight', { setValueAs: (v: string) => v === '' || v === null || v === undefined ? undefined : parseFloat(v) })}
                 placeholder="e.g., 450"
               />
               <p className="text-xs text-gray-500">
@@ -689,7 +1037,7 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
                 type="number"
                 step="0.1"
                 min="0"
-                {...form.register('weight', { valueAsNumber: true })}
+                {...form.register('weight', { setValueAs: (v: string) => v === '' || v === null || v === undefined ? undefined : parseFloat(v) })}
                 placeholder="e.g., 480"
               />
               <p className="text-xs text-gray-500">
@@ -705,16 +1053,21 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
               type="number"
               step="0.01"
               min="0"
-              {...form.register('purchase_price', { valueAsNumber: true })}
+              {...form.register('purchase_price', { setValueAs: (v: string) => v === '' || v === null || v === undefined ? undefined : parseFloat(v) })}
               placeholder="e.g., 1500.00"
             />
           </div>
-        </div>
+        </CollapsibleFormSection>
 
         {/* Status Information */}
-        <div className="space-y-4">
-          <h4 className="text-md font-medium text-gray-900 border-b pb-2">Current Status</h4>
-
+        <CollapsibleFormSection
+          title="Current Status"
+          icon={<Activity className="h-4 w-4" />}
+          filledFieldCount={countCurrentStatusFields(formData).filled}
+          totalFieldCount={countCurrentStatusFields(formData).total}
+          isRequired={true}
+          defaultExpanded={expandedSections.has('current-status')}
+        >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="health_status">Health Status *</Label>
@@ -723,7 +1076,18 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
                 onValueChange={(value) => form.setValue('health_status', value as any)}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select health status" />
+                  <SelectValue placeholder="Select health status">
+                    {(() => {
+                      const healthMap: Record<string, string> = {
+                        healthy: 'Healthy',
+                        sick: 'Sick',
+                        requires_attention: 'Requires Attention',
+                        quarantined: 'Quarantined',
+                      }
+                      const selectedHealth = form.watch('health_status')
+                      return healthMap[selectedHealth] || 'Select health status'
+                    })()}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="healthy">Healthy</SelectItem>
@@ -772,7 +1136,12 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
                     onValueChange={(value) => form.setValue('production_status', value as any)}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select production status" />
+                      <SelectValue placeholder="Select production status">
+                        {(() => {
+                          const status = form.watch('production_status') || calculatedProductionStatus
+                          return status ? getProductionStatusDisplay(status, formData.gender) : 'Select production status'
+                        })()}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       {allowedStatuses.map(status => (
@@ -790,506 +1159,614 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
               )}
             </div>
           </div>
-        </div>
+        </CollapsibleFormSection>
 
         {/* Conditional Fields Based on Production Status */}
         {productionStatus === 'heifer' && (
-          <Card className="border-l-4 border-blue-500">
-            <CardContent className="p-4">
-              <div className="flex items-center space-x-2 mb-4">
-                <Heart className="w-5 h-5 text-blue-600" />
-                <h4 className="font-medium text-blue-900">Mother's Production Information (Optional)</h4>
+          <CollapsibleFormSection
+            title="Heifer Information - Mother's Production"
+            icon={<Heart className="h-4 w-4" />}
+            filledFieldCount={countHeiferFields(formData).filled}
+            totalFieldCount={countHeiferFields(formData).total}
+            isRequired={false}
+            defaultExpanded={expandedSections.has('heifer')}
+          >
+            <p className="text-sm text-blue-700 mb-4">
+              Information about the mother's production can help predict this heifer's future performance.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="mother_daily_production">Mother's Daily Production (L)</Label>
+                <Input
+                  id="mother_daily_production"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  {...form.register('mother_daily_production', { setValueAs: (v: string) => v === '' || v === null || v === undefined ? undefined : parseFloat(v) })}
+                  placeholder="e.g., 25.5"
+                />
               </div>
-              <p className="text-sm text-blue-700 mb-4">
-                Information about the mother's production can help predict this heifer's future performance.
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="mother_daily_production">Mother's Daily Production (L)</Label>
-                  <Input
-                    id="mother_daily_production"
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    {...form.register('mother_daily_production', { valueAsNumber: true })}
-                    placeholder="e.g., 25.5"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="mother_lactation_number">Mother's Lactation Number</Label>
-                  <Input
-                    id="mother_lactation_number"
-                    type="number"
-                    min="1"
-                    {...form.register('mother_lactation_number', { valueAsNumber: true })}
-                    placeholder="e.g., 3"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="mother_peak_production">Mother's Peak Production (L)</Label>
-                  <Input
-                    id="mother_peak_production"
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    {...form.register('mother_peak_production', { valueAsNumber: true })}
-                    placeholder="e.g., 45.0"
-                  />
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="mother_lactation_number">Mother's Lactation Number</Label>
+                <Input
+                  id="mother_lactation_number"
+                  type="number"
+                  min="1"
+                  {...form.register('mother_lactation_number', { setValueAs: (v: string) => v === '' || v === null || v === undefined ? undefined : parseFloat(v) })}
+                  placeholder="e.g., 3"
+                />
               </div>
-            </CardContent>
-          </Card>
+              <div className="space-y-2">
+                <Label htmlFor="mother_peak_production">Mother's Peak Production (L)</Label>
+                <Input
+                  id="mother_peak_production"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  {...form.register('mother_peak_production', { setValueAs: (v: string) => v === '' || v === null || v === undefined ? undefined : parseFloat(v) })}
+                  placeholder="e.g., 45.0"
+                />
+              </div>
+            </div>
+          </CollapsibleFormSection>
         )}
 
+        {/* ✅ UPDATED: Served Status - Shows Milk Production + Lactation Number */}
         {productionStatus === 'served' && (
-          <Card className="border-l-4 border-purple-500">
-            <CardContent className="p-4">
-              <div className="flex items-center space-x-2 mb-4">
-                <Calendar className="w-5 h-5 text-purple-600" />
-                <h4 className="font-medium text-purple-900">Service Information</h4>
-                <Info className="w-4 h-4 text-purple-500" />
-              </div>
-
-              {/* ✅ NEW: Display gestation period info */}
-              {breedingSettings && (
-                <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg mb-4">
-                  <p className="text-sm text-purple-700">
-                    <span className="font-medium">Gestation Period:</span> {breedingSettings.default_gestation} days ({Math.round(breedingSettings.default_gestation / 30)} months)
-                  </p>
-                  <p className="text-xs text-purple-600 mt-1">
-                    💡 Dates will be auto-calculated using this gestation period. You can enter either the service date or expected calving date.
-                  </p>
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="service_date">Service Date</Label>
-                  <Input
-                    id="service_date"
-                    type="date"
-                    {...form.register('service_date')}
-                    onChange={(e) => {
-                      form.setValue('service_date', e.target.value)
-                    }}
-                  />
-                  <p className="text-xs text-gray-500">
-                    When the animal was serviced
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="service_method">Service Method</Label>
-                  <Select
-                    value={form.watch('service_method')}
-                    onValueChange={(value) => form.setValue('service_method', value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select method" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="artificial_insemination">Artificial Insemination</SelectItem>
-                      <SelectItem value="natural_breeding">Natural Breeding</SelectItem>
-                      <SelectItem value="embryo_transfer">Embryo Transfer</SelectItem>
-                      <SelectItem value="unknown">Unknown</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="expected_calving_date">Expected Calving Date</Label>
-                  <Input
-                    id="expected_calving_date"
-                    type="date"
-                    {...form.register('expected_calving_date')}
-                    onChange={(e) => {
-                      form.setValue('expected_calving_date', e.target.value)
-                    }}
-                  />
-                  <p className="text-xs text-gray-500">
-                    Calculated or estimated date
-                  </p>
-                </div>
-              </div>
-
-              {/* ✅ NEW: Breeding Cycle Number for Served Animals */}
-              <div className="mt-4">
-                <div className="space-y-2">
-                  <Label htmlFor="lactation_number">
-                    Breeding Cycle Number *
-                    <span className="text-xs text-gray-500 ml-2">(Required)</span>
-                  </Label>
-                  <Input
-                    id="lactation_number"
-                    type="number"
-                    min="1"
-                    required
-                    {...form.register('lactation_number', { valueAsNumber: true })}
-                    placeholder="e.g., 1 (first cycle), 2 (second cycle), etc."
-                    className={form.formState.errors.lactation_number ? 'border-red-500' : ''}
-                  />
-                  {form.formState.errors.lactation_number && (
-                    <p className="text-sm text-red-600 flex items-center">
-                      <AlertTriangle className="w-3 h-3 mr-1" />
-                      {form.formState.errors.lactation_number.message}
-                    </p>
-                  )}
-                  <p className="text-xs text-gray-500">
-                    💡 Required: Which breeding cycle number is this animal on? (1st, 2nd, 3rd cycle, etc.)
-                  </p>
-                </div>
-              </div>
-
-              {/* ✅ NEW: Optional Current Lactating Details for In-Calf Animals */}
-              <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-                <div className="flex items-center space-x-2 mb-4">
-                  <Droplets className="w-5 h-5 text-green-600" />
-                  <h5 className="font-medium text-green-900">Current Production Information (Optional)</h5>
-                </div>
-                <p className="text-sm text-green-700 mb-4">
-                  If this animal is still producing milk while in-calf, enter the production details below:
+          <CollapsibleFormSection
+            title="Production & Reproductive Status (Served)"
+            icon={<Calendar className="h-4 w-4" />}
+            filledFieldCount={countServedFields(formData, currentMilkProduction, currentLactationNumber).filled}
+            totalFieldCount={countServedFields(formData, currentMilkProduction, currentLactationNumber).total}
+            isRequired={true}
+            defaultExpanded={expandedSections.has('served')}
+          >
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <Label className="text-xs font-medium text-gray-700">
+                  Current Milk Production (L/day) <span className="text-red-500">*</span>
+                  <span className="text-xs text-gray-500 ml-2">(Avg last 7 days)</span>
+                </Label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  placeholder="e.g. 25.5"
+                  className="bg-white"
+                  value={currentMilkProduction}
+                  onChange={e => {
+                    const v = e.target.value === '' ? '' : parseFloat(e.target.value)
+                    setCurrentMilkProduction(isNaN(v as number) ? '' : v)
+                  }}
+                />
+                <p className="text-xs text-gray-500">
+                  Average daily milk production over the last 7 days in liters
                 </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="current_daily_production_served">Current Daily Production (L)</Label>
-                    <Input
-                      id="current_daily_production_served"
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      {...form.register('current_daily_production', { valueAsNumber: true })}
-                      placeholder="e.g., 28.5"
-                    />
-                    <p className="text-xs text-gray-500">
-                      Current milk production in liters per day
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="days_in_milk_served">Days in Milk</Label>
-                    <Input
-                      id="days_in_milk_served"
-                      type="number"
-                      min="0"
-                      {...form.register('days_in_milk', { valueAsNumber: true })}
-                      placeholder="e.g., 150"
-                    />
-                    <p className="text-xs text-gray-500">
-                      Number of days this animal has been producing milk
-                    </p>
-                  </div>
-                </div>
               </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-medium text-gray-700">
+                  Current Lactation Number <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  type="number"
+                  min={1}
+                  placeholder="e.g. 1, 2, 3 …"
+                  className="bg-white"
+                  value={currentLactationNumber}
+                  onChange={e => {
+                    const v = e.target.value === '' ? '' : parseInt(e.target.value, 10)
+                    const num = isNaN(v as number) ? '' : v as number
+                    setCurrentLactationNumber(num)
+                    form.setValue('lactation_number', num === '' ? undefined : num, { shouldValidate: true })
+                  }}
+                />
+                <p className="text-xs text-gray-500">
+                  Which lactation cycle is this animal currently in? (1st, 2nd, 3rd, etc.)
+                </p>
+              </div>
+            </div>
 
-              {/* ✅ NEW: Display calculation summary */}
-              {(form.watch('service_date') || form.watch('expected_calving_date')) && breedingSettings && (
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg mt-4">
-                  <div className="flex items-start space-x-2">
-                    <Info className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
-                    <div className="text-sm text-blue-700">
-                      <p className="font-medium">Service & Calving Timeline:</p>
-                      {form.watch('service_date') && (
-                        <p className="mt-1">
-                          Service Date: <span className="font-medium">{new Date(form.watch('service_date') as string).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
-                          {form.watch('expected_calving_date') && form.watch('service_date') !== '' && (
-                            <>
-                              <br />
-                              Expected Calving: <span className="font-medium">{new Date(form.watch('expected_calving_date') as string).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
-                              <br />
-                              <span className="text-xs text-blue-600 mt-1">
-                                Gestation period: {breedingSettings.default_gestation} days ({Math.round(breedingSettings.default_gestation / 30)} months, ~{Math.round(breedingSettings.default_gestation / 7)} weeks)
-                              </span>
-                            </>
-                          )}
-                        </p>
-                      )}
-                      {form.watch('expected_calving_date') && !form.watch('service_date') && (
-                        <p className="mt-1">
-                          Expected Calving: <span className="font-medium">{new Date(form.watch('expected_calving_date') as string).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
-                          <br />
-                          Service Date: <span className="font-medium">{new Date(subtractDaysFromDate(form.watch('expected_calving_date') as string, breedingSettings.default_gestation)).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
-                          <br />
-                          <span className="text-xs text-blue-600 mt-1">
-                            Gestation period: {breedingSettings.default_gestation} days ({Math.round(breedingSettings.default_gestation / 30)} months, ~{Math.round(breedingSettings.default_gestation / 7)} weeks)
-                          </span>
-                        </p>
-                      )}
-                      {(() => {
-                        const serviceDate = form.watch('service_date')
-                        const calvingDate = form.watch('expected_calving_date') ? new Date(form.watch('expected_calving_date') as string) : null
-                        const today = new Date()
-                        const daysUntilCalving = calvingDate ? Math.ceil((calvingDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) : null
-
-                        if (daysUntilCalving) {
-                          return (
-                            <>
-                              <p className="mt-2 font-medium">
-                                Days until calving: <span className="text-purple-700">{daysUntilCalving} days</span>
-                              </p>
-                              {daysUntilCalving < 0 && (
-                                <p className="mt-1 text-red-600 text-xs">
-                                  ⚠️ This calving date is in the past
-                                </p>
-                              )}
-                            </>
-                          )
-                        }
-                        return null
-                      })()}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+            {(currentMilkProduction === '' || currentLactationNumber === '') && (
+              <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-4">
+                <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
+                Enter both milk production and lactation number to unlock service record entry below.
+              </div>
+            )}
+            {form.formState.errors.lactation_number && (
+              <p className="text-sm text-red-600 mt-2">{form.formState.errors.lactation_number.message}</p>
+            )}
+          </CollapsibleFormSection>
         )}
 
+        {/* ✅ UPDATED: Lactating Status - Shows Milk Production + Lactation Number */}
         {productionStatus === 'lactating' && (
-          <Card className="border-l-4 border-green-500">
-            <CardContent className="p-4">
-              <div className="flex items-center space-x-2 mb-4">
-                <Droplets className="w-5 h-5 text-green-600" />
-                <h4 className="font-medium text-green-900">Current Production Information</h4>
+          <CollapsibleFormSection
+            title="Production & Reproductive Status (Lactating)"
+            icon={<Droplets className="h-4 w-4" />}
+            filledFieldCount={countLactatingFields(formData, currentMilkProduction, currentLactationNumber).filled}
+            totalFieldCount={countLactatingFields(formData, currentMilkProduction, currentLactationNumber).total}
+            isRequired={true}
+            defaultExpanded={expandedSections.has('lactating')}
+          >
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <Label className="text-xs font-medium text-gray-700">
+                  Current Milk Production (L/day) <span className="text-red-500">*</span>
+                  <span className="text-xs text-gray-500 ml-2">(Avg last 7 days)</span>
+                </Label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  placeholder="e.g. 25.5"
+                  className="bg-white"
+                  value={currentMilkProduction}
+                  onChange={e => {
+                    const v = e.target.value === '' ? '' : parseFloat(e.target.value)
+                    setCurrentMilkProduction(isNaN(v as number) ? '' : v)
+                  }}
+                />
+                <p className="text-xs text-gray-500">
+                  Average daily milk production over the last 7 days in liters
+                </p>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="current_daily_production">Current Daily Production (L)</Label>
-                  <Input
-                    id="current_daily_production"
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    {...form.register('current_daily_production', { valueAsNumber: true })}
-                    placeholder="e.g., 28.5"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="days_in_milk">Days in Milk</Label>
-                  <Input
-                    id="days_in_milk"
-                    type="number"
-                    min="0"
-                    {...form.register('days_in_milk', { valueAsNumber: true })}
-                    placeholder="e.g., 150"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="lactation_number_lactating">
-                    Lactation Number *
-                    <span className="text-xs text-gray-500 ml-2">(Required)</span>
-                  </Label>
-                  <Input
-                    id="lactation_number_lactating"
-                    type="number"
-                    min="1"
-                    required
-                    {...form.register('lactation_number', { valueAsNumber: true })}
-                    placeholder="e.g., 2"
-                    className={form.formState.errors.lactation_number ? 'border-red-500' : ''}
-                  />
-                  {form.formState.errors.lactation_number && (
-                    <p className="text-sm text-red-600 flex items-center">
-                      <AlertTriangle className="w-3 h-3 mr-1" />
-                      {form.formState.errors.lactation_number.message}
-                    </p>
-                  )}
-                </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-medium text-gray-700">
+                  Current Lactation Number <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  type="number"
+                  min={1}
+                  placeholder="e.g. 1, 2, 3 …"
+                  className="bg-white"
+                  value={currentLactationNumber}
+                  onChange={e => {
+                    const v = e.target.value === '' ? '' : parseInt(e.target.value, 10)
+                    const num = isNaN(v as number) ? '' : v as number
+                    setCurrentLactationNumber(num)
+                    form.setValue('lactation_number', num === '' ? undefined : num, { shouldValidate: true })
+                  }}
+                />
+                <p className="text-xs text-gray-500">
+                  Which lactation cycle is this animal currently in? (1st, 2nd, 3rd, etc.)
+                </p>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+
+            {(currentMilkProduction === '' || currentLactationNumber === '') && (
+              <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-4">
+                <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
+                Enter both milk production and lactation number to unlock service record entry below.
+              </div>
+            )}
+            {form.formState.errors.lactation_number && (
+              <p className="text-sm text-red-600 mt-2">{form.formState.errors.lactation_number.message}</p>
+            )}
+          </CollapsibleFormSection>
         )}
 
+        {/* ✅ UPDATED: Steaming Dry Status - Shows Current Breeding Cycle Number */}
         {productionStatus === 'steaming_dry_cows' && (
-          <Card className="border-l-4 border-orange-500">
-            <CardContent className="p-4">
-              <div className="flex items-center space-x-2 mb-4">
-                <Calendar className="w-5 h-5 text-orange-600" />
-                <h4 className="font-medium text-orange-900">Steaming Dry Period Information</h4>
-                <Info className="w-4 h-4 text-orange-500" />
-              </div>
-              <p className="text-sm text-orange-700 mb-4">
-                This animal is in the dry period and is preparing to calve. Expected calving date is required.
+          <CollapsibleFormSection
+            title="Production & Reproductive Status (Steaming Dry)"
+            icon={<Calendar className="h-4 w-4" />}
+            filledFieldCount={countSteamingDryCowsFields(formData, breedingCycleNumber).filled}
+            totalFieldCount={countSteamingDryCowsFields(formData, breedingCycleNumber).total}
+            isRequired={true}
+            defaultExpanded={expandedSections.has('steaming-dry')}
+          >
+            <div className="space-y-1">
+              <Label className="text-xs font-medium text-gray-700">
+                Current Breeding Cycle Number <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                type="number"
+                min={1}
+                placeholder="e.g. 1, 2, 3 …"
+                className="bg-white"
+                value={breedingCycleNumber}
+                onChange={e => {
+                  const v = e.target.value === '' ? '' : parseInt(e.target.value, 10)
+                  const num = isNaN(v as number) ? '' : v as number
+                  setBreedingCycleNumber(num)
+                  form.setValue('lactation_number', num === '' ? undefined : num, { shouldValidate: true })
+                }}
+              />
+              <p className="text-xs text-gray-500">
+                Which breeding cycle number is this animal currently in the dry period of?
               </p>
+            </div>
 
-              {/* ✅ Display gestation period info */}
-              {breedingSettings && (
-                <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg mb-4">
-                  <p className="text-sm text-orange-700">
-                    <span className="font-medium">Gestation Period:</span> {breedingSettings.default_gestation} days ({Math.round(breedingSettings.default_gestation / 30)} months)
-                  </p>
-                  <p className="text-xs text-orange-600 mt-1">
-                    💡 This information is used to calculate the service date based on the expected calving date.
-                  </p>
-                </div>
-              )}
-
-              {/* ✅ REQUIRED: Expected Calving Date and Breeding Cycle Number */}
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="expected_calving_date">
-                      Expected Calving Date *
-                      <span className="text-xs text-red-600 ml-2">(Required)</span>
-                    </Label>
-                    <Input
-                      id="expected_calving_date"
-                      type="date"
-                      {...form.register('expected_calving_date')}
-                      className={form.formState.errors.expected_calving_date ? 'border-red-500' : ''}
-                    />
-                    {form.formState.errors.expected_calving_date && (
-                      <p className="text-sm text-red-600 flex items-center">
-                        <AlertTriangle className="w-3 h-3 mr-1" />
-                        {form.formState.errors.expected_calving_date.message}
-                      </p>
-                    )}
-                    <p className="text-xs text-gray-500">
-                      When is this animal expected to calve?
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="lactation_number_steaming">
-                      Breeding Cycle Number *
-                      <span className="text-xs text-gray-500 ml-2">(Required)</span>
-                    </Label>
-                    <Input
-                      id="lactation_number_steaming"
-                      type="number"
-                      min="1"
-                      required
-                      {...form.register('lactation_number', { valueAsNumber: true })}
-                      placeholder="e.g., 1, 2, 3, etc."
-                      className={form.formState.errors.lactation_number ? 'border-red-500' : ''}
-                    />
-                    {form.formState.errors.lactation_number && (
-                      <p className="text-sm text-red-600 flex items-center">
-                        <AlertTriangle className="w-3 h-3 mr-1" />
-                        {form.formState.errors.lactation_number.message}
-                      </p>
-                    )}
-                    <p className="text-xs text-gray-500">
-                      Which breeding cycle number?
-                    </p>
-                  </div>
-                </div>
-
-                {/* ✅ Calculate and show service date + dry period duration */}
-                {form.watch('expected_calving_date') && breedingSettings && (
-                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                    <div className="flex items-start space-x-2">
-                      <Info className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
-                      <div className="text-sm text-blue-700">
-                        <p className="font-medium">Breeding & Gestation Timeline:</p>
-                        <p className="mt-2">
-                          Expected Calving: <span className="font-medium">{new Date(form.watch('expected_calving_date') as string).toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}</span>
-                        </p>
-                        <p className="mt-1">
-                          Service Date (calculated): <span className="font-medium">{new Date(subtractDaysFromDate(form.watch('expected_calving_date') as string, breedingSettings.default_gestation)).toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}</span>
-                          <br />
-                          <span className="text-xs text-blue-600">(Gestation: {breedingSettings.default_gestation} days / ~{Math.round(breedingSettings.default_gestation / 7)} weeks)</span>
-                        </p>
-                        {(() => {
-                          const expectedDate = form.watch('expected_calving_date')
-                          const calvingDate = expectedDate ? new Date(expectedDate) : new Date()
-                          const today = new Date()
-                          const daysUntilCalving = Math.ceil((calvingDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-
-                          return (
-                            <p className="mt-2 font-medium">
-                              Days until calving: <span className={daysUntilCalving < 0 ? 'text-red-600' : daysUntilCalving < 30 ? 'text-orange-600' : 'text-gray-700'}>{daysUntilCalving} days</span>
-                            </p>
-                          )
-                        })()}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div className="bg-orange-50 p-3 rounded-md">
-                  <p className="text-sm text-orange-800 font-medium">
-                    💡 Steaming Dry Period Care:
-                  </p>
-                  <ul className="text-xs text-orange-700 mt-2 space-y-1 ml-4 list-disc">
-                    <li>Monitor closely for signs of calving (discharge, udder development)</li>
-                    <li>Ensure proper nutrition for fetal development</li>
-                    <li>Separate from lactating herd if possible</li>
-                    <li>Watch for expulsion of placenta and calf</li>
-                  </ul>
-                </div>
+            {breedingCycleNumber === '' && (
+              <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-4">
+                <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
+                Enter the current breeding cycle number to unlock service record entry below.
               </div>
-            </CardContent>
-          </Card>
+            )}
+            {form.formState.errors.lactation_number && (
+              <p className="text-sm text-red-600 mt-2">{form.formState.errors.lactation_number.message}</p>
+            )}
+          </CollapsibleFormSection>
         )}
 
+        {/* ✅ UPDATED: Open/Dry Status - Shows Last Breeding Cycle Number */}
         {productionStatus === 'open_culling_dry_cows' && (
-          <Card className="border-l-4 border-gray-500">
-            <CardContent className="p-4">
-              <div className="flex items-center space-x-2 mb-4">
-                <Activity className="w-5 h-5 text-gray-600" />
-                <h4 className="font-medium text-gray-900">Open Dry Cow Status</h4>
-                <Info className="w-4 h-4 text-gray-500" />
-              </div>
-              <p className="text-sm text-gray-700 mb-4">
-                This animal is not currently pregnant. It is "open" - available for breeding or being held for evaluation.
+          <CollapsibleFormSection
+            title="Production & Reproductive Status (Open Dry)"
+            icon={<Activity className="h-4 w-4" />}
+            filledFieldCount={countOpenDryCowsFields(formData, lastBreedingCycleNumber).filled}
+            totalFieldCount={countOpenDryCowsFields(formData, lastBreedingCycleNumber).total}
+            isRequired={true}
+            defaultExpanded={expandedSections.has('open-dry')}
+          >
+            <div className="space-y-1">
+              <Label className="text-xs font-medium text-gray-700">
+                Last Breeding Cycle Number <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                type="number"
+                min={1}
+                placeholder="e.g. 1, 2, 3 …"
+                className="bg-white"
+                value={lastBreedingCycleNumber}
+                onChange={e => {
+                  const v = e.target.value === '' ? '' : parseInt(e.target.value, 10)
+                  const num = isNaN(v as number) ? '' : v as number
+                  setLastBreedingCycleNumber(num)
+                  form.setValue('lactation_number', num === '' ? undefined : num, { shouldValidate: true })
+                }}
+              />
+              <p className="text-xs text-gray-500">
+                What was the last breeding cycle number this open animal completed?
               </p>
+            {form.formState.errors.lactation_number && (
+              <p className="text-sm text-red-600 mt-2">{form.formState.errors.lactation_number.message}</p>
+            )}
+            </div>
 
-              {/* ✅ Breeding Cycle Number (still required to track cycle history) */}
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="lactation_number_open">
-                    Breeding Cycle Number *
-                    <span className="text-xs text-gray-500 ml-2">(Required)</span>
-                  </Label>
-                  <Input
-                    id="lactation_number_open"
-                    type="number"
-                    min="1"
-                    required
-                    {...form.register('lactation_number', { valueAsNumber: true })}
-                    placeholder="e.g., 1, 2, 3, etc."
-                    className={form.formState.errors.lactation_number ? 'border-red-500' : ''}
-                  />
-                  {form.formState.errors.lactation_number && (
-                    <p className="text-sm text-red-600 flex items-center">
-                      <AlertTriangle className="w-3 h-3 mr-1" />
-                      {form.formState.errors.lactation_number.message}
-                    </p>
-                  )}
-                  <p className="text-xs text-gray-500">
-                    Track which breeding cycle this animal is on
-                  </p>
-                </div>
+            {/* Additional context for open dry cows */}
+            <div className="mt-4 space-y-4">
 
-                <div className="bg-gray-50 p-3 rounded-md">
-                  <p className="text-sm text-gray-800 font-medium">
-                    📋 Open Dry Cow Status Explained:
-                  </p>
-                  <ul className="text-xs text-gray-700 mt-2 space-y-1 ml-4 list-disc">
-                    <li><strong>Not Pregnant:</strong> This animal has not been successfully serviced or is between breeding cycles</li>
-                    <li><strong>Available for Breeding:</strong> Can be serviced when ready</li>
-                    <li><strong>Dry Period:</strong> Not currently producing milk</li>
-                    <li><strong>No Expected Calving Date:</strong> Because the animal is not pregnant</li>
-                  </ul>
-                </div>
-
-                <div className="bg-blue-50 border border-blue-200 p-3 rounded-md">
-                  <p className="text-sm text-blue-800 font-medium">
-                    💡 Next Steps for Open Dry Cows:
-                  </p>
-                  <ul className="text-xs text-blue-700 mt-2 space-y-1 ml-4 list-disc">
-                    <li>Health check and body condition scoring</li>
-                    <li>Plan breeding/service schedule</li>
-                    <li>If culling candidate: Define reason (low production, age, health, genetics)</li>
-                    <li>If holding for breeding: Monitor for estrus signs</li>
-                    <li>Note any special requirements in farm notes</li>
-                  </ul>
-                </div>
+              <div className="bg-gray-50 p-3 rounded-md">
+                <p className="text-sm text-gray-800 font-medium">
+                  📋 Open Dry Cow Status Explained:
+                </p>
+                <ul className="text-xs text-gray-700 mt-2 space-y-1 ml-4 list-disc">
+                  <li><strong>Not Pregnant:</strong> This animal has not been successfully serviced or is between breeding cycles</li>
+                  <li><strong>Available for Breeding:</strong> Can be serviced when ready</li>
+                  <li><strong>Dry Period:</strong> Not currently producing milk</li>
+                  <li><strong>No Expected Calving Date:</strong> Because the animal is not pregnant</li>
+                </ul>
               </div>
-            </CardContent>
-          </Card>
+
+              <div className="bg-blue-50 border border-blue-200 p-3 rounded-md">
+                <p className="text-sm text-blue-800 font-medium">
+                  💡 Next Steps for Open Dry Cows:
+                </p>
+                <ul className="text-xs text-blue-700 mt-2 space-y-1 ml-4 list-disc">
+                  <li>Health check and body condition scoring</li>
+                  <li>Plan breeding/service schedule</li>
+                  <li>If culling candidate: Define reason (low production, age, health, genetics)</li>
+                  <li>If holding for breeding: Monitor for estrus signs</li>
+                  <li>Note any special requirements in farm notes</li>
+                </ul>
+              </div>
+            </div>
+          </CollapsibleFormSection>
+        )}
+
+        {/* ── Service / Calving History (per breeding cycle) ── */}
+        {serviceRecords.length > 0 && (
+          <div className="space-y-3">
+            <div className="border-b pb-2 flex items-center justify-between">
+              <h4 className="text-md font-medium text-gray-900 flex items-center gap-2">
+                <Syringe className="h-4 w-4 text-purple-600" />
+                Service &amp; Calving Records
+                <span className="text-xs font-normal text-gray-500">
+                  ({serviceRecords.length} cycle{serviceRecords.length > 1 ? 's' : ''})
+                </span>
+              </h4>
+              <span className="text-xs text-gray-400">
+                Fill in details for each breeding cycle
+              </span>
+            </div>
+
+            {serviceRecords.map(record => {
+              // Only 'served' and 'steaming_dry_cows' have a current cycle (the last one)
+              // Lactating animals treat all cycles as previous
+              const productionHasCurrentCycle = productionStatus === 'served' || productionStatus === 'steaming_dry_cows'
+              const isCurrent = productionHasCurrentCycle && record.cycle_number === serviceRecords.length
+              const isExpanded = expandedCycles.has(record.cycle_number)
+              const isPrevious = !isCurrent
+
+              return (
+                <div
+                  key={record.cycle_number}
+                  className={`border rounded-lg overflow-hidden ${
+                    isCurrent ? 'border-purple-300 shadow-sm' : 'border-gray-200'
+                  }`}
+                >
+                  {/* Cycle header */}
+                  <button
+                    type="button"
+                    onClick={() => toggleCycle(record.cycle_number)}
+                    className={`w-full flex items-center justify-between px-4 py-3 text-left transition-colors ${
+                      isCurrent ? 'bg-purple-50 hover:bg-purple-100' : 'bg-gray-50 hover:bg-gray-100'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className={`text-sm font-semibold ${isCurrent ? 'text-purple-800' : 'text-gray-700'}`}>
+                        Cycle {record.cycle_number}
+                      </span>
+                      {isCurrent ? (
+                        <Badge className="bg-purple-100 text-purple-700 text-xs px-2 py-0.5">Current</Badge>
+                      ) : (
+                        <Badge className="bg-gray-100 text-gray-600 text-xs px-2 py-0.5">Previous</Badge>
+                      )}
+                      {record.service_date && (
+                        <span className="text-xs text-gray-500">
+                          Serviced: {record.service_date}
+                        </span>
+                      )}
+                    </div>
+                    {isExpanded ? (
+                      <ChevronUp className="h-4 w-4 text-gray-500" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4 text-gray-500" />
+                    )}
+                  </button>
+
+                  {/* Cycle body */}
+                  {isExpanded && (
+                    <div className="p-4 space-y-5">
+                      {/* Service Details */}
+                      <div className="space-y-3">
+                        <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide flex items-center gap-1">
+                          <Syringe className="h-3 w-3" /> Service Details
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Service Date</Label>
+                            <Input
+                              type="date"
+                              value={record.service_date}
+                              onChange={e => updateRecord(record.cycle_number, 'service_date', e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Service Method</Label>
+                            <select
+                              value={record.service_method}
+                              onChange={e => updateRecord(record.cycle_number, 'service_method', e.target.value)}
+                              className="w-full h-10 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-400"
+                            >
+                              <option value="">Select method</option>
+                              <option value="artificial_insemination">Artificial Insemination (AI)</option>
+                              <option value="natural_breeding">Natural Breeding</option>
+                              <option value="embryo_transfer">Embryo Transfer</option>
+                              <option value="unknown">Unknown</option>
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Bull / Semen Name</Label>
+                            <Input
+                              placeholder="e.g., Badger-Bluff Farm Fanny"
+                              value={record.bull_name}
+                              onChange={e => updateRecord(record.cycle_number, 'bull_name', e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Bull / Semen Code</Label>
+                            <Input
+                              placeholder="e.g., 1HO09356"
+                              value={record.bull_code}
+                              onChange={e => updateRecord(record.cycle_number, 'bull_code', e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Type of Semen</Label>
+                            <select
+                              value={record.semen_type}
+                              onChange={e => updateRecord(record.cycle_number, 'semen_type', e.target.value)}
+                              className="w-full h-10 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-400"
+                            >
+                              <option value="">Select type</option>
+                              <option value="conventional">Conventional</option>
+                              <option value="sexed_female">Sexed — Female</option>
+                              <option value="sexed_male">Sexed — Male</option>
+                              <option value="natural">Natural Service</option>
+                              <option value="unknown">Unknown</option>
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs flex items-center gap-1">
+                              <UserCheck className="h-3 w-3" /> AI Technician
+                            </Label>
+                            <Input
+                              placeholder="Technician name"
+                              value={record.ai_technician}
+                              onChange={e => updateRecord(record.cycle_number, 'ai_technician', e.target.value)}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Service Outcome */}
+                        <div className="space-y-1">
+                          <Label className="text-xs">Outcome of Service</Label>
+                          <div className="flex flex-wrap gap-2">
+                            {[
+                              { value: 'confirmed_pregnant', label: 'Confirmed Pregnant', icon: <CheckCircle2 className="h-3 w-3" />, color: 'green' },
+                              { value: 'not_pregnant', label: 'Not Pregnant', icon: <XCircle className="h-3 w-3" />, color: 'red' },
+                              { value: 'pending', label: 'Pending Check', icon: <Clock className="h-3 w-3" />, color: 'yellow' },
+                              { value: 'unknown', label: 'Unknown', icon: null, color: 'gray' },
+                            ].map(opt => (
+                              <button
+                                key={opt.value}
+                                type="button"
+                                onClick={() => updateRecord(record.cycle_number, 'service_outcome', opt.value)}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs border transition-all ${
+                                  record.service_outcome === opt.value
+                                    ? opt.color === 'green' ? 'bg-green-100 border-green-400 text-green-800'
+                                    : opt.color === 'red' ? 'bg-red-100 border-red-400 text-red-800'
+                                    : opt.color === 'yellow' ? 'bg-yellow-100 border-yellow-400 text-yellow-800'
+                                    : 'bg-gray-200 border-gray-400 text-gray-800'
+                                    : 'bg-white border-gray-300 text-gray-600 hover:border-gray-400'
+                                }`}
+                              >
+                                {opt.icon}
+                                {opt.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Dates */}
+                      <div className="space-y-3 border-t pt-4">
+                        <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide flex items-center gap-1">
+                          <Calendar className="h-3 w-3" /> Dates
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Steaming Date</Label>
+                            <Input
+                              type="date"
+                              value={record.steaming_date}
+                              onChange={e => updateRecord(record.cycle_number, 'steaming_date', e.target.value)}
+                            />
+                            <p className="text-xs text-gray-400">When dry-off began</p>
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Expected Calving Date</Label>
+                            <Input
+                              type="date"
+                              value={record.expected_calving_date}
+                              onChange={e => updateRecord(record.cycle_number, 'expected_calving_date', e.target.value)}
+                            />
+                          </div>
+                          {isPrevious && (
+                            <div className="space-y-1">
+                              <Label className="text-xs">Actual Calving Date</Label>
+                              <Input
+                                type="date"
+                                value={record.actual_calving_date}
+                                onChange={e => updateRecord(record.cycle_number, 'actual_calving_date', e.target.value)}
+                              />
+                            </div>
+                          )}
+                          {isPrevious && (
+                            <div className="space-y-1">
+                              <Label className="text-xs flex items-center gap-1">
+                                <Clock className="h-3 w-3" /> Calving Time
+                              </Label>
+                              <Input
+                                type="time"
+                                value={record.calving_time}
+                                onChange={e => updateRecord(record.cycle_number, 'calving_time', e.target.value)}
+                              />
+                              <p className="text-xs text-gray-400">Time calf was born</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Calving outcome — only for completed cycles */}
+                      {isPrevious && (
+                        <div className="space-y-3 border-t pt-4">
+                          <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide flex items-center gap-1">
+                            <Baby className="h-3 w-3" /> Calving Outcome &amp; Difficulty
+                          </p>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Calving Difficulty</Label>
+                            <div className="flex flex-wrap gap-2">
+                              {[
+                                { value: 'easy', label: 'Easy - No issues, quick delivery', color: 'green' },
+                                { value: 'normal', label: 'Normal - Standard delivery', color: 'blue' },
+                                { value: 'difficult', label: 'Difficult - Hard but unassisted', color: 'yellow' },
+                                { value: 'assisted', label: 'Assisted - Required human help', color: 'orange' },
+                                { value: 'cesarean', label: 'Cesarean - Surgical delivery', color: 'red' },
+                                { value: 'aborted', label: 'Aborted - Pregnancy terminated', color: 'purple' },
+                              ].map(opt => (
+                                <button
+                                  key={opt.value}
+                                  type="button"
+                                  onClick={() => updateRecord(record.cycle_number, 'calving_outcome', opt.value)}
+                                  className={`px-3 py-1.5 rounded-full text-xs border transition-all ${
+                                    record.calving_outcome === opt.value
+                                      ? opt.color === 'green' ? 'bg-green-100 border-green-400 text-green-800'
+                                      : opt.color === 'blue' ? 'bg-blue-100 border-blue-400 text-blue-800'
+                                      : opt.color === 'yellow' ? 'bg-yellow-100 border-yellow-400 text-yellow-800'
+                                      : opt.color === 'orange' ? 'bg-orange-100 border-orange-400 text-orange-800'
+                                      : opt.color === 'red' ? 'bg-red-100 border-red-400 text-red-800'
+                                      : 'bg-purple-100 border-purple-400 text-purple-800'
+                                      : 'bg-white border-gray-300 text-gray-600 hover:border-gray-400'
+                                  }`}
+                                >
+                                  {opt.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <Label className="text-xs flex items-center gap-1">
+                                <Droplets className="h-3 w-3 text-blue-500" /> Colostrum Produced (L)
+                              </Label>
+                              <Input
+                                type="number"
+                                step="0.1"
+                                min="0"
+                                placeholder="e.g., 6.5"
+                                value={record.colostrum_produced}
+                                onChange={e => updateRecord(record.cycle_number, 'colostrum_produced', e.target.value)}
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Days in Milk (this cycle)</Label>
+                              <Input
+                                type="number"
+                                min="0"
+                                placeholder="e.g., 305"
+                                value={record.days_in_milk}
+                                onChange={e => updateRecord(record.cycle_number, 'days_in_milk', e.target.value)}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Days in milk for current cycle */}
+                      {isCurrent && (
+                        <div className="space-y-1 border-t pt-4">
+                          <Label className="text-xs">Days in Milk (current)</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            placeholder="e.g., 120"
+                            value={record.days_in_milk}
+                            onChange={e => updateRecord(record.cycle_number, 'days_in_milk', e.target.value)}
+                          />
+                          <p className="text-xs text-gray-400">Days milking since last calving</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         )}
 
         {/* Additional Information */}
-        <div className="space-y-4">
-          <h4 className="text-md font-medium text-gray-900 border-b pb-2">Additional Information</h4>
-
+        <CollapsibleFormSection
+          title="Additional Information"
+          icon={<Info className="h-4 w-4" />}
+          filledFieldCount={countAdditionalInfoFields(formData).filled}
+          totalFieldCount={countAdditionalInfoFields(formData).total}
+          isRequired={false}
+          defaultExpanded={expandedSections.has('additional-info')}
+        >
           <div className="space-y-2">
             <Label htmlFor="notes">Notes</Label>
             <textarea
@@ -1303,7 +1780,7 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
               Include any relevant information about the animal's history, health, or special care requirements
             </p>
           </div>
-        </div>
+        </CollapsibleFormSection>
 
         {/* Form Actions */}
         <div className="flex justify-end space-x-4 pt-6 border-t">
@@ -1321,14 +1798,25 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel }: PurchasedAn
             primary={true}
             type="submit"
             disabled={loading || !formData.tag_number}
+            onClick={() => {
+              console.group('🖱️ [Form] Add Animal clicked')
+              console.log('tag_number:', formData.tag_number || '(empty — button should be disabled)')
+              console.log('loading:', loading)
+              console.log('disabled:', loading || !formData.tag_number)
+              console.log('form values:', form.getValues())
+              console.log('form errors (current):', form.formState.errors)
+              console.log('isDirty:', form.formState.isDirty)
+              console.log('isValid:', form.formState.isValid)
+              console.groupEnd()
+            }}
           >
             {loading ? (
               <>
                 <LoadingSpinner size="sm" className="mr-2" />
-                Adding Animal...
+                {isEditMode ? 'Updating Animal...' : 'Adding Animal...'}
               </>
             ) : (
-              'Add Animal'
+              isEditMode ? 'Update Animal' : 'Add Animal'
             )}
           </Button>
         </div>

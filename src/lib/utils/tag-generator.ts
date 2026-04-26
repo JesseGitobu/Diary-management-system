@@ -388,23 +388,44 @@ export function previewTagGeneration(
 ): string {
   try {
     console.log('🎯 Generating preview with:', { 
-      numberingSystem: settings.numberingSystem, 
+      numberingSystem: settings.numberingSystem,
+      useSourceSpecificFormats: settings.useSourceSpecificFormats,
+      animalSource: context?.animalSource,
       nextNumber, 
       context: context?.animalData 
     })
 
-    switch (settings.numberingSystem) {
+    // ✅ NEW: Check if source-specific formats should be used
+    let numberingSystem = settings.numberingSystem
+    let prefix = settings.tagPrefix
+    let customFormat = settings.customFormat
+
+    if (settings.useSourceSpecificFormats && context?.animalSource && settings.sourceSpecificFormats) {
+      // Normalize animal source to match key in sourceSpecificFormats
+      const sourceKey = context.animalSource === 'newborn_calf' ? 'newborn' : 'purchased'
+      const sourceFormat = settings.sourceSpecificFormats[sourceKey]
+
+      if (sourceFormat && sourceFormat.enabled) {
+        console.log(`✅ Using source-specific format for "${sourceKey}":`, sourceFormat)
+        prefix = sourceFormat.prefix || prefix
+        customFormat = sourceFormat.formatPattern || sourceFormat.format || customFormat
+        // For source-specific formats, always use 'custom' numbering system if a format is provided
+        numberingSystem = customFormat ? 'custom' : numberingSystem
+      }
+    }
+
+    switch (numberingSystem) {
       case 'sequential':
-        return generateSequentialPreview(settings, nextNumber)
+        return generateSequentialPreview({ ...settings, tagPrefix: prefix }, nextNumber)
         
       case 'custom':
-        return generateCustomFormatPreview(settings, context, nextNumber)
+        return generateCustomFormatPreview({ ...settings, tagPrefix: prefix, customFormat }, context, nextNumber)
         
       case 'barcode':
-        return generateEnhancedBarcodePreview(settings, nextNumber)
+        return generateEnhancedBarcodePreview({ ...settings, tagPrefix: prefix }, nextNumber)
         
       default:
-        return generateSequentialPreview(settings, nextNumber)
+        return generateSequentialPreview({ ...settings, tagPrefix: prefix }, nextNumber)
     }
   } catch (error) {
     console.error('Error in previewTagGeneration:', error)

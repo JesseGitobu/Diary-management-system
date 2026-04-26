@@ -87,6 +87,10 @@ interface CalvingEvent {
   event_date: string
   estimated_due_date?: string
   calving_outcome?: string
+  calf_tag_number?: string
+  calf_weight?: number
+  calf_gender?: string
+  calf_health_status?: string
   created_at?: string
 }
 
@@ -137,6 +141,7 @@ interface InseminationEvent {
   insemination_method: string
   semen_bull_code?: string
   technician_name?: string
+  estimated_due_date?: string
   created_at?: string
 }
 
@@ -208,31 +213,64 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
     try {
       if (newOffset === 0) setLoading(true)
       else setLoadingMore(true)
-      
+
       const response = await fetch(`/api/animals/${animalId}/breeding-records?limit=${RECORDS_PER_PAGE}&offset=${newOffset}`)
       const data = await response.json()
+
+      console.log('📥 [AnimalBreedingRecords] API response received:', {
+        success: data.success,
+        serviceRecordsCount: data.serviceRecords?.length ?? 0,
+        pregnancyChecksCount: data.pregnancyChecks?.length ?? 0,
+        heatEventsCount: data.heatEvents?.length ?? 0,
+        inseminationEventsCount: data.inseminationEvents?.length ?? 0,
+        calvingEventsCount: data.calvingEvents?.length ?? 0,
+        allEventsCount: data.allEvents?.length ?? 0,
+      })
+
       if (data.success) {
         const sortedRecords = (data.serviceRecords || []).sort((a: BreedingRecord, b: BreedingRecord) => {
           const dateA = new Date(a.service_date).getTime();
           const dateB = new Date(b.service_date).getTime();
           return dateB - dateA;
         })
-        
+
+        console.log('🐄 [AnimalBreedingRecords] Service records:', sortedRecords.map((r: BreedingRecord) => ({
+          id: r.id,
+          service_date: r.service_date,
+          service_type: r.service_type,
+          service_number: r.service_number,
+          bull_tag_or_semen_code: r.bull_tag_or_semen_code,
+          bull_name_or_semen_source: r.bull_name_or_semen_source,
+          technician_name: r.technician_name,
+          service_cost: r.service_cost,
+          pregnancy_status: r.pregnancy_status,
+          expected_calving_date: r.expected_calving_date,
+        })))
+
         if (newOffset === 0) {
           setServiceRecords(sortedRecords)
         } else {
           setServiceRecords(prev => [...prev, ...sortedRecords])
         }
-        
+
         setPregnancyChecks(data.pregnancyChecks || [])
+        console.log('🔬 [AnimalBreedingRecords] Pregnancy checks:', (data.pregnancyChecks || []).map((c: any) => ({
+          id: c.id, check_date: c.check_date, result: c.result,
+          examination_method: c.examination_method, veterinarian_name: c.veterinarian_name,
+          estimated_due_date: c.estimated_due_date,
+        })))
+
         setAllEvents(data.allEvents || [])
-        
+
         const sortedHeat = (data.heatEvents || []).sort((a: HeatEvent, b: HeatEvent) => {
           const timeA = a.created_at ? new Date(a.created_at).getTime() : new Date(a.event_date).getTime();
           const timeB = b.created_at ? new Date(b.created_at).getTime() : new Date(b.event_date).getTime();
           return timeB - timeA;
         })
         setHeatEvents(sortedHeat)
+        console.log('🌡️ [AnimalBreedingRecords] Heat events:', sortedHeat.map((e: HeatEvent) => ({
+          id: e.id, event_date: e.event_date, heat_signs: e.heat_signs, heat_action_taken: e.heat_action_taken,
+        })))
 
         const sortedInsemination = (data.inseminationEvents || []).sort((a: InseminationEvent, b: InseminationEvent) => {
           const timeA = a.created_at ? new Date(a.created_at).getTime() : new Date(a.event_date).getTime();
@@ -240,6 +278,11 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
           return timeB - timeA;
         })
         setInseminationEvents(sortedInsemination)
+        console.log('💉 [AnimalBreedingRecords] Insemination events:', sortedInsemination.map((e: InseminationEvent) => ({
+          id: e.id, event_date: e.event_date, insemination_method: e.insemination_method,
+          semen_bull_code: e.semen_bull_code, technician_name: e.technician_name,
+          estimated_due_date: e.estimated_due_date,
+        })))
 
         const sortedCalving = (data.calvingEvents || []).sort((a: CalvingEvent, b: CalvingEvent) => {
           const timeA = new Date(a.event_date).getTime();
@@ -247,7 +290,12 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
           return timeB - timeA;
         })
         setCalvingEvents(sortedCalving)
-        
+        console.log('🐣 [AnimalBreedingRecords] Calving events:', sortedCalving.map((e: CalvingEvent) => ({
+          id: e.id, event_date: e.event_date, calving_outcome: e.calving_outcome,
+          calf_tag_number: e.calf_tag_number, calf_weight: e.calf_weight,
+          calf_gender: e.calf_gender, calf_health_status: e.calf_health_status,
+        })))
+
         setHasMore(sortedRecords.length === RECORDS_PER_PAGE)
         setOffset(newOffset)
       }
@@ -860,127 +908,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
   return (
     <div className="space-y-6">
       
-      {/* 1. STATUS BANNER (Heat or Pending Check) */}
-      {breedingWindow && (
-        <div className="mb-6">
-           <div className={cn(
-             "p-4 border-l-4 rounded-r-lg shadow-sm animate-in fade-in slide-in-from-top-2 duration-300",
-             breedingWindow.color === 'blue' && "bg-blue-50 border-blue-500",
-             breedingWindow.color === 'yellow' && "bg-yellow-50 border-yellow-500",
-             breedingWindow.color === 'green' && "bg-green-50 border-green-500 ring-2 ring-green-200", 
-             breedingWindow.color === 'orange' && "bg-orange-50 border-orange-500",
-             breedingWindow.color === 'red' && "bg-red-50 border-red-500",
-             breedingWindow.color === 'gray' && "bg-gray-50 border-gray-500",
-           )}>
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div className="flex items-start space-x-3">
-                {breedingWindow.color === 'green' ? (
-                  <Timer className="h-8 w-8 text-green-600 mt-1 animate-pulse" />
-                ) : breedingWindow.status === 'ready_for_check' ? (
-                  <Stethoscope className="h-6 w-6 mt-1 text-blue-600" />
-                ) : breedingWindow.status === 'waiting' ? (
-                  <Clock className="h-6 w-6 mt-1 text-gray-600" />
-                ) : (
-                  <Clock className={cn(
-                    "h-6 w-6 mt-1",
-                    breedingWindow.color === 'blue' ? "text-blue-600" :
-                    breedingWindow.color === 'orange' ? "text-orange-600" :
-                    "text-gray-600"
-                  )} />
-                )}
-                
-                <div>
-                  <h3 className={cn(
-                    "text-lg font-bold flex items-center gap-2",
-                    breedingWindow.color === 'green' ? "text-green-900" : 
-                    breedingWindow.color === 'gray' ? "text-gray-900" : "text-gray-900"
-                  )}>
-                    {breedingWindow.message}
-                    {breedingWindow.color === 'green' && <Badge className="bg-green-600 text-white animate-pulse">Best Time</Badge>}
-                  </h3>
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-1">
-                     <p className="text-sm font-medium">
-                       {breedingWindow.action === 'breed' && `${breedingWindow.hoursElapsed} hours since heat detected`}
-                     </p>
-                     {breedingWindow.action === 'breed' && <span className="hidden sm:inline text-gray-400">•</span>}
-                     <p className="text-sm text-gray-700">{breedingWindow.subMessage}</p>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Action buttons specifically for the window */}
-              {breedingWindow.action === 'breed' && breedingWindow.status !== 'expired' && (
-                <div className="flex gap-2 w-full md:w-auto">
-                   <Button 
-                    onClick={() => setActiveModal('insemination')} 
-                    className={cn(
-                      "text-white shadow-md w-full md:w-auto",
-                      breedingWindow.color === 'green' ? "bg-green-600 hover:bg-green-700" : 
-                      breedingWindow.color === 'orange' ? "bg-orange-600 hover:bg-orange-700" :
-                      "bg-blue-600 hover:bg-blue-700"
-                    )}
-                  >
-                    <Syringe className="w-4 h-4 mr-2"/> 
-                    {breedingWindow.color === 'green' ? "Inseminate Now" : "Record Breeding"}
-                  </Button>
-                </div>
-              )}
-
-              {/* Action button for Pregnancy Check */}
-              {breedingWindow.action === 'check' && (
-                <div className="flex gap-2 w-full md:w-auto">
-                   <Button 
-                    onClick={() => setActiveModal('pregnancy_check')} 
-                    className="bg-blue-600 hover:bg-blue-700 text-white shadow-md w-full md:w-auto"
-                  >
-                    <Stethoscope className="w-4 h-4 mr-2"/> 
-                    Confirm Pregnancy
-                  </Button>
-                </div>
-              )}
-
-              {/* Action button for Calving */}
-              {breedingWindow.action === 'calving' && (
-                <div className="flex gap-2 w-full md:w-auto">
-                   <Button 
-                    onClick={() => setActiveModal('calving')} 
-                    className="bg-purple-600 hover:bg-purple-700 text-white shadow-md w-full md:w-auto"
-                  >
-                    <Baby className="w-4 h-4 mr-2"/> 
-                    Record Calving
-                  </Button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 2. STANDARD NOTIFICATION (Only if no active banner) */}
-      {!breedingWindow && breedingEligibility && breedingEligibility.eligible && (breedingEligibility.isReadyForFirstService || breedingEligibility.isReadyForReService) && (
-        <div className="mb-6">
-             <div className="p-4 bg-green-50 border-l-4 border-green-500 rounded-r-lg shadow-sm">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="flex items-start space-x-3">
-                  <BellRing className="h-6 w-6 text-green-600 mt-1 flex-shrink-0" />
-                  <div>
-                    <h3 className="text-lg font-bold text-green-900">
-                      {breedingEligibility.isReadyForFirstService ? 'Heifer Ready for Service' : 'Ready for Breeding'}
-                    </h3>
-                    <p className="text-sm text-green-800 mt-1">
-                      {breedingEligibility.isReadyForFirstService 
-                        ? `Heifer is ${breedingEligibility.ageInMonths} months old. Monitor for heat signs.` 
-                        : `Animal is open and past waiting period. Eligible for service.`}
-                    </p>
-                  </div>
-                </div>
-                <div className="w-full md:w-auto">
-                   {renderActionButtons()}
-                </div>
-              </div>
-            </div>
-        </div>
-      )}
+      
 
       {/* Warnings */}
       {(() => {
@@ -1273,6 +1201,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                       if (item.type === 'heat') {
                         const heat = item.data as HeatEvent
                         const createdTime = heat.created_at ? parseISO(heat.created_at) : (heat.event_date ? parseISO(heat.event_date) : new Date())
+                        console.log('🌡️ [render:overview] Heat event:', { id: heat.id, event_date: heat.event_date, heat_signs: heat.heat_signs, heat_action_taken: heat.heat_action_taken })
                         return (
                           <div key={`heat-${heat.id}`} className="border rounded-lg p-4 bg-pink-50 border-pink-100">
                             <div className="flex items-start justify-between">
@@ -1300,6 +1229,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                       if (item.type === 'insemination') {
                         const insem = item.data as InseminationEvent
                         const createdTime = insem.created_at ? parseISO(insem.created_at) : (insem.event_date ? parseISO(insem.event_date) : new Date())
+                        console.log('💉 [render:overview] Insemination event:', { id: insem.id, event_date: insem.event_date, insemination_method: insem.insemination_method, semen_bull_code: insem.semen_bull_code, technician_name: insem.technician_name, estimated_due_date: insem.estimated_due_date })
                         return (
                           <div key={`insem-${insem.id}`} className="border rounded-lg p-4 bg-green-50 border-green-100">
                             <div className="flex items-start justify-between">
@@ -1312,7 +1242,8 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                                   <Badge variant="outline" className="bg-white text-green-700 border-green-200">Insemination</Badge>
                                 </div>
                                 <p className="text-sm text-gray-600 ml-6 mb-2">
-                                  Method: {insem.insemination_method}
+                                  Method: <span className="capitalize">{insem.insemination_method?.replace(/_/g, ' ')}</span>
+                                  {insem.semen_bull_code && ` • Code: ${insem.semen_bull_code}`}
                                   {insem.technician_name && ` • Technician: ${insem.technician_name}`}
                                 </p>
                                 <p className="text-xs text-gray-500 ml-6">
@@ -1328,7 +1259,8 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                       if (item.type === 'pregnancy_check') {
                         const check = item.data as PregnancyCheck
                         const createdTime = check.created_at ? parseISO(check.created_at) : (check.check_date ? parseISO(check.check_date) : new Date())
-                        
+                        console.log('🔬 [render:overview] Pregnancy check:', { id: check.id, check_date: check.check_date, result: check.result, examination_method: check.examination_method, veterinarian_name: check.veterinarian_name, estimated_due_date: check.estimated_due_date, notes: check.notes })
+
                         // Determine result color and display text
                         let resultColor = 'bg-yellow-100 text-yellow-800'
                         let resultText = 'Inconclusive'
@@ -1377,6 +1309,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                       if (item.type === 'breeding') {
                         const record = item.data as BreedingRecord
                         const createdTime = record.created_at ? parseISO(record.created_at) : (record.service_date ? parseISO(record.service_date) : new Date())
+                        console.log('🐄 [render:overview] Service record:', { id: record.id, service_date: record.service_date, service_type: record.service_type, service_number: record.service_number, bull_tag_or_semen_code: record.bull_tag_or_semen_code, bull_name_or_semen_source: record.bull_name_or_semen_source, technician_name: record.technician_name, service_cost: record.service_cost, pregnancy_status: record.pregnancy_status, expected_calving_date: record.expected_calving_date })
                         return (
                           <div key={record.id} className="border rounded-lg p-4 hover:bg-gray-50 transition-colors">
                             <div className="flex items-start justify-between">
@@ -1425,6 +1358,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                       if (item.type === 'calving') {
                         const calving = item.data as CalvingEvent
                         const createdTime = calving.created_at ? parseISO(calving.created_at) : (calving.event_date ? parseISO(calving.event_date) : new Date())
+                        console.log('🐣 [render:overview] Calving event:', { id: calving.id, event_date: calving.event_date, calving_outcome: calving.calving_outcome, calf_tag_number: calving.calf_tag_number, calf_weight: calving.calf_weight, calf_gender: calving.calf_gender, calf_health_status: calving.calf_health_status })
                         return (
                           <div key={`calving-${calving.id}`} className="border rounded-lg p-4 bg-purple-50 border-purple-100">
                             <div className="flex items-start justify-between">
@@ -1436,16 +1370,23 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                                   </span>
                                   <Badge variant="outline" className="bg-white text-purple-700 border-purple-200">Calving</Badge>
                                 </div>
-                                {(calving.estimated_due_date || calving.calving_outcome) && (
-                                  <div className="ml-6 pt-2 border-t border-purple-100 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-gray-600 mb-2">
-                                    {calving.estimated_due_date && (
-                                      <span>Expected Due: {calving.estimated_due_date ? format(parseISO(calving.estimated_due_date), 'MMM dd, yyyy') : 'Date not set'}</span>
-                                    )}
-                                    {calving.calving_outcome && (
-                                      <span>Outcome: <span className="font-semibold">{calving.calving_outcome}</span></span>
-                                    )}
-                                  </div>
-                                )}
+                                <div className="ml-6 pt-2 border-t border-purple-100 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-gray-600 mb-2">
+                                  {calving.calving_outcome && (
+                                    <span>Outcome: <span className="font-semibold capitalize">{calving.calving_outcome.replace(/_/g, ' ')}</span></span>
+                                  )}
+                                  {calving.calf_gender && (
+                                    <span>Calf: <span className="font-semibold capitalize">{calving.calf_gender}</span></span>
+                                  )}
+                                  {calving.calf_tag_number && (
+                                    <span>Calf Tag: <span className="font-semibold">{calving.calf_tag_number}</span></span>
+                                  )}
+                                  {calving.calf_weight && (
+                                    <span>Birth Weight: <span className="font-semibold">{calving.calf_weight} kg</span></span>
+                                  )}
+                                  {calving.calf_health_status && (
+                                    <span>Calf Health: <span className="font-semibold capitalize">{calving.calf_health_status}</span></span>
+                                  )}
+                                </div>
                                 <p className="text-xs text-gray-500 ml-6">
                                   Added: {format(createdTime, 'MMM dd, yyyy • h:mm a')}
                                 </p>
@@ -1489,6 +1430,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                        // Heat Event
                        if (item.type === 'heat') {
                          const heat = item.data as HeatEvent
+                         console.log('🌡️ [render:records] Heat event:', { id: heat.id, event_date: heat.event_date, heat_signs: heat.heat_signs, heat_action_taken: heat.heat_action_taken })
                          return (
                            <div key={`heat-${heat.id}`} className="border rounded-lg p-4 bg-pink-50 border-pink-100 hover:shadow-md transition-shadow">
                              <div className="flex items-start justify-between">
@@ -1513,6 +1455,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                        // Insemination Event
                        if (item.type === 'insemination') {
                          const insem = item.data as InseminationEvent
+                         console.log('💉 [render:records] Insemination event:', { id: insem.id, event_date: insem.event_date, insemination_method: insem.insemination_method, semen_bull_code: insem.semen_bull_code, technician_name: insem.technician_name, estimated_due_date: insem.estimated_due_date })
                          return (
                            <div key={`insem-${insem.id}`} className="border rounded-lg p-4 bg-green-50 border-green-100 hover:shadow-md transition-shadow">
                              <div className="flex items-start justify-between">
@@ -1524,9 +1467,10 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                                  </div>
                                  <div className="ml-7 space-y-2 text-sm">
                                    <p><span className="font-medium text-gray-700">Date:</span> {format(parseISO(insem.event_date), 'MMMM dd, yyyy • h:mm a')}</p>
-                                   <p><span className="font-medium text-gray-700">Method:</span> {insem.insemination_method}</p>
-                                   {insem.semen_bull_code && <p><span className="font-medium text-gray-700">Semen Bull Code:</span> {insem.semen_bull_code}</p>}
+                                   <p><span className="font-medium text-gray-700">Method:</span> <span className="capitalize">{insem.insemination_method?.replace(/_/g, ' ')}</span></p>
+                                   {insem.semen_bull_code && <p><span className="font-medium text-gray-700">Semen/Bull Code:</span> {insem.semen_bull_code}</p>}
                                    {insem.technician_name && <p><span className="font-medium text-gray-700">Technician:</span> {insem.technician_name}</p>}
+                                   {insem.estimated_due_date && <p><span className="font-medium text-gray-700">Expected Calving:</span> {format(parseISO(insem.estimated_due_date), 'MMMM dd, yyyy')}</p>}
                                    <p className="text-xs text-gray-500 pt-1">Recorded: {format(insem.created_at ? parseISO(insem.created_at) : parseISO(insem.event_date), 'MMM dd, yyyy • h:mm a')}</p>
                                  </div>
                                </div>
@@ -1538,7 +1482,8 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                        // Pregnancy Check Event
                        if (item.type === 'pregnancy_check') {
                          const check = item.data as PregnancyCheck
-                         
+                         console.log('🔬 [render:records] Pregnancy check:', { id: check.id, check_date: check.check_date, result: check.result, examination_method: check.examination_method, veterinarian_name: check.veterinarian_name, estimated_due_date: check.estimated_due_date, notes: check.notes })
+
                          // Determine result color and display text
                          let resultColor = 'bg-yellow-100 text-yellow-800'
                          let resultText = 'Inconclusive'
@@ -1583,6 +1528,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                        // Breeding Record
                        if (item.type === 'breeding') {
                          const record = item.data as BreedingRecord
+                         console.log('🐄 [render:records] Service record:', { id: record.id, service_date: record.service_date, service_type: record.service_type, service_number: record.service_number, bull_tag_or_semen_code: record.bull_tag_or_semen_code, bull_name_or_semen_source: record.bull_name_or_semen_source, technician_name: record.technician_name, service_cost: record.service_cost, pregnancy_status: record.pregnancy_status, expected_calving_date: record.expected_calving_date })
                          return (
                            <div key={record.id} className="border rounded-lg p-4 bg-white border-gray-200 hover:shadow-md transition-shadow">
                              <div className="flex items-start justify-between">
@@ -1613,6 +1559,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                        // Calving Event
                        if (item.type === 'calving') {
                          const calving = item.data as CalvingEvent
+                         console.log('🐣 [render:records] Calving event:', { id: calving.id, event_date: calving.event_date, calving_outcome: calving.calving_outcome, calf_tag_number: calving.calf_tag_number, calf_weight: calving.calf_weight, calf_gender: calving.calf_gender, calf_health_status: calving.calf_health_status })
                          return (
                            <div key={`calving-${calving.id}`} className="border rounded-lg p-4 bg-purple-50 border-purple-100 hover:shadow-md transition-shadow">
                              <div className="flex items-start justify-between">
@@ -1624,8 +1571,12 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                                  </div>
                                  <div className="ml-7 space-y-2 text-sm">
                                    <p><span className="font-medium text-gray-700">Calving Date:</span> {calving.event_date ? format(parseISO(calving.event_date), 'MMMM dd, yyyy • h:mm a') : 'Date not set'}</p>
+                                   {calving.calving_outcome && <p><span className="font-medium text-gray-700">Outcome:</span> <span className="capitalize">{calving.calving_outcome.replace(/_/g, ' ')}</span></p>}
+                                   {calving.calf_gender && <p><span className="font-medium text-gray-700">Calf Gender:</span> <span className="capitalize">{calving.calf_gender}</span></p>}
+                                   {calving.calf_tag_number && <p><span className="font-medium text-gray-700">Calf Tag:</span> {calving.calf_tag_number}</p>}
+                                   {calving.calf_weight && <p><span className="font-medium text-gray-700">Birth Weight:</span> {calving.calf_weight} kg</p>}
+                                   {calving.calf_health_status && <p><span className="font-medium text-gray-700">Calf Health:</span> <span className="capitalize">{calving.calf_health_status}</span></p>}
                                    {calving.estimated_due_date && <p><span className="font-medium text-gray-700">Estimated Due Date:</span> {format(parseISO(calving.estimated_due_date), 'MMMM dd, yyyy')}</p>}
-                                   {calving.calving_outcome && <p><span className="font-medium text-gray-700">Outcome:</span> {calving.calving_outcome}</p>}
                                    <p className="text-xs text-gray-500 pt-1">Recorded: {format(calving.created_at ? parseISO(calving.created_at) : parseISO(calving.event_date), 'MMM dd, yyyy • h:mm a')}</p>
                                  </div>
                                </div>
@@ -1651,7 +1602,9 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                  <p className="text-gray-500 text-center py-8">No pregnancy checks recorded.</p>
                ) : (
                  <div className="space-y-4">
-                    {pregnancyChecks.map((check) => (
+                    {pregnancyChecks.map((check) => {
+                      console.log('🔬 [render:checks-tab] Pregnancy check:', { id: check.id, check_date: check.check_date, result: check.result, examination_method: check.examination_method, veterinarian_name: check.veterinarian_name, estimated_due_date: check.estimated_due_date, notes: check.notes })
+                      return (
                       <div key={check.id} className="bg-blue-50 border border-blue-200 rounded-lg p-4 hover:shadow-md transition-shadow">
                          <div className="space-y-3">
                            {/* Header Row */}
@@ -1740,7 +1693,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                            </div>
                          </div>
                       </div>
-                    ))}
+                    )})}
                  </div>
                )}
              </CardContent>

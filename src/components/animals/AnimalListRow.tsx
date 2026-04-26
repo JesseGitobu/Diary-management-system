@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { Animal } from '@/types/database'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { EditAnimalModal } from '@/components/animals/EditAnimalModal'
+import AddAnimalModal from '@/components/animals/AddAnimalModal'
 import { cn } from '@/lib/utils/cn'
 import { 
   Calendar, 
@@ -321,16 +321,14 @@ export function AnimalListRow({ animal, farmId, userRole, onAnimalUpdated, isMob
         )}
       </div>
       
-      {/* Edit Animal Modal */}
-      {showEditModal && (
-        <EditAnimalModal
-          animal={animalData}
-          farmId={farmId}
-          isOpen={showEditModal}
-          onClose={() => setShowEditModal(false)}
-          onAnimalUpdated={handleAnimalUpdated}
-        />
-      )}
+      {/* Edit Animal Modal - Using AddAnimalModal in edit mode */}
+      <AddAnimalModal
+        farmId={farmId}
+        isOpen={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        onAnimalAdded={handleAnimalUpdated}
+        editingAnimal={showEditModal ? animalData : null}
+      />
     </>
   )
 }

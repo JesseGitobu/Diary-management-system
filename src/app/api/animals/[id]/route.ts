@@ -100,7 +100,8 @@ export async function PUT(
       animalId,
       weightChanged: oldWeight !== newWeight,
       healthStatusChanged: oldHealthStatus !== newHealthStatus,
-      productionStatusChanged: oldProductionStatus !== newProductionStatus
+      productionStatusChanged: oldProductionStatus !== newProductionStatus,
+      autoGenerateTagChanged: currentAnimal.auto_generate_tag !== body.auto_generate_tag
     })
     
     // Update the animal

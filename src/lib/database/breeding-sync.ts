@@ -565,7 +565,34 @@ export async function getUnifiedBreedingHistory(
     
     supabase
       .from('breeding_events')
-      .select('*')
+      .select(`
+        *,
+        heat_detection_signs(sign),
+        service_records(
+          service_type,
+          bull_tag_or_semen_code,
+          technician_name,
+          expected_calving_date
+        ),
+        pregnancy_records(
+          confirmation_method,
+          veterinarian,
+          expected_calving_date,
+          pregnancy_status
+        ),
+        calving_records(
+          calving_difficulty,
+          calf_alive,
+          assistance_required,
+          veterinarian,
+          calf_records(
+            gender,
+            birth_weight,
+            registration_number,
+            health_status
+          )
+        )
+      `)
       .eq('animal_id', animalId)
       .order('event_date', { ascending: false }),
     
@@ -576,9 +603,70 @@ export async function getUnifiedBreedingHistory(
       .order('created_at', { ascending: false })
   ])
   
+  // Normalize breeding_events to flatten related data
+  const normalizedEvents = (eventsResult.data || []).map((event: any) => {
+    const normalized: any = { ...event }
+    
+    // Extract heat signs for heat_detection events
+    if (event.event_type === 'heat_detection' && event.heat_detection_signs) {
+      normalized.heat_signs = Array.isArray(event.heat_detection_signs)
+        ? event.heat_detection_signs.map((hs: any) => hs.sign)
+        : []
+      delete normalized.heat_detection_signs
+    }
+    
+    // For insemination events, extract service_records data
+    if (event.event_type === 'insemination' && event.service_records) {
+      const sr = Array.isArray(event.service_records) ? event.service_records[0] : event.service_records
+      if (sr) {
+        normalized.insemination_method = sr.service_type === 'artificial_insemination' ? 'artificial_insemination' : 'natural_breeding'
+        normalized.semen_bull_code = sr.bull_tag_or_semen_code
+        normalized.technician_name = sr.technician_name
+        normalized.estimated_due_date = sr.expected_calving_date
+      }
+      delete normalized.service_records
+    }
+    
+    // For pregnancy_check events, extract pregnancy_records data
+    if (event.event_type === 'pregnancy_check' && event.pregnancy_records) {
+      const pr = Array.isArray(event.pregnancy_records) ? event.pregnancy_records[0] : event.pregnancy_records
+      if (pr) {
+        normalized.examination_method = pr.confirmation_method
+        normalized.veterinarian_name = pr.veterinarian
+        normalized.estimated_due_date = pr.expected_calving_date
+        normalized.pregnancy_result = pr.pregnancy_status === 'confirmed' ? 'pregnant' : 
+                                      pr.pregnancy_status === 'false' ? 'not_pregnant' : 'uncertain'
+      }
+      delete normalized.pregnancy_records
+    }
+    
+    // For calving events, extract calving_records and nested calf_records data
+    if (event.event_type === 'calving' && event.calving_records) {
+      const cr = Array.isArray(event.calving_records) ? event.calving_records[0] : event.calving_records
+      if (cr) {
+        normalized.calving_outcome = cr.calving_difficulty || 'normal'
+        normalized.veterinarian_name = cr.veterinarian
+        
+        // Extract calf information from nested calf_records
+        if (cr.calf_records) {
+          const calfRecs = Array.isArray(cr.calf_records) ? cr.calf_records[0] : cr.calf_records
+          if (calfRecs) {
+            normalized.calf_gender = calfRecs.gender
+            normalized.calf_weight = calfRecs.birth_weight
+            normalized.calf_tag_number = calfRecs.registration_number
+            normalized.calf_health_status = calfRecs.health_status
+          }
+        }
+      }
+      delete normalized.calving_records
+    }
+    
+    return normalized
+  })
+  
   return {
     breedingRecords: recordsResult.data || [],
-    events: eventsResult.data || [],
+    events: normalizedEvents,
     pregnancyRecords: pregnancyResult.data || []
   }
 }

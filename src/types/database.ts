@@ -47,6 +47,9 @@ export interface Animal {
   father_info: string | null // Changed from string | undefined to string | null
   birth_weight: number | null // Changed from number | undefined to number | null
 
+  // Tag generation preference
+  auto_generate_tag: boolean // User preference for auto-generating tag numbers (defaults to true)
+
   // Relations (for joined queries)
   mother?: {
     id: string

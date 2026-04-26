@@ -7,7 +7,7 @@ import { Animal } from '@/types/database'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { EditAnimalModal } from '@/components/animals/EditAnimalModal'
+import AddAnimalModal from '@/components/animals/AddAnimalModal'
 import { HealthStatusBadge } from './HealthStatusBadge'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { cn } from '@/lib/utils/cn'
@@ -715,14 +715,12 @@ export function AnimalCard({ animal, farmId, userRole, onAnimalUpdated, onHealth
 
       {/* Edit Animal Modal */}
       {showEditModal && (
-        <EditAnimalModal
-          animal={animalData}
-          farmId={farmId}
+        <AddAnimalModal
           isOpen={showEditModal}
           onClose={() => setShowEditModal(false)}
-          onAnimalUpdated={handleAnimalUpdated}
-          highlightWeight={requiresWeightUpdate} // ✅ Pass weight requirement status
-          weightUpdateReason={requiresWeightUpdate ? 'routine_schedule' : undefined}
+          editingAnimal={animalData}
+          onAnimalAdded={handleAnimalUpdated}
+          farmId={farmId}
         />
       )}
     </>

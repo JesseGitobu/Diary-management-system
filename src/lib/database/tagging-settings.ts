@@ -29,6 +29,8 @@ export interface TaggingSettings {
   barcodeLength: number
   includeCheckDigit: boolean
   paddingZeros: boolean
+  useSourceSpecificFormats: boolean
+  sourceSpecificFormats: SourceSpecificFormat[]
 }
 
 export interface CustomAttribute {
@@ -40,9 +42,22 @@ export interface CustomAttribute {
 }
 
 export interface ColorCode {
+  id?: string
   name: string
   color: string
   value: string
+  description?: string
+  isActive?: boolean
+}
+
+export interface SourceSpecificFormat {
+  id?: string
+  sourceKey: string
+  enabled: boolean
+  prefix: string
+  formatPattern: string
+  startNumber: number
+  description?: string
 }
 
 export interface SmartAlertSettings {
@@ -63,28 +78,45 @@ export async function getTaggingSettings(farmId: string): Promise<TaggingSetting
       .eq('farm_id', farmId)
       .single()
 
-    // Get custom attributes
+    // Get custom attributes (from updated table name)
     const { data: attributesData, error: attributesError } = await supabase
-      .from('custom_attributes')
+      .from('tagging_custom_attributes')
       .select('*')
       .eq('farm_id', farmId)
       .order('sort_order', { ascending: true })
 
+    // Get source-specific formats
+    const { data: sourceFormatsData, error: sourceFormatsError } = await supabase
+      .from('tagging_source_formats')
+      .select('*')
+      .eq('farm_id', farmId)
+
+    // Get color codes
+    const { data: colorCodesData, error: colorCodesError } = await supabase
+      .from('tagging_color_codes')
+      .select('*')
+      .eq('farm_id', farmId)
+
     if (settingsError && settingsError.code !== 'PGRST116') {
-      console.error('Error fetching tagging settings:', settingsError)
     }
 
     if (attributesError) {
-      console.error('Error fetching custom attributes:', attributesError)
+    }
+
+    if (sourceFormatsError) {
+    }
+
+    if (colorCodesError) {
     }
 
     // FIXED: Cast to any to bypass 'never' type error
     const settings = settingsData as any
     const attributes = attributesData as any[]
+    const sourceFormats = sourceFormatsData as any[]
+    const colorCodes = colorCodesData as any[]
 
     // Return default settings if none exist
     if (!settings) {
-      console.log('No existing settings found, returning defaults for farm:', farmId)
       return getDefaultTaggingSettings()
     }
 
@@ -125,7 +157,27 @@ export async function getTaggingSettings(farmId: string): Promise<TaggingSetting
         sortOrder: attr.sort_order ?? 0
       })) : getDefaultCustomAttributes(),
       
-      colorCoding: getDefaultColorCoding(),
+      sourceSpecificFormats: sourceFormats && sourceFormats.length > 0 ? sourceFormats.map(fmt => ({
+        id: fmt.id,
+        sourceKey: fmt.source_key,
+        enabled: fmt.enabled ?? true,
+        prefix: fmt.prefix,
+        formatPattern: fmt.format_pattern,
+        startNumber: fmt.start_number ?? 1,
+        description: fmt.description
+      })) : getDefaultSourceSpecificFormats(),
+      
+      colorCoding: colorCodes ? colorCodes.map(cc => ({
+        id: cc.id,
+        name: cc.name,
+        color: cc.color_class,
+        value: cc.value,
+        description: cc.description,
+        isActive: cc.is_active ?? true
+      })) : getDefaultColorCoding(),
+      
+      useSourceSpecificFormats: settings.use_source_specific_formats ?? true,
+      
       smartAlerts: {
         healthReminders: true,
         breedingReminders: true,
@@ -193,6 +245,7 @@ export async function updateTaggingSettings(
       barcode_length: settings.barcodeLength || 8,
       include_check_digit: settings.includeCheckDigit ?? false,
       padding_zeros: settings.paddingZeros ?? true,
+      use_source_specific_formats: settings.useSourceSpecificFormats ?? true,
       updated_at: new Date().toISOString()
     }
 
@@ -232,7 +285,7 @@ export async function updateTaggingSettings(
       
       // Delete existing attributes for this farm
       const { error: deleteError } = await supabase
-        .from('custom_attributes')
+        .from('tagging_custom_attributes')
         .delete()
         .eq('farm_id', farmId)
 
@@ -254,7 +307,7 @@ export async function updateTaggingSettings(
         console.log('📤 Inserting custom attributes:', attributesData)
 
         const { error: attributesError } = await (supabase
-          .from('custom_attributes') as any)
+          .from('tagging_custom_attributes') as any)
           .insert(attributesData)
 
         if (attributesError) {
@@ -263,6 +316,87 @@ export async function updateTaggingSettings(
           console.warn('⚠️ Custom attributes failed to save, but main settings were saved')
         } else {
           console.log('✅ Custom attributes saved successfully')
+        }
+      }
+    }
+
+    // Handle source-specific formats if provided
+    if (settings.sourceSpecificFormats) {
+      console.log('🔄 Updating source-specific formats...')
+      
+      // Delete existing formats for this farm
+      const { error: deleteError } = await supabase
+        .from('tagging_source_formats')
+        .delete()
+        .eq('farm_id', farmId)
+
+      if (deleteError) {
+        console.error('Error deleting existing source formats:', deleteError)
+      }
+
+      // Insert new formats if any exist
+      if (settings.sourceSpecificFormats.length > 0) {
+        const formatsData = settings.sourceSpecificFormats.map(fmt => ({
+          farm_id: farmId,
+          source_key: fmt.sourceKey,
+          enabled: fmt.enabled ?? true,
+          prefix: fmt.prefix,
+          format_pattern: fmt.formatPattern,
+          start_number: fmt.startNumber ?? 1,
+          description: fmt.description
+        }))
+
+        console.log('📤 Inserting source-specific formats:', formatsData)
+
+        const { error: formatsError } = await (supabase
+          .from('tagging_source_formats') as any)
+          .insert(formatsData)
+
+        if (formatsError) {
+          console.error('❌ Error inserting source formats:', formatsError)
+          console.warn('⚠️ Source formats failed to save, but main settings were saved')
+        } else {
+          console.log('✅ Source-specific formats saved successfully')
+        }
+      }
+    }
+
+    // Handle color codes if provided
+    if (settings.colorCoding) {
+      console.log('🔄 Updating color codes...')
+      
+      // Delete existing color codes for this farm
+      const { error: deleteError } = await supabase
+        .from('tagging_color_codes')
+        .delete()
+        .eq('farm_id', farmId)
+
+      if (deleteError) {
+        console.error('Error deleting existing color codes:', deleteError)
+      }
+
+      // Insert new color codes if any exist
+      if (settings.colorCoding.length > 0) {
+        const colorCodesData = settings.colorCoding.map(cc => ({
+          farm_id: farmId,
+          name: cc.name,
+          value: cc.value,
+          color_class: cc.color,
+          description: cc.description,
+          is_active: cc.isActive ?? true
+        }))
+
+        console.log('📤 Inserting color codes:', colorCodesData)
+
+        const { error: colorError } = await (supabase
+          .from('tagging_color_codes') as any)
+          .insert(colorCodesData)
+
+        if (colorError) {
+          console.error('❌ Error inserting color codes:', colorError)
+          console.warn('⚠️ Color codes failed to save, but main settings were saved')
+        } else {
+          console.log('✅ Color codes saved successfully')
         }
       }
     }
@@ -390,6 +524,8 @@ function getDefaultTaggingSettings(): TaggingSettings {
     gpsUpdateInterval: 30,
     customAttributes: getDefaultCustomAttributes(),
     colorCoding: getDefaultColorCoding(),
+    useSourceSpecificFormats: true,
+    sourceSpecificFormats: getDefaultSourceSpecificFormats(),
     smartAlerts: {
       healthReminders: true,
       breedingReminders: true,
@@ -431,5 +567,26 @@ function getDefaultColorCoding(): ColorCode[] {
     { name: 'Pregnant', color: 'bg-blue-500', value: 'pregnant' },
     { name: 'High Yield', color: 'bg-purple-500', value: 'high_yield' },
     { name: 'Due for Service', color: 'bg-orange-500', value: 'service_due' }
+  ]
+}
+
+function getDefaultSourceSpecificFormats(): SourceSpecificFormat[] {
+  return [
+    {
+      sourceKey: 'newborn',
+      enabled: true,
+      prefix: 'CALF',
+      formatPattern: '{PREFIX}-{YEAR}-{COHORT:2}-{NUMBER:3}',
+      startNumber: 1,
+      description: 'Format for animals born on farm (calves)'
+    },
+    {
+      sourceKey: 'purchased',
+      enabled: true,
+      prefix: 'PUR',
+      formatPattern: '{PREFIX}-{YEAR}-{BREED:2}-{NUMBER:3}',
+      startNumber: 1,
+      description: 'Format for purchased animals'
+    }
   ]
 }

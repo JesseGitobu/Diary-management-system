@@ -143,125 +143,91 @@ export async function getFarmFeedingSchedulesForAnimal(
 ) {
   try {
     const supabase = await createServerSupabaseClient()
+    const today = new Date().toISOString().split('T')[0]
 
-    // Get all active feeding schedules for the farm
-    const { data: schedules, error } = await (supabase as any)
-      .from('feeding_schedules')
-      .select('*')
+    // Fetch pending schedules for this farm that are currently active by date range
+    const { data: schedules, error } = await supabase
+      .from('scheduled_feedings')
+      .select(`
+        id,
+        schedule_name,
+        feeding_time,
+        feed_type_id,
+        quantity_kg,
+        target_mode,
+        schedule_date_from,
+        schedule_date_to,
+        status,
+        animal_id,
+        feed_types (
+          id,
+          name
+        ),
+        scheduled_feeding_entries (
+          id,
+          feed_type_id,
+          quantity_kg_per_animal,
+          feed_types (
+            id,
+            name
+          )
+        )
+      `)
       .eq('farm_id', farmId)
-      .eq('is_active', true)
+      .eq('status', 'pending')
+      .lte('schedule_date_from', today)
+      .gte('schedule_date_to', today)
 
     if (error) {
       console.error('Error fetching feeding schedules:', error)
       return { success: false, error: error.message, data: [] }
     }
 
-    // Get animal details to check category matching
-    const { data: animalData, error: animalError } = await supabase
-      .from('animals')
-      .select('id, breed, gender, production_status, health_status, birth_date, weight')
-      .eq('id', animalId)
-      .eq('farm_id', farmId)
-      .single()
+    const allSchedules = (schedules as any[]) || []
 
-    if (animalError) {
-      console.error('Error fetching animal details:', animalError)
-      return { success: false, error: animalError.message, data: [] }
+    // For 'specific' target_mode schedules, check junction table
+    const specificIds = allSchedules
+      .filter(s => s.target_mode === 'specific')
+      .map(s => s.id)
+
+    let animalSpecificScheduleIds: string[] = []
+    if (specificIds.length > 0) {
+      const { data: animalLinks } = await supabase
+        .from('scheduled_feeding_animals')
+        .select('scheduled_feeding_id')
+        .in('scheduled_feeding_id', specificIds)
+        .eq('animal_id', animalId)
+
+      animalSpecificScheduleIds = (animalLinks || []).map((row: any) => row.scheduled_feeding_id)
     }
 
-    const animal = animalData as any
-
-    // Calculate animal age in days for age-based filtering
-    const calculateAgeInDays = (birthDate: string | null): number => {
-      if (!birthDate) return 0
-      const birth = new Date(birthDate)
-      const now = new Date()
-      return Math.floor((now.getTime() - birth.getTime()) / (1000 * 60 * 60 * 24))
-    }
-
-    const animalAgeInDays = calculateAgeInDays(animal.birth_date)
-
-    // Filter schedules that target this animal
-    // FIXED: Cast schedules to any[] to safely access properties
-    const relevantSchedules = (schedules as any[] || []).filter(schedule => {
-      if (!schedule.target_animals) return false
-
-      const targetAnimals = schedule.target_animals as any
-
-      // Check for specific animal IDs
-      if (targetAnimals.animal_ids && Array.isArray(targetAnimals.animal_ids)) {
-        if (targetAnimals.animal_ids.includes(animalId)) {
-          return true
-        }
-      }
-
-      // Check for criteria-based targeting (breed, gender, production status, etc.)
-      if (targetAnimals.criteria) {
-        const criteria = targetAnimals.criteria
-
-        // Check breed matching
-        if (criteria.breeds && Array.isArray(criteria.breeds) && animal.breed) {
-          if (criteria.breeds.includes(animal.breed)) return true
-        }
-
-        // Check gender matching
-        if (criteria.genders && Array.isArray(criteria.genders) && animal.gender) {
-          if (criteria.genders.includes(animal.gender)) return true
-        }
-
-        // Check production status matching
-        if (criteria.production_statuses && Array.isArray(criteria.production_statuses) && animal.production_status) {
-          if (criteria.production_statuses.includes(animal.production_status)) return true
-        }
-
-        // Check health status matching
-        if (criteria.health_statuses && Array.isArray(criteria.health_statuses) && animal.health_status) {
-          if (criteria.health_statuses.includes(animal.health_status)) return true
-        }
-
-        // Check age range matching
-        if (criteria.age_range && animal.birth_date) {
-          const minAgeDays = criteria.age_range.min_days || 0
-          const maxAgeDays = criteria.age_range.max_days || Number.MAX_SAFE_INTEGER
-          if (animalAgeInDays >= minAgeDays && animalAgeInDays <= maxAgeDays) {
-            return true
-          }
-        }
-
-        // Check weight range matching
-        if (criteria.weight_range && animal.weight) {
-          const minWeight = criteria.weight_range.min_kg || 0
-          const maxWeight = criteria.weight_range.max_kg || Number.MAX_SAFE_INTEGER
-          if (animal.weight >= minWeight && animal.weight <= maxWeight) {
-            return true
-          }
-        }
-      }
-
-      // Check for "all animals" targeting
-      if (targetAnimals.target_all === true) {
-        return true
-      }
-
+    // Include schedule if: targets all animals, directly targets this animal, or
+    // is 'specific' mode and this animal is in the junction table
+    const relevantSchedules = allSchedules.filter(schedule => {
+      if (schedule.target_mode === 'all') return true
+      if (schedule.animal_id === animalId) return true
+      if (schedule.target_mode === 'specific' && animalSpecificScheduleIds.includes(schedule.id)) return true
       return false
     })
 
-    // Transform to expected format
     const transformedSchedules = relevantSchedules.map(schedule => {
-      const feedMix = schedule.feed_mix as any
-      const scheduleTimes = schedule.schedule_times as any
+      const entries = (schedule.scheduled_feeding_entries || []) as any[]
+      const primaryEntry = entries[0]
+      const feedTypeId = schedule.feed_type_id || primaryEntry?.feed_type_id || ''
+      const feedName = schedule.schedule_name || (schedule.feed_types as any)?.name || (primaryEntry?.feed_types as any)?.name || 'Unknown Feed'
+      const quantityKg = schedule.quantity_kg || primaryEntry?.quantity_kg_per_animal || 0
 
       return {
         id: schedule.id,
-        animal_id: animalId, // Conceptual since it's not stored per animal
-        feed_type_id: feedMix.primary_feed_id || feedMix.feed_type_id || '',
-        feed_name: schedule.name,
-        scheduled_time: scheduleTimes.times?.[0] || scheduleTimes.time || '07:00',
-        quantity_kg: feedMix.total_quantity_kg || feedMix.quantity_kg || 0,
-        frequency: scheduleTimes.frequency || 'daily',
-        start_date: schedule.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
-        end_date: null,
-        is_active: schedule.is_active,
+        animal_id: animalId,
+        feed_type_id: feedTypeId,
+        feed_name: feedName,
+        scheduled_time: schedule.feeding_time || '07:00',
+        quantity_kg: quantityKg,
+        frequency: 'daily',
+        start_date: schedule.schedule_date_from,
+        end_date: schedule.schedule_date_to,
+        is_active: schedule.status === 'pending',
         created_by: 'Farm Schedule'
       }
     })
@@ -270,10 +236,10 @@ export async function getFarmFeedingSchedulesForAnimal(
 
   } catch (error) {
     console.error('Error in getFarmFeedingSchedulesForAnimal:', error)
-    return { 
-      success: false, 
-      error: 'Failed to fetch feeding schedules', 
-      data: [] 
+    return {
+      success: false,
+      error: 'Failed to fetch feeding schedules',
+      data: []
     }
   }
 }

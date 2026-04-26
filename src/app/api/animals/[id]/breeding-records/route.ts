@@ -25,34 +25,42 @@ export async function GET(
 
     const { id: animalId } = await params
 
-    console.log('📋 Fetching unified breeding history for:', animalId)
+    console.log('📋 [breeding-records] Fetching unified breeding history for animal:', animalId)
 
     // Get unified data
     const history = await getUnifiedBreedingHistory(animalId, true)
 
-    // 1. Transform Breeding Records (existing logic)
+    console.log('📦 [breeding-records] Raw data from DB:', {
+      serviceRecordsCount: history.breedingRecords.length,
+      breedingEventsCount: history.events.length,
+      pregnancyRecordsCount: history.pregnancyRecords.length,
+      eventTypes: history.events.reduce((acc: Record<string, number>, e: any) => {
+        acc[e.event_type] = (acc[e.event_type] || 0) + 1
+        return acc
+      }, {}),
+    })
+
+    // 1. Transform Breeding Records — service_records fields mapped to component interface
     const transformedRecords = history.breedingRecords.map(record => {
       const pregnancy = history.pregnancyRecords.find(
         p => p.breeding_record_id === record.id
       )
 
-      // ✅ NEW: Check for most recent pregnancy check event for this breeding record
-      // This ensures we use the actual pregnancy check result, not the database field
+      // Check for most recent pregnancy check event for this animal
       const relatedPregnancyChecks = history.events
-        .filter((e: any) => 
-          e.event_type === 'pregnancy_check' && 
+        .filter((e: any) =>
+          e.event_type === 'pregnancy_check' &&
           e.animal_id === record.animal_id
         )
         .sort((a: any, b: any) => new Date(b.event_date).getTime() - new Date(a.event_date).getTime())
 
       const mostRecentPregnancyCheck = relatedPregnancyChecks[0]
 
-      // ✅ Determine pregnancy status: prefer breeding_event data if available
+      // Determine pregnancy status: prefer breeding_event data if available
       let pregnancyStatus = mapPregnancyStatus(pregnancy?.pregnancy_status)
-      
-      if (mostRecentPregnancyCheck && mostRecentPregnancyCheck.event_date >= record.breeding_date) {
-        // If there's a pregnancy check event after this breeding, use its result
-        pregnancyStatus = mostRecentPregnancyCheck.pregnancy_result === 'pregnant' 
+
+      if (mostRecentPregnancyCheck && mostRecentPregnancyCheck.event_date >= record.service_date) {
+        pregnancyStatus = mostRecentPregnancyCheck.pregnancy_result === 'pregnant'
           ? 'confirmed'
           : mostRecentPregnancyCheck.pregnancy_result === 'not_pregnant'
           ? 'negative'
@@ -61,30 +69,44 @@ export async function GET(
           : 'pending'
       }
 
-      return {
+      const transformed = {
         id: record.id,
         animal_id: record.animal_id,
-        breeding_date: record.breeding_date,
-        breeding_method: record.breeding_type,
-        sire_tag: record.sire_name,
-        sire_breed: record.sire_breed,
+        service_date: record.service_date,
+        service_type: record.service_type,
+        service_number: record.service_number,
+        bull_tag_or_semen_code: record.bull_tag_or_semen_code,
+        bull_name_or_semen_source: record.bull_name_or_semen_source,
+        sire_id: record.sire_id,
+        technician_name: record.technician_name,
+        service_cost: record.service_cost,
+        notes: record.notes,
+        outcome: record.outcome,
         expected_calving_date: pregnancy?.expected_calving_date || mostRecentPregnancyCheck?.estimated_due_date,
-        actual_calving_date: pregnancy?.actual_calving_date,
-        pregnancy_confirmed: pregnancyStatus === 'confirmed',
-        pregnancy_check_date: pregnancy?.confirmed_date || mostRecentPregnancyCheck?.event_date,
         pregnancy_status: pregnancyStatus,
-        gestation_period: pregnancy?.gestation_length || 280,
-        breeding_notes: record.notes,
-        veterinarian: record.technician_name,
-        breeding_cost: record.cost,
         created_at: record.created_at,
         updated_at: record.updated_at,
         auto_generated: record.auto_generated
       }
+
+      console.log(`🐄 [breeding-records] Service record #${transformed.service_number}:`, {
+        id: transformed.id,
+        service_date: transformed.service_date,
+        service_type: transformed.service_type,
+        bull_tag_or_semen_code: transformed.bull_tag_or_semen_code,
+        bull_name_or_semen_source: transformed.bull_name_or_semen_source,
+        technician_name: transformed.technician_name,
+        service_cost: transformed.service_cost,
+        pregnancy_status: transformed.pregnancy_status,
+        expected_calving_date: transformed.expected_calving_date,
+      })
+
+      return transformed
     })
 
-    // 2. Filter & Map Heat Events (NEW LOGIC)
-    // We specifically extract 'heat_detection' events for the timer banner
+    console.log(`✅ [breeding-records] Transformed ${transformedRecords.length} service records`)
+
+    // 2. Filter & Map Heat Events
     const heatEvents = history.events
       .filter((e: any) => e.event_type === 'heat_detection')
       .map((e: any) => ({
@@ -97,8 +119,11 @@ export async function GET(
         created_at: e.created_at
       }))
 
+    console.log(`🌡️ [breeding-records] Heat events (${heatEvents.length}):`, heatEvents.map(e => ({
+      id: e.id, event_date: e.event_date, heat_signs: e.heat_signs, heat_action_taken: e.heat_action_taken
+    })))
+
     // 2B. Extract Insemination Events from breeding_events
-    // These are needed to clear the heat banner when breeding is recorded
     const inseminationEvents = history.events
       .filter((e: any) => e.event_type === 'insemination')
       .map((e: any) => ({
@@ -106,13 +131,19 @@ export async function GET(
         animal_id: e.animal_id,
         event_date: e.event_date,
         insemination_method: e.insemination_method,
+        semen_bull_code: e.semen_bull_code,
         technician_name: e.technician_name,
-        estimated_due_date: e.estimated_due_date,  // ✅ ADDED: For PregnancyCheckForm
+        estimated_due_date: e.estimated_due_date,
         created_at: e.created_at
       }))
 
+    console.log(`💉 [breeding-records] Insemination events (${inseminationEvents.length}):`, inseminationEvents.map(e => ({
+      id: e.id, event_date: e.event_date, insemination_method: e.insemination_method,
+      semen_bull_code: e.semen_bull_code, technician_name: e.technician_name,
+      estimated_due_date: e.estimated_due_date
+    })))
+
     // 2C. Extract Calving Events from breeding_events
-    // These are needed for calving countdown banners
     const calvingEvents = history.events
       .filter((e: any) => e.event_type === 'calving')
       .map((e: any) => ({
@@ -121,8 +152,18 @@ export async function GET(
         event_date: e.event_date,
         estimated_due_date: e.estimated_due_date,
         calving_outcome: e.calving_outcome,
+        calf_tag_number: e.calf_tag_number,
+        calf_weight: e.calf_weight,
+        calf_gender: e.calf_gender,
+        calf_health_status: e.calf_health_status,
         created_at: e.created_at
       }))
+
+    console.log(`🐣 [breeding-records] Calving events (${calvingEvents.length}):`, calvingEvents.map(e => ({
+      id: e.id, event_date: e.event_date, calving_outcome: e.calving_outcome,
+      calf_tag_number: e.calf_tag_number, calf_weight: e.calf_weight,
+      calf_gender: e.calf_gender, calf_health_status: e.calf_health_status
+    })))
 
     // 3. Filter & Extract Pregnancy Checks from Both Sources
     // PRIMARY: From breeding_events table (standalone pregnancy checks)
@@ -159,10 +200,13 @@ export async function GET(
         return {
           id: e.id,
           breeding_record_id: null,
-          service_record_id: pregnancyRecord?.service_record_id || null,  // Track which service cycle
-          pregnancy_record_id: e.pregnancy_record_id,  // Also track pregnancy record
+          service_record_id: pregnancyRecord?.service_record_id || null,
+          pregnancy_record_id: e.pregnancy_record_id,
           check_date: e.event_date,
           check_method: e.examination_method || 'Unknown',
+          examination_method: e.examination_method,
+          veterinarian_name: e.veterinarian_name,
+          estimated_due_date: e.estimated_due_date,
           result: resultValue,
           checked_by: e.veterinarian_name || 'System',
           notes: e.notes,
@@ -183,13 +227,16 @@ export async function GET(
       return {
         id: p.id,
         breeding_record_id: p.breeding_record_id,
-        service_record_id: p.service_record_id,  // Track which service cycle
-        pregnancy_record_id: p.id,  // Also track pregnancy record
+        service_record_id: p.service_record_id,
+        pregnancy_record_id: p.id,
         check_date: p.confirmed_date || p.created_at,
-        check_method: p.check_method || 'Unknown',
+        check_method: p.confirmation_method || p.check_method || 'Unknown',
+        examination_method: p.confirmation_method || p.check_method || null,
+        veterinarian_name: p.veterinarian || p.checked_by || null,
+        estimated_due_date: p.expected_calving_date || null,
         result: resultValue,
-        checked_by: p.checked_by || 'System',
-        notes: p.notes,
+        checked_by: p.veterinarian || p.checked_by || 'System',
+        notes: p.pregnancy_notes || p.notes || null,
         created_at: p.created_at
       }
     })
@@ -211,23 +258,33 @@ export async function GET(
     ]
     
     // Sort by date descending (most recent first)
-    formattedPregnancyChecks.sort((a, b) => 
+    formattedPregnancyChecks.sort((a, b) =>
       new Date(b.check_date).getTime() - new Date(a.check_date).getTime()
     )
 
+    console.log(`🔬 [breeding-records] Pregnancy checks (${formattedPregnancyChecks.length}):`, formattedPregnancyChecks.map(c => ({
+      id: c.id, check_date: c.check_date, result: c.result,
+      examination_method: c.examination_method, veterinarian_name: c.veterinarian_name,
+      estimated_due_date: c.estimated_due_date, notes: c.notes
+    })))
+
+    console.log('📤 [breeding-records] Final response summary:', {
+      serviceRecords: transformedRecords.length,
+      pregnancyChecks: formattedPregnancyChecks.length,
+      heatEvents: heatEvents.length,
+      inseminationEvents: inseminationEvents.length,
+      calvingEvents: calvingEvents.length,
+      allEvents: history.events.length,
+    })
+
     return NextResponse.json({
       success: true,
-      breedingRecords: transformedRecords,
-      // Change 'pregnancyRecords' to 'pregnancyChecks' to match frontend expectation
-      pregnancyChecks: formattedPregnancyChecks, 
-      // Add 'heatEvents' specifically for the breeding window logic
+      serviceRecords: transformedRecords,
+      pregnancyChecks: formattedPregnancyChecks,
       heatEvents: heatEvents,
-      // Add 'inseminationEvents' to help clear the heat banner
       inseminationEvents: inseminationEvents,
-      // Add 'calvingEvents' for calving countdown logic
       calvingEvents: calvingEvents,
-      // Keep raw events for debugging or other lists
-      allEvents: history.events 
+      allEvents: history.events
     })
 
   } catch (error: any) {

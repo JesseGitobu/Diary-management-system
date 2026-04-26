@@ -44,7 +44,6 @@ import {
 import { GiCow } from 'react-icons/gi'
 import { Animal } from '@/types/database'
 import { HealthStatusNotification } from '../health/HealthStatusChangeNotification'
-import { EditAnimalModal } from './EditAnimalModal'
 import { Progress } from '@/components/ui/Progress'
 import { FarmPermissions, FULL_ACCESS_PERMISSIONS } from '@/lib/utils/permissions'
 
@@ -962,17 +961,15 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
       )}
 
       {showWeightUpdateModal && selectedAnimalForWeight && (
-      <EditAnimalModal
-        animal={selectedAnimalForWeight}
+      <AddAnimalModal
         farmId={farmId}
         isOpen={showWeightUpdateModal}
         onClose={() => {
           setShowWeightUpdateModal(false)
           setSelectedAnimalForWeight(null)
         }}
-        onAnimalUpdated={handleWeightUpdated}
-        highlightWeight={true}
-        weightUpdateReason={selectedAnimalForWeight.weightUpdateReason}
+        editingAnimal={selectedAnimalForWeight}
+        onAnimalAdded={handleWeightUpdated}
       />
     )}
 

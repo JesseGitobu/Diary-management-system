@@ -90,7 +90,7 @@ interface FeedInventoryItem {
     nutritional_info: any
     feed_type_categories?: {  // Made optional since it might not exist
       id: string
-      name: string
+      category_name: string
       color: string
       description: string
     }
@@ -122,7 +122,7 @@ interface NutritionalTarget {
 interface FeedTypeCategory {
   id: string
   farm_id: string
-  name: string
+  category_name: string
   description: string
   color: string
   is_default: boolean
@@ -496,7 +496,7 @@ export function AnimalFeedingRecords({ animalId, farmId, canAddRecords, feedType
         console.log(`📦 Transformed feed type ${feedType.name}:`, {
           totalStock,
           totalValue,
-          category: category?.name,
+          category: category?.category_name,
           nutritionalInfo: defaultedNutrition
         })
 
@@ -507,7 +507,7 @@ export function AnimalFeedingRecords({ animalId, farmId, canAddRecords, feedType
           typical_cost_per_kg: feedType.typical_cost_per_kg || 0,
           nutritional_info: defaultedNutrition,
           supplier: feedType.supplier,
-          category_name: category?.name || null,
+          category_name: category?.category_name || null,
           category_color: category?.color || null,
           available_stock: totalStock,
           total_inventory_value: totalValue,
@@ -636,7 +636,7 @@ export function AnimalFeedingRecords({ animalId, farmId, canAddRecords, feedType
             feeding_time: record.feed_consumption.feeding_time,
             feed_type_id: record.feed_consumption.feed_types?.id,
             feed_name: record.feed_consumption.feed_types?.name || 'Unknown Feed',
-            feed_category: record.feed_consumption.feed_types?.feed_type_categories?.name || 'Uncategorized',
+            feed_category: record.feed_consumption.feed_types?.feed_type_categories?.category_name || 'Uncategorized',
             quantity_kg: record.feed_consumption.quantity_kg,
             feeding_mode: record.feed_consumption.feeding_mode,
             animal_count: record.feed_consumption.animal_count,

@@ -70,8 +70,7 @@ export function WeightUpdateModal({
           measurement_date: measurementDate,
           measurement_type: reason.includes('calf') ? 'update_initial' :
             reason.includes('purchased') ? 'update_initial' : 'routine',
-          notes,
-          is_required: true
+          notes
         })
       })
 

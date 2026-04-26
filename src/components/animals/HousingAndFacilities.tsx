@@ -19,7 +19,17 @@ import {
   Settings,
   Eye,
   EyeOff,
-  Filter
+  Filter,
+  Wind,
+  Lightbulb,
+  Droplets,
+  Thermometer,
+  FlaskConical,
+  ClipboardList,
+  Package,
+  Info,
+  Hash,
+  Ruler
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
@@ -377,6 +387,8 @@ export function HousingAndFacilities({ farmId, isMobile }: HousingAndFacilitiesP
                     <button
                       onClick={() => {
                         setSelectedBuilding(building.id)
+                        setSelectedUnit(null)
+                        setSelectedPen(null)
                         toggleBuilding(building.id)
                       }}
                       className={`w-full flex items-center space-x-2 p-2 rounded hover:bg-gray-100 ${
@@ -404,6 +416,7 @@ export function HousingAndFacilities({ farmId, isMobile }: HousingAndFacilitiesP
                               <button
                                 onClick={() => {
                                   setSelectedUnit(unit.id)
+                                  setSelectedPen(null)
                                   toggleUnit(unit.id)
                                 }}
                                 className={`w-full flex items-center space-x-2 p-2 rounded text-sm hover:bg-gray-100 ${
@@ -457,155 +470,547 @@ export function HousingAndFacilities({ farmId, isMobile }: HousingAndFacilitiesP
 
             {/* Detailed View */}
             <div className="lg:col-span-2 space-y-4">
-              {/* Pen Details */}
-              {selectedPenData && (
+
+              {/* Empty state — nothing selected */}
+              {!selectedBuildingData && !selectedUnitData && !selectedPenData && (
+                <Card className="flex items-center justify-center min-h-64">
+                  <CardContent className="text-center text-gray-400 py-12">
+                    <Building2 className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                    <p className="text-sm font-medium">Select a building, unit, or pen</p>
+                    <p className="text-xs mt-1">Click any item in the farm structure to view its details</p>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* ── Building Details ── */}
+              {selectedBuildingData && !selectedUnitData && !selectedPenData && (
                 <Card>
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-lg">Pen Details: {selectedPenData.pen_number}</CardTitle>
-                      <Badge className={getStatusColor(selectedPenData.status)}>
-                        {selectedPenData.status}
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <CardTitle className="text-lg flex items-center gap-2">
+                          <Building2 className="h-5 w-5 text-purple-600" />
+                          {selectedBuildingData.name}
+                        </CardTitle>
+                        <CardDescription className="mt-1 capitalize">{selectedBuildingData.type}</CardDescription>
+                      </div>
+                      <Badge className={getStatusColor(selectedBuildingData.status)}>
+                        {selectedBuildingData.status}
                       </Badge>
                     </div>
-                    <CardDescription>{getHousingTypeLabel(selectedPenData.special_type)}</CardDescription>
                   </CardHeader>
-                  <CardContent className="space-y-6">
-                    {/* Capacity */}
+                  <CardContent className="space-y-5">
+                    {/* Utilisation bar */}
                     <div>
-                      <label className="text-sm font-medium text-gray-700 mb-2 block">
-                        Occupancy
-                      </label>
-                      <div className="bg-gray-100 rounded-full h-2 overflow-hidden">
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="font-medium text-gray-700">Occupancy</span>
+                        <span className="text-gray-500">
+                          {selectedBuildingData.current_occupancy} / {selectedBuildingData.total_capacity} animals
+                        </span>
+                      </div>
+                      <div className="bg-gray-100 rounded-full h-2.5 overflow-hidden">
                         <div
-                          className="bg-green-500 h-full"
+                          className={`h-full transition-all ${
+                            selectedBuildingData.total_capacity > 0 &&
+                            (selectedBuildingData.current_occupancy / selectedBuildingData.total_capacity) > 0.9
+                              ? 'bg-red-500'
+                              : (selectedBuildingData.current_occupancy / selectedBuildingData.total_capacity) > 0.7
+                              ? 'bg-yellow-500'
+                              : 'bg-purple-500'
+                          }`}
                           style={{
-                            width: `${(selectedPenData.current_occupancy / selectedPenData.capacity) * 100}%`,
+                            width: `${selectedBuildingData.total_capacity > 0
+                              ? (selectedBuildingData.current_occupancy / selectedBuildingData.total_capacity) * 100
+                              : 0}%`,
                           }}
                         />
                       </div>
-                      <p className="text-sm text-gray-600 mt-2">
-                        {selectedPenData.current_occupancy} of {selectedPenData.capacity} animals
+                      <p className="text-xs text-gray-400 mt-1">
+                        {selectedBuildingData.total_capacity > 0
+                          ? `${((selectedBuildingData.current_occupancy / selectedBuildingData.total_capacity) * 100).toFixed(1)}% utilisation`
+                          : 'No capacity set'}
                       </p>
                     </div>
 
-                    {/* Dimensions */}
-                    {selectedPenData.dimensions && (
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <p className="text-xs text-gray-600">Dimensions</p>
-                          <p className="font-medium">
-                            {selectedPenData.dimensions.length_meters}m × {selectedPenData.dimensions.width_meters}m
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-gray-600">Area</p>
-                          <p className="font-medium">{selectedPenData.dimensions.area_sqm} m²</p>
-                        </div>
+                    {/* Key stats grid */}
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="bg-gray-50 rounded-lg p-3 text-center">
+                        <p className="text-xl font-bold text-gray-900">{selectedBuildingData.units_count}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">Units</p>
                       </div>
-                    )}
+                      <div className="bg-gray-50 rounded-lg p-3 text-center">
+                        <p className="text-xl font-bold text-gray-900">{selectedBuildingData.total_capacity}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">Capacity</p>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-3 text-center">
+                        <p className="text-xl font-bold text-gray-900">
+                          {selectedBuildingData.total_capacity - selectedBuildingData.current_occupancy}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0.5">Available</p>
+                      </div>
+                    </div>
 
-                    {/* Environmental Conditions */}
-                    {selectedPenData.conditions && (
+                    {/* Meta info */}
+                    <div className="space-y-2 border-t pt-4">
+                      {selectedBuildingData.location && (
+                        <div className="flex items-center gap-2 text-sm text-gray-700">
+                          <MapPin className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                          <span>{selectedBuildingData.location}</span>
+                        </div>
+                      )}
+                      {selectedBuildingData.year_built && (
+                        <div className="flex items-center gap-2 text-sm text-gray-700">
+                          <Calendar className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                          <span>Built in {selectedBuildingData.year_built}</span>
+                        </div>
+                      )}
+                      {selectedBuildingData.notes && (
+                        <div className="flex items-start gap-2 text-sm text-gray-700">
+                          <Info className="h-4 w-4 text-gray-400 flex-shrink-0 mt-0.5" />
+                          <span className="text-gray-600">{selectedBuildingData.notes}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex gap-2 border-t pt-4">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => setIsAddUnitModalOpen(true)}
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        Add Unit
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* ── Unit Details ── */}
+              {selectedUnitData && !selectedPenData && (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <CardTitle className="text-lg flex items-center gap-2">
+                          <Layers className="h-5 w-5 text-green-600" />
+                          {selectedUnitData.name}
+                        </CardTitle>
+                        <CardDescription className="mt-1 capitalize">
+                          {selectedUnitData.unit_type.replace(/_/g, ' ')}
+                          {selectedBuildingData && ` · ${selectedBuildingData.name}`}
+                        </CardDescription>
+                      </div>
+                      <Badge className={getStatusColor(selectedUnitData.status)}>
+                        {selectedUnitData.status}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-5">
+                    {/* Utilisation bar */}
+                    <div>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="font-medium text-gray-700">Capacity Utilisation</span>
+                        <span className="text-gray-500">
+                          {selectedUnitData.current_occupancy} / {selectedUnitData.total_capacity} animals
+                        </span>
+                      </div>
+                      <div className="bg-gray-100 rounded-full h-2.5 overflow-hidden">
+                        <div
+                          className={`h-full transition-all ${
+                            selectedUnitData.total_capacity > 0 &&
+                            (selectedUnitData.current_occupancy / selectedUnitData.total_capacity) > 0.9
+                              ? 'bg-red-500'
+                              : (selectedUnitData.current_occupancy / selectedUnitData.total_capacity) > 0.7
+                              ? 'bg-yellow-500'
+                              : 'bg-green-500'
+                          }`}
+                          style={{
+                            width: `${selectedUnitData.total_capacity > 0
+                              ? (selectedUnitData.current_occupancy / selectedUnitData.total_capacity) * 100
+                              : 0}%`,
+                          }}
+                        />
+                      </div>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {selectedUnitData.total_capacity > 0
+                          ? `${((selectedUnitData.current_occupancy / selectedUnitData.total_capacity) * 100).toFixed(1)}% utilisation`
+                          : 'No capacity set'}
+                      </p>
+                    </div>
+
+                    {/* Key stats */}
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="bg-gray-50 rounded-lg p-3 text-center">
+                        <p className="text-xl font-bold text-gray-900">{selectedUnitData.pens_count}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">Pens</p>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-3 text-center">
+                        <p className="text-xl font-bold text-gray-900">{selectedUnitData.total_capacity}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">Capacity</p>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-3 text-center">
+                        <p className="text-xl font-bold text-gray-900">
+                          {selectedUnitData.total_capacity - selectedUnitData.current_occupancy}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0.5">Available</p>
+                      </div>
+                    </div>
+
+                    {/* Environmental conditions (from jsonb) */}
+                    {selectedUnitData.environmental_conditions &&
+                      Object.keys(selectedUnitData.environmental_conditions).length > 0 && (
                       <div className="space-y-3 border-t pt-4">
-                        <h4 className="font-semibold text-sm">Environmental Conditions</h4>
+                        <h4 className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
+                          <Wind className="h-4 w-4 text-blue-500" />
+                          Environmental Conditions
+                        </h4>
                         <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <p className="text-xs text-gray-600">Ventilation</p>
-                            <Badge variant="outline">{selectedPenData.conditions.ventilation_quality}</Badge>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-600">Lighting</p>
-                            <Badge variant="outline">{selectedPenData.conditions.lighting_type}</Badge>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-600">Water Access</p>
-                            <Badge variant="outline">
-                              {selectedPenData.conditions.water_access ? 'Yes' : 'No'}
-                            </Badge>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-600">Drainage</p>
-                            <Badge variant="outline">{selectedPenData.conditions.drainage}</Badge>
-                          </div>
+                          {selectedUnitData.environmental_conditions.ventilation_quality && (
+                            <div>
+                              <p className="text-xs text-gray-500 flex items-center gap-1 mb-1">
+                                <Wind className="h-3 w-3" /> Ventilation
+                              </p>
+                              <Badge variant="outline" className="capitalize">
+                                {selectedUnitData.environmental_conditions.ventilation_quality}
+                              </Badge>
+                            </div>
+                          )}
+                          {selectedUnitData.environmental_conditions.lighting_type && (
+                            <div>
+                              <p className="text-xs text-gray-500 flex items-center gap-1 mb-1">
+                                <Lightbulb className="h-3 w-3" /> Lighting
+                              </p>
+                              <Badge variant="outline" className="capitalize">
+                                {selectedUnitData.environmental_conditions.lighting_type}
+                              </Badge>
+                            </div>
+                          )}
+                          {selectedUnitData.environmental_conditions.drainage && (
+                            <div>
+                              <p className="text-xs text-gray-500 flex items-center gap-1 mb-1">
+                                <Droplets className="h-3 w-3" /> Drainage
+                              </p>
+                              <Badge variant="outline" className="capitalize">
+                                {selectedUnitData.environmental_conditions.drainage}
+                              </Badge>
+                            </div>
+                          )}
+                          {selectedUnitData.environmental_conditions.water_quality && (
+                            <div>
+                              <p className="text-xs text-gray-500 flex items-center gap-1 mb-1">
+                                <Droplets className="h-3 w-3" /> Water Quality
+                              </p>
+                              <Badge variant="outline" className="capitalize">
+                                {selectedUnitData.environmental_conditions.water_quality}
+                              </Badge>
+                            </div>
+                          )}
+                          {selectedUnitData.environmental_conditions.bedding_type && (
+                            <div className="col-span-2">
+                              <p className="text-xs text-gray-500 mb-1">Bedding Type</p>
+                              <p className="text-sm font-medium capitalize">
+                                {selectedUnitData.environmental_conditions.bedding_type}
+                              </p>
+                            </div>
+                          )}
+                          {selectedUnitData.environmental_conditions.temperature_range && (
+                            <div>
+                              <p className="text-xs text-gray-500 flex items-center gap-1 mb-1">
+                                <Thermometer className="h-3 w-3" /> Temperature
+                              </p>
+                              <p className="text-sm font-medium">
+                                {selectedUnitData.environmental_conditions.temperature_range.min}°C –{' '}
+                                {selectedUnitData.environmental_conditions.temperature_range.max}°C
+                              </p>
+                            </div>
+                          )}
+                          {selectedUnitData.environmental_conditions.humidity_range && (
+                            <div>
+                              <p className="text-xs text-gray-500 mb-1">Humidity</p>
+                              <p className="text-sm font-medium">
+                                {selectedUnitData.environmental_conditions.humidity_range.min}% –{' '}
+                                {selectedUnitData.environmental_conditions.humidity_range.max}%
+                              </p>
+                            </div>
+                          )}
+                          {selectedUnitData.environmental_conditions.last_checked && (
+                            <div className="col-span-2">
+                              <p className="text-xs text-gray-500 flex items-center gap-1 mb-1">
+                                <Calendar className="h-3 w-3" /> Last Checked
+                              </p>
+                              <p className="text-sm">
+                                {new Date(selectedUnitData.environmental_conditions.last_checked).toLocaleDateString()}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}
 
                     {/* Actions */}
                     <div className="flex gap-2 border-t pt-4">
-                      <Button size="sm" variant="outline" className="flex-1" onClick={() => setIsMoveAnimalModalOpen(true)}>
-                        <Users className="h-4 w-4 mr-2" />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => setIsCreatePenModalOpen(true)}
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        Add Pen
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* ── Pen Details ── */}
+              {selectedPenData && (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <CardTitle className="text-lg flex items-center gap-2">
+                          <Box className="h-5 w-5 text-orange-600" />
+                          Pen {selectedPenData.pen_number}
+                        </CardTitle>
+                        <CardDescription className="mt-1">
+                          {getHousingTypeLabel(selectedPenData.special_type)}
+                          {selectedUnitData && ` · ${selectedUnitData.name}`}
+                          {selectedBuildingData && ` · ${selectedBuildingData.name}`}
+                        </CardDescription>
+                      </div>
+                      <Badge className={getStatusColor(selectedPenData.status)}>
+                        {selectedPenData.status}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-5">
+                    {/* Occupancy bar */}
+                    <div>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="font-medium text-gray-700">Occupancy</span>
+                        <span className="text-gray-500">
+                          {selectedPenData.current_occupancy} / {selectedPenData.capacity} animals
+                        </span>
+                      </div>
+                      <div className="bg-gray-100 rounded-full h-2.5 overflow-hidden">
+                        <div
+                          className={`h-full transition-all ${
+                            selectedPenData.capacity > 0 &&
+                            (selectedPenData.current_occupancy / selectedPenData.capacity) > 0.9
+                              ? 'bg-red-500'
+                              : (selectedPenData.current_occupancy / selectedPenData.capacity) > 0.7
+                              ? 'bg-yellow-500'
+                              : 'bg-green-500'
+                          }`}
+                          style={{
+                            width: `${selectedPenData.capacity > 0
+                              ? (selectedPenData.current_occupancy / selectedPenData.capacity) * 100
+                              : 0}%`,
+                          }}
+                        />
+                      </div>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {selectedPenData.capacity - selectedPenData.current_occupancy} spaces available
+                      </p>
+                    </div>
+
+                    {/* Dimensions */}
+                    {selectedPenData.dimensions &&
+                      Object.keys(selectedPenData.dimensions).length > 0 && (
+                      <div className="border-t pt-4 space-y-2">
+                        <h4 className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
+                          <Ruler className="h-4 w-4 text-gray-500" />
+                          Dimensions
+                        </h4>
+                        <div className="grid grid-cols-2 gap-3">
+                          {selectedPenData.dimensions.length_meters != null &&
+                           selectedPenData.dimensions.width_meters != null && (
+                            <div>
+                              <p className="text-xs text-gray-500">L × W</p>
+                              <p className="text-sm font-medium">
+                                {selectedPenData.dimensions.length_meters} m × {selectedPenData.dimensions.width_meters} m
+                              </p>
+                            </div>
+                          )}
+                          {selectedPenData.dimensions.height_meters != null && (
+                            <div>
+                              <p className="text-xs text-gray-500">Height</p>
+                              <p className="text-sm font-medium">{selectedPenData.dimensions.height_meters} m</p>
+                            </div>
+                          )}
+                          {selectedPenData.dimensions.area_sqm != null && (
+                            <div>
+                              <p className="text-xs text-gray-500">Floor Area</p>
+                              <p className="text-sm font-medium">{selectedPenData.dimensions.area_sqm} m²</p>
+                            </div>
+                          )}
+                          {selectedPenData.dimensions.area_sqm != null &&
+                           selectedPenData.current_occupancy > 0 && (
+                            <div>
+                              <p className="text-xs text-gray-500">Density</p>
+                              <p className="text-sm font-medium">
+                                {(selectedPenData.dimensions.area_sqm / selectedPenData.current_occupancy).toFixed(1)} m²/animal
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Environmental Conditions */}
+                    {selectedPenData.conditions &&
+                      Object.keys(selectedPenData.conditions).length > 0 && (
+                      <div className="border-t pt-4 space-y-3">
+                        <h4 className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
+                          <Wind className="h-4 w-4 text-blue-500" />
+                          Environmental Conditions
+                        </h4>
+                        <div className="grid grid-cols-2 gap-3">
+                          {selectedPenData.conditions.ventilation_quality && (
+                            <div>
+                              <p className="text-xs text-gray-500 flex items-center gap-1 mb-1">
+                                <Wind className="h-3 w-3" /> Ventilation
+                              </p>
+                              <Badge variant="outline" className="capitalize">
+                                {selectedPenData.conditions.ventilation_quality}
+                              </Badge>
+                            </div>
+                          )}
+                          {selectedPenData.conditions.lighting_type && (
+                            <div>
+                              <p className="text-xs text-gray-500 flex items-center gap-1 mb-1">
+                                <Lightbulb className="h-3 w-3" /> Lighting
+                              </p>
+                              <Badge variant="outline" className="capitalize">
+                                {selectedPenData.conditions.lighting_type}
+                              </Badge>
+                            </div>
+                          )}
+                          <div>
+                            <p className="text-xs text-gray-500 flex items-center gap-1 mb-1">
+                              <Droplets className="h-3 w-3" /> Water Access
+                            </p>
+                            <Badge
+                              variant="outline"
+                              className={selectedPenData.conditions.water_access
+                                ? 'text-green-700 bg-green-50'
+                                : 'text-red-700 bg-red-50'}
+                            >
+                              {selectedPenData.conditions.water_access ? 'Yes' : 'No'}
+                            </Badge>
+                          </div>
+                          {selectedPenData.conditions.drainage && (
+                            <div>
+                              <p className="text-xs text-gray-500 mb-1">Drainage</p>
+                              <Badge variant="outline" className="capitalize">
+                                {selectedPenData.conditions.drainage}
+                              </Badge>
+                            </div>
+                          )}
+                          {selectedPenData.conditions.water_quality && (
+                            <div>
+                              <p className="text-xs text-gray-500 flex items-center gap-1 mb-1">
+                                <Droplets className="h-3 w-3" /> Water Quality
+                              </p>
+                              <Badge variant="outline" className="capitalize">
+                                {selectedPenData.conditions.water_quality}
+                              </Badge>
+                            </div>
+                          )}
+                          {selectedPenData.conditions.bedding_type && (
+                            <div>
+                              <p className="text-xs text-gray-500 mb-1">Bedding</p>
+                              <p className="text-sm font-medium capitalize">
+                                {selectedPenData.conditions.bedding_type}
+                              </p>
+                            </div>
+                          )}
+                          {selectedPenData.conditions.temperature_range && (
+                            <div>
+                              <p className="text-xs text-gray-500 flex items-center gap-1 mb-1">
+                                <Thermometer className="h-3 w-3" /> Temperature
+                              </p>
+                              <p className="text-sm font-medium">
+                                {selectedPenData.conditions.temperature_range.min}°C –{' '}
+                                {selectedPenData.conditions.temperature_range.max}°C
+                              </p>
+                            </div>
+                          )}
+                          {selectedPenData.conditions.humidity_range && (
+                            <div>
+                              <p className="text-xs text-gray-500 mb-1">Humidity</p>
+                              <p className="text-sm font-medium">
+                                {selectedPenData.conditions.humidity_range.min}% –{' '}
+                                {selectedPenData.conditions.humidity_range.max}%
+                              </p>
+                            </div>
+                          )}
+                          {selectedPenData.conditions.ammonia_level != null && (
+                            <div>
+                              <p className="text-xs text-gray-500 flex items-center gap-1 mb-1">
+                                <FlaskConical className="h-3 w-3" /> Ammonia Level
+                              </p>
+                              <p className="text-sm font-medium">
+                                {selectedPenData.conditions.ammonia_level} ppm
+                              </p>
+                            </div>
+                          )}
+                          {selectedPenData.conditions.last_checked && (
+                            <div className="col-span-2">
+                              <p className="text-xs text-gray-500 flex items-center gap-1 mb-1">
+                                <Calendar className="h-3 w-3" /> Last Checked
+                              </p>
+                              <p className="text-sm">
+                                {new Date(selectedPenData.conditions.last_checked).toLocaleDateString()}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Equipment */}
+                    {selectedPenData.equipment && selectedPenData.equipment.length > 0 && (
+                      <div className="border-t pt-4 space-y-2">
+                        <h4 className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
+                          <Package className="h-4 w-4 text-gray-500" />
+                          Equipment ({selectedPenData.equipment.length})
+                        </h4>
+                        <div className="flex flex-wrap gap-2">
+                          {selectedPenData.equipment.map((item, i) => (
+                            <Badge key={i} variant="outline" className="text-xs capitalize">
+                              {item.replace(/_/g, ' ')}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Actions */}
+                    <div className="flex gap-2 border-t pt-4">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => setIsMoveAnimalModalOpen(true)}
+                      >
+                        <Users className="h-4 w-4 mr-1" />
                         Move Animal
                       </Button>
-                      <Button size="sm" variant="outline" className="flex-1" onClick={() => setIsAssignAnimalModalOpen(true)}>
-                        <Eye className="h-4 w-4 mr-2" />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => setIsAssignAnimalModalOpen(true)}
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
                         Assign Animal
                       </Button>
                     </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Unit Details */}
-              {selectedUnitData && !selectedPenData && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">{selectedUnitData.name}</CardTitle>
-                    <CardDescription>Unit - {selectedUnitData.unit_type}</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div>
-                      <p className="text-sm text-gray-600 mb-2">Capacity Utilization</p>
-                      <div className="bg-gray-100 rounded-full h-2 overflow-hidden">
-                        <div
-                          className="bg-blue-500 h-full"
-                          style={{
-                            width: `${(selectedUnitData.current_occupancy / selectedUnitData.total_capacity) * 100}%`,
-                          }}
-                        />
-                      </div>
-                      <p className="text-sm text-gray-600 mt-2">
-                        {selectedUnitData.current_occupancy} of {selectedUnitData.total_capacity} animals
-                      </p>
-                    </div>
-                    <p className="text-sm">
-                      <strong>Pens:</strong> {selectedUnitData.pens_count}
-                    </p>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Building Details */}
-              {selectedBuildingData && !selectedUnitData && !selectedPenData && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">{selectedBuildingData.name}</CardTitle>
-                    <CardDescription>{selectedBuildingData.type}</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div>
-                      <p className="text-sm text-gray-600 mb-2">Building Utilization</p>
-                      <div className="bg-gray-100 rounded-full h-2 overflow-hidden">
-                        <div
-                          className="bg-purple-500 h-full"
-                          style={{
-                            width: `${(selectedBuildingData.current_occupancy / selectedBuildingData.total_capacity) * 100}%`,
-                          }}
-                        />
-                      </div>
-                      <p className="text-sm text-gray-600 mt-2">
-                        {selectedBuildingData.current_occupancy} of {selectedBuildingData.total_capacity} animals
-                      </p>
-                    </div>
-                    {selectedBuildingData.location && (
-                      <p className="text-sm flex items-center space-x-2">
-                        <MapPin className="h-4 w-4" />
-                        <span>{selectedBuildingData.location}</span>
-                      </p>
-                    )}
-                    <p className="text-sm">
-                      <strong>Units:</strong> {selectedBuildingData.units_count}
-                    </p>
                   </CardContent>
                 </Card>
               )}

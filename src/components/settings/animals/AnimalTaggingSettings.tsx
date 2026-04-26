@@ -33,7 +33,9 @@ import {
   Save,
   RotateCcw,
   Info,
-  ArrowLeft
+  ArrowLeft,
+  Baby,
+  Truck
 } from 'lucide-react'
 
 // Mock data structure for different tagging methods
@@ -119,7 +121,7 @@ export default function AnimalTaggingSettings({
 
     // Custom Attributes
     customAttributes: [
-      { name: 'Breed Group', values: ['Holstein-Friesian', 'Jersey', 'Ayrshire','Guernsey', 'Cross'] },
+      { name: 'Breed Group', values: ['Holstein-Friesian', 'Jersey', 'Ayrshire', 'Guernsey', 'Cross'] },
       { name: 'Production Stage', values: ['Calf', 'Heifer', 'Lactating', 'Dry'] }
     ],
 
@@ -147,6 +149,25 @@ export default function AnimalTaggingSettings({
       breedingReminders: true,
       vaccinationReminders: true,
       productionAlerts: true
+    },
+
+    // Source-Specific Tag Formats
+    useSourceSpecificFormats: true,
+    sourceSpecificFormats: {
+      newborn: {
+        enabled: true,
+        prefix: 'CALF',
+        format: '{PREFIX}-{YEAR}-{COHORT:2}-{NUMBER:3}',
+        startNumber: 1,
+        description: 'Format for calves born on the farm'
+      },
+      purchased: {
+        enabled: true,
+        prefix: 'PUR',
+        format: '{PREFIX}-{BREED:2}-{GENDER}-{NUMBER:3}',
+        startNumber: 1,
+        description: 'Format for purchased animals'
+      }
     }
   })
   const [newColor, setNewColor] = useState({
@@ -156,44 +177,44 @@ export default function AnimalTaggingSettings({
   })
 
   const resetCustomFormat = () => {
-  const defaultFormat = settings.includeYearInTag
-    ? '{PREFIX}-{YEAR}-{NUMBER:3}'
-    : '{PREFIX}-{NUMBER:3}'
+    const defaultFormat = settings.includeYearInTag
+      ? '{PREFIX}-{YEAR}-{NUMBER:3}'
+      : '{PREFIX}-{NUMBER:3}'
 
-  setSettings(prev => ({
-    ...prev,
-    customFormat: defaultFormat
-  }))
-}
+    setSettings(prev => ({
+      ...prev,
+      customFormat: defaultFormat
+    }))
+  }
 
-const clearCustomFormat = () => {
-  setSettings(prev => ({
-    ...prev,
-    customFormat: ''
-  }))
-}
+  const clearCustomFormat = () => {
+    setSettings(prev => ({
+      ...prev,
+      customFormat: ''
+    }))
+  }
 
-// Update the existing appendToFormat function to handle empty formats better:
-const appendToFormat = (placeholder: string) => {
-  setSettings(prev => {
-    const currentFormat = prev.customFormat || ''
+  // Update the existing appendToFormat function to handle empty formats better:
+  const appendToFormat = (placeholder: string) => {
+    setSettings(prev => {
+      const currentFormat = prev.customFormat || ''
 
-    // If format is empty, just add the placeholder
-    if (!currentFormat) {
+      // If format is empty, just add the placeholder
+      if (!currentFormat) {
+        return {
+          ...prev,
+          customFormat: placeholder
+        }
+      }
+
+      // Add separator and placeholder
+      const separator = '-'
       return {
         ...prev,
-        customFormat: placeholder
+        customFormat: currentFormat + separator + placeholder
       }
-    }
-
-    // Add separator and placeholder
-    const separator = '-'
-    return {
-      ...prev,
-      customFormat: currentFormat + separator + placeholder
-    }
-  })
-}
+    })
+  }
 
   const generateTagPreview = (
     prefix: string,
@@ -214,6 +235,7 @@ const appendToFormat = (placeholder: string) => {
       .replace(/\{MONTH:1\}/g, (new Date().getMonth() + 1).toString())
       .replace(/\{NUMBER:(\d+)\}/g, (match, digits) => (startNumber || 1).toString().padStart(parseInt(digits), '0'))
       .replace(/\{NUMBER\}/g, (startNumber || 1).toString())
+      .replace(/\{MOTHER_TAG\}/g, `${prefix || 'COW'}001`)
 
     // Handle custom attributes
     if (customAttributes) {
@@ -370,12 +392,147 @@ const appendToFormat = (placeholder: string) => {
     }))
   }
 
+  // Transform sourceSpecificFormats from API array to component object structure
+  const transformSourceFormats = (data: any) => {
+    // If already an object with newborn/purchased, return as-is
+    if (data && typeof data === 'object' && !Array.isArray(data) && data.newborn) {
+      return data
+    }
+
+    // If array, transform to object keyed by sourceKey
+    if (Array.isArray(data)) {
+      // If array is empty, return defaults instead of empty object
+      if (data.length === 0) {
+        return {
+          newborn: {
+            enabled: true,
+            prefix: 'CALF',
+            format: '{PREFIX}-{YEAR}-{COHORT:2}-{NUMBER:3}',
+            startNumber: 1,
+            description: 'Format for calves born on the farm'
+          },
+          purchased: {
+            enabled: true,
+            prefix: 'PUR',
+            format: '{PREFIX}-{BREED:2}-{GENDER}-{NUMBER:3}',
+            startNumber: 1,
+            description: 'Format for purchased animals'
+          }
+        }
+      }
+      
+      const result: any = {}
+      data.forEach((format: any) => {
+        result[format.sourceKey] = {
+          enabled: format.enabled ?? true,
+          prefix: format.prefix,
+          format: format.formatPattern,
+          startNumber: format.startNumber ?? 1,
+          description: format.description
+        }
+      })
+      return result
+    }
+
+    // Default structure
+    return {
+      newborn: {
+        enabled: true,
+        prefix: 'CALF',
+        format: '{PREFIX}-{YEAR}-{COHORT:2}-{NUMBER:3}',
+        startNumber: 1,
+        description: 'Format for calves born on the farm'
+      },
+      purchased: {
+        enabled: true,
+        prefix: 'PUR',
+        format: '{PREFIX}-{BREED:2}-{GENDER}-{NUMBER:3}',
+        startNumber: 1,
+        description: 'Format for purchased animals'
+      }
+    }
+  }
+
   const [newAttribute, setNewAttribute] = useState({ name: '', values: '' })
   const [isLoading, setIsLoading] = useState(false)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [confirmUnsavedDialog, setConfirmUnsavedDialog] = useState<{ show: boolean; callback?: () => void }>({ show: false })
+  const [confirmResetDialog, setConfirmResetDialog] = useState<{ show: boolean; step?: 'first' | 'second' }>({ show: false, step: 'first' })
+
+  // Fetch tagging settings from API when component mounts or farmId changes
+  useEffect(() => {
+    const fetchTaggingSettings = async () => {
+      if (!farmId) return
+
+      try {
+        const response = await fetch(`/api/settings/animal-tagging?farmId=${farmId}`)
+        
+        if (!response.ok) {
+          return
+        }
+
+        const data = await response.json()
+
+        if (data.settings) {
+          const transformedFormats = transformSourceFormats(data.settings.sourceSpecificFormats)
+          setSettings({
+            tagPrefix: data.settings.tagPrefix || 'COW',
+            tagNumbering: data.settings.numberingSystem || 'sequential',
+            enablePhotoTags: data.settings.enablePhotoTags ?? true,
+            enableColorCoding: data.settings.enableColorCoding ?? true,
+            customFormat: data.settings.customFormat || '{PREFIX}-{YEAR}-{NUMBER:3}',
+            customStartNumber: data.settings.customStartNumber || 1,
+            includeYearInTag: data.settings.includeYearInTag || false,
+            barcodeType: data.settings.barcodeType || 'code128',
+            barcodeLength: data.settings.barcodeLength || 8,
+            includeCheckDigit: data.settings.includeCheckDigit || false,
+            paddingZeros: data.settings.paddingZeros ?? true,
+            customAttributes: data.settings.customAttributes || [
+              { name: 'Breed Group', values: ['Holstein-Friesian', 'Jersey', 'Ayrshire', 'Guernsey', 'Cross'] },
+              { name: 'Production Stage', values: ['Calf', 'Heifer', 'Lactating', 'Dry'] }
+            ],
+            colorCoding: data.settings.colorCoding && data.settings.colorCoding.length > 0
+              ? data.settings.colorCoding
+              : colorOptions,
+            enableHierarchicalTags: data.settings.enableHierarchicalTags ?? false,
+            enableBatchTagging: data.settings.enableBatchTagging ?? true,
+            enableQRCodes: data.settings.enableQRCodes ?? false,
+            enableSmartAlerts: data.settings.enableSmartAlerts ?? true,
+            qrCodeSize: data.settings.qrCodeSize || 'medium',
+            enableRFID: data.settings.enableRFID ?? false,
+            enableNFC: data.settings.enableNFC ?? false,
+            enableGPS: data.settings.enableGPS ?? false,
+            enableBiometric: data.settings.enableBiometric ?? false,
+            rfidFrequency: data.settings.rfidFrequency || '134.2khz',
+            gpsUpdateInterval: data.settings.gpsUpdateInterval || 30,
+            smartAlerts: data.settings.smartAlerts || {
+              healthReminders: true,
+              breedingReminders: true,
+              vaccinationReminders: true,
+              productionAlerts: true
+            },
+            useSourceSpecificFormats: data.settings.useSourceSpecificFormats ?? true,
+            sourceSpecificFormats: transformedFormats
+          })
+
+          // Set the method based on fetched settings
+          if (data.settings.method) {
+            setSelectedMethod(data.settings.method)
+          }
+
+          setHasUnsavedChanges(false)
+        }
+      } catch (error) {
+      }
+    }
+
+    fetchTaggingSettings()
+  }, [farmId])
 
   useEffect(() => {
     if (initialSettings) {
+      const transformedFormats = transformSourceFormats(initialSettings.sourceSpecificFormats)
+      
       setSettings({
         tagPrefix: initialSettings.tagPrefix || 'COW',
         tagNumbering: initialSettings.numberingSystem || 'sequential',
@@ -392,7 +549,7 @@ const appendToFormat = (placeholder: string) => {
         paddingZeros: initialSettings.paddingZeros ?? true,
 
         customAttributes: initialSettings.customAttributes || [
-          { name: 'Breed Group', values: ['Holstein-Friesian', 'Jersey', 'Ayrshire','Guernsey', 'Cross'] },
+          { name: 'Breed Group', values: ['Holstein-Friesian', 'Jersey', 'Ayrshire', 'Guernsey', 'Cross'] },
           { name: 'Production Stage', values: ['Calf', 'Heifer', 'Lactating', 'Dry'] }
         ],
         colorCoding: initialSettings.colorCoding && initialSettings.colorCoding.length > 0
@@ -414,7 +571,9 @@ const appendToFormat = (placeholder: string) => {
           breedingReminders: true,
           vaccinationReminders: true,
           productionAlerts: true
-        }
+        },
+        useSourceSpecificFormats: initialSettings.useSourceSpecificFormats ?? true,
+        sourceSpecificFormats: transformedFormats
       })
 
       // Set the method based on initial settings
@@ -425,9 +584,9 @@ const appendToFormat = (placeholder: string) => {
   }, [initialSettings])
 
   useEffect(() => {
-  // This will trigger when settings change
-  setHasUnsavedChanges(true)
-}, [settings, selectedMethod])
+    // This will trigger when settings change
+    setHasUnsavedChanges(true)
+  }, [settings, selectedMethod])
 
   // Auto-suggest method based on herd size
   useEffect(() => {
@@ -485,147 +644,216 @@ const appendToFormat = (placeholder: string) => {
     }))
   }
 
-  const checkUnsavedChanges = () => {
-  if (hasUnsavedChanges) {
-    return window.confirm(
-      `⚠️ Unsaved Changes Detected\n\n` +
-      `You have unsaved changes to your animal tagging settings.\n\n` +
-      `If you leave now, your changes will be lost.\n\n` +
-      `Are you sure you want to leave without saving?`
-    )
+  const showUnsavedChangesDialog = (callback: () => void) => {
+    setConfirmUnsavedDialog({ show: true, callback })
   }
-  return true
-}
+
+  const handleUnsavedConfirm = () => {
+    setConfirmUnsavedDialog({ show: false })
+    confirmUnsavedDialog.callback?.()
+  }
+
+  const handleUnsavedCancel = () => {
+    setConfirmUnsavedDialog({ show: false })
+  }
 
 
   const handleSaveSettings = async () => {
-  // User confirmation dialog
-  const userConfirmed = window.confirm(
-    `Are you sure you want to save these animal tagging settings?\n\n` +
-    `This will:\n` +
-    `• Update the tagging method to: ${taggingMethods[selectedMethod].title}\n` +
-    `• Apply new settings to future animal registrations\n` +
-    `• Change tag generation format\n\n` +
-    `Click OK to proceed or Cancel to review your settings.`
-  )
+    const enabledFeatures = [
+      settings.enablePhotoTags && 'Photo Tags',
+      settings.enableColorCoding && 'Color Coding',
+      settings.enableQRCodes && 'QR Codes',
+      settings.enableBatchTagging && 'Batch Tagging',
+      settings.enableHierarchicalTags && 'Hierarchical Tags',
+      settings.enableSmartAlerts && 'Smart Alerts',
+      settings.enableRFID && 'RFID',
+      settings.enableNFC && 'NFC',
+      settings.enableGPS && 'GPS',
+      settings.enableBiometric && 'Biometric ID'
+    ].filter(Boolean)
 
-  if (!userConfirmed) {
-    return // User cancelled
-  }
-
-  setIsLoading(true)
-  try {
-    console.log('🔄 Saving tagging settings...', {
-      farmId,
-      method: selectedMethod,
-      settings: settings
+    // Show confirmation toast with action
+    toast.custom((t) => (
+      <div className="bg-white rounded-lg shadow-lg p-4 border border-gray-200 max-w-md">
+        <div className="space-y-3">
+          <p className="font-semibold text-gray-900">Save Tagging Settings?</p>
+          <div className="text-sm text-gray-700 space-y-2 bg-gray-50 p-3 rounded">
+            <div><span className="font-medium">Method:</span> {taggingMethods[selectedMethod].title}</div>
+            <div><span className="font-medium">Tag Format:</span> {settings.tagNumbering}</div>
+            <div><span className="font-medium">Prefix:</span> {settings.tagPrefix}</div>
+            <div><span className="font-medium">Features:</span> {enabledFeatures.length > 0 ? enabledFeatures.join(', ') : 'Basic features only'}</div>
+          </div>
+          <p className="text-xs text-gray-500">Changes apply to new animals only</p>
+          <div className="flex gap-2 justify-end pt-2">
+            <button
+              onClick={() => toast.dismiss(t.id)}
+              className="px-3 py-2 text-sm rounded bg-gray-100 text-gray-800 hover:bg-gray-200 transition"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={async () => {
+                toast.dismiss(t.id)
+                await performSave()
+              }}
+              className="px-3 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 transition"
+            >
+              Save Settings
+            </button>
+          </div>
+        </div>
+      </div>
+    ), {
+      duration: Infinity,
+      position: 'top-center',
     })
 
-    const response = await fetch('/api/settings/animal-tagging', {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        farmId: farmId,
-        settings: {
-          method: selectedMethod,
-          tagPrefix: settings.tagPrefix,
-          numberingSystem: settings.tagNumbering,
+    const performSave = async () => {
+      setIsLoading(true)
+      try {
 
-          // Custom format settings
-          customFormat: settings.customFormat,
-          customStartNumber: settings.customStartNumber,
-          includeYearInTag: settings.includeYearInTag,
+        const response = await fetch('/api/settings/animal-tagging', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            farmId: farmId,
+            settings: {
+              method: selectedMethod,
+              tagPrefix: settings.tagPrefix,
+              numberingSystem: settings.tagNumbering,
 
-          // Barcode settings
-          barcodeType: settings.barcodeType,
-          barcodeLength: settings.barcodeLength,
-          includeCheckDigit: settings.includeCheckDigit,
-          paddingZeros: settings.paddingZeros,
+              // Custom format settings
+              customFormat: settings.customFormat,
+              customStartNumber: settings.customStartNumber,
+              includeYearInTag: settings.includeYearInTag,
 
-          // Basic features
-          enablePhotoTags: settings.enablePhotoTags,
-          enableColorCoding: settings.enableColorCoding,
-          enableQRCodes: settings.enableQRCodes,
-          enableHierarchicalTags: settings.enableHierarchicalTags,
-          enableBatchTagging: settings.enableBatchTagging,
-          enableSmartAlerts: settings.enableSmartAlerts,
+              // Barcode settings
+              barcodeType: settings.barcodeType,
+              barcodeLength: settings.barcodeLength,
+              includeCheckDigit: settings.includeCheckDigit,
+              paddingZeros: settings.paddingZeros,
 
-          // Advanced features
-          enableRFID: settings.enableRFID,
-          enableNFC: settings.enableNFC,
-          enableGPS: settings.enableGPS,
-          enableBiometric: settings.enableBiometric,
-          qrCodeSize: settings.qrCodeSize,
-          rfidFrequency: settings.rfidFrequency,
-          gpsUpdateInterval: settings.gpsUpdateInterval,
+              // Basic features
+              enablePhotoTags: settings.enablePhotoTags,
+              enableColorCoding: settings.enableColorCoding,
+              enableQRCodes: settings.enableQRCodes,
+              enableHierarchicalTags: settings.enableHierarchicalTags,
+              enableBatchTagging: settings.enableBatchTagging,
+              enableSmartAlerts: settings.enableSmartAlerts,
 
-          // Custom attributes and colors
-          customAttributes: settings.customAttributes.map((attr, index) => ({
-            name: attr.name,
-            values: attr.values,
-            required: false,
-            sortOrder: index
-          })),
-          colorCoding: settings.colorCoding,
-          smartAlerts: settings.smartAlerts
+              // Advanced features
+              enableRFID: settings.enableRFID,
+              enableNFC: settings.enableNFC,
+              enableGPS: settings.enableGPS,
+              enableBiometric: settings.enableBiometric,
+              qrCodeSize: settings.qrCodeSize,
+              rfidFrequency: settings.rfidFrequency,
+              gpsUpdateInterval: settings.gpsUpdateInterval,
+
+              // Custom attributes and colors
+              customAttributes: settings.customAttributes.map((attr, index) => ({
+                name: attr.name,
+                values: attr.values,
+                required: false,
+                sortOrder: index
+              })),
+              colorCoding: settings.colorCoding,
+              smartAlerts: settings.smartAlerts,
+
+              // Source-specific formats - convert object to array
+              useSourceSpecificFormats: settings.useSourceSpecificFormats,
+              sourceSpecificFormats: (() => {
+                
+                const converted = Object.entries(settings.sourceSpecificFormats || {}).map(
+                  ([sourceKey, format]: [string, any]) => ({
+                    sourceKey,
+                    enabled: format.enabled ?? true,
+                    prefix: format.prefix,
+                    formatPattern: format.format,
+                    startNumber: format.startNumber ?? 1,
+                    description: format.description
+                  })
+                )
+                
+                return converted
+              })()
+            }
+          })
+        })
+
+        const result = await response.json()
+
+        if (!response.ok) {
+          throw new Error(result.error || 'Failed to save settings')
         }
-      })
-    })
 
-    const result = await response.json()
-    console.log('💾 Save response:', result)
+        // Success feedback with detailed toast
+        toast.custom((t) => (
+          <div className="bg-green-50 border border-green-200 rounded-lg shadow-lg p-4 max-w-md">
+            <div className="space-y-2">
+              <p className="font-semibold text-green-900">✅ Settings Saved Successfully!</p>
+              <div className="text-sm text-green-800 space-y-1">
+                <div><span className="font-medium">Method:</span> {taggingMethods[selectedMethod].title}</div>
+                <div><span className="font-medium">Tag Format:</span> {settings.tagNumbering}</div>
+                <div><span className="font-medium">Prefix:</span> {settings.tagPrefix}</div>
+                <div><span className="font-medium">Features Enabled:</span> {enabledFeatures.length > 0 ? enabledFeatures.join(', ') : 'Basic features only'}</div>
+              </div>
+              <p className="text-xs text-green-700 mt-2">Changes apply to new animals only. Existing animals retain their current tags.</p>
+            </div>
+          </div>
+        ), {
+          duration: 5000,
+          position: 'top-right',
+        })
 
-    if (!response.ok) {
-      throw new Error(result.error || 'Failed to save settings')
+        setHasUnsavedChanges(false)
+
+      } catch (error) {
+
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+
+        // Enhanced error feedback
+        toast.custom((t) => (
+          <div className="bg-red-50 border border-red-200 rounded-lg shadow-lg p-4 max-w-md">
+            <div className="space-y-2">
+              <p className="font-semibold text-red-900">❌ Failed to Save Settings</p>
+              <p className="text-sm text-red-800">{errorMessage}</p>
+              <p className="text-xs text-red-700 mt-2">Please check your connection and try again.</p>
+              <button
+                onClick={() => toast.dismiss(t.id)}
+                className="mt-3 w-full px-3 py-2 text-sm rounded bg-red-100 text-red-700 hover:bg-red-200 transition"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        ), {
+          duration: 8000,
+          position: 'top-right',
+        })
+      } finally {
+        setIsLoading(false)
+      }
     }
-
-    // Success feedback
-    toast.success('✅ Tagging settings saved successfully!', {
-      duration: 4000,
-      position: 'top-right',
-    })
-
-    // Optional: Show detailed success message
-    const successMessage = `Settings saved successfully!\n\n` +
-      `Method: ${taggingMethods[selectedMethod].title}\n` +
-      `Tag Format: ${settings.tagNumbering}\n` +
-      `Prefix: ${settings.tagPrefix}\n` +
-      `Features enabled: ${[
-        settings.enablePhotoTags && 'Photo Tags',
-        settings.enableColorCoding && 'Color Coding',
-        settings.enableQRCodes && 'QR Codes',
-        settings.enableBatchTagging && 'Batch Tagging',
-        settings.enableRFID && 'RFID',
-        settings.enableNFC && 'NFC',
-        settings.enableGPS && 'GPS'
-      ].filter(Boolean).join(', ') || 'Basic features only'}`
-
-    console.log('✅ Settings saved:', successMessage)
-
-    // You can uncomment this if you want a detailed success dialog
-    // alert(successMessage)
-
-  } catch (error) {
-    console.error('❌ Error saving settings:', error)
-
-    // Error feedback
-    toast.error(`Failed to save settings: ${error instanceof Error ? error.message : 'Unknown error'}`, {
-      duration: 6000,
-      position: 'top-right',
-    })
-
-    // Also show alert for critical errors
-    alert(`Failed to save settings:\n\n${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease check your connection and try again.`)
-  } finally {
-    setIsLoading(false)
   }
-}
 
   const generateQRCodes = async () => {
     if (!settings.enableQRCodes) {
-      alert('QR codes are not enabled. Please enable QR codes and save settings first.')
+      toast.custom((t) => (
+        <div className="bg-white rounded-lg shadow-lg p-4 border border-amber-200 max-w-md">
+          <div className="space-y-3">
+            <div className="flex items-start space-x-3">
+              <AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
+              <div>
+                <h3 className="font-semibold text-gray-900">QR Codes Not Enabled</h3>
+                <p className="text-sm text-gray-600 mt-1">Please enable QR codes in the settings and save before generating codes.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      ), { duration: 4000, position: 'top-right' })
       return
     }
 
@@ -658,122 +886,164 @@ const appendToFormat = (placeholder: string) => {
       window.URL.revokeObjectURL(url)
       document.body.removeChild(a)
 
-      alert('QR codes generated and downloaded successfully!')
+      toast.custom((t) => (
+        <div className="bg-white rounded-lg shadow-lg p-4 border border-green-200 max-w-md">
+          <div className="space-y-3">
+            <div className="flex items-start space-x-3">
+              <div className="h-5 w-5 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                <span className="text-white text-sm">✓</span>
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900">QR Codes Generated</h3>
+                <p className="text-sm text-gray-600 mt-1">Your animal QR code PDF has been downloaded successfully.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      ), { duration: 4000, position: 'top-right' })
 
     } catch (error) {
-      console.error('Error generating QR codes:', error)
-      alert(error instanceof Error ? error.message : 'Failed to generate QR codes')
+      const errorMessage = error instanceof Error ? error.message : 'Failed to generate QR codes'
+      toast.custom((t) => (
+        <div className="bg-white rounded-lg shadow-lg p-4 border border-red-200 max-w-md">
+          <div className="space-y-3">
+            <div className="flex items-start space-x-3">
+              <div className="h-5 w-5 bg-red-500 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                <span className="text-white text-sm">!</span>
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900">Generation Failed</h3>
+                <p className="text-sm text-gray-600 mt-1">{errorMessage}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      ), { duration: 5000, position: 'top-right' })
     }
+  }
+
+  const initiateResetToDefaults = () => {
+    setConfirmResetDialog({ show: true, step: 'first' })
+  }
+
+  const handleResetFirstConfirm = () => {
+    setConfirmResetDialog({ show: true, step: 'second' })
+  }
+
+  const handleResetSecondConfirm = () => {
+    setConfirmResetDialog({ show: false })
+    performResetToDefaults()
+  }
+
+  const handleResetCancel = () => {
+    setConfirmResetDialog({ show: false })
   }
 
   const resetToDefaults = () => {
-  // Detailed confirmation dialog
-  const userConfirmed = window.confirm(
-    `⚠️ Reset to Default Settings?\n\n` +
-    `This will permanently reset ALL your animal tagging configuration to default values:\n\n` +
-    `• Tag prefix will be set to "COW"\n` +
-    `• Numbering system will be "Sequential"\n` +
-    `• All custom attributes will be reset to defaults\n` +
-    `• Advanced features will be disabled\n` +
-    `• Color coding will be reset to standard colors\n\n` +
-    `❌ This action cannot be undone.\n\n` +
-    `Are you absolutely sure you want to continue?`
-  )
-
-  if (!userConfirmed) {
-    return // User cancelled
+    initiateResetToDefaults()
   }
 
-  // Second confirmation for critical action
-  const doubleConfirmed = window.confirm(
-    `🚨 Final Confirmation\n\n` +
-    `You are about to lose all your custom tagging settings.\n\n` +
-    `Click OK only if you are absolutely certain you want to reset everything to defaults.`
-  )
+  const performResetToDefaults = () => {
 
-  if (!doubleConfirmed) {
-    return // User cancelled on second confirmation
-  }
+    try {
+      // Reset settings
+      const defaultSettings = {
+        tagPrefix: 'COW',
+        tagNumbering: 'sequential',
 
-  try {
-    // Reset settings
-    const defaultSettings = {
-      tagPrefix: 'COW',
-      tagNumbering: 'sequential',
+        // Custom format defaults
+        customFormat: '{PREFIX}-{NUMBER:3}',
+        customStartNumber: 1,
+        includeYearInTag: false,
 
-      // Custom format defaults
-      customFormat: '{PREFIX}-{NUMBER:3}',
-      customStartNumber: 1,
-      includeYearInTag: false,
+        // Barcode defaults
+        barcodeType: 'code128',
+        barcodeLength: 8,
+        includeCheckDigit: false,
+        paddingZeros: true,
 
-      // Barcode defaults
-      barcodeType: 'code128',
-      barcodeLength: 8,
-      includeCheckDigit: false,
-      paddingZeros: true,
-
-      enablePhotoTags: true,
-      enableColorCoding: true,
-      customAttributes: [
-        { name: 'Breed Group', values: ['Holstein-Friesian', 'Jersey', 'Ayrshire','Guernsey', 'Cross'] },
-        { name: 'Production Stage', values: ['Calf', 'Heifer', 'Lactating', 'Dry'] }
-      ],
-      colorCoding: colorOptions,
-      enableHierarchicalTags: selectedMethod !== 'basic',
-      enableBatchTagging: selectedMethod !== 'basic',
-      enableQRCodes: selectedMethod === 'structured' || selectedMethod === 'automated',
-      enableSmartAlerts: true,
-      qrCodeSize: 'medium',
-      enableRFID: selectedMethod === 'automated',
-      enableNFC: selectedMethod === 'automated',
-      enableGPS: false,
-      enableBiometric: false,
-      rfidFrequency: '134.2khz',
-      gpsUpdateInterval: 30,
-      smartAlerts: {
-        healthReminders: true,
-        breedingReminders: true,
-        vaccinationReminders: true,
-        productionAlerts: true
+        enablePhotoTags: true,
+        enableColorCoding: true,
+        customAttributes: [
+          { name: 'Breed Group', values: ['Holstein-Friesian', 'Jersey', 'Ayrshire', 'Guernsey', 'Cross'] },
+          { name: 'Production Stage', values: ['Calf', 'Heifer', 'Lactating', 'Dry'] }
+        ],
+        colorCoding: colorOptions,
+        enableHierarchicalTags: selectedMethod !== 'basic',
+        enableBatchTagging: selectedMethod !== 'basic',
+        enableQRCodes: selectedMethod === 'structured' || selectedMethod === 'automated',
+        enableSmartAlerts: true,
+        qrCodeSize: 'medium',
+        enableRFID: selectedMethod === 'automated',
+        enableNFC: selectedMethod === 'automated',
+        enableGPS: false,
+        enableBiometric: false,
+        rfidFrequency: '134.2khz',
+        gpsUpdateInterval: 30,
+        smartAlerts: {
+          healthReminders: true,
+          breedingReminders: true,
+          vaccinationReminders: true,
+          productionAlerts: true
+        },
+        useSourceSpecificFormats: true,
+        sourceSpecificFormats: {
+          newborn: {
+            enabled: true,
+            prefix: 'CALF',
+            format: '{PREFIX}-{YEAR}-{COHORT:2}-{NUMBER:3}',
+            startNumber: 1,
+            description: 'Format for calves born on the farm'
+          },
+          purchased: {
+            enabled: true,
+            prefix: 'PUR',
+            format: '{PREFIX}-{BREED:2}-{GENDER}-{NUMBER:3}',
+            startNumber: 1,
+            description: 'Format for purchased animals'
+          }
+        }
       }
+
+      setSettings(defaultSettings)
+      setHasUnsavedChanges(true)
+
+      // Success feedback
+
+    } catch (error) {
+      toast.custom((t) => (
+        <div className="bg-white rounded-lg shadow-lg p-4 border border-red-200 max-w-md">
+          <div className="space-y-3">
+            <div className="flex items-start space-x-3">
+              <div className="h-5 w-5 bg-red-500 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                <span className="text-white text-sm">!</span>
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900">Reset Failed</h3>
+                <p className="text-sm text-gray-600 mt-1">Failed to reset settings. Please refresh the page and try again.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      ), { duration: 5000, position: 'top-right' })
     }
-
-    setSettings(defaultSettings)
-
-    // Success feedback
-    toast.success('🔄 Settings reset to defaults successfully!', {
-      duration: 3000,
-      position: 'top-right',
-    })
-
-    console.log('🔄 Settings reset to defaults')
-
-    // Optional success alert
-    alert(`✅ Settings Reset Complete\n\nAll animal tagging settings have been restored to their default values.\n\nRemember to click "Save Settings" to make these changes permanent.`)
-
-  } catch (error) {
-    console.error('❌ Error resetting settings:', error)
-    toast.error('Failed to reset settings. Please try again.', {
-      duration: 4000,
-      position: 'top-right',
-    })
-    alert('Failed to reset settings. Please refresh the page and try again.')
   }
-}
 
   const handleBack = (event: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
-  event.preventDefault()
+    event.preventDefault()
 
-  if (checkUnsavedChanges()) {
-    window.history.back()
-    // Or if using Next.js router:
-    // router.push('/dashboard/settings')
+    if (hasUnsavedChanges) {
+      showUnsavedChangesDialog(() => {
+        window.history.back()
+      })
+    } else {
+      window.history.back()
+    }
   }
-}
 
-const resetUnsavedChanges = () => {
-  setHasUnsavedChanges(false)
-}
+  const resetUnsavedChanges = () => {
+    setHasUnsavedChanges(false)
+  }
 
   return (
     <div className={`
@@ -858,7 +1128,8 @@ const resetUnsavedChanges = () => {
         </CardContent>
       </Card>
 
-      {/* Basic Settings */}
+      {/* Basic Settings - Only show for basic method */}
+      {selectedMethod === 'basic' && (
       <Card>
         <CardHeader>
           <CardTitle>Basic Identification Settings</CardTitle>
@@ -893,467 +1164,895 @@ const resetUnsavedChanges = () => {
                   <SelectItem value="barcode">Barcode Compatible</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+          </div>
 
-              {/* Custom Format Configuration */}
-              {settings.tagNumbering === 'custom' && (
-                <div className={`mt-3 p-3 bg-gray-50 rounded-lg space-y-3 ${isMobile ? 'text-sm' : ''}`}>
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <Label className="text-sm font-medium">Custom Format Pattern</Label>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => resetCustomFormat()}
-                        className="text-xs text-gray-600 hover:text-gray-800"
-                      >
-                        <RotateCcw className="h-3 w-3 mr-1" />
-                        Reset Format
-                      </Button>
-                    </div>
-                    <Input
-                      placeholder="e.g., {PREFIX}-{YEAR}-{BREED_GROUP:2}-{NUMBER:3}"
-                      value={settings.customFormat || ''}
-                      onChange={(e) => setSettings(prev => ({ ...prev, customFormat: e.target.value }))}
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      Available placeholders: {'{PREFIX}'}, {'{YEAR}'}, {'{MONTH}'}
-                      {settings.customAttributes.length > 0 && (
-                        <span>
-                          , {settings.customAttributes.map(attr =>
-                            `{${attr.name.toUpperCase().replace(/\s+/g, '_')}:X}`
-                          ).join(', ')}
-                        </span>
-                      )}
-                    </p>
-                  </div>
+          {/* Source-Specific Tag Formats - Full Width */}
+          {settings.tagNumbering === 'custom' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <Label className="text-base font-semibold">Source-Specific Tag Formats</Label>
+                  <p className="text-xs text-gray-500">(Different formats for newborn vs. purchased animals)</p>
+                </div>
+                <Switch
+                  checked={settings.useSourceSpecificFormats}
+                  onCheckedChange={(checked) => setSettings(prev => ({ ...prev, useSourceSpecificFormats: checked }))}
+                />
+              </div>
 
-                  {/* Quick Format Builder */}
-                  <div className="p-3 bg-white rounded border">
-                    <div className="flex items-center justify-between mb-2">
-                      <Label className="text-sm font-medium">Quick Format Builder</Label>
-                      <div className="flex items-center space-x-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => clearCustomFormat()}
-                          className="text-xs text-red-600 hover:text-red-700"
-                        >
-                          <X className="h-3 w-3 mr-1" />
-                          Clear All
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => resetCustomFormat()}
-                          className="text-xs text-blue-600 hover:text-blue-700"
-                        >
-                          <RotateCcw className="h-3 w-3 mr-1" />
-                          Reset
-                        </Button>
-                      </div>
+              {settings.useSourceSpecificFormats && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Newborn Calves Format */}
+                  <div className="p-4 bg-green-50 border-2 border-green-200 rounded-lg space-y-3">
+                    <div className="flex items-center space-x-2 mb-3">
+                      <Baby className="h-5 w-5 text-green-600" />
+                      <Label className="font-semibold text-green-900">Animals Born On Farm (Calves)</Label>
                     </div>
 
-                    <div className={`grid gap-2 ${isMobile ? 'grid-cols-2' : 'grid-cols-2 md:grid-cols-4'}`}>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => appendToFormat('{PREFIX}')}
-                        className={isMobile ? 'text-xs' : ''}
-                      >
-                        + Prefix
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => appendToFormat('{YEAR}')}
-                        className={isMobile ? 'text-xs' : ''}
-                      >
-                        + Year
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => appendToFormat('{MONTH:2}')}
-                        className={isMobile ? 'text-xs' : ''}
-                      >
-                        + Month
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => appendToFormat('{NUMBER:3}')}
-                        className={isMobile ? 'text-xs' : ''}
-                      >
-                        + Number
-                      </Button>
-
-                      {/* Dynamic buttons for custom attributes */}
-                      {settings.customAttributes.slice(0, 4).map((attr, index) => (
-                        <Button
-                          key={index}
-                          variant="outline"
-                          size="sm"
-                          onClick={() => appendToFormat(`{${attr.name.toUpperCase().replace(/\s+/g, '_')}:2}`)}
-                          className="text-xs"
-                        >
-                          + {attr.name}
-                        </Button>
-                      ))}
+                    <div>
+                      <Label className="text-sm">Prefix</Label>
+                      <Input
+                        value={settings.sourceSpecificFormats?.newborn?.prefix || 'CALF'}
+                        onChange={(e) => setSettings(prev => ({
+                          ...prev,
+                          sourceSpecificFormats: {
+                            ...prev.sourceSpecificFormats || {},
+                            newborn: { ...(prev.sourceSpecificFormats?.newborn || {}), prefix: e.target.value }
+                          }
+                        }))}
+                        placeholder="CALF"
+                        className="text-sm"
+                      />
                     </div>
 
-                    <div className="mt-2 text-xs text-gray-500">
-                      Current format: <code className="bg-gray-100 px-1 rounded">
-                        {settings.customFormat || '{PREFIX}-{NUMBER:3}'}
-                      </code>
+                    <div>
+                      <Label className="text-sm">Format Pattern</Label>
+                      <Input
+                        value={settings.sourceSpecificFormats?.newborn?.format || ''}
+                        onChange={(e) => setSettings(prev => ({
+                          ...prev,
+                          sourceSpecificFormats: {
+                            ...prev.sourceSpecificFormats || {},
+                            newborn: { ...(prev.sourceSpecificFormats?.newborn || {}), format: e.target.value }
+                          }
+                        }))}
+                        placeholder="{PREFIX}-{YEAR}-{COHORT:2}-{NUMBER:3}"
+                        className="text-sm"
+                      />
+                      <p className="text-xs text-gray-600 mt-1">Example: CALF-2026-03-001</p>
+                      <p className="text-xs text-gray-500 mt-2">Available: {'{PREFIX}'}, {'{YEAR}'}, {'{MONTH}'}, {'{NUMBER:3}'}, {'{MOTHER_TAG}'}</p>
                     </div>
-                  </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                       <Label className="text-sm">Starting Number</Label>
                       <Input
                         type="number"
+                        value={settings.sourceSpecificFormats?.newborn?.startNumber || 1}
+                        onChange={(e) => setSettings(prev => ({
+                          ...prev,
+                          sourceSpecificFormats: {
+                            ...prev.sourceSpecificFormats || {},
+                            newborn: { ...(prev.sourceSpecificFormats?.newborn || {}), startNumber: parseInt(e.target.value) }
+                          }
+                        }))}
                         min="1"
-                        value={settings.customStartNumber || 1}
-                        onChange={(e) => setSettings(prev => ({ ...prev, customStartNumber: parseInt(e.target.value) }))}
+                        className="text-sm"
                       />
                     </div>
 
-                    {/* Include Year switch remains the same */}
-                    <div className="flex flex-col justify-end">
-                      <div className="flex items-center justify-between p-3 border rounded-lg bg-white">
-                        <Label className="text-sm font-medium">Include Year</Label>
-                        <Switch
-                          checked={settings.includeYearInTag || false}
-                          onCheckedChange={(checked) => {
-                            setSettings(prev => {
-                              let newFormat = prev.customFormat || '{PREFIX}-{NUMBER:3}'
-
-                              if (checked) {
-                                if (!newFormat.includes('{YEAR}')) {
-                                  newFormat = newFormat.replace('{PREFIX}', '{PREFIX}-{YEAR}')
-                                }
-                              } else {
-                                newFormat = newFormat
-                                  .replace('-{YEAR}', '')
-                                  .replace('_{YEAR}', '')
-                                  .replace('{YEAR}-', '')
-                                  .replace('{YEAR}_', '')
-                                  .replace('{YEAR}', '')
-                              }
-
-                              return {
-                                ...prev,
-                                includeYearInTag: checked,
-                                customFormat: newFormat
-                              }
-                            })
-                          }}
-                        />
-                      </div>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Auto adds/removes year
-                      </p>
+                    <div>
+                      <Label className="text-sm">Description</Label>
+                      <Input
+                        value={settings.sourceSpecificFormats?.newborn?.description || ''}
+                        onChange={(e) => setSettings(prev => ({
+                          ...prev,
+                          sourceSpecificFormats: {
+                            ...prev.sourceSpecificFormats || {},
+                            newborn: { ...(prev.sourceSpecificFormats?.newborn || {}), description: e.target.value }
+                          }
+                        }))}
+                        placeholder="e.g., Format for calves born on the farm"
+                        className="text-sm"
+                      />
                     </div>
 
-                    {/* Format templates */}
-                    <div>
-                      <Label className="text-sm">Quick Templates</Label>
-                      <Select
-                        value=""
-                        onValueChange={(value) => {
-                          if (value) {
-                            setSettings(prev => ({ ...prev, customFormat: value }))
-                          }
-                        }}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Choose template" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="{PREFIX}-{NUMBER:3}">Simple: COW-001</SelectItem>
-                          <SelectItem value="{PREFIX}-{YEAR}-{NUMBER:3}">With Year: COW-2024-001</SelectItem>
-                          <SelectItem value="{PREFIX}-{MONTH:2}-{NUMBER:2}">Monthly: COW-01-01</SelectItem>
-                          {settings.customAttributes.length > 0 && (
-                            <>
-                              <SelectItem value={`{PREFIX}-{${settings.customAttributes[0].name.toUpperCase().replace(/\s+/g, '_')}:2}-{NUMBER:3}`}>
-                                With {settings.customAttributes[0].name}
-                              </SelectItem>
-                              {settings.customAttributes.length > 1 && (
-                                <SelectItem value={`{PREFIX}-{${settings.customAttributes[0].name.toUpperCase().replace(/\s+/g, '_')}:1}{${settings.customAttributes[1].name.toUpperCase().replace(/\s+/g, '_')}:1}-{NUMBER:3}`}>
-                                  Multi-Attribute
-                                </SelectItem>
-                              )}
-                            </>
-                          )}
-                        </SelectContent>
-                      </Select>
+                    {/* Quick Format Builder for Newborn */}
+                    <div className="p-3 bg-white rounded border">
+                      <div className="flex items-center justify-between mb-2">
+                        <Label className="text-sm font-medium">Quick Format Builder</Label>
+                        <div className="flex items-center space-x-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setSettings(prev => ({
+                              ...prev,
+                              sourceSpecificFormats: {
+                                ...prev.sourceSpecificFormats || {},
+                                newborn: { ...(prev.sourceSpecificFormats?.newborn || {}), format: '' }
+                              }
+                            }))}
+                            className="text-xs text-red-600 hover:text-red-700"
+                          >
+                            <X className="h-3 w-3 mr-1" />
+                            Clear
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className={`grid gap-2 ${isMobile ? 'grid-cols-2' : 'grid-cols-2 md:grid-cols-3'}`}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSettings(prev => {
+                            const currentFormat = prev.sourceSpecificFormats?.newborn?.format || '';
+                            return {
+                              ...prev,
+                              sourceSpecificFormats: {
+                                ...prev.sourceSpecificFormats || {},
+                                newborn: {
+                                  ...(prev.sourceSpecificFormats?.newborn || {}),
+                                  format: currentFormat ? currentFormat + '-{PREFIX}' : '{PREFIX}'
+                                }
+                              }
+                            }
+                          })}
+                          className={isMobile ? 'text-xs' : 'text-sm'}
+                        >
+                          + Prefix
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSettings(prev => {
+                            const currentFormat = prev.sourceSpecificFormats?.newborn?.format || '';
+                            return {
+                              ...prev,
+                              sourceSpecificFormats: {
+                                ...prev.sourceSpecificFormats || {},
+                                newborn: {
+                                  ...(prev.sourceSpecificFormats?.newborn || {}),
+                                  format: currentFormat ? currentFormat + '-{YEAR}' : '{YEAR}'
+                                }
+                              }
+                            }
+                          })}
+                          className={isMobile ? 'text-xs' : 'text-sm'}
+                        >
+                          + Year
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSettings(prev => {
+                            const currentFormat = prev.sourceSpecificFormats?.newborn?.format || '';
+                            return {
+                              ...prev,
+                              sourceSpecificFormats: {
+                                ...prev.sourceSpecificFormats || {},
+                                newborn: {
+                                  ...(prev.sourceSpecificFormats?.newborn || {}),
+                                  format: currentFormat ? currentFormat + '-{MONTH:2}' : '{MONTH:2}'
+                                }
+                              }
+                            }
+                          })}
+                          className={isMobile ? 'text-xs' : 'text-sm'}
+                        >
+                          + Month
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSettings(prev => {
+                            const currentFormat = prev.sourceSpecificFormats?.newborn?.format || '';
+                            return {
+                              ...prev,
+                              sourceSpecificFormats: {
+                                ...prev.sourceSpecificFormats || {},
+                                newborn: {
+                                  ...(prev.sourceSpecificFormats?.newborn || {}),
+                                  format: currentFormat ? currentFormat + '-{NUMBER:3}' : '{NUMBER:3}'
+                                }
+                              }
+                            }
+                          })}
+                          className={isMobile ? 'text-xs' : 'text-sm'}
+                        >
+                          + Number
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSettings(prev => {
+                            const currentFormat = prev.sourceSpecificFormats?.newborn?.format || '';
+                            return {
+                              ...prev,
+                              sourceSpecificFormats: {
+                                ...prev.sourceSpecificFormats || {},
+                                newborn: {
+                                  ...(prev.sourceSpecificFormats?.newborn || {}),
+                                  format: currentFormat ? currentFormat + '-{MOTHER_TAG}' : '{MOTHER_TAG}'
+                                }
+                              }
+                            }
+                          })}
+                          className={isMobile ? 'text-xs' : 'text-sm'}
+                        >
+                          + Mother's Tag
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-white rounded border">
+                      <p className="text-xs text-gray-600 mb-2">Preview:</p>
+                      <p className="font-mono text-sm text-green-700 bg-green-50 p-2 rounded">
+                        {generateTagPreview(
+                          settings.sourceSpecificFormats?.newborn?.prefix || 'CALF',
+                          settings.sourceSpecificFormats?.newborn?.format,
+                          settings.sourceSpecificFormats?.newborn?.startNumber || 1,
+                          settings.customAttributes
+                        )}
+                      </p>
                     </div>
                   </div>
 
-                  {/* Enhanced Preview */}
-                  <div className="p-3 bg-white rounded border">
-                    <Label className="text-xs text-gray-600 mb-2 block">Preview Examples:</Label>
-                    <div className="space-y-1">
-                      {[1, 2, 3].map(num => (
-                        <div key={num} className="font-mono text-sm text-gray-800">
-                          {generateTagPreview(
-                            settings.tagPrefix,
-                            settings.customFormat,
-                            (settings.customStartNumber || 1) + num - 1,
-                            settings.customAttributes
+                  {/* Purchased Animals Format */}
+                  <div className="p-4 bg-purple-50 border-2 border-purple-200 rounded-lg space-y-3">
+                    <div className="flex items-center space-x-2 mb-3">
+                      <Truck className="h-5 w-5 text-purple-600" />
+                      <Label className="font-semibold text-purple-900">Purchased Animals</Label>
+                    </div>
+
+                    <div>
+                      <Label className="text-sm">Prefix</Label>
+                      <Input
+                        value={settings.sourceSpecificFormats?.purchased?.prefix || 'PUR'}
+                        onChange={(e) => setSettings(prev => ({
+                          ...prev,
+                          sourceSpecificFormats: {
+                            ...prev.sourceSpecificFormats || {},
+                            purchased: { ...(prev.sourceSpecificFormats?.purchased || {}), prefix: e.target.value }
+                          }
+                        }))}
+                        placeholder="PUR"
+                        className="text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <Label className="text-sm">Format Pattern</Label>
+                      <Input
+                        value={settings.sourceSpecificFormats?.purchased?.format || ''}
+                        onChange={(e) => setSettings(prev => ({
+                          ...prev,
+                          sourceSpecificFormats: {
+                            ...prev.sourceSpecificFormats || {},
+                            purchased: { ...(prev.sourceSpecificFormats?.purchased || {}), format: e.target.value }
+                          }
+                        }))}
+                        placeholder="{PREFIX}-{BREED:2}-{GENDER}-{NUMBER:3}"
+                        className="text-sm"
+                      />
+                      <p className="text-xs text-gray-600 mt-1">Example: PUR-HO-F-001</p>
+                    </div>
+
+                    <div>
+                      <Label className="text-sm">Starting Number</Label>
+                      <Input
+                        type="number"
+                        value={settings.sourceSpecificFormats?.purchased?.startNumber || 1}
+                        onChange={(e) => setSettings(prev => ({
+                          ...prev,
+                          sourceSpecificFormats: {
+                            ...prev.sourceSpecificFormats || {},
+                            purchased: { ...(prev.sourceSpecificFormats?.purchased || {}), startNumber: parseInt(e.target.value) }
+                          }
+                        }))}
+                        min="1"
+                        className="text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <Label className="text-sm">Description</Label>
+                      <Input
+                        value={settings.sourceSpecificFormats?.purchased?.description || ''}
+                        onChange={(e) => setSettings(prev => ({
+                          ...prev,
+                          sourceSpecificFormats: {
+                            ...prev.sourceSpecificFormats || {},
+                            purchased: { ...(prev.sourceSpecificFormats?.purchased || {}), description: e.target.value }
+                          }
+                        }))}
+                        placeholder="e.g., Format for purchased animals"
+                        className="text-sm"
+                      />
+                    </div>
+
+                    {/* Quick Format Builder for Purchased */}
+                    <div className="p-3 bg-white rounded border">
+                      <div className="flex items-center justify-between mb-2">
+                        <Label className="text-sm font-medium">Quick Format Builder</Label>
+                        <div className="flex items-center space-x-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setSettings(prev => ({
+                              ...prev,
+                              sourceSpecificFormats: {
+                                ...prev.sourceSpecificFormats || {},
+                                purchased: { ...(prev.sourceSpecificFormats?.purchased || {}), format: '' }
+                              }
+                            }))}
+                            className="text-xs text-red-600 hover:text-red-700"
+                          >
+                            <X className="h-3 w-3 mr-1" />
+                            Clear
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className={`grid gap-2 ${isMobile ? 'grid-cols-2' : 'grid-cols-2 md:grid-cols-3'}`}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSettings(prev => {
+                            const currentFormat = prev.sourceSpecificFormats?.purchased?.format || '';
+                            return {
+                              ...prev,
+                              sourceSpecificFormats: {
+                                ...prev.sourceSpecificFormats || {},
+                                purchased: {
+                                  ...(prev.sourceSpecificFormats?.purchased || {}),
+                                  format: currentFormat ? currentFormat + '-{PREFIX}' : '{PREFIX}'
+                                }
+                              }
+                            }
+                          })}
+                          className={isMobile ? 'text-xs' : 'text-sm'}
+                        >
+                          + Prefix
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSettings(prev => {
+                            const currentFormat = prev.sourceSpecificFormats?.purchased?.format || '';
+                            return {
+                              ...prev,
+                              sourceSpecificFormats: {
+                                ...prev.sourceSpecificFormats || {},
+                                purchased: {
+                                  ...(prev.sourceSpecificFormats?.purchased || {}),
+                                  format: currentFormat ? currentFormat + '-{YEAR}' : '{YEAR}'
+                                }
+                              }
+                            }
+                          })}
+                          className={isMobile ? 'text-xs' : 'text-sm'}
+                        >
+                          + Year
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSettings(prev => {
+                            const currentFormat = prev.sourceSpecificFormats?.purchased?.format || '';
+                            return {
+                              ...prev,
+                              sourceSpecificFormats: {
+                                ...prev.sourceSpecificFormats || {},
+                                purchased: {
+                                  ...(prev.sourceSpecificFormats?.purchased || {}),
+                                  format: currentFormat ? currentFormat + '-{MONTH:2}' : '{MONTH:2}'
+                                }
+                              }
+                            }
+                          })}
+                          className={isMobile ? 'text-xs' : 'text-sm'}
+                        >
+                          + Month
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSettings(prev => {
+                            const currentFormat = prev.sourceSpecificFormats?.purchased?.format || '';
+                            return {
+                              ...prev,
+                              sourceSpecificFormats: {
+                                ...prev.sourceSpecificFormats || {},
+                                purchased: {
+                                  ...(prev.sourceSpecificFormats?.purchased || {}),
+                                  format: currentFormat ? currentFormat + '-{NUMBER:3}' : '{NUMBER:3}'
+                                }
+                              }
+                            }
+                          })}
+                          className={isMobile ? 'text-xs' : 'text-sm'}
+                        >
+                          + Number
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-white rounded border">
+                      <p className="text-xs text-gray-600 mb-2">Preview:</p>
+                      <p className="font-mono text-sm text-purple-700 bg-purple-50 p-2 rounded">
+                        {generateTagPreview(
+                          settings.sourceSpecificFormats?.purchased?.prefix || 'PUR',
+                          settings.sourceSpecificFormats?.purchased?.format,
+                          settings.sourceSpecificFormats?.purchased?.startNumber || 1,
+                          settings.customAttributes
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Custom Format Configuration - Full Width */}
+          {settings.tagNumbering === 'custom' && !settings.useSourceSpecificFormats && (
+            <div className={`p-4 bg-gray-50 rounded-lg space-y-3 ${isMobile ? 'text-sm' : ''}`}>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <Label className="text-sm font-medium">Custom Format Pattern</Label>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => resetCustomFormat()}
+                    className="text-xs text-gray-600 hover:text-gray-800"
+                  >
+                    <RotateCcw className="h-3 w-3 mr-1" />
+                    Reset Format
+                  </Button>
+                </div>
+                <Input
+                  placeholder="e.g., {PREFIX}-{YEAR}-{BREED_GROUP:2}-{NUMBER:3}"
+                  value={settings.customFormat || ''}
+                  onChange={(e) => setSettings(prev => ({ ...prev, customFormat: e.target.value }))}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Available placeholders: {'{PREFIX}'}, {'{YEAR}'}, {'{MONTH}'}
+                  {settings.customAttributes.length > 0 && (
+                    <span>
+                      , {settings.customAttributes.map(attr =>
+                        `{${attr.name.toUpperCase().replace(/\s+/g, '_')}:X}`
+                      ).join(', ')}
+                    </span>
+                  )}
+                </p>
+              </div>
+
+              {/* Quick Format Builder */}
+              <div className="p-3 bg-white rounded border">
+                <div className="flex items-center justify-between mb-2">
+                  <Label className="text-sm font-medium">Quick Format Builder</Label>
+                  <div className="flex items-center space-x-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => clearCustomFormat()}
+                      className="text-xs text-red-600 hover:text-red-700"
+                    >
+                      <X className="h-3 w-3 mr-1" />
+                      Clear All
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => resetCustomFormat()}
+                      className="text-xs text-blue-600 hover:text-blue-700"
+                    >
+                      <RotateCcw className="h-3 w-3 mr-1" />
+                      Reset
+                    </Button>
+                  </div>
+                </div>
+
+                <div className={`grid gap-2 ${isMobile ? 'grid-cols-2' : 'grid-cols-2 md:grid-cols-4'}`}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => appendToFormat('{PREFIX}')}
+                    className={isMobile ? 'text-xs' : ''}
+                  >
+                    + Prefix
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => appendToFormat('{YEAR}')}
+                    className={isMobile ? 'text-xs' : ''}
+                  >
+                    + Year
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => appendToFormat('{MONTH:2}')}
+                    className={isMobile ? 'text-xs' : ''}
+                  >
+                    + Month
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => appendToFormat('{NUMBER:3}')}
+                    className={isMobile ? 'text-xs' : ''}
+                  >
+                    + Number
+                  </Button>
+
+                  {/* Dynamic buttons for custom attributes */}
+                  {settings.customAttributes.slice(0, 4).map((attr, index) => (
+                    <Button
+                      key={index}
+                      variant="outline"
+                      size="sm"
+                      onClick={() => appendToFormat(`{${attr.name.toUpperCase().replace(/\s+/g, '_')}:2}`)}
+                      className="text-xs"
+                    >
+                      + {attr.name}
+                    </Button>
+                  ))}
+                </div>
+
+                <div className="mt-2 text-xs text-gray-500">
+                  Current format: <code className="bg-gray-100 px-1 rounded">
+                    {settings.customFormat || '{PREFIX}-{NUMBER:3}'}
+                  </code>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label className="text-sm">Starting Number</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={settings.customStartNumber || 1}
+                    onChange={(e) => setSettings(prev => ({ ...prev, customStartNumber: parseInt(e.target.value) }))}
+                  />
+                </div>
+
+                {/* Include Year switch remains the same */}
+                <div className="flex flex-col justify-end">
+                  <div className="flex items-center justify-between p-3 border rounded-lg bg-white">
+                    <Label className="text-sm font-medium">Include Year</Label>
+                    <Switch
+                      checked={settings.includeYearInTag || false}
+                      onCheckedChange={(checked) => {
+                        setSettings(prev => {
+                          let newFormat = prev.customFormat || '{PREFIX}-{NUMBER:3}'
+
+                          if (checked) {
+                            if (!newFormat.includes('{YEAR}')) {
+                              newFormat = newFormat.replace('{PREFIX}', '{PREFIX}-{YEAR}')
+                            }
+                          } else {
+                            newFormat = newFormat
+                              .replace('-{YEAR}', '')
+                              .replace('_{YEAR}', '')
+                              .replace('{YEAR}-', '')
+                              .replace('{YEAR}_', '')
+                              .replace('{YEAR}', '')
+                          }
+
+                          return {
+                            ...prev,
+                            includeYearInTag: checked,
+                            customFormat: newFormat
+                          }
+                        })
+                      }}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Auto adds/removes year
+                  </p>
+                </div>
+
+                {/* Format templates */}
+                <div>
+                  <Label className="text-sm">Quick Templates</Label>
+                  <Select
+                    value=""
+                    onValueChange={(value) => {
+                      if (value) {
+                        setSettings(prev => ({ ...prev, customFormat: value }))
+                      }
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose template" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="{PREFIX}-{NUMBER:3}">Simple: COW-001</SelectItem>
+                      <SelectItem value="{PREFIX}-{YEAR}-{NUMBER:3}">With Year: COW-2024-001</SelectItem>
+                      <SelectItem value="{PREFIX}-{MONTH:2}-{NUMBER:2}">Monthly: COW-01-01</SelectItem>
+                      {settings.customAttributes.length > 0 && (
+                        <>
+                          <SelectItem value={`{PREFIX}-{${settings.customAttributes[0].name.toUpperCase().replace(/\s+/g, '_')}:2}-{NUMBER:3}`}>
+                            With {settings.customAttributes[0].name}
+                          </SelectItem>
+                          {settings.customAttributes.length > 1 && (
+                            <SelectItem value={`{PREFIX}-{${settings.customAttributes[0].name.toUpperCase().replace(/\s+/g, '_')}:1}{${settings.customAttributes[1].name.toUpperCase().replace(/\s+/g, '_')}:1}-{NUMBER:3}`}>
+                              Multi-Attribute
+                            </SelectItem>
                           )}
+                        </>
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Enhanced Preview */}
+              <div className="p-3 bg-white rounded border">
+                <Label className="text-xs text-gray-600 mb-2 block">Preview Examples:</Label>
+                <div className="space-y-1">
+                  {[1, 2, 3].map(num => (
+                    <div key={num} className="font-mono text-sm text-gray-800">
+                      {generateTagPreview(
+                        settings.tagPrefix,
+                        settings.customFormat,
+                        (settings.customStartNumber || 1) + num - 1,
+                        settings.customAttributes
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Format validation and tips */}
+              <div className="text-xs text-gray-600">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <div className="font-medium mb-1">Available Placeholders:</div>
+                    <div className="space-y-1 ml-2">
+                      <div>• <code>{'{PREFIX}'}</code> → Your tag prefix</div>
+                      <div>• <code>{'{YEAR}'}</code> → 2024 | <code>{'{YEAR:2}'}</code> → 24</div>
+                      <div>• <code>{'{MONTH}'}</code> → 01-12 | <code>{'{MONTH:1}'}</code> → 1-12</div>
+                      <div>• <code>{'{NUMBER:X}'}</code> → Padded numbers</div>
+                      {settings.customAttributes.map(attr => (
+                        <div key={attr.name}>
+                          • <code>{`{${attr.name.toUpperCase().replace(/\s+/g, '_')}:X}`}</code> → {attr.values[0].substring(0, 2).toUpperCase()}...
                         </div>
                       ))}
                     </div>
                   </div>
-
-                  {/* Format validation and tips */}
-                  <div className="text-xs text-gray-600">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <div className="font-medium mb-1">Available Placeholders:</div>
-                        <div className="space-y-1 ml-2">
-                          <div>• <code>{'{PREFIX}'}</code> → Your tag prefix</div>
-                          <div>• <code>{'{YEAR}'}</code> → 2024 | <code>{'{YEAR:2}'}</code> → 24</div>
-                          <div>• <code>{'{MONTH}'}</code> → 01-12 | <code>{'{MONTH:1}'}</code> → 1-12</div>
-                          <div>• <code>{'{NUMBER:X}'}</code> → Padded numbers</div>
-                          {settings.customAttributes.map(attr => (
-                            <div key={attr.name}>
-                              • <code>{`{${attr.name.toUpperCase().replace(/\s+/g, '_')}:X}`}</code> → {attr.values[0].substring(0, 2).toUpperCase()}...
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="font-medium mb-1">Tips:</div>
-                        <div className="space-y-1 ml-2">
-                          <div>• Use :X to specify character length</div>
-                          <div>• First attribute value is used in previews</div>
-                          <div>• Keep total tag length under 20 characters</div>
-                          <div>• Use Reset button if format gets messy</div>
-                        </div>
-                      </div>
+                  <div>
+                    <div className="font-medium mb-1">Tips:</div>
+                    <div className="space-y-1 ml-2">
+                      <div>• Use :X to specify character length</div>
+                      <div>• First attribute value is used in previews</div>
+                      <div>• Keep total tag length under 20 characters</div>
+                      <div>• Use Reset button if format gets messy</div>
                     </div>
                   </div>
                 </div>
-              )}
+              </div>
+            </div>
+          )}
 
 
-              {/* Barcode Compatible Configuration */}
-              {settings.tagNumbering === 'barcode' && (
-                <div className="mt-4 p-4 bg-gray-50 rounded-lg space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label className="text-sm">Barcode Type</Label>
-                      <Select
-                        value={settings.barcodeType || 'code128'}
-                        onValueChange={(value) => {
-                          setSettings(prev => {
-                            // Auto-adjust settings based on barcode type
-                            let newSettings = { ...prev, barcodeType: value }
 
-                            switch (value) {
-                              case 'ean13':
-                                newSettings.barcodeLength = 13
-                                newSettings.includeCheckDigit = true
-                                newSettings.paddingZeros = true
-                                break
-                              case 'upc':
-                                newSettings.barcodeLength = 12
-                                newSettings.includeCheckDigit = true
-                                newSettings.paddingZeros = true
-                                break
-                              case 'code39':
-                                // Code 39 has character limitations
-                                newSettings.barcodeLength = Math.min(newSettings.barcodeLength || 8, 15)
-                                break
-                              case 'code128':
-                              default:
-                                // Most flexible, keep current settings
-                                break
-                            }
+          {/* Barcode Compatible Configuration */}
+          {settings.tagNumbering === 'barcode' && (
+            <div className="p-4 bg-gray-50 rounded-lg space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-sm">Barcode Type</Label>
+                  <Select
+                    value={settings.barcodeType || 'code128'}
+                    onValueChange={(value) => {
+                      setSettings(prev => {
+                        // Auto-adjust settings based on barcode type
+                        let newSettings = { ...prev, barcodeType: value }
 
-                            return newSettings
-                          })
-                        }}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="code128">Code 128 (Alphanumeric)</SelectItem>
-                          <SelectItem value="code39">Code 39 (Basic)</SelectItem>
-                          <SelectItem value="ean13">EAN-13 (Numeric only)</SelectItem>
-                          <SelectItem value="upc">UPC-A (Numeric only)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                        switch (value) {
+                          case 'ean13':
+                            newSettings.barcodeLength = 13
+                            newSettings.includeCheckDigit = true
+                            newSettings.paddingZeros = true
+                            break
+                          case 'upc':
+                            newSettings.barcodeLength = 12
+                            newSettings.includeCheckDigit = true
+                            newSettings.paddingZeros = true
+                            break
+                          case 'code39':
+                            // Code 39 has character limitations
+                            newSettings.barcodeLength = Math.min(newSettings.barcodeLength || 8, 15)
+                            break
+                          case 'code128':
+                          default:
+                            // Most flexible, keep current settings
+                            break
+                        }
 
-                    <div>
-                      <Label className="text-sm">Number Length</Label>
-                      <Select
-                        value={settings.barcodeLength?.toString() || '8'}
-                        onValueChange={(value) => setSettings(prev => ({ ...prev, barcodeLength: parseInt(value) }))}
-                        disabled={settings.barcodeType === 'ean13' || settings.barcodeType === 'upc'}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {settings.barcodeType === 'ean13' ? (
-                            <SelectItem value="13">13 digits (Fixed)</SelectItem>
-                          ) : settings.barcodeType === 'upc' ? (
-                            <SelectItem value="12">12 digits (Fixed)</SelectItem>
-                          ) : (
-                            <>
-                              <SelectItem value="6">6 digits</SelectItem>
-                              <SelectItem value="8">8 digits</SelectItem>
-                              <SelectItem value="10">10 digits</SelectItem>
-                              <SelectItem value="12">12 digits</SelectItem>
-                              {settings.barcodeType === 'code128' && <SelectItem value="15">15 digits</SelectItem>}
-                            </>
-                          )}
-                        </SelectContent>
-                      </Select>
-                      {(settings.barcodeType === 'ean13' || settings.barcodeType === 'upc') && (
-                        <p className="text-xs text-gray-500 mt-1">Fixed length for {settings.barcodeType.toUpperCase()}</p>
-                      )}
-                    </div>
-                  </div>
+                        return newSettings
+                      })
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="code128">Code 128 (Alphanumeric)</SelectItem>
+                      <SelectItem value="code39">Code 39 (Basic)</SelectItem>
+                      <SelectItem value="ean13">EAN-13 (Numeric only)</SelectItem>
+                      <SelectItem value="upc">UPC-A (Numeric only)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Include Check Digit Switch */}
-                    <div className="flex items-center justify-between p-3 border rounded-lg bg-white">
-                      <div className="flex flex-col">
-                        <Label className="text-sm font-medium">Include Check Digit</Label>
-                        <p className="text-xs text-gray-500">
-                          {settings.barcodeType === 'ean13' || settings.barcodeType === 'upc'
-                            ? 'Required for this barcode type'
-                            : 'Adds error detection capability'
-                          }
-                        </p>
-                      </div>
-                      <Switch
-                        checked={settings.includeCheckDigit || settings.barcodeType === 'ean13' || settings.barcodeType === 'upc'}
-                        onCheckedChange={(checked) => {
-                          // Force check digit for EAN13 and UPC
-                          if (settings.barcodeType === 'ean13' || settings.barcodeType === 'upc') return
-                          setSettings(prev => ({ ...prev, includeCheckDigit: checked }))
-                        }}
-                        disabled={settings.barcodeType === 'ean13' || settings.barcodeType === 'upc'}
-                      />
-                    </div>
-
-                    {/* Leading Zeros Switch */}
-                    <div className="flex items-center justify-between p-3 border rounded-lg bg-white">
-                      <div className="flex flex-col">
-                        <Label className="text-sm font-medium">Leading Zeros</Label>
-                        <p className="text-xs text-gray-500">
-                          {settings.barcodeType === 'ean13' || settings.barcodeType === 'upc'
-                            ? 'Required for proper scanning'
-                            : 'Pads numbers with zeros (001 vs 1)'
-                          }
-                        </p>
-                      </div>
-                      <Switch
-                        checked={settings.paddingZeros ?? true}
-                        onCheckedChange={(checked) => {
-                          // Force padding for EAN13 and UPC
-                          if (settings.barcodeType === 'ean13' || settings.barcodeType === 'upc') return
-                          setSettings(prev => ({ ...prev, paddingZeros: checked }))
-                        }}
-                        disabled={settings.barcodeType === 'ean13' || settings.barcodeType === 'upc'}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Enhanced Barcode Preview with validation */}
-                  <div className="p-3 bg-white rounded border">
-                    <Label className="text-xs text-gray-600 mb-2 block">Barcode Preview Examples:</Label>
-                    <div className="space-y-2">
-                      {[1, 2, 3].map(num => {
-                        const preview = generateBarcodePreview(
-                          settings.tagPrefix,
-                          settings.barcodeType,
-                          settings.barcodeLength,
-                          settings.paddingZeros,
-                          settings.includeCheckDigit,
-                          num
-                        )
-                        return (
-                          <div key={num} className="flex items-center justify-between">
-                            <span className="font-mono text-sm text-gray-800">{preview.display}</span>
-                            {preview.isValid ? (
-                              <span className="text-xs text-green-600">✓ Valid</span>
-                            ) : (
-                              <span className="text-xs text-red-600">⚠ Check format</span>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Dynamic Barcode Guidance */}
-                  <div className="text-xs text-gray-600 space-y-2">
-                    <div className="font-medium">Barcode Guidelines for {settings.barcodeType?.toUpperCase()}:</div>
-                    <div className="ml-2 space-y-1">
-                      {settings.barcodeType === 'code128' && (
+                <div>
+                  <Label className="text-sm">Number Length</Label>
+                  <Select
+                    value={settings.barcodeLength?.toString() || '8'}
+                    onValueChange={(value) => setSettings(prev => ({ ...prev, barcodeLength: parseInt(value) }))}
+                    disabled={settings.barcodeType === 'ean13' || settings.barcodeType === 'upc'}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {settings.barcodeType === 'ean13' ? (
+                        <SelectItem value="13">13 digits (Fixed)</SelectItem>
+                      ) : settings.barcodeType === 'upc' ? (
+                        <SelectItem value="12">12 digits (Fixed)</SelectItem>
+                      ) : (
                         <>
-                          <div>• Most versatile: supports letters, numbers, and symbols</div>
-                          <div>• Variable length: 1-48 characters recommended</div>
-                          <div>• Best for: complex identification with alphanumeric data</div>
+                          <SelectItem value="6">6 digits</SelectItem>
+                          <SelectItem value="8">8 digits</SelectItem>
+                          <SelectItem value="10">10 digits</SelectItem>
+                          <SelectItem value="12">12 digits</SelectItem>
+                          {settings.barcodeType === 'code128' && <SelectItem value="15">15 digits</SelectItem>}
                         </>
                       )}
-                      {settings.barcodeType === 'code39' && (
-                        <>
-                          <div>• Basic format: supports A-Z, 0-9, and limited symbols</div>
-                          <div>• Variable length: up to 43 characters</div>
-                          <div>• Best for: simple numeric or basic alphanumeric codes</div>
-                        </>
-                      )}
-                      {settings.barcodeType === 'ean13' && (
-                        <>
-                          <div>• International retail standard: exactly 13 digits</div>
-                          <div>• First 3 digits: country/manufacturer code</div>
-                          <div>• Last digit: automatically calculated check digit</div>
-                          <div>• Best for: retail products and inventory</div>
-                        </>
-                      )}
-                      {settings.barcodeType === 'upc' && (
-                        <>
-                          <div>• North American retail standard: exactly 12 digits</div>
-                          <div>• First digit: number system (usually 0-9)</div>
-                          <div>• Last digit: automatically calculated check digit</div>
-                          <div>• Best for: US/Canada retail operations</div>
-                        </>
-                      )}
-                      <div>• Test scan sample tags before bulk printing</div>
-                      <div>• Ensure your scanner supports {settings.barcodeType?.toUpperCase()}</div>
-                    </div>
-                  </div>
-
-                  {/* Validation warnings */}
-                  {getValidationWarnings(settings).length > 0 && (
-                    <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                      <div className="flex items-start space-x-2">
-                        <AlertTriangle className="h-4 w-4 text-yellow-600 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <div className="text-sm font-medium text-yellow-800">Configuration Warnings:</div>
-                          <ul className="text-xs text-yellow-700 mt-1 space-y-1">
-                            {getValidationWarnings(settings).map((warning, index) => (
-                              <li key={index}>• {warning}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
-                    </div>
+                    </SelectContent>
+                  </Select>
+                  {(settings.barcodeType === 'ean13' || settings.barcodeType === 'upc') && (
+                    <p className="text-xs text-gray-500 mt-1">Fixed length for {settings.barcodeType.toUpperCase()}</p>
                   )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Include Check Digit Switch */}
+                <div className="flex items-center justify-between p-3 border rounded-lg bg-white">
+                  <div className="flex flex-col">
+                    <Label className="text-sm font-medium">Include Check Digit</Label>
+                    <p className="text-xs text-gray-500">
+                      {settings.barcodeType === 'ean13' || settings.barcodeType === 'upc'
+                        ? 'Required for this barcode type'
+                        : 'Adds error detection capability'
+                      }
+                    </p>
+                  </div>
+                  <Switch
+                    checked={settings.includeCheckDigit || settings.barcodeType === 'ean13' || settings.barcodeType === 'upc'}
+                    onCheckedChange={(checked) => {
+                      // Force check digit for EAN13 and UPC
+                      if (settings.barcodeType === 'ean13' || settings.barcodeType === 'upc') return
+                      setSettings(prev => ({ ...prev, includeCheckDigit: checked }))
+                    }}
+                    disabled={settings.barcodeType === 'ean13' || settings.barcodeType === 'upc'}
+                  />
+                </div>
+
+                {/* Leading Zeros Switch */}
+                <div className="flex items-center justify-between p-3 border rounded-lg bg-white">
+                  <div className="flex flex-col">
+                    <Label className="text-sm font-medium">Leading Zeros</Label>
+                    <p className="text-xs text-gray-500">
+                      {settings.barcodeType === 'ean13' || settings.barcodeType === 'upc'
+                        ? 'Required for proper scanning'
+                        : 'Pads numbers with zeros (001 vs 1)'
+                      }
+                    </p>
+                  </div>
+                  <Switch
+                    checked={settings.paddingZeros ?? true}
+                    onCheckedChange={(checked) => {
+                      // Force padding for EAN13 and UPC
+                      if (settings.barcodeType === 'ean13' || settings.barcodeType === 'upc') return
+                      setSettings(prev => ({ ...prev, paddingZeros: checked }))
+                    }}
+                    disabled={settings.barcodeType === 'ean13' || settings.barcodeType === 'upc'}
+                  />
+                </div>
+              </div>
+
+              {/* Enhanced Barcode Preview with validation */}
+              <div className="p-3 bg-white rounded border">
+                <Label className="text-xs text-gray-600 mb-2 block">Barcode Preview Examples:</Label>
+                <div className="space-y-2">
+                  {[1, 2, 3].map(num => {
+                    const preview = generateBarcodePreview(
+                      settings.tagPrefix,
+                      settings.barcodeType,
+                      settings.barcodeLength,
+                      settings.paddingZeros,
+                      settings.includeCheckDigit,
+                      num
+                    )
+                    return (
+                      <div key={num} className="flex items-center justify-between">
+                        <span className="font-mono text-sm text-gray-800">{preview.display}</span>
+                        {preview.isValid ? (
+                          <span className="text-xs text-green-600">✓ Valid</span>
+                        ) : (
+                          <span className="text-xs text-red-600">⚠ Check format</span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Dynamic Barcode Guidance */}
+              <div className="text-xs text-gray-600 space-y-2">
+                <div className="font-medium">Barcode Guidelines for {settings.barcodeType?.toUpperCase()}:</div>
+                <div className="ml-2 space-y-1">
+                  {settings.barcodeType === 'code128' && (
+                    <>
+                      <div>• Most versatile: supports letters, numbers, and symbols</div>
+                      <div>• Variable length: 1-48 characters recommended</div>
+                      <div>• Best for: complex identification with alphanumeric data</div>
+                    </>
+                  )}
+                  {settings.barcodeType === 'code39' && (
+                    <>
+                      <div>• Basic format: supports A-Z, 0-9, and limited symbols</div>
+                      <div>• Variable length: up to 43 characters</div>
+                      <div>• Best for: simple numeric or basic alphanumeric codes</div>
+                    </>
+                  )}
+                  {settings.barcodeType === 'ean13' && (
+                    <>
+                      <div>• International retail standard: exactly 13 digits</div>
+                      <div>• First 3 digits: country/manufacturer code</div>
+                      <div>• Last digit: automatically calculated check digit</div>
+                      <div>• Best for: retail products and inventory</div>
+                    </>
+                  )}
+                  {settings.barcodeType === 'upc' && (
+                    <>
+                      <div>• North American retail standard: exactly 12 digits</div>
+                      <div>• First digit: number system (usually 0-9)</div>
+                      <div>• Last digit: automatically calculated check digit</div>
+                      <div>• Best for: US/Canada retail operations</div>
+                    </>
+                  )}
+                  <div>• Test scan sample tags before bulk printing</div>
+                  <div>• Ensure your scanner supports {settings.barcodeType?.toUpperCase()}</div>
+                </div>
+              </div>
+
+              {/* Validation warnings */}
+              {getValidationWarnings(settings).length > 0 && (
+                <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <div className="flex items-start space-x-2">
+                    <AlertTriangle className="h-4 w-4 text-yellow-600 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <div className="text-sm font-medium text-yellow-800">Configuration Warnings:</div>
+                      <ul className="text-xs text-yellow-700 mt-1 space-y-1">
+                        {getValidationWarnings(settings).map((warning, index) => (
+                          <li key={index}>• {warning}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
-          </div>
+          )}
 
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
@@ -1438,173 +2137,71 @@ const resetUnsavedChanges = () => {
           </div>
         </CardContent>
       </Card>
+      )}
 
-      {/* Custom Attributes */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Custom Attributes</CardTitle>
-          <CardDescription>
-            Define custom categories that can be used in tag formats and animal registration
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-
-          {/* Information Banner */}
-          <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <div className="flex items-start space-x-2">
-              <Info className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
-              <div className="text-sm text-blue-700">
-                <div className="font-medium mb-1">Custom Attributes Usage:</div>
-                <ul className="space-y-1 ml-2">
-                  <li>• Used in animal registration forms for data collection</li>
-                  <li>• Can be included in custom tag formats (e.g., {`{BREED:2}`} for breed codes)</li>
-                  <li>• Help organize and filter your herd effectively</li>
-                  <li>• First value in each attribute becomes the default option</li>
+      {/* Coming Soon - Structured Tagging */}
+      {selectedMethod === 'structured' && (
+        <Card className="border-blue-200 bg-blue-50">
+          <CardHeader>
+            <CardTitle className="text-blue-900">Semi-Structured Tagging</CardTitle>
+            <CardDescription className="text-blue-700">Balanced approach with some automation</CardDescription>
+          </CardHeader>
+          <CardContent className="py-12 text-center">
+            <div className="flex flex-col items-center justify-center space-y-4">
+              <div className="w-16 h-16 bg-blue-200 rounded-full flex items-center justify-center">
+                <QrCode className="h-8 w-8 text-blue-600" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-xl font-semibold text-blue-900">Coming Soon</h3>
+                <p className="text-blue-700 max-w-md">
+                  Advanced structured tagging features with hierarchical organization, batch operations, and QR code integration will be available shortly.
+                </p>
+              </div>
+              <div className="mt-6 p-4 bg-blue-100 rounded-lg max-w-md">
+                <p className="text-sm text-blue-800 font-medium mb-2">Expected Features:</p>
+                <ul className="text-sm text-blue-700 space-y-1">
+                  <li>✓ Hierarchical tag organization</li>
+                  <li>✓ Batch tagging operations</li>
+                  <li>✓ QR code generation</li>
+                  <li>✓ Smart alert configuration</li>
                 </ul>
               </div>
             </div>
-          </div>
+          </CardContent>
+        </Card>
+      )}
 
-          {/* Existing Attributes */}
-          <div className="space-y-4">
-            {settings.customAttributes.map((attr, index) => (
-              <div key={index} className="p-4 border rounded-lg bg-white">
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <h4 className="font-medium text-gray-900">{attr.name}</h4>
-                    <p className="text-xs text-gray-500">
-                      Tag placeholder: {`{${attr.name.toUpperCase().replace(/\s+/g, '_')}:X}`} (X = number of characters)
-                    </p>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        // Copy tag placeholder to clipboard
-                        const placeholder = `{${attr.name.toUpperCase().replace(/\s+/g, '_')}:2}`
-                        navigator.clipboard.writeText(placeholder)
-                        alert(`Copied: ${placeholder}`)
-                      }}
-                      className="text-xs"
-                    >
-                      Copy Tag
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => removeCustomAttribute(index)}
-                      className="text-red-600 hover:text-red-700"
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex flex-wrap gap-2">
-                    {attr.values.map((value, vIndex) => (
-                      <div key={vIndex} className="flex items-center space-x-1">
-                        <Badge variant={vIndex === 0 ? "default" : "secondary"}>
-                          {value}
-                        </Badge>
-                        {vIndex === 0 && (
-                          <span className="text-xs text-blue-600">(Default)</span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Show example tag usage */}
-                  <div className="text-xs text-gray-500 mt-2 p-2 bg-gray-50 rounded">
-                    <span className="font-medium">Example: </span>
-                    Using {`{${attr.name.toUpperCase().replace(/\s+/g, '_')}:2}`} with "{attr.values[0]}" would generate:
-                    <code className="ml-1 px-1 bg-gray-200 rounded">
-                      {attr.values[0].substring(0, 2).toUpperCase()}
-                    </code>
-                  </div>
-                </div>
+      {/* Coming Soon - Automated/Tech-Integrated */}
+      {selectedMethod === 'automated' && (
+        <Card className="border-purple-200 bg-purple-50">
+          <CardHeader>
+            <CardTitle className="text-purple-900">Automated/Tech-Integrated Tagging</CardTitle>
+            <CardDescription className="text-purple-700">Advanced automation for large operations</CardDescription>
+          </CardHeader>
+          <CardContent className="py-12 text-center">
+            <div className="flex flex-col items-center justify-center space-y-4">
+              <div className="w-16 h-16 bg-purple-200 rounded-full flex items-center justify-center">
+                <Wifi className="h-8 w-8 text-purple-600" />
               </div>
-            ))}
-          </div>
-
-          {/* Add New Attribute Form */}
-          <div className="p-4 border-2 border-dashed border-gray-300 rounded-lg">
-            <div className="space-y-4">
-              <div>
-                <Label className="text-sm font-medium">Attribute Name</Label>
-                <Input
-                  placeholder="e.g., Breed Group, Location, Source Farm"
-                  value={newAttribute.name}
-                  onChange={(e) => setNewAttribute(prev => ({ ...prev, name: e.target.value }))}
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Will create tag placeholder: {`{${newAttribute.name.toUpperCase().replace(/\s+/g, '_')}:X}`}
+              <div className="space-y-2">
+                <h3 className="text-xl font-semibold text-purple-900">Coming Soon</h3>
+                <p className="text-purple-700 max-w-md">
+                  Enterprise-grade automated tagging with RFID, NFC, GPS, and biometric identification will be available shortly.
                 </p>
               </div>
-
-              <div>
-                <Label className="text-sm font-medium">Attribute Values</Label>
-                <Input
-                  placeholder="Holstein-Friesian, Jersey, Ayrshire, Guernsey, Cross (first value = default)"
-                  value={newAttribute.values}
-                  onChange={(e) => setNewAttribute(prev => ({ ...prev, values: e.target.value }))}
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Comma-separated values. First value will be the default selection.
-                </p>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <Button
-                  onClick={addCustomAttribute}
-                  disabled={!newAttribute.name || !newAttribute.values}
-                  size="sm"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Attribute
-                </Button>
-
-                {newAttribute.name && newAttribute.values && (
-                  <div className="text-xs text-gray-500">
-                    Preview: {newAttribute.values.split(',').map(v => v.trim()).filter(v => v).slice(0, 3).join(', ')}
-                    {newAttribute.values.split(',').length > 3 && '...'}
-                  </div>
-                )}
+              <div className="mt-6 p-4 bg-purple-100 rounded-lg max-w-md">
+                <p className="text-sm text-purple-800 font-medium mb-2">Expected Features:</p>
+                <ul className="text-sm text-purple-700 space-y-1">
+                  <li>✓ RFID integration</li>
+                  <li>✓ NFC support</li>
+                  <li>✓ GPS tracking</li>
+                  <li>✓ Biometric identification</li>
+                </ul>
               </div>
             </div>
-          </div>
-
-          {/* Recommended Attributes */}
-          <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-            <div className="flex items-start space-x-2">
-              <div className="w-4 h-4 bg-green-600 rounded-full mt-0.5 flex-shrink-0"></div>
-              <div>
-                <div className="text-sm font-medium text-green-800 mb-2">
-                  Recommended Attributes for Dairy Farms:
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-green-700">
-                  <div>
-                    <strong>Breed Group:</strong> Holstein-Friesian, Jersey, Ayrshire, Guernsey, Cross
-                  </div>
-                  <div>
-                    <strong>Production Stage:</strong> Calf, Heifer, Lactating, Dry
-                  </div>
-                  <div>
-                    <strong>Location:</strong> Barn A, Barn B, Pasture 1, Pasture 2
-                  </div>
-                  <div>
-                    <strong>Source Farm:</strong> Born Here, Smith Farm, Auction, Other
-                  </div>
-                </div>
-                <p className="text-xs text-green-600 mt-2">
-                  These attributes work well with custom tag formats and provide good herd organization.
-                </p>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Structured Tagging Features */}
       {(selectedMethod === 'structured' || selectedMethod === 'automated') && (
@@ -1777,32 +2374,6 @@ const resetUnsavedChanges = () => {
         </Card>
       )}
 
-      {/* Smart Alerts Configuration */}
-      {settings.enableSmartAlerts && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Smart Alert Configuration</CardTitle>
-            <CardDescription>Configure automatic notifications based on animal tags</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {Object.entries(settings.smartAlerts).map(([key, value]) => (
-                <div key={key} className="flex items-center justify-between">
-                  <Label className="capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</Label>
-                  <Switch
-                    checked={value}
-                    onCheckedChange={(checked) => setSettings(prev => ({
-                      ...prev,
-                      smartAlerts: { ...prev.smartAlerts, [key]: checked }
-                    }))}
-                  />
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {/* Action Buttons */}
       <div className={`pt-6 border-t mb-8 ${isMobile ? 'space-y-3' : 'space-y-4'}`}>
         <div className={`flex ${isMobile ? 'flex-col space-y-2' : 'items-center justify-between'}`}>
@@ -1843,6 +2414,121 @@ const resetUnsavedChanges = () => {
           </div>
         </div>
       </div>
+
+      {/* Unsaved Changes Confirmation Dialog */}
+      {confirmUnsavedDialog.show && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="p-6 space-y-4">
+              <div className="flex items-start space-x-3">
+                <div className="h-10 w-10 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <AlertTriangle className="h-6 w-6 text-amber-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Unsaved Changes</h2>
+                  <p className="text-sm text-gray-600 mt-1">You have unsaved changes to your animal tagging settings. If you leave now, your changes will be lost.</p>
+                </div>
+              </div>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <p className="text-sm text-amber-900">Are you sure you want to leave without saving?</p>
+              </div>
+            </div>
+            <div className="flex gap-3 p-6 border-t bg-gray-50 rounded-b-lg">
+              <button
+                onClick={handleUnsavedCancel}
+                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Keep Editing
+              </button>
+              <button
+                onClick={handleUnsavedConfirm}
+                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+              >
+                Leave Without Saving
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset to Defaults Confirmation Dialog - First Step */}
+      {confirmResetDialog.show && confirmResetDialog.step === 'first' && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="p-6 space-y-4">
+              <div className="flex items-start space-x-3">
+                <div className="h-10 w-10 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <AlertTriangle className="h-6 w-6 text-red-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Reset to Defaults?</h2>
+                  <p className="text-sm text-gray-600 mt-1\">This will permanently reset ALL your animal tagging configuration.</p>
+                </div>
+              </div>
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 space-y-2">
+                <p className="text-sm font-medium text-red-900">The following will be reset:</p>
+                <ul className="text-sm text-red-800 space-y-1 list-disc list-inside">
+                  <li>Tag prefix to "COW"</li>
+                  <li>Numbering system to "Sequential"</li>
+                  <li>Custom attributes to defaults</li>
+                  <li>Advanced features disabled</li>
+                  <li>Color coding to standard colors</li>
+                </ul>
+              </div>
+            </div>
+            <div className="flex gap-3 p-6 border-t bg-gray-50 rounded-b-lg">
+              <button
+                onClick={handleResetCancel}
+                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleResetFirstConfirm}
+                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset to Defaults Confirmation Dialog - Second Step */}
+      {confirmResetDialog.show && confirmResetDialog.step === 'second' && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="p-6 space-y-4">
+              <div className="flex items-start space-x-3">
+                <div className="h-10 w-10 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <AlertTriangle className="h-6 w-6 text-red-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Final Confirmation</h2>
+                  <p className="text-sm text-gray-600 mt-1">You are about to lose all your custom tagging settings. This action cannot be undone.</p>
+                </div>
+              </div>
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <p className="text-sm font-semibold text-red-900">Click "Reset Everything" only if you are absolutely certain.</p>
+              </div>
+            </div>
+            <div className="flex gap-3 p-6 border-t bg-gray-50 rounded-b-lg">
+              <button
+                onClick={handleResetCancel}
+                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleResetSecondConfirm}
+                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+              >
+                Reset Everything
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

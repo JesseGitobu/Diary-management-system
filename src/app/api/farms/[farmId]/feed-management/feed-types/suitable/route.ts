@@ -19,13 +19,12 @@ interface FeedType {
   name: string;
   description: string | null;
   typical_cost_per_kg: number | null;
-  nutritional_info: any;
-  supplier: string | null;
+  nutritional_value: any;
   category_id: string | null;
   animal_categories: string[];
-  preferred_measurement_unit: string | null;
+  unit_of_measure: string | null;
   low_stock_threshold: number | null;
-  feed_type_categories: { id: string; name: string; color: string; description: string | null; } | null;
+  feed_type_categories: { id: string; category_name: string; color: string; description: string | null; } | null;
   feed_inventory?: FeedInventory[];
 }
 
@@ -49,15 +48,14 @@ export async function GET(
         name,
         description,
         typical_cost_per_kg,
-        nutritional_info,
-        supplier,
+        nutritional_value,
         category_id,
         animal_categories,
-        preferred_measurement_unit,
+        unit_of_measure,
         low_stock_threshold,
         feed_type_categories (
           id,
-          name,
+          category_name,
           color,
           description
         )
