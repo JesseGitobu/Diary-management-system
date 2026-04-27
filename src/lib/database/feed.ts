@@ -12,7 +12,7 @@ type FeedConsumptionInsert = Database['public']['Tables']['feed_consumption_reco
 /**
  * Feed Management
  * 
- * Supports two feed sources:
+ * Supports three feed sources:
  * 1. PURCHASED FEEDS (source='purchased')
  *    - Stored in feed_purchases table
  *    - Requires: feed_type_id, quantity_kg, source, purchase_date, supplier (optional)
@@ -24,6 +24,12 @@ type FeedConsumptionInsert = Database['public']['Tables']['feed_consumption_reco
  *    - Fields: cost_per_kg, batch_number, notes, expiry_date, storage_location_id
  *    - Optional: source_type (crop_harvest|animal_production|fermentation|processing|other)
  *    - Optional: yield_source (e.g., "Field A", "Cow #5", "Tank 1")
+ * 
+ * 3. FORMULATED FEEDS (source='formulate')
+ *    - Stored in feed_purchases table
+ *    - Created from ingredient formulations using feed_inventory_transactions
+ *    - Tracks ingredient breakdowns via feed_inventory_transactions with transaction_type='formulation_use'
+ *    - Records output via 'restock_formulation' transaction type
  */
 
 // Feed Types Management
@@ -116,7 +122,7 @@ export async function addFeedInventory(farmId: string, data: any) {
   const {
     feed_type_id, 
     quantity_kg, 
-    source = 'purchased', // 'purchased', 'produced', or 'formulated'
+    source = 'purchased', // 'purchased', 'produced', 'formulate'
     cost_per_kg, 
     purchase_date, 
     expiry_date,
@@ -132,17 +138,19 @@ export async function addFeedInventory(farmId: string, data: any) {
 
   // 1. Determine Logic based on Source
   // ─────────────────────────────────────────────────────────
-  const isPurchased = source === 'purchased';
-  
-  // Mapping for the Database Table "feed_inventory" (which only allows 'purchased' or 'produced')
-  const dbInventorySource = isPurchased ? 'purchased' : 'produced';
+  const isPurchased = source === 'purchased' || source === 'formulate';
+
+  // Mapping for the Database Table "feed_inventory"
+  // Note: source='formulate' is stored as-is (not mapped)
+  const dbInventorySource = source === 'formulate' ? 'formulate' : (isPurchased ? 'purchased' : 'produced');
 
   // Determine the Transaction Type for the Ledger
   let transactionType: TransactionType = 'restock_purchase';
   if (source === 'produced') transactionType = 'restock_harvest';
-  if (source === 'formulated') transactionType = 'restock_formulation';
+  if (source === 'formulate') transactionType = 'restock_formulation';
 
   // Determine which source table to use
+  // Formulated feeds use feed_purchases just like regular purchases
   const tableName = isPurchased ? 'feed_purchases' : 'feed_harvests';
   const dateField = isPurchased ? 'purchase_date' : 'harvest_date';
 
@@ -178,7 +186,7 @@ export async function addFeedInventory(farmId: string, data: any) {
       .insert({
         farm_id: farmId,
         feed_type_id: feed_type_id,
-        source: dbInventorySource, // Uses mapped 'produced' if source was 'formulated'
+        source: dbInventorySource, // 'purchased', 'formulate', or 'produced'
         quantity_kg: 0,
         minimum_threshold: feedTypeData?.low_stock_threshold ?? null,
         storage_location_id: storage_location_id ?? null,
@@ -208,7 +216,7 @@ export async function addFeedInventory(farmId: string, data: any) {
     recordData.supplier_id = supplier_id ?? null;
     recordData.supplier = supplier ?? null;
   } else {
-    recordData.source_type = source_type ?? (source === 'formulated' ? 'processing' : null);
+    recordData.source_type = source_type ?? (source === 'formulate' ? 'processing' : null);
     recordData.yield_source = yield_source ?? null;
   }
 
@@ -652,6 +660,10 @@ export async function getFeedInventory(farmId: string) {
     return []
   }
 
+  const inventorySources = inventoryData.map((i: any) => ({ feedTypeId: i.feed_type_id, source: i.source }));
+  console.log('[FeedInventory] DEBUG: inventoryData items sources:', inventorySources);
+  console.log('[FeedInventory] DEBUG: inventoryData sources that are "produced":', inventorySources.filter(s => s.source === 'produced'));
+
   // Get the most recent purchase/harvest for each feed type (check both tables)
   const feedTypeIds = inventoryData.map(item => item.feed_type_id)
 
@@ -694,7 +706,9 @@ export async function getFeedInventory(farmId: string) {
       .order('harvest_date', { ascending: false })
   ])
 
-
+  console.log('[FeedInventory] DEBUG: purchasesData count:', purchasesData?.length);
+  console.log('[FeedInventory] DEBUG: harvestsData count:', harvestsData?.length);
+  console.log('[FeedInventory] DEBUG: harvestsError:', harvestsError);
 
   if (purchasesError) {
     console.error('Error fetching purchase data:', purchasesError)
@@ -787,15 +801,19 @@ export async function getFeedInventory(farmId: string) {
     }
   })
 
-  // ── Fetch formulation ingredient breakdown for 'produced' harvests ───────
-  const producedHarvestIds = [...latestPurchases.values()]
-    .filter((p: any) => p._source === 'harvest')
+  // ── Fetch formulation ingredient breakdown for formulated feeds ──────────
+  const formulatedFeedTypeIds = inventoryData
+    .filter((i: any) => i.source === 'formulate' || i.source === 'formulated')
+    .map((i: any) => i.feed_type_id)
+
+  const formulatedPurchaseIds = [...latestPurchases.values()]
+    .filter((p: any) => p._source === 'purchase' && formulatedFeedTypeIds.includes(p.feed_type_id))
     .map((p: any) => p.id)
 
   const formulationIngredientsMap = new Map<string, any[]>()
 
-  if (producedHarvestIds.length > 0) {
-    const { data: txRows } = await (supabase
+  if (formulatedPurchaseIds.length > 0) {
+    const { data: txRows, error: txError } = await (supabase
       .from('feed_inventory_transactions') as any)
       .select(`
         reference_id,
@@ -809,12 +827,16 @@ export async function getFeedInventory(farmId: string) {
       `)
       .eq('farm_id', farmId)
       .eq('transaction_type', 'formulation_use')
-      .eq('reference_type', 'feed_harvest')
-      .in('reference_id', producedHarvestIds)
+      .eq('reference_type', 'feed_formulation')
+      .in('reference_id', formulatedPurchaseIds)
 
-    if (txRows) {
+    if (txError) {
+      console.error('[FeedInventory] Error fetching formulation ingredient transactions:', txError);
+    }
+
+    if (txRows && Array.isArray(txRows)) {
       txRows.forEach((tx: any) => {
-        if (!tx.reference_id) return
+        if (!tx.reference_id) return;
         if (!formulationIngredientsMap.has(tx.reference_id)) {
           formulationIngredientsMap.set(tx.reference_id, [])
         }
@@ -835,8 +857,11 @@ export async function getFeedInventory(farmId: string) {
   const processedData = inventoryData.map(item => {
     const latestPurchase = latestPurchases.get(item.feed_type_id)
     const nutrition = latestPurchase ? nutritionalMap.get(latestPurchase.id) : null
-    const formulationIngredients = latestPurchase?._source === 'harvest'
-      ? (formulationIngredientsMap.get(latestPurchase.id) ?? null)
+    const isFormulated = item.source === 'formulate' || item.source === 'formulated'
+    const formulationIngredients = (
+      latestPurchase?._source === 'harvest' ||
+      (latestPurchase?._source === 'purchase' && isFormulated)
+    ) ? (formulationIngredientsMap.get(latestPurchase.id) ?? null)
       : null
 
     return {

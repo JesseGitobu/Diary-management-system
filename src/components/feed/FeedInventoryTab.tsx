@@ -208,11 +208,14 @@ export function FeedInventoryTab({
       // Current stock level from inventory
       const currentStock = item.quantity_kg || 0
 
+      // Reconstruct original stock from current + consumed (same logic as FeedOverviewTab)
+      const originalStock = currentStock + totalConsumed
+
       // Calculate consumption metrics
       const consumedQuantity = totalConsumed
       const remainingQuantity = currentStock
-      const consumptionPercentage = consumedQuantity > 0 ? (consumedQuantity / (consumedQuantity + currentStock)) * 100 : 0
-      const remainingPercentage = currentStock > 0 ? 100 : 0
+      const consumptionPercentage = originalStock > 0 ? (totalConsumed / originalStock) * 100 : 0
+      const remainingPercentage = originalStock > 0 ? (currentStock / originalStock) * 100 : 0
 
       // Check if this inventory needs to be updated based on consumption
       const needsQuantityUpdate = false // We'll handle this differently now
@@ -223,6 +226,7 @@ export function FeedInventoryTab({
         remainingQuantity: currentStock,
         consumptionPercentage,
         remainingPercentage,
+        originalStock,
         needsQuantityUpdate,
         consumptionCount: itemConsumption.length,
         // Add purchase information
@@ -714,7 +718,7 @@ export function FeedInventoryTab({
       <div className="space-y-2">
         {/* Main quantity display */}
         <div className="flex items-center space-x-4">
-          {remainingPreferred !== null && unitDisplay && (
+          {/* {remainingPreferred !== null && unitDisplay && (
             <div className="text-sm">
               <span className="font-bold text-blue-700 text-lg">
                 {remainingPreferred.toFixed(1)} {unitDisplay.symbol}
@@ -723,7 +727,15 @@ export function FeedInventoryTab({
                 remaining
               </span>
             </div>
-          )}
+          )} */}
+          <div className="text-sm">
+              <span className="font-semibold text-gray-700 text-base">
+                {item.initial_quantity_kg.toFixed(1)} kg
+              </span>
+              <span className="text-gray-500 text-xs ml-1">
+                initially stocked
+              </span>
+            </div>
           <div className="text-sm">
             <span className="font-bold text-lg">
               {(item.remainingQuantity ?? item.quantity_kg ?? 0).toFixed(1)} kg
@@ -733,6 +745,31 @@ export function FeedInventoryTab({
             </span>
           </div>
         </div>
+        
+
+        {/* Initial stock display */}
+        {/* {item.initial_quantity_kg && item.initial_quantity_kg > 0 && (
+          <div className="flex items-center space-x-4 pt-2 border-t border-gray-200">
+            {initialPreferred !== null && unitDisplay && (
+              <div className="text-sm">
+                <span className="font-semibold text-gray-700 text-base">
+                  {initialPreferred.toFixed(1)} {unitDisplay.symbol}
+                </span>
+                <span className="text-gray-500 text-xs ml-1">
+                  initially stocked
+                </span>
+              </div>
+            )}
+            <div className="text-sm">
+              <span className="font-semibold text-gray-700 text-base">
+                {item.initial_quantity_kg.toFixed(1)} kg
+              </span>
+              <span className="text-gray-500 text-xs ml-1">
+                initially stocked
+              </span>
+            </div>
+          </div>
+        )} */}
 
         {/* Stock level indicators */}
         <div className="space-y-1">
@@ -767,13 +804,22 @@ export function FeedInventoryTab({
             const hasCapacity = !!capacityRef && capacityRef > 0
             const percentage = hasCapacity ? (item.remainingQuantity / capacityRef) * 100 : 0
             const width = Math.min(percentage, 100)
+            
+            // Determine color based on percentage and low stock threshold
+            const lowStockThreshold = item.minimum_threshold || item.feed_types?.low_stock_threshold || 0
+            const thresholdPercentage = lowStockThreshold > 0 ? (lowStockThreshold / capacityRef) * 100 : 0
+            
+            let barColor = 'bg-green-500' // Default: full
+            if (percentage <= thresholdPercentage) {
+              barColor = 'bg-red-500' // Critical: at or below threshold
+            } else if (percentage <= 50) {
+              barColor = 'bg-amber-500' // Warning: between threshold and halfway
+            }
+            
             return hasCapacity ? (
               <div className="w-full bg-gray-200 rounded-full h-2">
                 <div
-                  className={`h-2 rounded-full transition-all ${percentage >= 80 ? 'bg-red-500' :
-                    percentage >= 50 ? 'bg-orange-500' :
-                      'bg-green-500'
-                    }`}
+                  className={`h-2 rounded-full transition-all ${barColor}`}
                   style={{ width: `${width}%` }}
                 />
               </div>
@@ -811,9 +857,26 @@ export function FeedInventoryTab({
 
   // ── Formulation ingredient breakdown (collapsible) ───────────────────────
   const FormulationIngredients = ({ item }: { item: any }) => {
+
+    // Debug logs
+    console.log('[FormulationIngredients] === Full Item Data ===', item);
+    console.log('[FormulationIngredients] item.source:', item.source);
+    console.log('[FormulationIngredients] item.feed_type_id:', item.feed_type_id);
+    console.log('[FormulationIngredients] item.latest_purchase:', item.latest_purchase);
+    console.log('[FormulationIngredients] item.latest_purchase?.id:', item.latest_purchase?.id);
+    console.log('[FormulationIngredients] item.latest_purchase?._source:', item.latest_purchase?._source);
+    
     const [open, setOpen] = useState(false)
     const ingredients: any[] = item.latest_purchase?.formulation_ingredients ?? []
-    if (ingredients.length === 0) return null
+    
+    console.log('[FormulationIngredients] formulation_ingredients array:', ingredients);
+    console.log('[FormulationIngredients] ingredients.length:', ingredients.length);
+    console.log('[FormulationIngredients] ingredients check (formulated):', item.source === 'formulated' || item.source === 'formulate');
+    
+    if (ingredients.length === 0) {
+      console.log('[FormulationIngredients] No ingredients found, returning null');
+      return null
+    }
 
     const totalIngredientCost = ingredients.reduce((s: number, ing: any) => s + (ing.ingredient_cost ?? 0), 0)
     const batchQty = item.latest_purchase?.quantity_kg ?? (item.quantity_kg || 0)
@@ -967,10 +1030,31 @@ export function FeedInventoryTab({
                             <h4 className={`font-medium ${isMobile ? 'text-sm' : 'text-base'} truncate`}>
                               {item.feed_types?.name}
                             </h4>
-                            {item.source === 'produced' && item.feed_types?.is_formulate_feed && (
+                            {(() => {
+                              console.log(`[Badge Debug] Item: ${item.feed_types?.name}, source: "${item.source}", type: ${typeof item.source}`);
+                              const isFormulated = item.source === 'formulate' || item.source === 'formulated';
+                              console.log(`[Badge Debug] isFormulated (formulate OR formulated): ${isFormulated}`);
+                              console.log(`[Badge Debug] source === 'purchased': ${item.source === 'purchased'}`);
+                              console.log(`[Badge Debug] source === 'produced': ${item.source === 'produced'}`);
+                              return null;
+                            })()}
+                            {/* Formulated Feed Badge */}
+                            {(item.source === 'formulate' || item.source === 'formulated') && (
                               <Badge className="text-xs bg-purple-100 text-purple-800 border-purple-200 flex items-center gap-1">
                                 <FlaskConical className="h-3 w-3" />
                                 Formulated
+                              </Badge>
+                            )}
+                            {/* Purchased Feed Badge */}
+                            {item.source === 'purchased' && (
+                              <Badge className="text-xs bg-blue-100 text-blue-800 border-blue-200">
+                                Purchased
+                              </Badge>
+                            )}
+                            {/* Harvested Feed Badge */}
+                            {item.source === 'produced' && (
+                              <Badge className="text-xs bg-green-100 text-green-800 border-green-200">
+                                Harvested
                               </Badge>
                             )}
                           </div>
@@ -978,8 +1062,15 @@ export function FeedInventoryTab({
                         </div>
                       </div>
 
+                      
+
+                      {/* Quantity Display */}
+                      <div className="mb-3">
+                        <QuantityDisplay item={item} />
+                      </div>
+
                       {/* Formulated batch summary */}
-                      {item.source === 'produced' && item.feed_types?.is_formulate_feed && (
+                      {(item.source === 'formulate' || item.source === 'formulated') && (
                         <div className="mb-3 p-2 bg-purple-50 border border-purple-200 rounded-lg">
                           <div className="flex items-center justify-between text-xs text-purple-800">
                             <span className="font-medium">Batch Quantity</span>
@@ -1002,11 +1093,6 @@ export function FeedInventoryTab({
                         </div>
                       )}
 
-                      {/* Quantity Display */}
-                      <div className="mb-3">
-                        <QuantityDisplay item={item} />
-                      </div>
-
                       {/* Formulation ingredient breakdown */}
                       <FormulationIngredients item={item} />
 
@@ -1021,7 +1107,7 @@ export function FeedInventoryTab({
                         )}
 
                         {/* 2. Purchase or Production Info */}
-                        {!(item.source === 'produced' && item.feed_types?.is_formulate_feed) && (
+                        {item.source !== 'formulate' && item.source !== 'formulated' && (
                           <div className="space-y-1">
                             {item.cost_per_kg && (
                               <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>

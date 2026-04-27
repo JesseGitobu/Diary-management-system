@@ -20,7 +20,7 @@ interface IngredientRequirement extends IngredientInput {
  * Formulates a batch of feed from user-defined ingredient percentages:
  *   1. Validates percentages sum to 100 and all ingredients have stock
  *   2. Deducts each ingredient from feed_inventory
- *   3. Adds the finished product to inventory (source: 'produced')
+ *   3. Adds the finished product to inventory (source: 'formulate')
  */
 export async function POST(
   request: NextRequest,
@@ -191,7 +191,7 @@ export async function POST(
         farm_id: farmId,
         feed_type_id: output_feed_type_id,
         quantity_kg: 0,
-        source: 'produced',   // output feed is produced via formulation
+        source: 'formulate',   // output feed is created via formulation
       }
     ]
 
@@ -295,7 +295,7 @@ export async function POST(
           farm_id: farmId,
           feed_type_id: output_feed_type_id,
           quantity_kg: outputLatestTx.balance_after_kg,
-          source: 'produced',
+          source: 'formulate',
         }, {
           onConflict: 'farm_id,feed_type_id',
         })
