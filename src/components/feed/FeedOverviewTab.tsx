@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Input } from '@/components/ui/Input'
 import {
   Package, TrendingDown, AlertTriangle, Clock, Percent, Search, ChevronLeft, ChevronRight,
-  ShoppingCart, BarChart3, Wheat, Zap, FlaskConical, BookOpen, Trash2, ArrowRight, Loader2,
+  ShoppingCart, BarChart3, Wheat, Zap, FlaskConical, BookOpen, Trash2, ArrowRight, Loader2, ChevronDown,
 } from 'lucide-react'
 import { useMemo, useState, useEffect } from 'react'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
@@ -53,6 +53,7 @@ export function FeedOverviewTab({
   const [wasteRecords, setWasteRecords] = useState<WasteRecord[]>([])
   const [rationsData, setRationsData]   = useState<any[]>([])
   const [summaryLoading, setSummaryLoading] = useState(true)
+  const [alertsCollapsed, setAlertsCollapsed] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -331,39 +332,42 @@ export function FeedOverviewTab({
         <h2 className={`font-semibold text-gray-800 mb-3 ${isMobile ? 'text-sm' : 'text-base'}`}>
           Feed Management at a Glance
         </h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-          {summaryPanels.map(({ id, title, Icon, borderColor, bg, iconColor, metric, sub, tab, loading }) => (
-            <button
-              key={id}
-              onClick={() => onTabChange(tab)}
-              className={`
-                text-left rounded-lg border border-l-4 ${borderColor} ${bg}
-                p-3 hover:shadow-md transition-shadow group
-                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400
-              `}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <Icon className={`w-3.5 h-3.5 ${iconColor} flex-shrink-0`} />
-                  <span className="text-xs font-medium text-gray-600 truncate">{title}</span>
+        <div className="overflow-x-auto pb-1 -mx-1 px-1">
+          <div className="flex gap-3 md:grid md:grid-cols-3 xl:grid-cols-4">
+            {summaryPanels.map(({ id, title, Icon, borderColor, bg, iconColor, metric, sub, tab, loading }) => (
+              <button
+                key={id}
+                onClick={() => onTabChange(tab)}
+                className={`
+                  flex-shrink-0 w-40 md:w-auto
+                  text-left rounded-lg border border-l-4 ${borderColor} ${bg}
+                  p-3 hover:shadow-md transition-shadow group
+                  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400
+                `}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Icon className={`w-3.5 h-3.5 ${iconColor} flex-shrink-0`} />
+                    <span className="text-xs font-medium text-gray-600 truncate">{title}</span>
+                  </div>
+                  <ArrowRight className="w-3 h-3 text-gray-400 group-hover:text-gray-600 flex-shrink-0 transition-colors ml-1" />
                 </div>
-                <ArrowRight className="w-3 h-3 text-gray-400 group-hover:text-gray-600 flex-shrink-0 transition-colors ml-1" />
-              </div>
-              {loading ? (
-                <div className="flex items-center gap-1.5 text-gray-400">
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                  <span className="text-xs">Loading…</span>
-                </div>
-              ) : (
-                <>
-                  <p className={`font-semibold text-gray-900 leading-snug ${isMobile ? 'text-xs' : 'text-sm'}`}>
-                    {metric}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-0.5 leading-snug">{sub}</p>
-                </>
-              )}
-            </button>
-          ))}
+                {loading ? (
+                  <div className="flex items-center gap-1.5 text-gray-400">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    <span className="text-xs">Loading…</span>
+                  </div>
+                ) : (
+                  <>
+                    <p className="font-semibold text-gray-900 leading-snug text-sm">
+                      {metric}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5 leading-snug">{sub}</p>
+                  </>
+                )}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -376,61 +380,73 @@ export function FeedOverviewTab({
                 <AlertTriangle className="h-4 w-4" />
                 <span>Stock Alerts ({alertCounts.total})</span>
               </CardTitle>
-              {canManageFeed && !isMobile && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onAddInventory}
-                  className="text-yellow-800 border-yellow-300 hover:bg-yellow-100"
+              <div className="flex items-center gap-2">
+                {canManageFeed && !isMobile && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={onAddInventory}
+                    className="text-yellow-800 border-yellow-300 hover:bg-yellow-100"
+                  >
+                    <Package className="w-4 h-4 mr-1" />
+                    Add Stock
+                  </Button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setAlertsCollapsed(c => !c)}
+                  className="p-1 rounded text-yellow-700 hover:bg-yellow-100 transition-colors"
+                  aria-label={alertsCollapsed ? 'Expand alerts' : 'Collapse alerts'}
                 >
-                  <Package className="w-4 h-4 mr-1" />
-                  Add Stock
-                </Button>
-              )}
+                  <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${alertsCollapsed ? '-rotate-90' : ''}`} />
+                </button>
+              </div>
             </div>
             <CardDescription className="text-yellow-700">
               {alertCounts.critical} critical alert{alertCounts.critical !== 1 ? 's' : ''},{' '}
               {alertCounts.low} low stock warning{alertCounts.low !== 1 ? 's' : ''}
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className={isMobile ? 'space-y-3' : 'grid grid-cols-1 md:grid-cols-3 gap-4'}>
-              {feedStats.stockLevels
-                ?.filter((stock: any) => {
-                  const feedType = feedTypes.find(ft => ft.id === stock.feedType?.id || ft.id === stock.feed_type_id)
-                  if (!feedType) return false
-                  const threshold = feedType.low_stock_threshold || 50
-                  return stock.currentStock < threshold
-                })
-                .map((item: any, index: number) => {
-                  const feedType = feedTypes.find(ft => ft.id === item.feedType?.id || ft.id === item.feed_type_id)
-                  const threshold = feedType?.low_stock_threshold || 50
-                  const percentageRemaining = ((item.currentStock / threshold) * 100).toFixed(0)
-                  const isCritical = item.currentStock <= threshold * 0.5
-                  return (
-                    <div key={index} className="flex items-center justify-between p-3 bg-white rounded-lg border-l-4 border-red-400">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm truncate">{item.feedType?.name || 'Unknown Feed'}</p>
-                        <p className="text-xs text-gray-600">
-                          {item.currentStock.toFixed(1)}kg remaining of {threshold}kg threshold
-                        </p>
-                        <p className="text-xs text-red-600 font-medium">
-                          {percentageRemaining}% of minimum stock level
-                        </p>
-                      </div>
-                      <div className="ml-2 text-right flex-shrink-0">
-                        <Badge variant="destructive" className="text-xs mb-1">
-                          {isCritical ? 'Critical' : 'Low Stock'}
-                        </Badge>
-                        <div className="text-xs text-gray-500">
-                          Need: {Math.max(0, threshold - item.currentStock).toFixed(1)}kg
+          {!alertsCollapsed && (
+            <CardContent>
+              <div className={isMobile ? 'space-y-3' : 'grid grid-cols-1 md:grid-cols-3 gap-4'}>
+                {feedStats.stockLevels
+                  ?.filter((stock: any) => {
+                    const feedType = feedTypes.find(ft => ft.id === stock.feedType?.id || ft.id === stock.feed_type_id)
+                    if (!feedType) return false
+                    const threshold = feedType.low_stock_threshold || 50
+                    return stock.currentStock < threshold
+                  })
+                  .map((item: any, index: number) => {
+                    const feedType = feedTypes.find(ft => ft.id === item.feedType?.id || ft.id === item.feed_type_id)
+                    const threshold = feedType?.low_stock_threshold || 50
+                    const percentageRemaining = ((item.currentStock / threshold) * 100).toFixed(0)
+                    const isCritical = item.currentStock <= threshold * 0.5
+                    return (
+                      <div key={index} className="flex items-center justify-between p-3 bg-white rounded-lg border-l-4 border-red-400">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm truncate">{item.feedType?.name || 'Unknown Feed'}</p>
+                          <p className="text-xs text-gray-600">
+                            {item.currentStock.toFixed(1)}kg remaining of {threshold}kg threshold
+                          </p>
+                          <p className="text-xs text-red-600 font-medium">
+                            {percentageRemaining}% of minimum stock level
+                          </p>
+                        </div>
+                        <div className="ml-2 text-right flex-shrink-0">
+                          <Badge variant="destructive" className="text-xs mb-1">
+                            {isCritical ? 'Critical' : 'Low Stock'}
+                          </Badge>
+                          <div className="text-xs text-gray-500">
+                            Need: {Math.max(0, threshold - item.currentStock).toFixed(1)}kg
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )
-                })}
-            </div>
-          </CardContent>
+                    )
+                  })}
+              </div>
+            </CardContent>
+          )}
         </Card>
       )}
 

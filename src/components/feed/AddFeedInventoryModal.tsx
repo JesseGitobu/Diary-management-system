@@ -199,12 +199,16 @@ function FeedSearchSelect({
         className="w-full flex items-center justify-between px-3 py-2.5 border border-gray-300 rounded-xl shadow-sm bg-white text-sm text-left focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
       >
         {selected ? (
-          <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
             {selectedCat && (
               <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: selectedCat.color || '#9ca3af' }} />
             )}
-            <span className="truncate font-medium">{selected.name}</span>
-            {selectedCat && <span className="text-gray-400 text-xs flex-shrink-0">· {selectedCat.category_name}</span>}
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-medium text-sm leading-tight">{selected.name}</div>
+              {selectedCat && (
+                <div className="truncate text-xs text-gray-400 leading-tight">{selectedCat.category_name}</div>
+              )}
+            </div>
           </div>
         ) : (
           <span className="text-gray-400">{placeholder}</span>
@@ -1607,88 +1611,90 @@ export function AddFeedInventoryModal({
                     return (
                       <div
                         key={row.rowId}
-                        className={`flex items-start gap-2 p-2 rounded-lg border ${req && !req.sufficient ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-gray-50'
-                          }`}
+                        className={`p-2 rounded-lg border ${req && !req.sufficient ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-gray-50'}`}
                       >
-                        {/* Row number */}
-                        <span className="text-xs text-gray-400 w-5 text-right flex-shrink-0 mt-2.5">{idx + 1}.</span>
-
-                        {/* Feed type select + stock indicator */}
-                        <div className="flex-1 min-w-0 space-y-1">
-                          <FeedSearchSelect
-                            feedTypes={availableOptions}
-                            feedTypeCategories={feedTypeCategories}
-                            value={row.feed_type_id}
-                            onChange={(id) => updateIngredientRow(row.rowId, 'feed_type_id', id)}
-                            placeholder="Select ingredient…"
-                            inventoryStock={inventoryStock}
-                          />
-                          {row.feed_type_id && stockKg !== null && (
-                            <p className={`text-xs font-medium px-1 ${stockKg === 0
-                              ? 'text-red-600'
-                              : stockKg < 10
-                                ? 'text-amber-600'
-                                : 'text-green-700'
-                              }`}>
-                              In stock: {stockKg.toFixed(2)} kg
-                            </p>
-                          )}
-                          {row.feed_type_id && stockKg === null && (
-                            <p className="text-xs text-gray-400 px-1">No stock record found</p>
-                          )}
+                        {/* Line 1: index · feed select · remove */}
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-400 w-5 text-right flex-shrink-0">{idx + 1}.</span>
+                          <div className="flex-1 min-w-0">
+                            <FeedSearchSelect
+                              feedTypes={availableOptions}
+                              feedTypeCategories={feedTypeCategories}
+                              value={row.feed_type_id}
+                              onChange={(id) => updateIngredientRow(row.rowId, 'feed_type_id', id)}
+                              placeholder="Select ingredient…"
+                              inventoryStock={inventoryStock}
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeIngredientRow(row.rowId)}
+                            className="flex-shrink-0 p-2 text-gray-400 hover:text-red-500 transition-colors"
+                            title="Remove ingredient"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         </div>
 
-                        {/* Percentage input */}
-                        <div className="flex items-center gap-1 flex-shrink-0 mt-0.5">
-                          <Input
-                            type="number"
-                            step="0.01" // Allows the browser to handle 0.01 increments
-                            min="0"
-                            max="100"
-                            onFocus={(e) => e.target.select()}
-                            // Use an empty string if undefined, but allow 0 to be shown 
-                            // to distinguish between "not entered" and "zero"
-                            value={row.percentage === undefined ? '' : row.percentage}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              updateIngredientRow(
-                                row.rowId,
-                                'percentage',
-                                val === '' ? 0 : parseFloat(val) // Use parseFloat for better decimal handling
-                              );
-                            }}
-                            className="w-20 text-sm px-2 py-1.5"
-                            placeholder="0.00"
-                          />
-                          <span className="text-sm text-gray-500 flex-shrink-0">%</span>
-                        </div>
-
-                        {/* Availability indicator (shown once batch qty is known) */}
-                        {req && batchQuantityKg && batchQuantityKg > 0 && (
-                          <div className="flex-shrink-0 text-xs text-right w-28 mt-0.5">
-                            {req.sufficient ? (
-                              <span className="text-green-600 flex items-center gap-0.5 justify-end">
-                                <CheckCircle className="h-3 w-3" />
-                                {req.required_kg.toFixed(1)} kg
-                              </span>
-                            ) : (
-                              <span className="text-red-600 flex items-center gap-0.5 justify-end">
-                                <AlertTriangle className="h-3 w-3" />
-                                short {(req.required_kg - req.available_kg).toFixed(1)} kg
-                              </span>
+                        {/* Line 2: stock info · percentage · availability */}
+                        <div className="flex items-center gap-2 mt-1.5 pl-7">
+                          {/* Stock info — grows to fill available space */}
+                          <div className="flex-1 min-w-0">
+                            {row.feed_type_id && stockKg !== null && (
+                              <p className={`text-xs font-medium ${stockKg === 0
+                                ? 'text-red-600'
+                                : stockKg < 10
+                                  ? 'text-amber-600'
+                                  : 'text-green-700'
+                                }`}>
+                                In stock: {stockKg.toFixed(2)} kg
+                              </p>
+                            )}
+                            {row.feed_type_id && stockKg === null && (
+                              <p className="text-xs text-gray-400">No stock record found</p>
                             )}
                           </div>
-                        )}
 
-                        {/* Remove */}
-                        <button
-                          type="button"
-                          onClick={() => removeIngredientRow(row.rowId)}
-                          className="flex-shrink-0 p-1 text-gray-400 hover:text-red-500 transition-colors"
-                          title="Remove ingredient"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                          {/* Availability indicator */}
+                          {req && batchQuantityKg && batchQuantityKg > 0 && (
+                            <div className="flex-shrink-0 text-xs">
+                              {req.sufficient ? (
+                                <span className="text-green-600 flex items-center gap-0.5">
+                                  <CheckCircle className="h-3 w-3" />
+                                  {req.required_kg.toFixed(1)} kg
+                                </span>
+                              ) : (
+                                <span className="text-red-600 flex items-center gap-0.5">
+                                  <AlertTriangle className="h-3 w-3" />
+                                  short {(req.required_kg - req.available_kg).toFixed(1)} kg
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Percentage input */}
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              max="100"
+                              onFocus={(e) => e.target.select()}
+                              value={row.percentage === undefined ? '' : row.percentage}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                updateIngredientRow(
+                                  row.rowId,
+                                  'percentage',
+                                  val === '' ? 0 : parseFloat(val)
+                                );
+                              }}
+                              className="w-16 text-sm px-2 py-1"
+                              placeholder="0.00"
+                            />
+                            <span className="text-sm text-gray-500 flex-shrink-0">%</span>
+                          </div>
+                        </div>
                       </div>
                     )
                   })}

@@ -9,6 +9,7 @@ import { InstallPrompt } from "@/components/pwa/InstallPrompt"
 import { PWARegister } from "@/components/pwa/PWARegister"
 import { Toaster } from "react-hot-toast"
 import { Analytics } from "@vercel/analytics/next"
+import { SpeedInsights } from "@vercel/speed-insights/next"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -55,6 +56,7 @@ export default function RootLayout({
           <main className="flex flex-col h-screen overflow-hidden bg-background">
             {children}
             <Analytics />
+            <SpeedInsights />
           </main>
           <InstallPrompt />
           <Toaster 

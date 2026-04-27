@@ -898,9 +898,9 @@ export async function createUniversalExcelTemplate(
   })
   
   instructionsSheet.getColumn(1).width = 120
-  instructionsSheet.getRows(1, instructions.length)?.forEach(row => {
-    row.alignment = { wrapText: true, vertical: 'top' }
-  })
+  for (let i = 1; i <= instructions.length; i++) {
+    instructionsSheet.getRow(i).alignment = { wrapText: true, vertical: 'top' }
+  }
 
   // Write buffer
   return await workbook.xlsx.writeBuffer()
