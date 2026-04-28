@@ -225,9 +225,11 @@ export function FeedOverviewTab({
 
   // ── Enhanced stock levels (unchanged logic) ──────────────────────────────
   const enhancedStockLevels = useMemo(() => {
-    if (!feedStats.stockLevels) return []
+    if (!feedStats.stockLevels) {
+      return []
+    }
 
-    return feedStats.stockLevels.map((stock: any) => {
+    const result = feedStats.stockLevels.map((stock: any) => {
       const feedType = feedTypes.find(ft => ft.id === stock.feedType?.id)
       const thresholdAmountKg = feedType?.low_stock_threshold || 50
 
@@ -235,7 +237,7 @@ export function FeedOverviewTab({
         record.feed_type_id === stock.feedType?.id
       )
 
-      const totalFed = feedConsumption.reduce((sum, record) => sum + (record.quantity_kg || 0), 0)
+      const totalFed = feedConsumption.reduce((sum, record) => sum + (record.quantity_consumed || 0), 0)
       const feedingCount = feedConsumption.length
 
       let avgDailyConsumption = 0
@@ -282,6 +284,8 @@ export function FeedOverviewTab({
         status, statusColor, badgeVariant,
       }
     })
+
+    return result
   }, [feedStats.stockLevels, feedTypes, consumptionRecords])
 
   // ── Alert counts derived from already-computed stock levels ─────────────

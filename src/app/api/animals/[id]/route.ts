@@ -26,19 +26,21 @@ export async function GET(
     }
     
     const { id: animalId } = await params
+    
     const animal = await getAnimalById(animalId)
     
     if (!animal) {
       return NextResponse.json({ error: 'Animal not found' }, { status: 404 })
     }
     
-    return NextResponse.json({ 
+    const response = { 
       success: true, 
       animal 
-    })
+    }
+    
+    return NextResponse.json(response)
     
   } catch (error) {
-    console.error('Get animal API error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
@@ -96,14 +98,6 @@ export async function PUT(
     const oldProductionStatus = currentAnimal.production_status
     const newProductionStatus = body.production_status
     
-    console.log('🔍 [API] Update changes detected:', {
-      animalId,
-      weightChanged: oldWeight !== newWeight,
-      healthStatusChanged: oldHealthStatus !== newHealthStatus,
-      productionStatusChanged: oldProductionStatus !== newProductionStatus,
-      autoGenerateTagChanged: currentAnimal.auto_generate_tag !== body.auto_generate_tag
-    })
-    
     // Update the animal
     const result = await updateAnimal(animalId, userRole.farm_id, body)
     
@@ -115,8 +109,6 @@ export async function PUT(
     
     // ===== WEIGHT HANDLING (animal_weight_records, animals_requiring_weight_update) =====
     if (newWeight !== undefined && newWeight !== null && newWeight !== oldWeight) {
-      console.log('⚖️ [API] Weight was updated, creating weight record...')
-      
       // Create weight record
       const { data: weightRecord, error: weightError } = await (supabase as any)
         .from('animal_weight_records')
@@ -134,10 +126,8 @@ export async function PUT(
         .single()
       
       if (weightError) {
-        console.error('⚠️ [API] Failed to create weight record:', weightError)
+        // Error creating weight record
       } else {
-        console.log('✅ [API] Weight record created:', weightRecord.id)
-        
         // Resolve any pending weight requirements
         const { data: resolvedReqs, error: resolveError } = await (supabase as any)
           .from('animals_requiring_weight_update')
@@ -152,9 +142,9 @@ export async function PUT(
           .select()
         
         if (resolveError) {
-          console.error('⚠️ [API] Failed to resolve weight requirements:', resolveError)
+          // Error resolving weight requirements
         } else {
-          console.log('✅ [API] Resolved', resolvedReqs?.length || 0, 'weight requirement(s)')
+          // Weight requirements resolved
         }
       }
     }
@@ -165,8 +155,6 @@ export async function PUT(
     const isNowConcerning = concerningStatuses.includes(newHealthStatus)
     
     if (oldHealthStatus !== newHealthStatus && isNowConcerning) {
-      console.log('🏥 [API] Health status changed to concerning:', newHealthStatus)
-      
       // Create health record for the status change
       const healthRecordData = {
         animal_id: animalId,
@@ -184,8 +172,6 @@ export async function PUT(
       const healthResult = await createHealthRecord(healthRecordData)
       
       if (healthResult.success) {
-        console.log('✅ [API] Health record created:', (healthResult.data as any)?.id)
-        
         // Track in animals_requiring_health_attention
         await (supabase as any)
           .from('animals_requiring_health_attention')
@@ -198,7 +184,7 @@ export async function PUT(
             created_by: user.id
           })
       } else {
-        console.error('❌ [API] Failed to create health record:', healthResult.error)
+        // Error creating health record
       }
     }
     
@@ -227,14 +213,6 @@ export async function PUT(
         newProductionStatus === 'dry'
       )
       
-      console.log('🐄 [API] Breeding eligibility check:', {
-        isBreedingAge,
-        hasBreedingData,
-        ageMonths: ageInMonths,
-        minAge: minBreedingAge,
-        productionStatus: newProductionStatus
-      })
-      
       if (isBreedingAge && hasBreedingData) {
         // Check if breeding record already exists
         const { data: existingRecord } = await (supabase as any)
@@ -244,8 +222,6 @@ export async function PUT(
           .single()
         
         if (!existingRecord) {
-          console.log('✅ [API] Creating breeding record for updated animal...')
-          
           // Determine breeding type based on production status
           let breedingType = 'natural'
           if (body.service_method === 'artificial_insemination') {
@@ -274,12 +250,12 @@ export async function PUT(
             .insert(breedingRecordData)
           
           if (breedingError) {
-            console.error('⚠️ [API] Failed to create breeding record:', breedingError)
+            // Error creating breeding record
           } else {
-            console.log('✅ [API] Breeding record created successfully')
+            // Breeding record created successfully
           }
         } else {
-          console.log('ℹ️ [API] Breeding record already exists, skipping creation')
+          // Breeding record already exists
         }
       }
     }
@@ -291,7 +267,6 @@ export async function PUT(
     })
     
   } catch (error) {
-    console.error('❌ [API] Update animal error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

@@ -140,6 +140,8 @@ export async function POST(request: NextRequest) {
           service_type: serviceType,
           service_date: serviceDate,
           bull_tag_or_semen_code: eventData.semen_bull_code || null,
+          bull_name_or_semen_source: eventData.semen_bull_name || null,
+          semen_type: eventData.semen_type || null,
           technician_name: eventData.technician_name || null,
           expected_calving_date: expectedCalvingDate,
           notes: eventData.notes || null,
@@ -256,6 +258,16 @@ export async function POST(request: NextRequest) {
     }
 
     // ===== HEAT DETECTION: insert breeding_event first, then heat_detection_signs =====
+    // 🔍 DEBUG: Log received heat detection event data
+    console.log('🔥 [API] Heat detection event data received:', {
+      event_type: eventData.event_type,
+      animal_id: eventData.animal_id,
+      event_date: eventData.event_date,
+      heat_action_taken: eventData.heat_action_taken,
+      heat_signs: eventData.heat_signs,
+      farm_id: eventData.farm_id,
+    })
+
     const { data: event, error } = await (supabase as any)
       .from('breeding_events')
       .insert({
@@ -269,6 +281,14 @@ export async function POST(request: NextRequest) {
       console.error('❌ Database error:', error)
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
+
+    // 🔍 DEBUG: Log saved event record
+    console.log('🔥 [API] Event saved to database:', {
+      id: event.id,
+      event_date: event.event_date,
+      event_type: event.event_type,
+      heat_action_taken: event.heat_action_taken,
+    })
 
     // Insert individual heat signs into heat_detection_signs child table
     const signs: string[] = eventData.heat_signs || []

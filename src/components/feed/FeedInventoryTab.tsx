@@ -857,24 +857,10 @@ export function FeedInventoryTab({
 
   // ── Formulation ingredient breakdown (collapsible) ───────────────────────
   const FormulationIngredients = ({ item }: { item: any }) => {
-
-    // Debug logs
-    console.log('[FormulationIngredients] === Full Item Data ===', item);
-    console.log('[FormulationIngredients] item.source:', item.source);
-    console.log('[FormulationIngredients] item.feed_type_id:', item.feed_type_id);
-    console.log('[FormulationIngredients] item.latest_purchase:', item.latest_purchase);
-    console.log('[FormulationIngredients] item.latest_purchase?.id:', item.latest_purchase?.id);
-    console.log('[FormulationIngredients] item.latest_purchase?._source:', item.latest_purchase?._source);
-    
     const [open, setOpen] = useState(false)
     const ingredients: any[] = item.latest_purchase?.formulation_ingredients ?? []
     
-    console.log('[FormulationIngredients] formulation_ingredients array:', ingredients);
-    console.log('[FormulationIngredients] ingredients.length:', ingredients.length);
-    console.log('[FormulationIngredients] ingredients check (formulated):', item.source === 'formulated' || item.source === 'formulate');
-    
     if (ingredients.length === 0) {
-      console.log('[FormulationIngredients] No ingredients found, returning null');
       return null
     }
 
@@ -1031,11 +1017,6 @@ export function FeedInventoryTab({
                               {item.feed_types?.name}
                             </h4>
                             {(() => {
-                              console.log(`[Badge Debug] Item: ${item.feed_types?.name}, source: "${item.source}", type: ${typeof item.source}`);
-                              const isFormulated = item.source === 'formulate' || item.source === 'formulated';
-                              console.log(`[Badge Debug] isFormulated (formulate OR formulated): ${isFormulated}`);
-                              console.log(`[Badge Debug] source === 'purchased': ${item.source === 'purchased'}`);
-                              console.log(`[Badge Debug] source === 'produced': ${item.source === 'produced'}`);
                               return null;
                             })()}
                             {/* Formulated Feed Badge */}

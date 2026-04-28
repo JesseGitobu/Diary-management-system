@@ -471,9 +471,10 @@ export function BreedingDashboard({
         </nav>
       </div>
 
-      {/* Content based on selected view */}
-      {selectedView === 'overview' && (
-        <div className={cn("space-y-6", !isMobile && "space-y-8")}>
+      {/* Content based on selected view — all three panels stay mounted to preserve state */}
+
+      {/* Overview */}
+      <div className={cn("space-y-6", !isMobile && "space-y-8", selectedView !== 'overview' && "hidden")}>
           {/* Stats Cards - Updated to use dynamic stats */}
           <BreedingStatsCards stats={currentStats} />
 
@@ -555,9 +556,9 @@ export function BreedingDashboard({
                                  {event.status}
                                </Badge>
                                {canManageBreeding && (
-                                 <Button 
-                                    size="sm" 
-                                    variant="ghost" 
+                                 <Button
+                                    size="sm"
+                                    variant="ghost"
                                     className="h-6 w-6 p-0 rounded-full hover:bg-green-100 text-green-700"
                                     onClick={() => {
                                       // Quick action from list
@@ -674,31 +675,28 @@ export function BreedingDashboard({
           </div>
 
         </div>
-      )}
 
-      {selectedView === 'calendar' && (
-        <div className={cn(isMobile && "pb-4")}>
-          <BreedingCalendar
-            farmId={farmId}
-            events={visibleCalendarEvents} // Use filtered events
-            canManage={canManageBreeding}
-          />
-        </div>
-      )}
+      {/* Calendar */}
+      <div className={cn(isMobile && "pb-4", selectedView !== 'calendar' && "hidden")}>
+        <BreedingCalendar
+          farmId={farmId}
+          events={visibleCalendarEvents}
+          canManage={canManageBreeding}
+        />
+      </div>
 
-      {selectedView === 'pregnant' && (
-        <div className={cn(isMobile && "pb-4")}>
-          <PregnantAnimalsList
-            farmId={farmId}
-            canManage={canManageBreeding}
-            hiddenAnimalIds={completedCalvingIds}
-            onRecordCalving={(animalId) => {
-              setSelectedAnimal({ id: animalId, gender: 'female' })
-              setActiveModal('calving')
-            }}
-          />
-        </div>
-      )}
+      {/* In-calf Animals */}
+      <div className={cn(isMobile && "pb-4", selectedView !== 'pregnant' && "hidden")}>
+        <PregnantAnimalsList
+          farmId={farmId}
+          canManage={canManageBreeding}
+          hiddenAnimalIds={completedCalvingIds}
+          onRecordCalving={(animalId) => {
+            setSelectedAnimal({ id: animalId, gender: 'female' })
+            setActiveModal('calving')
+          }}
+        />
+      </div>
 
       {/* Individual Breeding Event Modals */}
       {renderBreedingModal()}

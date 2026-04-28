@@ -106,7 +106,7 @@ export function InventoryItemCard({ item, canManage, onStockUpdate, viewMode, is
           </div>
           {canManage && (
             <DropdownMenu>
-              <DropdownMenuTrigger>
+              <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm">
                   <MoreHorizontal className="w-4 h-4" />
                 </Button>

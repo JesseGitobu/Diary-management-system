@@ -1,7 +1,7 @@
 // src/components/breeding/BreedingEventTimeline.tsx
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -18,6 +18,7 @@ import {
   Calendar,
   FileText,
   AlertCircle,
+  AlertTriangle,
   Filter,
   X,
   ChevronDown,
@@ -27,9 +28,14 @@ import {
   Clock,
   Edit2,
   Trash2,
-  ListFilter
+  ListFilter,
+  Droplets,
+  CheckCircle2,
+  XCircle,
+  CalendarPlus,
 } from 'lucide-react'
 import { AddBreedingEventModal } from './AddBreedingEventModal'
+import { FollowUpBreedingModal } from './FollowUpBreedingModal'
 
 interface BreedingEventTimelineProps {
   animalId?: string | null
@@ -104,17 +110,19 @@ export function BreedingEventTimeline({
         acc[e.event_type] = (acc[e.event_type] || 0) + 1
         return acc
       }, {})
-      console.log('[BreedingEventTimeline] Events loaded', {
-        loaded: events.length,
-        total: totalCount,
-        hasMore,
-        byType: typeCounts,
-      })
+
     }
     if (error) {
       console.error('[BreedingEventTimeline] Error:', error)
     }
   }, [events.length, loading, error])
+
+  // Filter state
+  const [selectedEventTypes, setSelectedEventTypes] = useState<string[]>([])
+  const [dateFilter, setDateFilter] = useState<'all' | '7days' | '30days' | '90days'>('all')
+  const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set())
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null)
+  const filterDropdownRef = useRef<HTMLDivElement>(null)
 
   // Refetch when trigger changes
   useEffect(() => {
@@ -123,15 +131,28 @@ export function BreedingEventTimeline({
     }
   }, [refreshTrigger, refetch, animalId])
 
-  // Filter state
-  const [selectedEventTypes, setSelectedEventTypes] = useState<string[]>([])
-  const [dateFilter, setDateFilter] = useState<'all' | '7days' | '30days' | '90days'>('all')
-  const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set())
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (filterDropdownRef.current && !filterDropdownRef.current.contains(event.target as Node)) {
+        setOpenDropdown(null)
+      }
+    }
 
-  // Edit / delete state
+    if (openDropdown) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [openDropdown])
+
+  // Edit / delete / follow-up state
   const [editingEvent, setEditingEvent] = useState<any | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [followUpEvent, setFollowUpEvent] = useState<any | null>(null)
+
+  // Collapsible subsections for calving details on mobile
+  const [expandedCalvingSections, setExpandedCalvingSections] = useState<Record<string, Set<string>>>({})
 
   const handleDelete = async (eventId: string) => {
     setIsDeleting(true)
@@ -181,12 +202,29 @@ export function BreedingEventTimeline({
       prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
     )
 
+  const toggleDropdown = (dropdown: string) => {
+    setOpenDropdown(openDropdown === dropdown ? null : dropdown)
+  }
+
   const toggleEventExpansion = (id: string) =>
     setExpandedEvents(prev => {
       const next = new Set(prev)
       next.has(id) ? next.delete(id) : next.add(id)
       return next
     })
+
+  const toggleCalvingSubsection = (eventId: string, subsection: string) => {
+    setExpandedCalvingSections(prev => {
+      const current = prev[eventId] ?? new Set()
+      const next = new Set(current)
+      next.has(subsection) ? next.delete(subsection) : next.add(subsection)
+      return { ...prev, [eventId]: next }
+    })
+  }
+
+  const isCalvingSubsectionExpanded = (eventId: string, subsection: string): boolean => {
+    return expandedCalvingSections[eventId]?.has(subsection) ?? (!isMobile)
+  }
 
   const clearFilters = () => {
     setSelectedEventTypes([])
@@ -237,7 +275,7 @@ export function BreedingEventTimeline({
     <div className={cn("flex flex-col gap-3", className)}>
 
       {/* ── Filter Panel ─────────────────────────────────────────────────── */}
-      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+      <div className="rounded-xl border border-gray-200 bg-white overflow-visible relative z-20">
 
         {/* Panel header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">
@@ -271,59 +309,108 @@ export function BreedingEventTimeline({
           </div>
         </div>
 
-        <div className={cn("px-4 py-3 space-y-3", isMobile && "px-3 py-2 space-y-2")}>
-          {/* Event type chips */}
-          <div>
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
-              Event Type
-            </p>
-            <div className={cn("flex flex-wrap gap-2", isMobile && "gap-1.5")}>
-              {Object.entries(eventConfig).map(([type, config]) => {
-                const Icon = config.icon
-                const isSelected = selectedEventTypes.includes(type)
-                return (
-                  <button
-                    key={type}
-                    onClick={() => toggleEventType(type)}
-                    className={cn(
-                      "flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all",
-                      isMobile && "px-2.5 py-1",
-                      isSelected
-                        ? `${config.color} border-transparent shadow-sm`
-                        : "bg-white border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50"
-                    )}
-                  >
-                    <Icon className="w-3 h-3" />
-                    <span className={isMobile ? "hidden xs:inline" : ""}>
-                      {config.title}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Date range */}
-          <div>
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
-              Time Period
-            </p>
-            <div className="flex items-center gap-1 flex-wrap">
-              {DATE_RANGE_OPTIONS.map(opt => (
-                <button
-                  key={opt.value}
-                  onClick={() => setDateFilter(opt.value)}
-                  className={cn(
-                    "px-3 py-1.5 rounded-full border text-xs font-medium transition-all",
-                    isMobile && "px-2.5 py-1",
-                    dateFilter === opt.value
-                      ? "bg-farm-green text-white border-farm-green shadow-sm"
-                      : "bg-white border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50"
+        <div ref={filterDropdownRef} className={cn("px-4 py-3 space-y-3", isMobile && "px-3 py-2 space-y-2")}>
+          {/* Filter Dropdowns - Single Row */}
+          <div className={cn("flex gap-3", isMobile ? "flex-col" : "flex-row")}>
+            
+            {/* Event Type Dropdown */}
+            <div className="relative flex-1">
+              <button
+                onClick={() => toggleDropdown('event_type')}
+                className={cn(
+                  "w-full px-3 py-2.5 flex items-center justify-between border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors",
+                  isMobile ? "text-sm" : "text-base",
+                  openDropdown === 'event_type' ? "border-farm-green bg-farm-green/5" : ""
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-gray-700">Event Type</span>
+                  {selectedEventTypes.length > 0 && (
+                    <Badge className="bg-farm-green text-white text-xs px-2 py-0.5">
+                      {selectedEventTypes.length}
+                    </Badge>
                   )}
-                >
-                  {opt.label}
-                </button>
-              ))}
+                </div>
+                {openDropdown === 'event_type' 
+                  ? <ChevronUp className="w-4 h-4 text-gray-500" />
+                  : <ChevronDown className="w-4 h-4 text-gray-500" />
+                }
+              </button>
+              {openDropdown === 'event_type' && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                  <div className="p-2 space-y-1 max-h-64 overflow-y-auto">
+                    {Object.entries(eventConfig).map(([type, config]) => {
+                      const Icon = config.icon
+                      const isSelected = selectedEventTypes.includes(type)
+                      return (
+                        <button
+                          key={type}
+                          onClick={() => toggleEventType(type)}
+                          className={cn(
+                            "w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-all text-left",
+                            isSelected
+                              ? `${config.color} border-transparent`
+                              : "bg-white border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50"
+                          )}
+                        >
+                          <Icon className="w-4 h-4 flex-shrink-0" />
+                          <span className="flex-1">{config.title}</span>
+                          {isSelected && <CheckCircle2 className="w-4 h-4 flex-shrink-0" />}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Date Range Dropdown */}
+            <div className="relative flex-1">
+              <button
+                onClick={() => toggleDropdown('date_range')}
+                className={cn(
+                  "w-full px-3 py-2.5 flex items-center justify-between border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors",
+                  isMobile ? "text-sm" : "text-base",
+                  openDropdown === 'date_range' ? "border-farm-green bg-farm-green/5" : ""
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-gray-700">Time Period</span>
+                  {dateFilter !== 'all' && (
+                    <Badge className="bg-farm-green text-white text-xs px-2 py-0.5">
+                      {DATE_RANGE_OPTIONS.find(o => o.value === dateFilter)?.label}
+                    </Badge>
+                  )}
+                </div>
+                {openDropdown === 'date_range' 
+                  ? <ChevronUp className="w-4 h-4 text-gray-500" />
+                  : <ChevronDown className="w-4 h-4 text-gray-500" />
+                }
+              </button>
+              {openDropdown === 'date_range' && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                  <div className="p-2 space-y-1">
+                    {DATE_RANGE_OPTIONS.map(opt => (
+                      <button
+                        key={opt.value}
+                        onClick={() => {
+                          setDateFilter(opt.value)
+                          setOpenDropdown(null)
+                        }}
+                        className={cn(
+                          "w-full flex items-center justify-between px-3 py-2 rounded-lg border text-xs font-medium transition-all",
+                          dateFilter === opt.value
+                            ? "bg-farm-green text-white border-farm-green"
+                            : "bg-white border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50"
+                        )}
+                      >
+                        <span>{opt.label}</span>
+                        {dateFilter === opt.value && <CheckCircle2 className="w-4 h-4 flex-shrink-0" />}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -386,6 +473,13 @@ export function BreedingEventTimeline({
               (event.event_type === 'pregnancy_check' && event.pregnancy_result) ||
               (event.event_type === 'calving' && event.calf_gender)
 
+            console.log(`[BreedingTimeline] Event ${event.id} (${event.event_type}):`, {
+              follow_up_recorded: event.follow_up_recorded,
+              follow_up_id: event.follow_up_id,
+              isExpanded,
+              hasDetails,
+            })
+
             return (
               <Card
                 key={event.id}
@@ -424,6 +518,27 @@ export function BreedingEventTimeline({
                                 month: 'short', day: 'numeric', year: 'numeric'
                               })}
                             </Badge>
+                            <div className={cn("flex items-center gap-1 text-gray-600", isMobile ? "text-xs" : "text-sm")}>
+                              <Clock className="w-3.5 h-3.5 text-gray-400" />
+                              {(() => {
+                                try {
+                                  // Extract time from ISO string: "2026-04-28T03:30:00+00:00" -> "03:30"
+                                  const timeStr = event.event_date?.substring(11, 16)
+                                  if (!timeStr || timeStr.length !== 5) {
+                                    return '12:00 AM' // Fallback for invalid/missing time
+                                  }
+                                  const [hours, minutes] = timeStr.split(':').map(Number)
+                                  if (isNaN(hours) || isNaN(minutes)) {
+                                    return '12:00 AM' // Fallback for invalid numbers
+                                  }
+                                  const ampm = hours >= 12 ? 'PM' : 'AM'
+                                  const displayHours = hours % 12 || 12
+                                  return `${String(displayHours).padStart(2, '0')}:${String(minutes).padStart(2, '0')} ${ampm}`
+                                } catch {
+                                  return '12:00 AM' // Fallback for any errors
+                                }
+                              })()}
+                            </div>
                           </div>
 
                           {event.animals && (
@@ -456,7 +571,6 @@ export function BreedingEventTimeline({
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => {
-                                  console.log('[BreedingEventTimeline] Edit button clicked', { eventId: event.id, eventType: event.event_type })
                                   setEditingEvent(event)
                                 }}
                                 className="text-gray-400 hover:text-farm-green h-8 w-8 p-0"
@@ -468,13 +582,21 @@ export function BreedingEventTimeline({
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => {
-                                  console.log('[BreedingEventTimeline] Delete button clicked', { eventId: event.id, eventType: event.event_type })
                                   setDeleteConfirmId(event.id)
                                 }}
                                 className="text-gray-400 hover:text-red-600 h-8 w-8 p-0"
                                 title="Delete event"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setFollowUpEvent(event)}
+                                className="text-gray-400 hover:text-blue-600 h-8 w-8 p-0"
+                                title="Add follow-up"
+                              >
+                                <CalendarPlus className="w-3.5 h-3.5" />
                               </Button>
                             </>
                           )}
@@ -501,39 +623,71 @@ export function BreedingEventTimeline({
                           <p><span className="font-medium">Action:</span> {event.heat_action_taken}</p>
                         )}
                         {event.event_type === 'insemination' && (
-                          <p>
-                            <span className="font-medium">Method:</span>{' '}
-                            {event.insemination_method?.replace('_', ' ')}
-                            {event.semen_bull_code && ` • Code: ${event.semen_bull_code}`}
-                          </p>
+                          <>
+                            <p>
+                              <span className="font-medium">Method:</span>{' '}
+                              {event.insemination_method?.replace('_', ' ')}
+                              {/* {event.semen_bull_code && ` • Code: ${event.semen_bull_code}`} */}
+                              {/* {event.semen_bull_name && ` • ${event.semen_bull_name}`} */}
+                            </p>
+                            {/* {event.semen_type && event.semen_type !== 'unknown' && (
+                              <p>
+                                <span className="font-medium">Semen Type:</span>{' '}
+                                {event.semen_type
+                                  .replace('_', ' - ')
+                                  .split(' ')
+                                  .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
+                                  .join(' ')}
+                              </p>
+                            )} */}
+                          </>
                         )}
                         {event.event_type === 'pregnancy_check' && event.pregnancy_result && (
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">Result:</span>
-                            <Badge className={
+                          <>
+
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">Result:</span>
+                              <Badge className={
                               event.pregnancy_result === 'pregnant' ? 'bg-green-100 text-green-800' :
                               event.pregnancy_result === 'not_pregnant' ? 'bg-red-100 text-red-800' :
                               'bg-yellow-100 text-yellow-800'
                             }>
                               {event.pregnancy_result.replace('_', ' ')}
                             </Badge>
-                          </div>
+                            </div>
+                          </>
                         )}
-                        {event.event_type === 'calving' && (
-                          <p>
-                            <span className="font-medium">Outcome:</span>{' '}
-                            {event.calving_outcome?.replace('_', ' ')}
-                            {event.calf_gender && ` • ${event.calf_gender} calf`}
-                          </p>
-                        )}
+                        {/* {event.event_type === 'calving' && (
+                          <>
+                            <p>
+                              <span className="font-medium">Outcome:</span>{' '}
+                              {event.calving_outcome?.replace('_', ' ')}
+                              {event.calf_gender && ` • ${event.calf_gender} calf`}
+                            </p>
+                          </>
+                        )} */}
                       </div>
 
                       {/* Expanded details */}
-                      {isExpanded && hasDetails && (
+
+                      {isExpanded && hasDetails &&
+                      (
                         <div className={cn(
                           "mt-4 pt-4 border-t border-gray-100 space-y-3",
                           isMobile ? "text-xs" : "text-sm"
                         )}>
+                          {farmId && (
+                            <div className="flex justify-end">
+                              <Button
+                                size="sm"
+                                onClick={() => setFollowUpEvent(event)}
+                                className="flex items-center gap-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 h-7 px-3 text-xs font-medium"
+                              >
+                                <CalendarPlus className="w-3.5 h-3.5" />
+                                Follow Up
+                              </Button>
+                            </div>
+                          )}
                           {event.event_type === 'heat_detection' && (event.heat_signs?.length ?? 0) > 0 && (
                             <div>
                               <p className="font-medium text-gray-700 mb-2">Heat Signs Observed:</p>
@@ -548,96 +702,407 @@ export function BreedingEventTimeline({
                           )}
 
                           {event.event_type === 'insemination' && (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                              {event.semen_bull_code && (
-                                <div className="flex items-start gap-2">
-                                  <FileText className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                                  <div>
-                                    <p className="font-medium text-gray-700">Semen/Bull Code</p>
-                                    <p className="text-gray-600">{event.semen_bull_code}</p>
+                            <>
+                              <div className="space-y-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                  {event.semen_bull_code && (
+                                    <div className="flex items-start gap-2">
+                                      <FileText className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                      <div>
+                                        <p className="font-medium text-gray-700">Semen/Bull Code</p>
+                                        <p className="text-gray-600">{event.semen_bull_code}</p>
+                                      </div>
+                                    </div>
+                                  )}
+                                  {event.semen_bull_name && (
+                                    <div className="flex items-start gap-2">
+                                      <FileText className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                      <div>
+                                        <p className="font-medium text-gray-700">Semen/Bull Name</p>
+                                        <p className="text-gray-600">{event.semen_bull_name}</p>
+                                      </div>
+                                    </div>
+                                  )}
+                                  {event.semen_type && event.semen_type !== 'unknown' && (
+                                    <div className="flex items-start gap-2">
+                                      <Syringe className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                      <div>
+                                        <p className="font-medium text-gray-700">Semen Type</p>
+                                        <Badge className="bg-blue-50 text-blue-700 border border-blue-200 mt-1">
+                                          {event.semen_type
+                                            .replace('_', ' - ')
+                                            .split(' ')
+                                            .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
+                                            .join(' ')}
+                                        </Badge>
+                                      </div>
+                                    </div>
+                                  )}
+                                  {event.technician_name && (
+                                    <div className="flex items-start gap-2">
+                                      <User className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                      <div>
+                                        <p className="font-medium text-gray-700">Technician</p>
+                                        <p className="text-gray-600">{event.technician_name}</p>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Service Details */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                  <div className="flex items-start gap-2">
+                                    <Calendar className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                    <div>
+                                      <p className="font-medium text-gray-700">Expected Calving Date</p>
+                                      <p className="text-gray-600">
+                                        {event.expected_calving_date 
+                                          ? new Date(event.expected_calving_date).toLocaleDateString()
+                                          : 'N/A'}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-start gap-2">
+                                    <FileText className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                    <div>
+                                      <p className="font-medium text-gray-700">Service Cost</p>
+                                      <p className="text-gray-600">
+                                        {event.service_cost != null ? `$${event.service_cost.toFixed(2)}` : 'N/A'}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-start gap-2">
+                                    <CheckCircle2 className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                    <div>
+                                      <p className="font-medium text-gray-700">Outcome</p>
+                                      {event.outcome
+                                        ? <Badge className="bg-blue-50 text-blue-700 border border-blue-200 mt-1 capitalize">{event.outcome}</Badge>
+                                        : <p className="text-gray-400">N/A</p>}
+                                    </div>
                                   </div>
                                 </div>
-                              )}
-                              {event.technician_name && (
-                                <div className="flex items-start gap-2">
-                                  <User className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                                  <div>
-                                    <p className="font-medium text-gray-700">Technician</p>
-                                    <p className="text-gray-600">{event.technician_name}</p>
+
+                                {event.service_notes && (
+                                  <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
+                                    <div className="flex items-start gap-2">
+                                      <FileText className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                      <div>
+                                        <p className="font-medium text-gray-700 mb-1">Service Notes</p>
+                                        <p className="text-gray-600 whitespace-pre-wrap">{event.service_notes}</p>
+                                      </div>
+                                    </div>
                                   </div>
+                                )}
+
+                                <div className="flex items-center gap-1 text-xs text-gray-400 pt-2 border-t border-gray-100">
+                                  <Clock className="w-3 h-3" />
+                                  <span>Service recorded {new Date(event.service_created_at || event.event_date).toLocaleString()}</span>
                                 </div>
-                              )}
-                            </div>
+                              </div>
+                            </>
                           )}
 
                           {event.event_type === 'pregnancy_check' && (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                              {event.examination_method && (
-                                <div className="flex items-start gap-2">
-                                  <Stethoscope className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                                  <div>
-                                    <p className="font-medium text-gray-700">Method</p>
-                                    <p className="text-gray-600">{event.examination_method}</p>
+                            <>
+                              <div className="space-y-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                  {/* <div className="flex items-start gap-2">
+                                    <CheckCircle2 className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                    <div>
+                                      <p className="font-medium text-gray-700">Pregnancy Status</p>
+                                      {event.pregnancy_result
+                                        ? <Badge className={
+                                          event.pregnancy_result === 'pregnant' ? 'bg-green-100 text-green-800' :
+                                          event.pregnancy_result === 'not_pregnant' ? 'bg-red-100 text-red-800' :
+                                          'bg-yellow-100 text-yellow-800'
+                                        }>
+                                          {event.pregnancy_result.replace('_', ' ')}
+                                        </Badge>
+                                        : <p className="text-gray-400">N/A</p>}
+                                    </div>
+                                  </div> */}
+                                  {event.examination_method && (
+                                    <div className="flex items-start gap-2">
+                                      <Stethoscope className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                      <div>
+                                        <p className="font-medium text-gray-700">Examination Method</p>
+                                        <p className="text-gray-600">{event.examination_method}</p>
+                                      </div>
+                                    </div>
+                                  )}
+                                  {event.veterinarian_name && (
+                                    <div className="flex items-start gap-2">
+                                      <User className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                      <div>
+                                        <p className="font-medium text-gray-700">Veterinarian</p>
+                                        <p className="text-gray-600">{event.veterinarian_name}</p>
+                                      </div>
+                                    </div>
+                                  )}
+                                  <div className="flex items-start gap-2">
+                                    <Calendar className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                    <div>
+                                      <p className="font-medium text-gray-700">Confirmed Date</p>
+                                      <p className="text-gray-600">
+                                        {event.confirmed_date 
+                                          ? new Date(event.confirmed_date).toLocaleDateString()
+                                          : 'N/A'}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-start gap-2">
+                                    <Calendar className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                    <div>
+                                      <p className="font-medium text-gray-700">Expected Due Date</p>
+                                      <p className="text-gray-600">
+                                        {event.estimated_due_date 
+                                          ? new Date(event.estimated_due_date).toLocaleDateString()
+                                          : 'N/A'}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-start gap-2">
+                                    <Calendar className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                    <div>
+                                      <p className="font-medium text-gray-700">Steaming Date</p>
+                                      <p className="text-gray-600">
+                                        {event.steaming_date 
+                                          ? new Date(event.steaming_date).toLocaleDateString()
+                                          : 'N/A'}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-start gap-2">
+                                    <FileText className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                    <div>
+                                      <p className="font-medium text-gray-700">Gestation Length</p>
+                                      <p className="text-gray-600">
+                                        {event.gestation_length_days != null ? `${event.gestation_length_days} days` : 'N/A'}
+                                      </p>
+                                    </div>
                                   </div>
                                 </div>
-                              )}
-                              {event.veterinarian_name && (
-                                <div className="flex items-start gap-2">
-                                  <User className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                                  <div>
-                                    <p className="font-medium text-gray-700">Veterinarian</p>
-                                    <p className="text-gray-600">{event.veterinarian_name}</p>
+
+                                {event.pregnancy_notes && (
+                                  <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
+                                    <div className="flex items-start gap-2">
+                                      <FileText className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                      <div>
+                                        <p className="font-medium text-gray-700 mb-1">Pregnancy Notes</p>
+                                        <p className="text-gray-600 whitespace-pre-wrap">{event.pregnancy_notes}</p>
+                                      </div>
+                                    </div>
                                   </div>
-                                </div>
-                              )}
-                              {event.estimated_due_date && (
-                                <div className="flex items-start gap-2">
-                                  <Clock className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                                  <div>
-                                    <p className="font-medium text-gray-700">Due Date</p>
-                                    <p className="text-gray-600">
-                                      {new Date(event.estimated_due_date).toLocaleDateString()}
-                                    </p>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
+                                )}
+
+                                {/* <div className="flex items-center gap-1 text-xs text-gray-400 pt-2 border-t border-gray-100">
+                                  <Clock className="w-3 h-3" />
+                                  <span>Recorded {new Date(event.pregnancy_created_at || event.event_date).toLocaleString()}</span>
+                                </div> */}
+                              </div>
+                            </>
                           )}
 
                           {event.event_type === 'calving' && (
-                            <div className="space-y-3">
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                {event.calf_tag_number && (
-                                  <div className="flex items-start gap-2">
-                                    <Tag className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                                    <div>
-                                      <p className="font-medium text-gray-700">Calf Tag</p>
-                                      <p className="text-gray-600">{event.calf_tag_number}</p>
+                            <>
+                              <div className="space-y-3">
+
+                                {/* ── Calving Event Details ─────────────────────────── */}
+                                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                                  <button
+                                    onClick={() => toggleCalvingSubsection(event.id, 'event_details')}
+                                    className={cn(
+                                      "w-full px-3 py-2.5 flex items-center justify-between bg-gray-50 hover:bg-gray-100 transition-colors",
+                                      isMobile ? "text-sm" : "text-base"
+                                    )}
+                                  >
+                                    <span className="font-semibold text-gray-700">Calving Event Details</span>
+                                    {isCalvingSubsectionExpanded(event.id, 'event_details') 
+                                      ? <ChevronUp className="w-4 h-4 text-gray-500" />
+                                      : <ChevronDown className="w-4 h-4 text-gray-500" />
+                                    }
+                                  </button>
+                                  {isCalvingSubsectionExpanded(event.id, 'event_details') && (
+                                    <div className="p-3 space-y-3 border-t border-gray-100">
+                                      <div className="grid grid-cols-1 gap-3">
+                                        <div className="flex items-start gap-2">
+                                          <Baby className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                          <div>
+                                            <p className="font-medium text-gray-700">Calving Difficulty</p>
+                                            {event.calving_outcome
+                                              ? <Badge className="bg-orange-50 text-orange-700 border border-orange-200 mt-1 capitalize">{event.calving_outcome}</Badge>
+                                              : <p className="text-gray-400">N/A</p>}
+                                          </div>
+                                        </div>
+                                        <div className="flex items-start gap-2">
+                                          {event.calf_alive == null
+                                            ? <Baby className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                            : event.calf_alive
+                                              ? <CheckCircle2 className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                                              : <XCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />}
+                                          <div>
+                                            <p className="font-medium text-gray-700">Calf Status</p>
+                                            {event.calf_alive == null
+                                              ? <p className="text-gray-400">N/A</p>
+                                              : <Badge className={event.calf_alive
+                                                  ? 'bg-green-50 text-green-700 border border-green-200 mt-1'
+                                                  : 'bg-red-50 text-red-700 border border-red-200 mt-1'}>
+                                                  {event.calf_alive ? 'Alive' : 'Deceased'}
+                                                </Badge>}
+                                          </div>
+                                        </div>
+                                        <div className="flex items-start gap-2">
+                                          <AlertTriangle className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                          <div>
+                                            <p className="font-medium text-gray-700">Assistance Required</p>
+                                            {event.assistance_required == null
+                                              ? <p className="text-gray-400">N/A</p>
+                                              : <Badge className={event.assistance_required
+                                                  ? 'bg-yellow-50 text-yellow-700 border border-yellow-200 mt-1'
+                                                  : 'bg-gray-50 text-gray-600 border border-gray-200 mt-1'}>
+                                                  {event.assistance_required ? 'Yes' : 'No'}
+                                                </Badge>}
+                                          </div>
+                                        </div>
+                                        <div className="flex items-start gap-2">
+                                          <User className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                          <div>
+                                            <p className="font-medium text-gray-700">Veterinarian</p>
+                                            <p className="text-gray-600">{event.veterinarian_name ?? 'N/A'}</p>
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-start gap-2 p-3 bg-gray-50 rounded-lg border border-gray-100">
+                                        <AlertCircle className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                        <div>
+                                          <p className="font-medium text-gray-700">Complications</p>
+                                          <p className={event.complications ? 'text-red-600 text-sm mt-0.5' : 'text-gray-400'}>
+                                            {event.complications ?? 'N/A'}
+                                          </p>
+                                        </div>
+                                      </div>
                                     </div>
-                                  </div>
-                                )}
-                                {event.calf_weight && (
-                                  <div className="flex items-start gap-2">
-                                    <Baby className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                                    <div>
-                                      <p className="font-medium text-gray-700">Birth Weight</p>
-                                      <p className="text-gray-600">{event.calf_weight} kg</p>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                              {event.calf_health_status && (
-                                <div className="flex items-start gap-2">
-                                  <Stethoscope className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                                  <div>
-                                    <p className="font-medium text-gray-700">Calf Health</p>
-                                    <Badge className="bg-blue-50 text-blue-700 border border-blue-200 mt-1">
-                                      {event.calf_health_status}
-                                    </Badge>
-                                  </div>
+                                  )}
                                 </div>
-                              )}
-                            </div>
+
+                                {/* ── Colostrum Information ──────────────────────────── */}
+                                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                                  <button
+                                    onClick={() => toggleCalvingSubsection(event.id, 'colostrum')}
+                                    className={cn(
+                                      "w-full px-3 py-2.5 flex items-center justify-between bg-gray-50 hover:bg-gray-100 transition-colors",
+                                      isMobile ? "text-sm" : "text-base"
+                                    )}
+                                  >
+                                    <span className="font-semibold text-gray-700">Colostrum Information</span>
+                                    {isCalvingSubsectionExpanded(event.id, 'colostrum') 
+                                      ? <ChevronUp className="w-4 h-4 text-gray-500" />
+                                      : <ChevronDown className="w-4 h-4 text-gray-500" />
+                                    }
+                                  </button>
+                                  {isCalvingSubsectionExpanded(event.id, 'colostrum') && (
+                                    <div className="p-3 space-y-3 border-t border-gray-100">
+                                      <div className="grid grid-cols-1 gap-3">
+                                        <div className="flex items-start gap-2">
+                                          <Droplets className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
+                                          <div>
+                                            <p className="font-medium text-gray-700">Colostrum Quality</p>
+                                            {event.colostrum_quality
+                                              ? <Badge className="bg-blue-50 text-blue-700 border border-blue-200 mt-1 capitalize">{event.colostrum_quality}</Badge>
+                                              : <p className="text-gray-400">N/A</p>}
+                                          </div>
+                                        </div>
+                                        <div className="flex items-start gap-2">
+                                          <Droplets className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
+                                          <div>
+                                            <p className="font-medium text-gray-700">Colostrum Produced</p>
+                                            <p className="text-gray-600">
+                                              {event.colostrum_produced != null ? `${event.colostrum_produced} L` : 'N/A'}
+                                            </p>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* ── Calf Information ──────────────────────────────── */}
+                                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                                  <button
+                                    onClick={() => toggleCalvingSubsection(event.id, 'calf_info')}
+                                    className={cn(
+                                      "w-full px-3 py-2.5 flex items-center justify-between bg-gray-50 hover:bg-gray-100 transition-colors",
+                                      isMobile ? "text-sm" : "text-base"
+                                    )}
+                                  >
+                                    <span className="font-semibold text-gray-700">Calf Information</span>
+                                    {isCalvingSubsectionExpanded(event.id, 'calf_info') 
+                                      ? <ChevronUp className="w-4 h-4 text-gray-500" />
+                                      : <ChevronDown className="w-4 h-4 text-gray-500" />
+                                    }
+                                  </button>
+                                  {isCalvingSubsectionExpanded(event.id, 'calf_info') && (
+                                    <div className="p-3 space-y-3 border-t border-gray-100">
+                                      <div className="grid grid-cols-1 gap-3">
+                                        <div className="flex items-start gap-2">
+                                          <Tag className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                          <div>
+                                            <p className="font-medium text-gray-700">Calf Tag</p>
+                                            <p className="text-gray-600">{event.calf_tag_number ?? 'N/A'}</p>
+                                          </div>
+                                        </div>
+                                        <div className="flex items-start gap-2">
+                                          <User className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                          <div>
+                                            <p className="font-medium text-gray-700">Calf Name</p>
+                                            <p className="text-gray-600">{event.calf_name ?? 'N/A'}</p>
+                                          </div>
+                                        </div>
+                                        <div className="flex items-start gap-2">
+                                          <Baby className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                          <div>
+                                            <p className="font-medium text-gray-700">Calf Gender</p>
+                                            <p className="text-gray-600 capitalize">{event.calf_gender ?? 'N/A'}</p>
+                                          </div>
+                                        </div>
+                                        <div className="flex items-start gap-2">
+                                          <Baby className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                          <div>
+                                            <p className="font-medium text-gray-700">Birth Weight</p>
+                                            <p className="text-gray-600">
+                                              {event.calf_weight != null ? `${event.calf_weight} kg` : 'N/A'}
+                                            </p>
+                                          </div>
+                                        </div>
+                                        <div className="flex items-start gap-2">
+                                          <Stethoscope className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                          <div>
+                                            <p className="font-medium text-gray-700">Calf Health</p>
+                                            {event.calf_health_status
+                                              ? <Badge className="bg-blue-50 text-blue-700 border border-blue-200 mt-1 capitalize">{event.calf_health_status}</Badge>
+                                              : <p className="text-gray-400">N/A</p>}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Calving Notes */}
+                                {event.calving_notes && (
+                                  <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
+                                    <div className="flex items-start gap-2">
+                                      <FileText className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                      <div>
+                                        <p className="font-medium text-gray-700 mb-1">Calving Notes</p>
+                                        <p className="text-gray-600 text-sm whitespace-pre-wrap">{event.calving_notes}</p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+
+                              </div>
+                            </>
                           )}
 
                           {event.notes && (
@@ -650,6 +1115,195 @@ export function BreedingEventTimeline({
                                 </div>
                               </div>
                             </div>
+                          )}
+
+                          {/* Follow-up Section */}
+                          {event.follow_up_recorded && (
+                            <>
+                              {console.log(`[BreedingTimeline] Rendering follow-up section for event ${event.id} (${event.event_type})`)}
+                              <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+                                <div className="flex items-start gap-2 mb-3">
+                                  <CalendarPlus className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                                  <div className="flex-1">
+                                    <p className="font-medium text-blue-900 mb-2">Follow-up</p>
+                                    
+                                    {/* Heat Detection Follow-up */}
+                                    {event.event_type === 'heat_detection' && (
+                                    <>
+                                      {console.log(`[BreedingTimeline] Heat detection follow-up for ${event.id}:`, {
+                                        insemination_scheduled: !!event.follow_up_insemination_scheduled_at,
+                                        confirmed: event.follow_up_insemination_confirmed,
+                                        breeding_window: !!event.follow_up_natural_breeding_start,
+                                        monitoring_plan: event.follow_up_monitoring_plan,
+                                        ovulation: !!event.follow_up_ovulation_date,
+                                      })}
+                                    <div className="space-y-1.5 text-sm text-blue-800">
+                                      {event.follow_up_insemination_scheduled_at && (
+                                        <div className="flex justify-between">
+                                          <span className="text-blue-700">Insemination Scheduled:</span>
+                                          <span className="font-medium">{new Date(event.follow_up_insemination_scheduled_at).toLocaleString()}</span>
+                                        </div>
+                                      )}
+                                      {event.follow_up_insemination_confirmed && (
+                                        <div className="flex items-center gap-2 text-green-700">
+                                          <CheckCircle2 className="w-3 h-3" />
+                                          <span>Insemination Confirmed</span>
+                                        </div>
+                                      )}
+                                      {event.follow_up_natural_breeding_start && (
+                                        <div className="flex justify-between">
+                                          <span className="text-blue-700">Breeding Window:</span>
+                                          <span className="font-medium">{new Date(event.follow_up_natural_breeding_start).toLocaleDateString()} - {new Date(event.follow_up_natural_breeding_end || '').toLocaleDateString()}</span>
+                                        </div>
+                                      )}
+                                      {event.follow_up_monitoring_plan && (
+                                        <div className="flex justify-between">
+                                          <span className="text-blue-700">Monitoring Plan:</span>
+                                          <Badge className="text-xs bg-blue-100 text-blue-800 border-blue-200">{event.follow_up_monitoring_plan.replace('_', ' ')}</Badge>
+                                        </div>
+                                      )}
+                                      {event.follow_up_ovulation_date && (
+                                        <div className="flex justify-between">
+                                          <span className="text-blue-700">Ovulation:</span>
+                                          <span className="font-medium">{event.follow_up_ovulation_date} ({event.follow_up_ovulation_start_time || '-'} to {event.follow_up_ovulation_end_time || '-'})</span>
+                                        </div>
+                                      )}
+                                      {event.follow_up_has_medical_issue && (
+                                        <div className="flex items-start gap-2">
+                                          <AlertTriangle className="w-3 h-3 text-orange-600 mt-0.5 flex-shrink-0" />
+                                          <div className="flex-1">
+                                            <span className="text-orange-700">Medical Issue:</span>
+                                            <p className="text-orange-600 text-xs mt-0.5">{event.follow_up_medical_issue_description}</p>
+                                          </div>
+                                        </div>
+                                      )}
+                                      {event.follow_up_vet_name && (
+                                        <div className="flex justify-between">
+                                          <span className="text-blue-700">Veterinarian:</span>
+                                          <span className="font-medium">{event.follow_up_vet_name}</span>
+                                        </div>
+                                      )}
+                                      {event.follow_up_notes && (
+                                        <div className="mt-2 pt-2 border-t border-blue-100">
+                                          <p className="text-xs text-blue-600">{event.follow_up_notes}</p>
+                                        </div>
+                                      )}
+                                    </div>
+                                    </>
+                                  )}
+
+                                  {/* Insemination Follow-up */}
+                                  {event.event_type === 'insemination' && (
+                                    <div className="space-y-1.5 text-sm text-blue-800">
+                                      {event.follow_up_ovulation_date && (
+                                        <div className="flex justify-between">
+                                          <span className="text-blue-700">Ovulation Date:</span>
+                                          <span className="font-medium">{event.follow_up_ovulation_date}</span>
+                                        </div>
+                                      )}
+                                      {event.follow_up_ovulation_start_time && (
+                                        <div className="flex justify-between">
+                                          <span className="text-blue-700">Ovulation Time:</span>
+                                          <span className="font-medium">{event.follow_up_ovulation_start_time} - {event.follow_up_ovulation_end_time}</span>
+                                        </div>
+                                      )}
+                                      {event.follow_up_ovulation_amount_ml && (
+                                        <div className="flex justify-between">
+                                          <span className="text-blue-700">Ovulation Amount:</span>
+                                          <span className="font-medium">{event.follow_up_ovulation_amount_ml} ml</span>
+                                        </div>
+                                      )}
+                                      {event.follow_up_has_medical_issue && (
+                                        <div className="flex items-start gap-2">
+                                          <AlertTriangle className="w-3 h-3 text-orange-600 mt-0.5 flex-shrink-0" />
+                                          <div className="flex-1">
+                                            <span className="text-orange-700">Medical Issue:</span>
+                                            <p className="text-orange-600 text-xs mt-0.5">{event.follow_up_medical_issue_description}</p>
+                                          </div>
+                                        </div>
+                                      )}
+                                      {event.follow_up_notes && (
+                                        <div className="mt-2 pt-2 border-t border-blue-100">
+                                          <p className="text-xs text-blue-600">{event.follow_up_notes}</p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* Pregnancy Check Follow-up */}
+                                  {event.event_type === 'pregnancy_check' && (
+                                    <div className="space-y-1.5 text-sm text-blue-800">
+                                      {event.follow_up_steaming_date && (
+                                        <div className="flex justify-between">
+                                          <span className="text-blue-700">Steaming Date:</span>
+                                          <span className="font-medium">{event.follow_up_steaming_date}</span>
+                                        </div>
+                                      )}
+                                      {event.follow_up_next_check_date && (
+                                        <div className="flex justify-between">
+                                          <span className="text-blue-700">Next Check Date:</span>
+                                          <span className="font-medium">{event.follow_up_next_check_date}</span>
+                                        </div>
+                                      )}
+                                      {event.follow_up_expected_heat_date && (
+                                        <div className="flex justify-between">
+                                          <span className="text-blue-700">Expected Heat Date:</span>
+                                          <span className="font-medium">{event.follow_up_expected_heat_date}</span>
+                                        </div>
+                                      )}
+                                      {event.follow_up_notes && (
+                                        <div className="mt-2 pt-2 border-t border-blue-100">
+                                          <p className="text-xs text-blue-600">{event.follow_up_notes}</p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* Calving Follow-up */}
+                                  {event.event_type === 'calving' && (
+                                    <div className="space-y-1.5 text-sm text-blue-800">
+                                      {event.follow_up_placenta_expelled !== null && (
+                                        <div className="flex items-center gap-2">
+                                          {event.follow_up_placenta_expelled ? (
+                                            <>
+                                              <CheckCircle2 className="w-3 h-3 text-green-600" />
+                                              <span>Placenta Expelled</span>
+                                              {event.follow_up_placenta_expelled_at && (
+                                                <span className="text-xs font-medium">{new Date(event.follow_up_placenta_expelled_at).toLocaleString()}</span>
+                                              )}
+                                            </>
+                                          ) : (
+                                            <>
+                                              <XCircle className="w-3 h-3 text-red-600" />
+                                              <span>Placenta Not Expelled</span>
+                                            </>
+                                          )}
+                                        </div>
+                                      )}
+                                      {event.follow_up_has_medical_issue && (
+                                        <div className="flex items-start gap-2">
+                                          <AlertTriangle className="w-3 h-3 text-orange-600 mt-0.5 flex-shrink-0" />
+                                          <div className="flex-1">
+                                            <span className="text-orange-700">Medical Issue:</span>
+                                            <p className="text-orange-600 text-xs mt-0.5">{event.follow_up_medical_issue_description}</p>
+                                          </div>
+                                        </div>
+                                      )}
+                                      {event.follow_up_notes && (
+                                        <div className="mt-2 pt-2 border-t border-blue-100">
+                                          <p className="text-xs text-blue-600">{event.follow_up_notes}</p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  <div className="mt-2 pt-2 border-t border-blue-100 text-xs text-blue-600">
+                                    Follow-up recorded {new Date(event.follow_up_created_at).toLocaleString()}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                            </>
                           )}
 
                           <div className="flex items-center gap-1 text-xs text-gray-400 pt-2 border-t border-gray-100">
@@ -703,11 +1357,6 @@ export function BreedingEventTimeline({
             </p>
             <Button
               onClick={() => {
-                console.log('[BreedingEventTimeline] Load more clicked', {
-                  currentLoadedCount: loadedCount,
-                  totalCount,
-                  filteredCount: filteredEvents.length
-                })
                 loadMore?.()
               }}
               disabled={loading}
@@ -751,18 +1400,24 @@ export function BreedingEventTimeline({
         <AddBreedingEventModal
           isOpen={!!editingEvent}
           onClose={() => {
-            console.log('[BreedingEventTimeline] Edit modal closed', { eventId: editingEvent.id })
             setEditingEvent(null)
           }}
           farmId={farmId}
           onEventCreated={() => {
-            console.log('[BreedingEventTimeline] Event created/updated', { eventId: editingEvent.id })
             setEditingEvent(null)
             refetch?.()
           }}
           editingEvent={editingEvent}
         />
       )}
+
+      {/* Follow-up modal */}
+      <FollowUpBreedingModal
+        isOpen={!!followUpEvent}
+        onClose={() => setFollowUpEvent(null)}
+        event={followUpEvent}
+        farmId={farmId}
+      />
     </div>
   )
 }

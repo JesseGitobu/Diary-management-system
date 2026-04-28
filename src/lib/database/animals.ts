@@ -192,7 +192,6 @@ export async function getAnimalById(animalId: string) {
   }
   
   if (!data) {
-    console.warn('[getAnimalById] No data returned for animal:', animalId)
     return null
   }
   
@@ -217,12 +216,16 @@ export async function getAnimalById(animalId: string) {
     .limit(1)
   
   // Fetch lactation data
-  const { data: lactationData } = await supabase
+  const { data: lactationData, error: lactationError } = await supabase
     .from('lactation_cycle_records')
     .select('id, lactation_number, peak_yield_litres, total_yield_litres, status, start_date, expected_end_date, actual_end_date')
     .eq('animal_id', animalId)
     .order('created_at', { ascending: false })
     .limit(1)
+  
+  if (lactationError) {
+    // Error fetching lactation
+  }
   
   // Fetch service records
   const { data: serviceData } = await supabase
@@ -261,12 +264,16 @@ export async function getAnimalById(animalId: string) {
     .limit(1)
   
   // Fetch calving records
-  const { data: calvingData } = await supabase
+  const { data: calvingData, error: calvingError } = await supabase
     .from('calving_records')
-    .select('id, calving_date, calving_time, calving_difficulty, assistance_required, calf_alive, colostrum_quality, steaming_date, colostrum_produced, complications')
+    .select('id, calving_date, calving_time, calving_difficulty, assistance_required, calf_alive, colostrum_quality, colostrum_produced, complications')
     .eq('mother_id', animalId)
     .order('calving_date', { ascending: false })
     .limit(1)
+  
+  if (calvingError) {
+    // Error fetching calving
+  }
   
   // Fetch all calvings for history
   const { data: allCalvingsData } = await supabase
@@ -284,31 +291,16 @@ export async function getAnimalById(animalId: string) {
     .limit(1)
   
   // Fetch breeding events
-  const { data: breedingData } = await supabase
+  const { data: breedingData, error: breedingError } = await supabase
     .from('breeding_events')
-    .select('id, event_type, event_date, heat_signs, heat_action_taken')
+    .select('id, event_type, event_date')
     .eq('animal_id', animalId)
     .order('event_date', { ascending: false })
     .limit(5)
   
-  // ========== DEBUG LOGGING ==========
-  console.log('[getAnimalById] === DEBUG START ===')
-  console.log('[getAnimalById] Animal ID:', animalId)
-  console.log('[getAnimalById] Tag/Name:', typedData.tag_number, typedData.name)
-  console.log('[getAnimalById] Animal Source:', typedData.animal_source)
-  console.log('[getAnimalById] Production Status:', typedData.production_status)
-  
-  console.log('[getAnimalById] --- PURCHASE DATA ---')
-  console.log('[getAnimalById] Purchase data:', purchaseData)
-  
-  console.log('[getAnimalById] --- LACTATION DATA ---')
-  console.log('[getAnimalById] Lactation data:', lactationData)
-  
-  console.log('[getAnimalById] --- WEIGHT DATA ---')
-  console.log('[getAnimalById] Weight data:', weightData)
-  
-  console.log('[getAnimalById] === DEBUG END ===')
-  // ========== END DEBUG LOGGING ==========
+  if (breedingError) {
+    // Error fetching breeding events
+  }
   
   // Map the data to extract weight and lactation info from joined tables
   // Calculate days_in_milk from lactation start_date
@@ -666,9 +658,6 @@ export async function updateAnimal(animalId: string, farmId: string, animalData:
       }
     })
     
-    // 🔍 Log BEFORE update to see what we're sending
-    console.log('🔍 [DB] Updating animal:', animalId, 'with data:', updateData)
-    
     // Update the animal
     // FIXED: Cast to any to bypass 'never' type on update
     const { data, error } = await (supabase
@@ -696,9 +685,6 @@ export async function updateAnimal(animalId: string, farmId: string, animalData:
       return { success: false, error: error.message }
     }
 
-    // ✅ FIXED: Log the returned data (which has the ID)
-    console.log('✅ [DB] Animal updated:', data.id, 'Weight:', data.weight)
-    
     return { success: true, data }
   } catch (error) {
     console.error('❌ [DB] Error in updateAnimal:', error)
@@ -734,7 +720,6 @@ export async function updateAnimalProductionStatusByAge(
     
     // Don't auto-update if animal has health issues (optional - you may want to update anyway)
     if (animal.health_status && ['sick', 'quarantined'].includes(animal.health_status)) {
-      console.log('Skipping production status update for animal with health issues')
       return { success: false, error: 'Animal has health issues - status not auto-updated' }
     }
     

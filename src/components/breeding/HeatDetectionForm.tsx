@@ -123,24 +123,18 @@ export function HeatDetectionForm({ farmId, onEventCreated, onCancel, preSelecte
 
     try {
       setDetailsLoading(true)
-      console.log('[HeatDetectionForm] loading selected animal details for', animalId)
       const response = await fetch(`/api/animals/${animalId}`, { signal })
       const result = await response.json()
-      console.log('[HeatDetectionForm] selected animal fetch response', {
-        animalId,
-        status: response.status,
-        ok: response.ok,
-        result,
-      })
 
       if (response.ok && result.success) {
-        setSelectedAnimalDetails(result.animal)
+        const animal = result.animal
+        setSelectedAnimalDetails(animal)
       } else {
         setSelectedAnimalDetails(null)
       }
     } catch (loadError) {
       if ((loadError as any)?.name !== 'AbortError') {
-        console.error('Error loading animal details:', loadError)
+        // Error silently handled
       }
       setSelectedAnimalDetails(null)
     } finally {
@@ -149,25 +143,24 @@ export function HeatDetectionForm({ farmId, onEventCreated, onCancel, preSelecte
   }
 
   const formatProductionStatus = (status?: string | null) => {
-    if (!status) return 'Unknown status'
-    return status
+    if (!status) {
+      return 'Unknown status'
+    }
+    const formatted = status
       .replace(/_/g, ' ')
       .replace(/\b\w/g, (char) => char.toUpperCase())
+    return formatted
   }
 
   const getLatestBreedingEvent = (eventType: 'heat_detection' | 'insemination') => {
-    return selectedAnimalDetails?.breeding_events?.find((event: any) => event.event_type === eventType)?.event_date ?? null
+    const breedingEvents = selectedAnimalDetails?.breeding_events
+    const found = breedingEvents?.find((event: any) => event.event_type === eventType)
+    return found?.event_date ?? null
   }
 
   const loadEligibleAnimals = async () => {
     try {
       const eligibleAnimals = await getEligibleAnimals(farmId, 'heat_detection')
-      console.log('[HeatDetectionForm] eligibleAnimals loaded', {
-        farmId,
-        preSelectedAnimalId,
-        count: eligibleAnimals?.length,
-        sample: eligibleAnimals?.slice(0, 10),
-      })
       
       // Inject animal if pre-selected but not in list (e.g. status issue)
       if (preSelectedAnimalId) {
@@ -185,14 +178,12 @@ export function HeatDetectionForm({ farmId, onEventCreated, onCancel, preSelecte
       }
       
       setAnimals(eligibleAnimals)
-      console.log('[HeatDetectionForm] animals state set', { animals: eligibleAnimals })
       
       // Re-assert value after loading
       if (preSelectedAnimalId) {
         form.setValue('animal_id', preSelectedAnimalId)
       }
     } catch (error) {
-      console.error('Error loading animals:', error)
       setError('Failed to load animals')
     }
   }
@@ -211,8 +202,20 @@ export function HeatDetectionForm({ farmId, onEventCreated, onCancel, preSelecte
     setError(null)
 
     try {
+      // 🔍 DEBUG: Log raw form input
+      console.log('🔥 [FORM] Raw form data:', {
+        event_date: data.event_date,
+        event_time: data.event_time,
+        animal_id: data.animal_id,
+        heat_action_taken: data.heat_action_taken,
+        heat_signs: selectedSigns,
+      })
+
       const dateTime = `${data.event_date}T${data.event_time}:00`
       const { event_time, ...restData } = data
+
+      // 🔍 DEBUG: Log combined datetime
+      console.log('🔥 [FORM] Combined datetime:', dateTime)
 
       const payload = {
         ...restData,
@@ -221,6 +224,9 @@ export function HeatDetectionForm({ farmId, onEventCreated, onCancel, preSelecte
         event_type: 'heat_detection',
         heat_signs: selectedSigns,
       }
+
+      // 🔍 DEBUG: Log final payload before sending
+      console.log('🔥 [FORM] Payload being sent to API:', payload)
 
       const url = eventId ? `/api/breeding-events/${eventId}` : '/api/breeding-events'
       const method = eventId ? 'PATCH' : 'POST'
@@ -236,13 +242,23 @@ export function HeatDetectionForm({ farmId, onEventCreated, onCancel, preSelecte
 
       const result = await response.json()
 
+      // 🔍 DEBUG: Log API response
+      console.log('🔥 [FORM] API Response:', {
+        status: response.status,
+        success: result.success,
+        event: result.event,
+        message: result.message,
+        error: result.error,
+      })
+
       if (response.ok && result.success) {
+        console.log('✅ [FORM] Heat detection event saved successfully')
         onEventCreated()
       } else {
         setError(result.error || `Failed to ${eventId ? 'update' : 'create'} heat detection event`)
       }
     } catch (error) {
-      console.error('Error submitting form:', error)
+      console.error('❌ [FORM] Error during submission:', error)
       setError('An unexpected error occurred')
     } finally {
       setLoading(false)

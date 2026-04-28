@@ -660,10 +660,6 @@ export async function getFeedInventory(farmId: string) {
     return []
   }
 
-  const inventorySources = inventoryData.map((i: any) => ({ feedTypeId: i.feed_type_id, source: i.source }));
-  console.log('[FeedInventory] DEBUG: inventoryData items sources:', inventorySources);
-  console.log('[FeedInventory] DEBUG: inventoryData sources that are "produced":', inventorySources.filter(s => s.source === 'produced'));
-
   // Get the most recent purchase/harvest for each feed type (check both tables)
   const feedTypeIds = inventoryData.map(item => item.feed_type_id)
 
@@ -705,10 +701,6 @@ export async function getFeedInventory(farmId: string) {
       .eq('farm_id', farmId)
       .order('harvest_date', { ascending: false })
   ])
-
-  console.log('[FeedInventory] DEBUG: purchasesData count:', purchasesData?.length);
-  console.log('[FeedInventory] DEBUG: harvestsData count:', harvestsData?.length);
-  console.log('[FeedInventory] DEBUG: harvestsError:', harvestsError);
 
   if (purchasesError) {
     console.error('Error fetching purchase data:', purchasesError)
@@ -1042,17 +1034,17 @@ export async function getFeedStats(farmId: string, days: number = 30) {
   const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
 
   try {
-    // Query both feed_types and their inventory, plus consumption records for the period
-    const [feedTypesRes, inventoryRes, consumptionRes] = await Promise.all([
+    // Query all required data sources: feed types, inventory, consumption, and actual purchase/harvest costs
+    const [feedTypesRes, inventoryRes, consumptionRes, purchasesRes, harvestsRes] = await Promise.all([
       supabase
         .from('feed_types')
-        .select('id, name, description, typical_cost_per_kg')
+        .select('id, name, description, typical_cost_per_kg, low_stock_threshold')
         .eq('farm_id', farmId),
 
-      // Get current inventory snapshot
+      // Get current inventory snapshot with actual accumulated costs
       supabase
         .from('feed_inventory')
-        .select('feed_type_id, quantity_kg, total_cost, minimum_threshold')
+        .select('feed_type_id, quantity_kg, total_cost, source')
         .eq('farm_id', farmId),
 
       // Get consumption for the period
@@ -1062,14 +1054,28 @@ export async function getFeedStats(farmId: string, days: number = 30) {
         .eq('farm_id', farmId)
         .gte('consumption_date', startDate)
         .lte('consumption_date', endDate),
+
+      // Get all purchases with cost data (from addFeedInventory source='purchased' or 'formulate')
+      supabase
+        .from('feed_purchases')
+        .select('feed_type_id, quantity_kg, cost_per_kg')
+        .eq('farm_id', farmId),
+
+      // Get all harvests with cost data (from addFeedInventory source='produced')
+      supabase
+        .from('feed_harvests')
+        .select('feed_type_id, quantity_kg, cost_per_kg')
+        .eq('farm_id', farmId),
     ])
 
     const feedTypes = (feedTypesRes.data as any[]) ?? []
     const inventoryRows = (inventoryRes.data as any[]) ?? []
     const consumptionRows = (consumptionRes.data as any[]) ?? []
+    const purchasesRows = (purchasesRes.data as any[]) ?? []
+    const harvestsRows = (harvestsRes.data as any[]) ?? []
 
     // Build lookup maps in JS (O(n), not O(n) DB round-trips)
-    const invByFeed = new Map<string, { quantity_kg: number; total_cost: number | null; minimum_threshold: number | null }[]>()
+    const invByFeed = new Map<string, { quantity_kg: number; total_cost: number | null; source: string }[]>()
     for (const row of inventoryRows) {
       if (!invByFeed.has(row.feed_type_id)) invByFeed.set(row.feed_type_id, [])
       invByFeed.get(row.feed_type_id)!.push(row)
@@ -1079,6 +1085,42 @@ export async function getFeedStats(farmId: string, days: number = 30) {
     for (const row of consumptionRows) {
       if (!consByFeed.has(row.feed_type_id)) consByFeed.set(row.feed_type_id, [])
       consByFeed.get(row.feed_type_id)!.push(row)
+    }
+
+    // Build maps for calculating weighted average costs from actual purchase/harvest records
+    const purchasesByFeed = new Map<string, { quantity_kg: number; cost_per_kg: number | null }[]>()
+    for (const row of purchasesRows) {
+      if (!purchasesByFeed.has(row.feed_type_id)) purchasesByFeed.set(row.feed_type_id, [])
+      purchasesByFeed.get(row.feed_type_id)!.push(row)
+    }
+
+    const harvestsByFeed = new Map<string, { quantity_kg: number; cost_per_kg: number | null }[]>()
+    for (const row of harvestsRows) {
+      if (!harvestsByFeed.has(row.feed_type_id)) harvestsByFeed.set(row.feed_type_id, [])
+      harvestsByFeed.get(row.feed_type_id)!.push(row)
+    }
+
+    // Helper function to calculate weighted average cost from transactions
+    const calculateWeightedAvgCost = (feedTypeId: string): number => {
+      const purchases = purchasesByFeed.get(feedTypeId) ?? []
+      const harvests = harvestsByFeed.get(feedTypeId) ?? []
+      const allTransactions = [...purchases, ...harvests]
+
+      if (allTransactions.length === 0) {
+        return 0
+      }
+
+      let totalCostAmount = 0
+      let totalQuantity = 0
+
+      for (const tx of allTransactions) {
+        const qty = tx.quantity_kg || 0
+        const costPerKg = tx.cost_per_kg || 0
+        totalCostAmount += qty * costPerKg
+        totalQuantity += qty
+      }
+
+      return totalQuantity > 0 ? totalCostAmount / totalQuantity : 0
     }
 
     const stockLevels = []
@@ -1096,13 +1138,18 @@ export async function getFeedStats(farmId: string, days: number = 30) {
       const inventoryTotalCost = inventory.reduce((s, i) => s + (i.total_cost || 0), 0)
       const periodSessions = consumption.length
       const periodAnimalsFed = new Set(consumption.map(c => c.animal_id).filter(Boolean)).size
-      const threshold = inventory[0]?.minimum_threshold ?? 50
+      const threshold = feedType.low_stock_threshold ?? 50
+
+      // Calculate avgCostPerKg from actual purchase/harvest records (not just typical_cost_per_kg)
+      // This reflects the actual weighted average cost entered via addFeedInventory
+      const weightedAvgCost = calculateWeightedAvgCost(feedType.id)
+      const avgCostPerKg = weightedAvgCost > 0 ? weightedAvgCost : (feedType.typical_cost_per_kg || 0)
 
       if (periodConsumption > 0 || currentStock > 0) {
         stockLevels.push({
           feedType: { id: feedType.id, name: feedType.name, description: feedType.description },
           currentStock,
-          avgCostPerKg: feedType.typical_cost_per_kg || 0,
+          avgCostPerKg,
           totalPurchased: currentStock,
           totalCost: inventoryTotalCost,
           periodConsumption,

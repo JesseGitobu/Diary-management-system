@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -14,11 +14,12 @@ import { format, subDays, subMonths } from 'date-fns'
 
 interface ReportGeneratorProps {
   farmId: string
+  initialReportType?: string
 }
 
-export function ReportGenerator({ farmId }: ReportGeneratorProps) {
+export function ReportGenerator({ farmId, initialReportType }: ReportGeneratorProps) {
   const [reportConfig, setReportConfig] = useState({
-    reportType: 'comprehensive',
+    reportType: initialReportType || 'comprehensive',
     dateRange: 'month',
     customStartDate: '',
     customEndDate: '',
@@ -27,7 +28,13 @@ export function ReportGenerator({ farmId }: ReportGeneratorProps) {
     exportFormat: 'pdf'
   })
   const [loading, setLoading] = useState(false)
-  
+
+  useEffect(() => {
+    if (initialReportType) {
+      setReportConfig(prev => ({ ...prev, reportType: initialReportType }))
+    }
+  }, [initialReportType])
+
   const generateReport = async () => {
     setLoading(true)
     

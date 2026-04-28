@@ -177,7 +177,7 @@ export function FeedManagementDashboard({
   const enhancedStats = useMemo(() => {
     // Calculate current inventory value
     const currentInventoryValue = inventory.reduce((sum, item) => 
-      sum + (item.quantity_kg * item.cost_per_kg), 0
+      sum + (item.total_cost || 0), 0
     )
 
     // Calculate active animals being fed
@@ -204,7 +204,7 @@ export function FeedManagementDashboard({
           const newestDate = dates[dates.length - 1]
           const daysDifference = Math.max(1, Math.ceil((newestDate.getTime() - oldestDate.getTime()) / (1000 * 60 * 60 * 24)))
           
-          const totalFed = feedConsumption.reduce((sum, record) => sum + (record.quantity_kg || 0), 0)
+          const totalFed = feedConsumption.reduce((sum, record) => sum + (record.quantity_consumed || 0), 0)
           const avgDailyConsumption = totalFed / daysDifference
           
           if (avgDailyConsumption > 0) {

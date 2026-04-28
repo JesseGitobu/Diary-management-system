@@ -20,6 +20,8 @@ const inseminationSchema = z.object({
   event_time: z.string().min(1, 'Time of insemination is required'),
   insemination_method: z.enum(['artificial_insemination', 'natural_breeding']),
   semen_bull_code: z.string().optional(),
+  semen_bull_name: z.string().optional(),
+  semen_type: z.enum(['sexed_male', 'sexed_female', 'conventional', 'unknown']).optional(),
   technician_name: z.string().optional(),
   notes: z.string().optional(),
 })
@@ -101,6 +103,8 @@ export function InseminationForm({ farmId, onEventCreated, onCancel, preSelected
       event_time: new Date().toTimeString().slice(0, 5),
       insemination_method: 'artificial_insemination',
       semen_bull_code: '',
+      semen_bull_name: '',
+      semen_type: 'unknown',
       technician_name: '',
       notes: '',
     },
@@ -127,6 +131,8 @@ export function InseminationForm({ farmId, onEventCreated, onCancel, preSelected
       event_time: timePart || new Date().toTimeString().slice(0, 5),
       insemination_method: initialData.insemination_method || 'artificial_insemination',
       semen_bull_code: initialData.semen_bull_code || '',
+      semen_bull_name: initialData.semen_bull_name || '',
+      semen_type: initialData.semen_type || 'unknown',
       technician_name: initialData.technician_name || '',
       notes: initialData.notes || '',
     })
@@ -374,7 +380,7 @@ export function InseminationForm({ farmId, onEventCreated, onCancel, preSelected
           )}
           
           {/* Selected Animal Info */}
-          {selectedAnimal && (
+          {/* {selectedAnimal && (
             <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-md">
               <div className="flex items-center justify-between">
                 <div>
@@ -390,7 +396,7 @@ export function InseminationForm({ farmId, onEventCreated, onCancel, preSelected
                 </Badge>
               </div>
             </div>
-          )}
+          )} */}
 
           {selectedAnimalDetails && !detailsLoading && (
             <Card className="mt-4 border-gray-200 bg-white">
@@ -478,7 +484,7 @@ export function InseminationForm({ farmId, onEventCreated, onCancel, preSelected
                 }`}
               >
                 <div className="flex items-start space-x-3">
-                  <span className="text-2xl">{method.icon}</span>
+                  {/* <span className="text-2xl">{method.icon}</span> */}
                   <div>
                     <h4 className="font-medium text-gray-900">{method.label}</h4>
                     <p className="text-sm text-gray-600">{method.description}</p>
@@ -492,12 +498,12 @@ export function InseminationForm({ farmId, onEventCreated, onCancel, preSelected
           </div>
         </div>
 }
-        {/* Semen/Bull Code */}
-        <div>
-          <Label htmlFor="semen_bull_code">
-            {selectedMethod === 'artificial_insemination' ? 'Semen Code/Straw ID' : 'Bull ID/Registration'}
-          </Label>
-          <div className="space-y-2">
+        {/* Semen/Bull Code and Name */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="semen_bull_code">
+              {selectedMethod === 'artificial_insemination' ? 'Semen Code/Straw ID' : 'Bull ID/Registration'} *
+            </Label>
             <Input
               id="semen_bull_code"
               {...form.register('semen_bull_code')}
@@ -507,31 +513,54 @@ export function InseminationForm({ farmId, onEventCreated, onCancel, preSelected
                   : 'e.g., Bull-001, REG12345'
               }
             />
-            
-            {/* Common codes suggestions */}
-            {selectedMethod === 'artificial_insemination' && (
-              <div className="flex flex-wrap gap-1">
-                <span className="text-xs text-gray-600 mr-2">Common codes:</span>
-                {commonSemenCodes.map((code) => (
-                  <button
-                    key={code}
-                    type="button"
-                    onClick={() => form.setValue('semen_bull_code', code)}
-                    className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded transition-colors"
-                  >
-                    {code}
-                  </button>
-                ))}
-              </div>
-            )}
+            <p className="text-xs text-gray-600 mt-1">
+              {selectedMethod === 'artificial_insemination' 
+                ? 'Semen straw identification code'
+                : 'Bull identification number or registration'
+              }
+            </p>
           </div>
-          <p className="text-sm text-gray-600 mt-1">
-            {selectedMethod === 'artificial_insemination' 
-              ? 'Semen straw identification code or bull registration number'
-              : 'Bull identification number, registration, or farm code'
-            }
-          </p>
+          <div>
+            <Label htmlFor="semen_bull_name">
+              {selectedMethod === 'artificial_insemination' ? 'Semen Name/Genetics' : 'Bull Name/Genetics'} *
+            </Label>
+            <Input
+              id="semen_bull_name"
+              {...form.register('semen_bull_name')}
+              placeholder={
+                selectedMethod === 'artificial_insemination' 
+                  ? 'e.g., Elite Holstein, Jersey Premium' 
+                  : 'e.g., Champion Bull, Genetics Line 5'
+              }
+            />
+            <p className="text-xs text-gray-600 mt-1">
+              {selectedMethod === 'artificial_insemination' 
+                ? 'Semen genetics or strain name'
+                : 'Bull name or genetic line designation'
+              }
+            </p>
+          </div>
         </div>
+        
+        {/* Semen Type - Only for Artificial Insemination */}
+        {selectedMethod === 'artificial_insemination' && (
+          <div>
+            <Label htmlFor="semen_type">Semen Type</Label>
+            <select
+              id="semen_type"
+              {...form.register('semen_type')}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+            >
+              <option value="sexed_male">Sexed - Male</option>
+              <option value="sexed_female">Sexed - Female</option>
+              <option value="conventional">Conventional</option>
+              <option value="unknown">Unknown</option>
+            </select>
+            <p className="text-xs text-gray-600 mt-1">
+              Type of semen used for insemination
+            </p>
+          </div>
+        )}
         
         {/* Technician Name */}
         <div>

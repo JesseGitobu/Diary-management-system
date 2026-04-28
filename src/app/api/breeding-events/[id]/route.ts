@@ -85,6 +85,8 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
               ? 'artificial_insemination' : 'natural',
             service_date: eventData.event_date.split('T')[0],
             bull_tag_or_semen_code: eventData.semen_bull_code || null,
+            bull_name_or_semen_source: eventData.semen_bull_name || null,
+            semen_type: eventData.semen_type || null,
             technician_name: eventData.technician_name || null,
             notes: eventData.notes || null,
           })
