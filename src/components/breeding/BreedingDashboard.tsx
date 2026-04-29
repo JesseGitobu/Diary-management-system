@@ -39,6 +39,7 @@ import { CalvingEventForm } from '@/components/breeding/CalvingEventForm'
 import { Modal } from '@/components/ui/Modal'
 import type { BreedingAlert } from '@/lib/database/breeding-stats'
 import { BreedingEventTimeline } from '@/components/breeding/BreedingEventTimeline'
+import { FollowUpBreedingModal } from '@/components/breeding/FollowUpBreedingModal'
 
 interface BreedingDashboardProps {
   userRole: string
@@ -79,6 +80,8 @@ export function BreedingDashboard({
   const [activeModal, setActiveModal] = useState<BreedingEventType>(null)
   const [showQuickActions, setShowQuickActions] = useState(false)
   const [upcomingEventsExpanded, setUpcomingEventsExpanded] = useState(false)
+  const [followUpModalOpen, setFollowUpModalOpen] = useState(false)
+  const [selectedFollowUpEvent, setSelectedFollowUpEvent] = useState<any>(null)
   
   // State to track which animal is currently being acted upon (from Alerts or Lists)
   const [selectedAnimal, setSelectedAnimal] = useState<{ id?: string, gender?: 'male' | 'female' } | null>(null)
@@ -136,6 +139,10 @@ export function BreedingDashboard({
   const { isMobile } = useDeviceInfo()
   const canManageBreeding = ['farm_owner', 'farm_manager'].includes(userRole)
 
+  // Debug logs
+  useEffect(() => {
+  }, [userRole, farmId, calendarEvents, breedingAlerts, breedingStats])
+
   // Filter out alerts that have been actioned in this session
   const visibleAlerts = useMemo(() => {
     return breedingAlerts.filter(alert => {
@@ -154,7 +161,7 @@ export function BreedingDashboard({
 
   // Filter out upcoming events that have been completed
   const visibleCalendarEvents = useMemo(() => {
-    return calendarEvents.filter(event => {
+    const filtered = calendarEvents.filter(event => {
       if (event.status === 'completed') return false // Already completed from DB
 
       const isCompletedNow = completedActions.some(action => 
@@ -167,6 +174,7 @@ export function BreedingDashboard({
       )
       return !isCompletedNow
     })
+    return filtered
   }, [calendarEvents, completedActions])
 
   // Calculate visible pregnant animals based on completed calvings
@@ -517,62 +525,166 @@ export function BreedingDashboard({
               </CardHeader>
               <CardContent>
                 {visibleCalendarEvents.length > 0 ? (
-                  <div className="space-y-3">
-                    {visibleCalendarEvents
-                      .slice(0, isMobile && !upcomingEventsExpanded ? 3 : 5)
-                      .map((event) => (
-                        <div
-                          key={event.id}
-                          className={cn(
-                            "flex justify-between p-3 bg-gray-50 rounded-lg animate-in fade-in",
-                            isMobile ? "flex-col space-y-2" : "items-center"
-                          )}
-                        >
-                          <div className={isMobile ? "" : ""}>
-                            <p className="font-medium text-gray-900">
-                              {event.animals?.name || event.animals?.tag_number}
-                            </p>
-                            <p className={cn(
-                              "text-gray-600 capitalize",
-                              isMobile ? "text-xs" : "text-sm"
+                  <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
+                    {(() => {
+                      return visibleCalendarEvents
+                        .slice(0, isMobile && !upcomingEventsExpanded ? 3 : 5)
+                        .map((event) => {
+                          // Determine if this is a heat detection event with follow-up actions
+                          const isHeatDetection = event.event_type === 'heat_detection'
+                          const heatAction = isHeatDetection ? event.heat_action_taken : null
+                          // Match the actual values stored in the database (Title Case with spaces)
+                          const hasInseminationScheduled = heatAction === 'Insemination scheduled' && event.follow_up_insemination_scheduled_at
+                          const hasNaturalBreedingArranged = heatAction === 'Natural breeding arranged' && 
+                            (event.follow_up_natural_breeding_start || event.follow_up_natural_breeding_end)
+                          const isMonitorFurther = heatAction === 'Monitor further'
+
+                          return (
+                          <div
+                            key={event.id}
+                            className={cn(
+                              "p-3 bg-gray-50 rounded-lg animate-in fade-in",
+                              isMobile ? "space-y-2" : "space-y-2"
+                            )}
+                          >
+                            {/* Header with animal info */}
+                            <div className={cn(
+                              "flex justify-between",
+                              isMobile ? "flex-col space-y-1" : "items-start"
                             )}>
-                              {event.event_type.replace('_', ' ')}
-                            </p>
-                          </div>
-                          <div className={cn(
-                            isMobile ? "flex justify-between items-center" : "text-right"
-                          )}>
-                            <p className={cn(
-                              "font-medium",
-                              isMobile ? "text-sm" : "text-sm"
+                              <div>
+                                <p className="font-medium text-gray-900">
+                                  {event.animals?.name || event.animals?.tag_number}
+                                </p>
+                                <p className={cn(
+                                  "text-gray-600 capitalize",
+                                  isMobile ? "text-xs" : "text-sm"
+                                )}>
+                                  {event.event_type.replace('_', ' ')}
+                                </p>
+                              </div>
+                              <div className="flex gap-2 items-center">
+                                <Badge
+                                  variant={event.status === 'scheduled' ? 'default' : 'destructive'}
+                                  className={isMobile ? "text-xs" : ""}
+                                >
+                                  {event.status}
+                                </Badge>
+                              </div>
+                            </div>
+
+                            {/* Main date/time info */}
+                            <div className={cn(
+                              "flex justify-between items-start",
+                              isMobile ? "flex-col space-y-1" : "items-center"
                             )}>
-                              {format(new Date(event.scheduled_date), 'MMM dd, yyyy')}
-                            </p>
-                            <div className="flex gap-2 items-center">
-                               <Badge
-                                 variant={event.status === 'scheduled' ? 'default' : 'destructive'}
-                                 className={isMobile ? "text-xs" : ""}
-                               >
-                                 {event.status}
-                               </Badge>
-                               {canManageBreeding && (
-                                 <Button
+                              <p className={cn(
+                                "font-medium",
+                                isMobile ? "text-sm" : "text-sm"
+                              )}>
+                                {format(new Date(event.scheduled_date), 'MMM dd, yyyy')}
+                              </p>
+                            </div>
+
+                            {/* Context-specific follow-up information */}
+                            {hasInseminationScheduled && (
+                              <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-200">
+                                <p className="text-xs font-medium text-blue-900 mb-1">📅 Insemination Scheduled</p>
+                                <p className="text-sm text-blue-700">
+                                  {format(new Date(event.follow_up_insemination_scheduled_at), 'MMM dd, yyyy • h:mm a')}
+                                </p>
+                              </div>
+                            )}
+
+                            {hasNaturalBreedingArranged && (
+                              <div className="mt-2 p-2 bg-amber-50 rounded border border-amber-200">
+                                <p className="text-xs font-medium text-amber-900 mb-1">🐂 Natural Breeding Arranged</p>
+                                <p className="text-sm text-amber-700">
+                                  {event.follow_up_natural_breeding_start && event.follow_up_natural_breeding_end
+                                    ? `${format(new Date(event.follow_up_natural_breeding_start), 'h:mm a')} - ${format(new Date(event.follow_up_natural_breeding_end), 'h:mm a')}`
+                                    : 'Time window arranged'
+                                  }
+                                </p>
+                              </div>
+                            )}
+
+                            {isMonitorFurther && (
+                              <div className="mt-2 p-2 bg-purple-50 rounded border border-purple-200">
+                                <p className="text-xs font-medium text-purple-900 mb-1">📝 Monitor & Observe</p>
+                                <p className="text-sm text-purple-700">
+                                  Create a new observation record to track changes
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Action buttons */}
+                            {canManageBreeding && (
+                              <div className="flex gap-2 flex-wrap mt-2">
+                                {hasInseminationScheduled && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-xs flex-1"
+                                    onClick={() => {
+                                      setSelectedAnimal({ id: event.animal_id, gender: 'female' })
+                                      setActiveModal('insemination')
+                                    }}
+                                  >
+                                    <Syringe className="w-3 h-3 mr-1" />
+                                    Record AI Service
+                                  </Button>
+                                )}
+
+                                {hasNaturalBreedingArranged && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-xs flex-1"
+                                    onClick={() => {
+                                      setSelectedAnimal({ id: event.animal_id, gender: 'female' })
+                                      setActiveModal('insemination')
+                                    }}
+                                  >
+                                    <TrendingUp className="w-3 h-3 mr-1" />
+                                    Confirm Served
+                                  </Button>
+                                )}
+
+                                {isMonitorFurther && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-xs flex-1"
+                                    onClick={() => {
+                                      setSelectedFollowUpEvent(event)
+                                      setFollowUpModalOpen(true)
+                                    }}
+                                  >
+                                    <Heart className="w-3 h-3 mr-1" />
+                                    New Observation
+                                  </Button>
+                                )}
+
+                                {/* Default action button if not heat detection or no follow-up */}
+                                {(!isHeatDetection || !heatAction) && (
+                                  <Button
                                     size="sm"
                                     variant="ghost"
-                                    className="h-6 w-6 p-0 rounded-full hover:bg-green-100 text-green-700"
+                                    className="h-8 w-8 p-0 rounded-full hover:bg-green-100 text-green-700"
                                     onClick={() => {
-                                      // Quick action from list
                                       setSelectedAnimal({ id: event.animal_id, gender: 'female' })
                                       setActiveModal(event.event_type as BreedingEventType)
                                     }}
-                                 >
+                                  >
                                     <TrendingUp className="w-4 h-4" />
-                                 </Button>
-                               )}
-                            </div>
+                                  </Button>
+                                )}
+                              </div>
+                            )}
                           </div>
-                        </div>
-                      ))}
+                        )
+                      })
+                    })()}
 
                     {isMobile && !upcomingEventsExpanded && visibleCalendarEvents.length > 3 && (
                       <Button
@@ -700,6 +812,21 @@ export function BreedingDashboard({
 
       {/* Individual Breeding Event Modals */}
       {renderBreedingModal()}
+
+      {/* Follow-Up Breeding Modal */}
+      <FollowUpBreedingModal
+        isOpen={followUpModalOpen}
+        onClose={() => {
+          setFollowUpModalOpen(false)
+          setSelectedFollowUpEvent(null)
+        }}
+        event={selectedFollowUpEvent}
+        farmId={farmId}
+        onSubmit={() => {
+          // Refresh data after follow-up is saved
+          onActionComplete?.()
+        }}
+      />
     </div>
   )
 }

@@ -1,15 +1,24 @@
 // src/components/settings/feeds/FeedManagementSettings.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from '@/components/ui/DropdownMenu'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { FeedTypeCategoriesManager } from '@/components/settings/feeds/FeedTypeCategoriesManager'
 import { FeedUnitConversionsManager } from '@/components/settings/feeds/FeedUnitConversionsManager'
 import { FeedSettingsManager } from '@/components/settings/feeds/FeedSettingsManager'
+import { FeedTypesTab } from '@/components/settings/feeds/FeedTypesTab'
+import { AddFeedTypeModal } from '@/components/settings/feeds/AddFeedTypeModal'
 import type { FeedTimeSlot, FeedAlertSetting, FeedFrequencyDefault } from '@/lib/database/feedSettingsConstants'
 import {
   ArrowLeft,
@@ -18,6 +27,9 @@ import {
   Scale,
   Settings,
   Info,
+  MoreVertical,
+  Plus,
+  Package,
 } from 'lucide-react'
 
 interface FeedManagementSettingsProps {
@@ -30,6 +42,7 @@ interface FeedManagementSettingsProps {
   timeSlots: FeedTimeSlot[]
   alertSettings: FeedAlertSetting[]
   frequencyDefaults: FeedFrequencyDefault[]
+  initialTab?: string
 }
 
 export function FeedManagementSettings({
@@ -42,26 +55,69 @@ export function FeedManagementSettings({
   timeSlots: initialTimeSlots,
   alertSettings: initialAlertSettings,
   frequencyDefaults: initialFrequencyDefaults,
+  initialTab = 'feed-categories',
 }: FeedManagementSettingsProps) {
   const router = useRouter()
   const { isMobile } = useDeviceInfo()
-  const [activeTab, setActiveTab] = useState('feed-categories')
+  const [activeTab, setActiveTab] = useState(initialTab)
 
   const [feedTypeCategories, setFeedTypeCategories] = useState(initialFeedTypeCategories)
-  const [feedTypes] = useState(initialFeedTypes)
+  const [feedTypes, setFeedTypes] = useState(initialFeedTypes)
   const [weightConversions, setWeightConversions] = useState(initialWeightConversions)
   const [animalCategories] = useState(initialAnimalCategories)
   const [timeSlots, setTimeSlots] = useState<FeedTimeSlot[]>(initialTimeSlots)
   const [alertSettings, setAlertSettings] = useState<FeedAlertSetting[]>(initialAlertSettings)
   const [frequencyDefaults, setFrequencyDefaults] = useState<FeedFrequencyDefault[]>(initialFrequencyDefaults)
+  const [showAddFeedTypeModal, setShowAddFeedTypeModal] = useState(false)
 
   const canManageSettings = ['farm_owner', 'farm_manager'].includes(userRole)
 
+  const handleFeedTypeAdded = useCallback((newFeedType: any) => {
+    setFeedTypes(prev => [...prev, newFeedType])
+  }, [])
+
+  const handleFeedTypeUpdated = useCallback((updatedFeedType: any) => {
+    setFeedTypes(prev => prev.map(ft =>
+      ft.id === updatedFeedType.id ? updatedFeedType : ft
+    ))
+  }, [])
+
+  const handleFeedTypeDeleted = useCallback((feedTypeId: string) => {
+    setFeedTypes(prev => prev.filter(ft => ft.id !== feedTypeId))
+  }, [])
+
+  const QuickActionsMenu = () => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size={isMobile ? 'sm' : 'default'} className="gap-2">
+          <MoreVertical className="w-4 h-4" />
+          {!isMobile && 'Quick Actions'}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuItem onClick={() => setShowAddFeedTypeModal(true)}>
+          <Package className="w-4 h-4 mr-2" />
+          <span>Add Feed Type</span>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem disabled className="text-xs text-gray-500">
+          More actions coming soon
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+
   const tabConfig = [
+
     {
       id: 'feed-categories',
       label: isMobile ? 'Categories' : 'Feed Type Categories',
       icon: <Tags className="w-4 h-4" />,
+    },
+    {
+      id: 'feed-types',
+      label: isMobile ? 'Types' : 'Feed Types',
+      icon: <Package className="w-4 h-4" />,
     },
     {
       id: 'weight-conversions',
@@ -79,15 +135,16 @@ export function FeedManagementSettings({
     <div className={`${isMobile ? 'px-4 py-4' : 'dashboard-container'} pb-20 lg:pb-6`}>
       {/* Header */}
       <div className="mb-6">
-        <div className={`${isMobile ? 'mb-4' : 'flex items-center space-x-4 mb-4'}`}>
+        <div className="flex items-center justify-between gap-3 mb-4">
           <Button
             variant="ghost"
             onClick={() => router.push(`/dashboard/settings?farmId=${farmId}`)}
-            className={`flex items-center space-x-2 ${isMobile ? 'w-full justify-start' : ''}`}
+            className={`flex items-center space-x-2 ${isMobile ? '' : ''}`}
           >
             <ArrowLeft className="w-4 h-4" />
             <span className={isMobile ? 'ml-2' : ''}>Back to Settings</span>
           </Button>
+          {canManageSettings && <QuickActionsMenu />}
         </div>
 
         <div className="flex items-center space-x-3 mb-4">
@@ -173,6 +230,22 @@ export function FeedManagementSettings({
           ))}
         </TabsList>
 
+        {/* Feed Types */}
+        <TabsContent value="feed-types">
+          <FeedTypesTab
+            feedTypes={feedTypes}
+            isMobile={isMobile}
+            canManageFeed={canManageSettings}
+            farmId={farmId}
+            onAddFeedType={() => setShowAddFeedTypeModal(true)}
+            onFeedTypeUpdated={handleFeedTypeUpdated}
+            onFeedTypeDeleted={handleFeedTypeDeleted}
+            feedTypeCategories={feedTypeCategories}
+            animalCategories={animalCategories}
+            weightConversions={weightConversions}
+          />
+        </TabsContent>
+
         {/* Feed Type Categories */}
         <TabsContent value="feed-categories">
           <Card>
@@ -252,6 +325,17 @@ export function FeedManagementSettings({
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Modals */}
+      <AddFeedTypeModal
+        farmId={farmId}
+        isOpen={showAddFeedTypeModal}
+        onClose={() => setShowAddFeedTypeModal(false)}
+        onSuccess={handleFeedTypeAdded}
+        feedTypeCategories={feedTypeCategories}
+        animalCategories={animalCategories}
+        weightConversions={weightConversions}
+      />
 
       {/* Help text */}
       <Card className="mt-6 border-blue-200 bg-blue-50">

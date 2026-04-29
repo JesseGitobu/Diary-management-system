@@ -113,7 +113,7 @@ export function BreedingEventTimeline({
 
     }
     if (error) {
-      console.error('[BreedingEventTimeline] Error:', error)
+      // Error handled in early return below
     }
   }, [events.length, loading, error])
 
@@ -162,11 +162,9 @@ export function BreedingEventTimeline({
       if (response.ok && result.success) {
         setDeleteConfirmId(null)
         refetch?.()
-      } else {
-        console.error('[BreedingEventTimeline] Delete failed:', result.error)
       }
     } catch (err) {
-      console.error('[BreedingEventTimeline] Delete error:', err)
+      // Delete error handled silently
     } finally {
       setIsDeleting(false)
     }
@@ -472,13 +470,6 @@ export function BreedingEventTimeline({
               (event.event_type === 'insemination' && event.semen_bull_code) ||
               (event.event_type === 'pregnancy_check' && event.pregnancy_result) ||
               (event.event_type === 'calving' && event.calf_gender)
-
-            console.log(`[BreedingTimeline] Event ${event.id} (${event.event_type}):`, {
-              follow_up_recorded: event.follow_up_recorded,
-              follow_up_id: event.follow_up_id,
-              isExpanded,
-              hasDetails,
-            })
 
             return (
               <Card
@@ -794,10 +785,10 @@ export function BreedingEventTimeline({
                                   </div>
                                 )}
 
-                                <div className="flex items-center gap-1 text-xs text-gray-400 pt-2 border-t border-gray-100">
+                                {/* <div className="flex items-center gap-1 text-xs text-gray-400 pt-2 border-t border-gray-100">
                                   <Clock className="w-3 h-3" />
                                   <span>Service recorded {new Date(event.service_created_at || event.event_date).toLocaleString()}</span>
-                                </div>
+                                </div> */}
                               </div>
                             </>
                           )}
@@ -1120,7 +1111,6 @@ export function BreedingEventTimeline({
                           {/* Follow-up Section */}
                           {event.follow_up_recorded && (
                             <>
-                              {console.log(`[BreedingTimeline] Rendering follow-up section for event ${event.id} (${event.event_type})`)}
                               <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
                                 <div className="flex items-start gap-2 mb-3">
                                   <CalendarPlus className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
@@ -1130,13 +1120,6 @@ export function BreedingEventTimeline({
                                     {/* Heat Detection Follow-up */}
                                     {event.event_type === 'heat_detection' && (
                                     <>
-                                      {console.log(`[BreedingTimeline] Heat detection follow-up for ${event.id}:`, {
-                                        insemination_scheduled: !!event.follow_up_insemination_scheduled_at,
-                                        confirmed: event.follow_up_insemination_confirmed,
-                                        breeding_window: !!event.follow_up_natural_breeding_start,
-                                        monitoring_plan: event.follow_up_monitoring_plan,
-                                        ovulation: !!event.follow_up_ovulation_date,
-                                      })}
                                     <div className="space-y-1.5 text-sm text-blue-800">
                                       {event.follow_up_insemination_scheduled_at && (
                                         <div className="flex justify-between">
@@ -1194,37 +1177,51 @@ export function BreedingEventTimeline({
 
                                   {/* Insemination Follow-up */}
                                   {event.event_type === 'insemination' && (
-                                    <div className="space-y-1.5 text-sm text-blue-800">
-                                      {event.follow_up_ovulation_date && (
-                                        <div className="flex justify-between">
-                                          <span className="text-blue-700">Ovulation Date:</span>
-                                          <span className="font-medium">{event.follow_up_ovulation_date}</span>
+                                    <div className="space-y-3 text-sm text-blue-800">
+                                      {/* Ovulation Date & Time */}
+                                      {(event.follow_up_ovulation_date || event.follow_up_ovulation_start_time) && (
+                                        <div className="border-l-2 border-blue-300 pl-3 py-1">
+                                          <p className="text-xs font-semibold text-blue-700 mb-1.5">Ovulation Observed</p>
+                                          {event.follow_up_ovulation_date && (
+                                            <div className="flex items-center gap-2 mb-1">
+                                              <Calendar className="w-3 h-3 text-blue-500 flex-shrink-0" />
+                                              <span className="font-medium">{event.follow_up_ovulation_date}</span>
+                                            </div>
+                                          )}
+                                          {event.follow_up_ovulation_start_time && (
+                                            <div className="flex items-center gap-2">
+                                              <Clock className="w-3 h-3 text-blue-500 flex-shrink-0" />
+                                              <span className="font-medium">{event.follow_up_ovulation_start_time} – {event.follow_up_ovulation_end_time || event.follow_up_ovulation_start_time}</span>
+                                            </div>
+                                          )}
                                         </div>
                                       )}
-                                      {event.follow_up_ovulation_start_time && (
-                                        <div className="flex justify-between">
-                                          <span className="text-blue-700">Ovulation Time:</span>
-                                          <span className="font-medium">{event.follow_up_ovulation_start_time} - {event.follow_up_ovulation_end_time}</span>
-                                        </div>
-                                      )}
+                                      
+                                      {/* Ovulation Amount */}
                                       {event.follow_up_ovulation_amount_ml && (
-                                        <div className="flex justify-between">
-                                          <span className="text-blue-700">Ovulation Amount:</span>
-                                          <span className="font-medium">{event.follow_up_ovulation_amount_ml} ml</span>
+                                        <div className="flex items-center gap-2 bg-blue-100/30 rounded px-2 py-1">
+                                          <Droplets className="w-3 h-3 text-blue-600 flex-shrink-0" />
+                                          <span className="text-blue-700">Amount:</span>
+                                          <span className="font-medium text-blue-800">{event.follow_up_ovulation_amount_ml} ml</span>
                                         </div>
                                       )}
+                                      
+                                      {/* Medical Issues */}
                                       {event.follow_up_has_medical_issue && (
-                                        <div className="flex items-start gap-2">
+                                        <div className="flex items-start gap-2 p-2 bg-orange-50 rounded border border-orange-100">
                                           <AlertTriangle className="w-3 h-3 text-orange-600 mt-0.5 flex-shrink-0" />
                                           <div className="flex-1">
-                                            <span className="text-orange-700">Medical Issue:</span>
-                                            <p className="text-orange-600 text-xs mt-0.5">{event.follow_up_medical_issue_description}</p>
+                                            <p className="text-xs font-semibold text-orange-700 mb-0.5">Medical Issue Noted</p>
+                                            <p className="text-xs text-orange-600">{event.follow_up_medical_issue_description}</p>
                                           </div>
                                         </div>
                                       )}
+                                      
+                                      {/* Notes */}
                                       {event.follow_up_notes && (
-                                        <div className="mt-2 pt-2 border-t border-blue-100">
-                                          <p className="text-xs text-blue-600">{event.follow_up_notes}</p>
+                                        <div className="p-2 bg-gray-50 rounded border border-gray-100">
+                                          <p className="text-xs font-semibold text-gray-600 mb-1">Observations</p>
+                                          <p className="text-xs text-gray-600 leading-relaxed">{event.follow_up_notes}</p>
                                         </div>
                                       )}
                                     </div>

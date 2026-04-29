@@ -17,13 +17,13 @@ export interface UnifiedBreedingRecord {
   veterinarian?: string
   breeding_cost?: number
   breeding_notes?: string
-  
+
   // Pregnancy tracking
   pregnancy_status: 'pending' | 'confirmed' | 'negative' | 'aborted' | 'completed'
   pregnancy_check_date?: string
   expected_calving_date?: string
   actual_calving_date?: string
-  
+
   // Metadata
   created_at: string
   updated_at: string
@@ -49,10 +49,10 @@ export async function calculateDryOffStatus(
   farmId: string,
   isServerSide = false
 ): Promise<{ shouldDryOff: boolean; daysUntilDryOff: number; daysPregnantAtDryoff: number }> {
-  const supabase = isServerSide 
-    ? await createServerSupabaseClient() 
+  const supabase = isServerSide
+    ? await createServerSupabaseClient()
     : createClient()
-  
+
   try {
     // Get breeding settings for this farm
     const { data: settings } = await supabase
@@ -60,29 +60,29 @@ export async function calculateDryOffStatus(
       .select('days_pregnant_at_dryoff')
       .eq('farm_id', farmId)
       .single()
-    
+
     const daysPregnantAtDryoff = (settings as any)?.days_pregnant_at_dryoff || 220
-    
+
     // Get animal and latest pregnancy record
     const animal = await getAnimalById(animalId)
     if (!animal || (animal as any).production_status !== 'served') {
       return { shouldDryOff: false, daysUntilDryOff: 0, daysPregnantAtDryoff }
     }
-    
+
     // If service_date exists, calculate days pregnant
     if ((animal as any).service_date) {
       const serviceDate = new Date((animal as any).service_date)
       const today = new Date()
       const daysPregnant = Math.floor((today.getTime() - serviceDate.getTime()) / (1000 * 60 * 60 * 24))
       const daysUntilDryOff = Math.max(0, daysPregnantAtDryoff - daysPregnant)
-      
+
       return {
         shouldDryOff: daysPregnant >= daysPregnantAtDryoff,
         daysUntilDryOff,
         daysPregnantAtDryoff
       }
     }
-    
+
     return { shouldDryOff: false, daysUntilDryOff: 0, daysPregnantAtDryoff }
   } catch (error) {
     console.error('Error calculating dry-off status:', error)
@@ -106,17 +106,17 @@ export async function getLactationSummary(
   if (!animal) {
     return { daysInMilk: 0, lactationNumber: null, currentDailyProduction: null, calvingDate: null }
   }
-  
+
   // Calculate days in milk from days_in_milk field if available
   let daysInMilk = (animal as any).days_in_milk || 0
-  
+
   // If production_status is lactating but days_in_milk is 0, try to calculate from calving
   if ((animal as any).production_status === 'lactating' && daysInMilk === 0 && (animal as any).birth_date) {
     // Try to find the most recent calving date from breeding events
-    const supabase = isServerSide 
-      ? await createServerSupabaseClient() 
+    const supabase = isServerSide
+      ? await createServerSupabaseClient()
       : createClient()
-    
+
     const { data: events } = await (supabase as any)
       .from('breeding_events')
       .select('event_date')
@@ -125,12 +125,12 @@ export async function getLactationSummary(
       .order('event_date', { ascending: false })
       .limit(1)
       .single()
-    
+
     if (events) {
       daysInMilk = calculateDaysInMilk((events as any).event_date)
     }
   }
-  
+
   return {
     daysInMilk,
     lactationNumber: (animal as any).lactation_number,
@@ -148,10 +148,10 @@ export async function createUnifiedBreedingRecord(
   userId: string,
   isServerSide = false
 ): Promise<{ success: boolean; data?: any; error?: string }> {
-  const supabase = isServerSide 
-    ? await createServerSupabaseClient() 
+  const supabase = isServerSide
+    ? await createServerSupabaseClient()
     : createClient()
-  
+
   try {
     // 1. Create the service record (stores breeding/service information)
     // First, get the next service_number for this animal
@@ -162,10 +162,10 @@ export async function createUnifiedBreedingRecord(
       .eq('farm_id', data.farm_id)
       .order('service_number', { ascending: false })
       .limit(1)
-    
+
     const lastServiceNumber = (existingServices as any[])?.[0]?.service_number || 0
     const serviceNumber = lastServiceNumber + 1
-    
+
     const { data: serviceRecord, error: recordError } = await (supabase
       .from('service_records') as any)
       .insert({
@@ -182,9 +182,9 @@ export async function createUnifiedBreedingRecord(
       })
       .select()
       .single()
-    
+
     if (recordError) throw recordError
-    
+
     // 2. Create corresponding insemination event for timeline
     const { error: eventError } = await (supabase
       .from('breeding_events') as any)
@@ -197,17 +197,17 @@ export async function createUnifiedBreedingRecord(
         notes: data.breeding_notes,
         created_by: userId
       })
-    
+
     if (eventError) {
       console.error('Failed to create breeding event:', eventError)
       // Don't fail the whole operation, just log the error
     }
-    
+
     // 3. Create pregnancy record if needed
     const gestationDays = 280
     const expectedDate = new Date(data.breeding_date)
     expectedDate.setDate(expectedDate.getDate() + gestationDays)
-    
+
     const { error: pregnancyError } = await (supabase
       .from('pregnancy_records') as any)
       .insert({
@@ -217,13 +217,13 @@ export async function createUnifiedBreedingRecord(
         expected_calving_date: expectedDate.toISOString().split('T')[0],
         confirmed_date: data.breeding_date
       })
-    
+
     if (pregnancyError) {
       console.error('Failed to create pregnancy record:', pregnancyError)
     }
-    
+
     return { success: true, data: serviceRecord }
-    
+
   } catch (error: any) {
     console.error('Error creating unified breeding record:', error)
     return { success: false, error: error.message }
@@ -248,10 +248,10 @@ export async function updatePregnancyStatusUnified(
   userId: string,
   isServerSide = false
 ): Promise<{ success: boolean; error?: string }> {
-  const supabase = isServerSide 
-    ? await createServerSupabaseClient() 
+  const supabase = isServerSide
+    ? await createServerSupabaseClient()
     : createClient()
-  
+
   try {
     // 1. Update pregnancy record
     const { error: pregnancyError } = await (supabase
@@ -265,12 +265,12 @@ export async function updatePregnancyStatusUnified(
         expected_calving_date: data.estimated_due_date
       })
       .eq('breeding_record_id', breedingRecordId)
-    
+
     if (pregnancyError) throw pregnancyError
-    
+
     // 2. Create pregnancy check event
     const { error: eventError } = await (supabase
-      .from('breeding_events')  as any)
+      .from('breeding_events') as any)
       .insert({
         farm_id: farmId,
         animal_id: animalId,
@@ -283,28 +283,27 @@ export async function updatePregnancyStatusUnified(
         notes: data.notes,
         created_by: userId
       })
-    
+
     if (eventError) {
       console.error('Failed to create pregnancy check event:', eventError)
     }
-    
+
     // 3. Update animal status
     const animalStatus = data.pregnancy_status === 'confirmed' ? 'pregnant' : 'open'
     const { error: animalError } = await (supabase
       .from('animals') as any)
       .update({
         production_status: animalStatus,
-        expected_calving_date: data.estimated_due_date,
         updated_at: new Date().toISOString()
       })
       .eq('id', animalId)
-    
+
     if (animalError) {
       console.error('Failed to update animal status:', animalError)
     }
-    
+
     return { success: true }
-    
+
   } catch (error: any) {
     console.error('Error updating pregnancy status:', error)
     return { success: false, error: error.message }
@@ -331,10 +330,10 @@ export async function recordCalvingUnified(
   userId: string,
   isServerSide = false
 ): Promise<{ success: boolean; calf?: any; error?: string }> {
-  const supabase = isServerSide 
-    ? await createServerSupabaseClient() 
+  const supabase = isServerSide
+    ? await createServerSupabaseClient()
     : createClient()
-  
+
   try {
     // 1. Update pregnancy record
     const { error: pregnancyError } = await (supabase
@@ -344,12 +343,12 @@ export async function recordCalvingUnified(
         actual_calving_date: data.calving_date
       })
       .eq('breeding_record_id', breedingRecordId)
-    
+
     if (pregnancyError) throw pregnancyError
-    
+
     // 2. Create calving event
     const { error: eventError } = await (supabase
-      .from('breeding_events')  as any)
+      .from('breeding_events') as any)
       .insert({
         farm_id: farmId,
         animal_id: animalId,
@@ -363,9 +362,9 @@ export async function recordCalvingUnified(
         notes: data.notes,
         created_by: userId
       })
-    
+
     if (eventError) throw eventError
-    
+
     // 3. Create calf if requested
     let calfData = null
     if (data.create_calf && data.calf_tag) {
@@ -384,14 +383,14 @@ export async function recordCalvingUnified(
         })
         .select()
         .single()
-      
+
       if (calfError) {
         console.error('Failed to create calf:', calfError)
       } else {
         calfData = calf
       }
     }
-    
+
     // 4. Update mother animal status
     // FIXED: Cast .from('animals') to any to bypass 'never' type error
     // FIXED: Cast rpc args to any to bypass 'undefined' argument error
@@ -399,23 +398,21 @@ export async function recordCalvingUnified(
       .from('animals') as any)
       .update({
         production_status: 'lactating',
-        expected_calving_date: null,
-        days_in_milk: 0,  // ✅ NEW: Reset days_in_milk to 0 at calving
-        service_date: null,  // ✅ NEW: Clear service_date after calving
+        // service_date: null,  // ✅ NEW: Clear service_date after calving
         updated_at: new Date().toISOString()
       })
       .eq('id', animalId)
-    
+
     if (animalError) {
       console.error('Failed to update animal status:', animalError)
     }
-    
+
     console.log('✅ [Breeding-Sync] Calving recorded successfully for animal:', animalId)
     console.log('📊 [Breeding-Sync] Production status updated to: lactating')
-    console.log('📅 [Breeding-Sync] Days in milk reset to: 0')
-    
+    console.log('📅 [Breeding-Sync] Service date cleared and animal ready for new breeding cycle')
+
     return { success: true, calf: calfData }
-    
+
   } catch (error: any) {
     console.error('Error recording calving:', error)
     return { success: false, error: error.message }
@@ -432,50 +429,48 @@ export async function handleInseminationEvent(
   userId: string,
   isServerSide = false
 ): Promise<{ success: boolean; error?: string }> {
-  const supabase = isServerSide 
-    ? await createServerSupabaseClient() 
+  const supabase = isServerSide
+    ? await createServerSupabaseClient()
     : createClient()
-  
+
   try {
     // Get current animal data
     const animal = await getAnimalById(animalId)
     if (!animal) {
       return { success: false, error: 'Animal not found' }
     }
-    
+
     // Only update if not already served
     if ((animal as any).production_status !== 'served') {
       console.log('🔄 [Breeding-Sync] Updating animal status to "served" for insemination:', animalId)
-      
+
       // Calculate expected calving date (default 280 days)
       const { data: breedingSettings } = await supabase
         .from('farm_breeding_settings')
         .select('default_gestation')
         .eq('farm_id', farmId)
         .single()
-      
+
       const gestationDays = (breedingSettings as any)?.default_gestation || 280
       const expectedCalvingDate = new Date(inseminationDate)
       expectedCalvingDate.setDate(expectedCalvingDate.getDate() + gestationDays)
-      
+
       // Update animal status
       const result = await updateAnimal(animalId, farmId, {
         production_status: 'served',
-        service_date: inseminationDate,
-        expected_calving_date: expectedCalvingDate.toISOString().split('T')[0],
-        days_in_milk: null,  // ✅ Clear days_in_milk when entering served status
+        // service_date: inseminationDate,
         updated_at: new Date().toISOString()
       })
-      
+
       if (!result.success) {
         console.error('Failed to update animal status:', result.error)
         return { success: false, error: result.error }
       }
-      
+
       console.log('✅ [Breeding-Sync] Animal status updated to served:', animalId)
       console.log('📅 [Breeding-Sync] Expected calving date:', expectedCalvingDate.toISOString().split('T')[0])
     }
-    
+
     return { success: true }
   } catch (error: any) {
     console.error('Error handling insemination event:', error)
@@ -495,45 +490,44 @@ export async function handlePregnancyCheckEvent(
   userId: string,
   isServerSide = false
 ): Promise<{ success: boolean; error?: string; statusUpdated?: boolean }> {
-  const supabase = isServerSide 
-    ? await createServerSupabaseClient() 
+  const supabase = isServerSide
+    ? await createServerSupabaseClient()
     : createClient()
-  
+
   try {
     const animal = await getAnimalById(animalId)
     if (!animal) {
       return { success: false, error: 'Animal not found' }
     }
-    
+
     let statusUpdated = false
-    
+
     // If pregnancy check is negative, revert back to lactating (heat cycle)
     if (pregnancyStatus === 'negative' && (animal as any).production_status === 'served') {
       console.log('🔄 [Breeding-Sync] Pregnancy check failed for animal:', animalId)
       console.log('📊 [Breeding-Sync] Reverting status from "served" back to "lactating"')
-      
+
       const result = await updateAnimal(animalId, farmId, {
         production_status: 'lactating',
         service_date: null,
-        expected_calving_date: null,
         updated_at: new Date().toISOString()
       })
-      
+
       if (!result.success) {
         console.error('Failed to update animal status:', result.error)
         return { success: false, error: result.error }
       }
-      
+
       console.log('✅ [Breeding-Sync] Animal ready for re-breeding')
       statusUpdated = true
     }
-    
+
     // If pregnancy is confirmed, keep status as 'served' (no change needed)
     if (pregnancyStatus === 'confirmed') {
       console.log('✅ [Breeding-Sync] Pregnancy confirmed for animal:', animalId)
       console.log('📊 [Breeding-Sync] Maintaining status: served')
     }
-    
+
     return { success: true, statusUpdated }
   } catch (error: any) {
     console.error('Error handling pregnancy check event:', error)
@@ -552,17 +546,17 @@ export async function getUnifiedBreedingHistory(
   events: any[]
   pregnancyRecords: any[]
 }> {
-  const supabase = isServerSide 
-    ? await createServerSupabaseClient() 
+  const supabase = isServerSide
+    ? await createServerSupabaseClient()
     : createClient()
-  
+
   const [recordsResult, eventsResult, pregnancyResult] = await Promise.all([
     supabase
       .from('service_records')
       .select('*')
       .eq('animal_id', animalId)
       .order('service_date', { ascending: false }),
-    
+
     supabase
       .from('breeding_events')
       .select(`
@@ -595,18 +589,18 @@ export async function getUnifiedBreedingHistory(
       `)
       .eq('animal_id', animalId)
       .order('event_date', { ascending: false }),
-    
+
     supabase
       .from('pregnancy_records')
       .select('*')
       .eq('animal_id', animalId)
       .order('created_at', { ascending: false })
   ])
-  
+
   // Normalize breeding_events to flatten related data
   const normalizedEvents = (eventsResult.data || []).map((event: any) => {
     const normalized: any = { ...event }
-    
+
     // Extract heat signs for heat_detection events
     if (event.event_type === 'heat_detection' && event.heat_detection_signs) {
       normalized.heat_signs = Array.isArray(event.heat_detection_signs)
@@ -614,7 +608,7 @@ export async function getUnifiedBreedingHistory(
         : []
       delete normalized.heat_detection_signs
     }
-    
+
     // For insemination events, extract service_records data
     if (event.event_type === 'insemination' && event.service_records) {
       const sr = Array.isArray(event.service_records) ? event.service_records[0] : event.service_records
@@ -626,7 +620,7 @@ export async function getUnifiedBreedingHistory(
       }
       delete normalized.service_records
     }
-    
+
     // For pregnancy_check events, extract pregnancy_records data
     if (event.event_type === 'pregnancy_check' && event.pregnancy_records) {
       const pr = Array.isArray(event.pregnancy_records) ? event.pregnancy_records[0] : event.pregnancy_records
@@ -634,19 +628,19 @@ export async function getUnifiedBreedingHistory(
         normalized.examination_method = pr.confirmation_method
         normalized.veterinarian_name = pr.veterinarian
         normalized.estimated_due_date = pr.expected_calving_date
-        normalized.pregnancy_result = pr.pregnancy_status === 'confirmed' ? 'pregnant' : 
-                                      pr.pregnancy_status === 'false' ? 'not_pregnant' : 'uncertain'
+        normalized.pregnancy_result = pr.pregnancy_status === 'confirmed' ? 'pregnant' :
+          pr.pregnancy_status === 'false' ? 'not_pregnant' : 'uncertain'
       }
       delete normalized.pregnancy_records
     }
-    
+
     // For calving events, extract calving_records and nested calf_records data
     if (event.event_type === 'calving' && event.calving_records) {
       const cr = Array.isArray(event.calving_records) ? event.calving_records[0] : event.calving_records
       if (cr) {
         normalized.calving_outcome = cr.calving_difficulty || 'normal'
         normalized.veterinarian_name = cr.veterinarian
-        
+
         // Extract calf information from nested calf_records
         if (cr.calf_records) {
           const calfRecs = Array.isArray(cr.calf_records) ? cr.calf_records[0] : cr.calf_records
@@ -660,10 +654,10 @@ export async function getUnifiedBreedingHistory(
       }
       delete normalized.calving_records
     }
-    
+
     return normalized
   })
-  
+
   return {
     breedingRecords: recordsResult.data || [],
     events: normalizedEvents,
@@ -682,7 +676,7 @@ export async function syncEventsToRecords(
   const supabase = await createServerSupabaseClient()
   const errors: string[] = []
   let synced = 0
-  
+
   try {
     // Get all insemination events without corresponding breeding records
     const { data: eventsData } = await supabase
@@ -690,14 +684,14 @@ export async function syncEventsToRecords(
       .select('*')
       .eq('farm_id', farmId)
       .eq('event_type', 'insemination')
-    
+
     // FIXED: Cast to any[] to avoid 'never' type on iteration
     const events = (eventsData || []) as any[]
 
     if (events.length === 0) {
       return { success: true, synced: 0, errors: [] }
     }
-    
+
     for (const event of events) {
       // Check if service record exists for this event
       const { data: existing } = await supabase
@@ -706,7 +700,7 @@ export async function syncEventsToRecords(
         .eq('animal_id', event.animal_id)
         .eq('service_date', event.event_date.split('T')[0])
         .single()
-      
+
       if (!existing) {
         // Create breeding record from event
         const result = await createUnifiedBreedingRecord({
@@ -720,7 +714,7 @@ export async function syncEventsToRecords(
           pregnancy_status: 'pending',
           auto_generated: true
         }, userId, true)
-        
+
         if (result.success) {
           synced++
         } else {
@@ -728,9 +722,9 @@ export async function syncEventsToRecords(
         }
       }
     }
-    
+
     return { success: true, synced, errors }
-    
+
   } catch (error: any) {
     return { success: false, synced, errors: [error.message] }
   }

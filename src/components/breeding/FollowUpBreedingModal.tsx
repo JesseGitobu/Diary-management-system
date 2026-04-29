@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -215,18 +215,29 @@ function InseminationFollowUp({ formData, onChange }: {
 }) {
   return (
     <div className="space-y-4">
-      <SectionHeading>Ovulation Details</SectionHeading>
+      <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+        <p className="text-xs text-blue-700 leading-relaxed">
+          Record ovulation observations after the insemination service to track reproductive response.
+        </p>
+      </div>
+
+      <SectionHeading>Ovulation Date & Time Window</SectionHeading>
       <Field label="Ovulation Date" icon={CalendarPlus}>
         <Input type="date" value={formData.ovulation_date || ''} onChange={e => onChange('ovulation_date', e.target.value)} />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Ovulation Start Time" icon={Clock}>
-          <Input type="time" value={formData.ovulation_start || ''} onChange={e => onChange('ovulation_start', e.target.value)} />
-        </Field>
-        <Field label="Ovulation End Time" icon={Clock}>
-          <Input type="time" value={formData.ovulation_end || ''} onChange={e => onChange('ovulation_end', e.target.value)} />
-        </Field>
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-gray-700">Ovulation Time Window</p>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Start Time" icon={Clock}>
+            <Input type="time" value={formData.ovulation_start || ''} onChange={e => onChange('ovulation_start', e.target.value)} />
+          </Field>
+          <Field label="End Time" icon={Clock}>
+            <Input type="time" value={formData.ovulation_end || ''} onChange={e => onChange('ovulation_end', e.target.value)} />
+          </Field>
+        </div>
       </div>
+
+      <SectionHeading>Ovulation Characteristics</SectionHeading>
       <Field label="Ovulation Amount (ml)" icon={Droplets}>
         <Input
           type="number"
@@ -238,7 +249,7 @@ function InseminationFollowUp({ formData, onChange }: {
         />
       </Field>
 
-      <SectionHeading>Medical Issues</SectionHeading>
+      <SectionHeading>Health Assessment</SectionHeading>
       <Field label="Any medical issues?" icon={AlertTriangle}>
         <YesNoToggle value={formData.has_medical_issue ?? null} onChange={v => onChange('has_medical_issue', v)} />
       </Field>
@@ -249,8 +260,8 @@ function InseminationFollowUp({ formData, onChange }: {
       )}
 
       <SectionHeading>Observation Notes</SectionHeading>
-      <Field label="Notes" icon={FileText}>
-        <Textarea value={formData.notes || ''} onChange={v => onChange('notes', v)} placeholder="General observations..." rows={3} />
+      <Field label="General Notes" icon={FileText}>
+        <Textarea value={formData.notes || ''} onChange={v => onChange('notes', v)} placeholder="Record any additional observations or comments..." rows={3} />
       </Field>
     </div>
   )
@@ -342,6 +353,46 @@ export function FollowUpBreedingModal({ isOpen, onClose, event, onSubmit, farmId
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+
+  // Auto-calculate insemination date/time for heat detection with "Insemination scheduled" action
+  useEffect(() => {
+    if (!isOpen || !event || event.event_type !== 'heat_detection') {
+      return
+    }
+
+    const action = event.heat_action_taken ?? ''
+    if (action !== 'Insemination scheduled') {
+      return
+    }
+
+    // Only auto-fill if not already filled
+    if (formData.insemination_date || formData.insemination_time) {
+      return
+    }
+
+    try {
+      // Parse the event date (e.g., "2026-04-28T03:30:00+00:00")
+      const eventDate = new Date(event.event_date)
+      
+      // Add 12 hours (working in UTC to avoid timezone conversions)
+      const insemDate = new Date(eventDate.getTime() + 12 * 60 * 60 * 1000)
+      
+      // Format date as YYYY-MM-DD (HTML date input format) using UTC
+      const dateStr = insemDate.toISOString().split('T')[0]
+      
+      // Format time as HH:MM (HTML time input format) using UTC (getUTCHours not getHours)
+      const timeStr = String(insemDate.getUTCHours()).padStart(2, '0') + ':' + 
+                      String(insemDate.getUTCMinutes()).padStart(2, '0')
+      
+      setFormData(prev => ({
+        ...prev,
+        insemination_date: dateStr,
+        insemination_time: timeStr
+      }))
+    } catch (err) {
+      // Silent fail - just don't auto-fill if calculation fails
+    }
+  }, [isOpen, event])
 
   if (!event) return null
 

@@ -8,17 +8,18 @@ import {
   getWeightConversions,
   initializeFarmFeedManagementSettings,
 } from '@/lib/database/feedManagementSettings'
+import { getFeedTypes } from '@/lib/database/feed'
 import { getAllFeedSettings } from '@/lib/database/feedSettings'
 import { FeedManagementSettings } from '@/components/settings/feeds/FeedManagementSettings'
 
 interface FeedManagementSettingsPageProps {
-  searchParams: Promise<{ farmId: string }>
+  searchParams: Promise<{ farmId: string; tab?: string }>
 }
 
 export default async function FeedManagementSettingsPage({
   searchParams,
 }: FeedManagementSettingsPageProps) {
-  const { farmId } = await searchParams
+  const { farmId, tab } = await searchParams
 
   if (!farmId) redirect('/dashboard')
 
@@ -30,11 +31,13 @@ export default async function FeedManagementSettingsPage({
 
   try {
     const [
+      feedTypes,
       feedTypeCategories,
       animalCategories,
       weightConversions,
       feedSettings,
     ] = await Promise.all([
+      getFeedTypes(farmId),
       getFeedTypeCategories(farmId),
       getAnimalCategories(farmId),
       getWeightConversions(farmId),
@@ -46,11 +49,13 @@ export default async function FeedManagementSettingsPage({
       await initializeFarmFeedManagementSettings(farmId)
 
       const [
+        refreshedFeedTypes,
         refreshedCategories,
         refreshedAnimalCategories,
         refreshedConversions,
         refreshedFeedSettings,
       ] = await Promise.all([
+        getFeedTypes(farmId),
         getFeedTypeCategories(farmId),
         getAnimalCategories(farmId),
         getWeightConversions(farmId),
@@ -61,12 +66,14 @@ export default async function FeedManagementSettingsPage({
         <FeedManagementSettings
           farmId={farmId}
           userRole={userRole.role_type}
+          feedTypes={refreshedFeedTypes}
           feedTypeCategories={refreshedCategories}
           animalCategories={refreshedAnimalCategories}
           weightConversions={refreshedConversions}
           timeSlots={refreshedFeedSettings.timeSlots}
           alertSettings={refreshedFeedSettings.alertSettings}
           frequencyDefaults={refreshedFeedSettings.frequencyDefaults}
+          initialTab={tab || 'feed-categories'}
         />
       )
     }
@@ -75,12 +82,14 @@ export default async function FeedManagementSettingsPage({
       <FeedManagementSettings
         farmId={farmId}
         userRole={userRole.role_type}
+        feedTypes={feedTypes}
         feedTypeCategories={feedTypeCategories}
         animalCategories={animalCategories}
         weightConversions={weightConversions}
         timeSlots={feedSettings.timeSlots}
         alertSettings={feedSettings.alertSettings}
         frequencyDefaults={feedSettings.frequencyDefaults}
+        initialTab={tab || 'feed-categories'}
       />
     )
   } catch (error) {
@@ -89,12 +98,14 @@ export default async function FeedManagementSettingsPage({
       <FeedManagementSettings
         farmId={farmId}
         userRole={userRole.role_type}
+        feedTypes={[]}
         feedTypeCategories={[]}
         animalCategories={[]}
         weightConversions={[]}
         timeSlots={[]}
         alertSettings={[]}
         frequencyDefaults={[]}
+        initialTab={tab || 'feed-categories'}
       />
     )
   }

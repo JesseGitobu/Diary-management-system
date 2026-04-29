@@ -221,8 +221,11 @@ export async function getUpcomingBreedingEvents(farmId: string) {
   const today = new Date()
   const sevenDaysFromNow = addDays(today, 7)
   
-  // Get recent breeding events that might need follow-up
-  const { data: eventsData } = await supabase
+  console.log('🔍 [getUpcomingBreedingEvents] Starting query for farm:', farmId)
+  console.log('🔍 [getUpcomingBreedingEvents] Date range:', today.toISOString().split('T')[0], 'to', sevenDaysFromNow.toISOString().split('T')[0])
+  
+  // Get recent breeding events
+  const { data: eventsData, error: queryError } = await supabase
     .from('breeding_events')
     .select(`
       *,
@@ -233,17 +236,76 @@ export async function getUpcomingBreedingEvents(farmId: string) {
     .lte('event_date', sevenDaysFromNow.toISOString().split('T')[0])
     .order('event_date', { ascending: true })
   
-  // FIXED: Cast to any[]
+  if (queryError) {
+    console.error('❌ [getUpcomingBreedingEvents] Query error:', queryError)
+  }
+  
   const events = (eventsData || []) as any[]
   
-  return events.map(event => ({
-    id: event.id,
-    event_type: event.event_type,
-    scheduled_date: event.event_date,
-    status: 'scheduled',
-    animal_tag: event.animals?.tag_number,
-    animal_name: event.animals?.name
-  }))
+  console.log(`📊 [getUpcomingBreedingEvents] Found ${events.length} events for farm ${farmId}`)
+  
+  // Fetch follow-ups separately to avoid RLS issues with JOIN
+  const eventIds = events.map(e => e.id)
+  let followUpsMap = new Map()
+  
+  if (eventIds.length > 0) {
+    console.log('📊 [getUpcomingBreedingEvents] Fetching follow-ups for event IDs:', eventIds)
+    const { data: followUpsData, error: followUpsError } = await supabase
+      .from('breeding_follow_ups')
+      .select('*')
+      .in('event_id', eventIds)
+    
+    if (followUpsError) {
+      console.error('❌ [getUpcomingBreedingEvents] Follow-ups query error:', followUpsError)
+    } else {
+      console.log('📊 [getUpcomingBreedingEvents] Retrieved follow-ups:', (followUpsData || []).length)
+      if (followUpsData && followUpsData.length > 0) {
+        console.log('🔍 [getUpcomingBreedingEvents] Sample follow-up:', JSON.stringify(followUpsData[0], null, 2))
+      }
+      // Map follow-ups by event_id for quick lookup
+      (followUpsData || []).forEach((followUp: any) => {
+        followUpsMap.set(followUp.event_id, followUp)
+      })
+    }
+  }
+  
+  // Log raw query response for first event
+  if (events.length > 0) {
+    console.log('🔍 [getUpcomingBreedingEvents] Raw response for first event:', JSON.stringify(events[0], null, 2))
+  }
+  
+  return events.map((event, idx) => {
+    const followUp = followUpsMap.get(event.id) || null
+    console.log(`  📅 [Event ${idx}] ID=${event.id}, type=${event.event_type}, animal=${event.animals?.name || event.animals?.tag_number}`)
+    console.log(`     heat_action_taken='${event.heat_action_taken}', hasFollowUp=${!!followUp}`)
+    if (followUp) {
+      console.log(`     followUp.insemination_scheduled_at=${followUp.insemination_scheduled_at}`)
+      console.log(`     followUp.natural_breeding_start=${followUp.natural_breeding_start}`)
+      console.log(`     followUp.natural_breeding_end=${followUp.natural_breeding_end}`)
+    }
+    
+    return {
+      id: event.id,
+      event_type: event.event_type,
+      scheduled_date: event.event_date,
+      status: 'scheduled',
+      animal_id: event.animal_id,
+      animal_tag: event.animals?.tag_number,
+      animal_name: event.animals?.name,
+      heat_action_taken: event.heat_action_taken || null,
+      // Include follow-up data with normalized field names
+      follow_up_insemination_scheduled_at: followUp?.insemination_scheduled_at || null,
+      follow_up_natural_breeding_start: followUp?.natural_breeding_start || null,
+      follow_up_natural_breeding_end: followUp?.natural_breeding_end || null,
+      follow_up_monitoring_plan: followUp?.monitoring_plan || null,
+      follow_up_ovulation_date: followUp?.ovulation_date || null,
+      follow_up_has_medical_issue: followUp?.has_medical_issue || null,
+      follow_up_medical_issue_description: followUp?.medical_issue_description || null,
+      follow_up_vet_name: followUp?.vet_name || null,
+      follow_up_notes: followUp?.notes || null,
+      follow_up_created_at: followUp?.created_at || null,
+    }
+  })
 }
 
 // Get breeding alerts

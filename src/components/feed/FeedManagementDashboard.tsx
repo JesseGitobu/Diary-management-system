@@ -2,17 +2,16 @@
 'use client'
 
 import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
-import { AddFeedTypeModal } from '@/components/feed/AddFeedTypeModal'
 import { AddFeedInventoryModal } from '@/components/feed/AddFeedInventoryModal'
 import { FeedConsumptionModal } from '@/components/feed/FeedConsumptionModal'
 import { FeedingGroupsManager } from '@/components/feed/FeedingGroupsManager'
 import { FeedOverviewTab } from '@/components/feed/FeedOverviewTab'
 import { FeedInventoryTab } from '@/components/feed/FeedInventoryTab'
 import { FeedConsumptionTab } from '@/components/feed/FeedConsumptionTab'
-import { FeedTypesTab } from '@/components/feed/FeedTypesTab'
 import { FeedStatsCards } from '@/components/feed/FeedStatsCards'
 import { FeedMixRecipeManager } from '@/components/feed/FeedMixRecipeManager'
 import { NutritionalDataManager } from '@/components/feed/NutritionalDataManager'
@@ -71,8 +70,8 @@ export function FeedManagementDashboard({
   suppliers = [],
   feedMixRecipes: initialFeedMixRecipes = [],
 }: FeedManagementDashboardProps) {
+  const router = useRouter()
   const [activeTab, setActiveTab] = useState('overview')
-  const [showAddTypeModal, setShowAddTypeModal] = useState(false)
   const [showAddInventoryModal, setShowAddInventoryModal] = useState(false)
   const [showConsumptionModal, setShowConsumptionModal] = useState(false)
   const [showFeedingGroupsModal, setShowFeedingGroupsModal] = useState(false)
@@ -154,8 +153,6 @@ export function FeedManagementDashboard({
 
     if (action === 'showRecordFeedingModal') {
       handleOpenConsumptionModal()
-    } else if (action === 'showAddFeedTypeModal') {
-      setShowAddTypeModal(true)
     } else if (action === 'showAddInventoryModal') {
       setShowAddInventoryModal(true)
     }
@@ -253,19 +250,7 @@ export function FeedManagementDashboard({
   // Calculate low stock alerts for backward compatibility
   const lowStockItems = enhancedStats.alertCounts.total
 
-  const handleFeedTypeAdded = (newFeedType: any) => {
-    setFeedTypes(prev => [...prev, newFeedType])
-  }
 
-  const handleFeedTypeUpdated = (updatedFeedType: any) => {
-    setFeedTypes(prev => prev.map(ft =>
-      ft.id === updatedFeedType.id ? updatedFeedType : ft
-    ))
-  }
-
-  const handleFeedTypeDeleted = (feedTypeId: string) => {
-    setFeedTypes(prev => prev.filter(ft => ft.id !== feedTypeId))
-  }
 
   const handleInventoryAdded = async (newInventory: any) => {
     // Refetch the full inventory list so feed_types data (unit conversions,
@@ -459,10 +444,6 @@ export function FeedManagementDashboard({
               <FlaskConical className="mr-2 h-4 w-4" />
               Create TMR Recipe
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setShowAddTypeModal(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Feed Type
-            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setShowAddInventoryModal(true)}>
               <Package className="mr-2 h-4 w-4" />
               Add Inventory
@@ -546,9 +527,6 @@ export function FeedManagementDashboard({
                 <TabsTrigger value="consumption" className={triggerClass}>
                   {isTablet || isDesktop ? 'Consumption' : 'Usage'}
                 </TabsTrigger>
-                <TabsTrigger value="types" className={triggerClass}>
-                  Types
-                </TabsTrigger>
                 <TabsTrigger value="nutrition" className={triggerClass}>
                   {isSmallMobile ? 'Nutr.' : isDesktop ? 'Nutrition Data' : 'Nutrition'}
                 </TabsTrigger>
@@ -573,7 +551,7 @@ export function FeedManagementDashboard({
               consumptionRecords={consumptionRecords}
               isMobile={isMobile}
               canManageFeed={canManageFeed}
-              onAddFeedType={() => setShowAddTypeModal(true)}
+              onAddFeedType={() => router.push(`/dashboard/settings/feeds?farmId=${farmId}&tab=feed-types`)}
               onAddInventory={() => setShowAddInventoryModal(true)}
               farmId={farmId}
               feedMixRecipes={feedMixRecipes}
@@ -614,21 +592,6 @@ export function FeedManagementDashboard({
               onEditRecord={handleEditRecord}
               onDeleteRecord={handleDeleteRecord}
               onScheduledFeedingConfirmed={handleScheduledFeedingConfirmed}
-            />
-          </TabsContent>
-
-          <TabsContent value="types" className="mt-6">
-            <FeedTypesTab
-              feedTypes={feedTypes}
-              isMobile={isMobile}
-              canManageFeed={canManageFeed}
-              farmId={farmId}
-              onAddFeedType={() => setShowAddTypeModal(true)}
-              onFeedTypeUpdated={handleFeedTypeUpdated}
-              onFeedTypeDeleted={handleFeedTypeDeleted}
-              feedTypeCategories={feedTypeCategories}
-              animalCategories={animalCategories}
-              weightConversions={weightConversions}
             />
           </TabsContent>
 
@@ -716,16 +679,6 @@ export function FeedManagementDashboard({
       </div>
 
       {/* Modals */}
-      <AddFeedTypeModal
-        farmId={farmId}
-        isOpen={showAddTypeModal}
-        onClose={() => setShowAddTypeModal(false)}
-        onSuccess={handleFeedTypeAdded}
-        feedTypeCategories={feedTypeCategories}
-        animalCategories={animalCategories}
-        weightConversions={weightConversions}
-      />
-
       <AddFeedInventoryModal
         farmId={farmId}
         feedTypes={feedTypes}

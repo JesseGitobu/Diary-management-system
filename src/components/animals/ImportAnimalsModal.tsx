@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from '@/components/ui/Alert'
 import { Progress } from '@/components/ui/Progress'
 import { importAnimalsActionWithAuth } from '@/app/actions/import-animals'
 import { downloadUniversalTemplate } from '@/lib/enhanced-template-generator'
+import { toast } from 'react-hot-toast'
 import {
   Upload,
   Download,
@@ -400,7 +401,8 @@ export function ImportAnimalsModal({
       setValidationResult(validation)
       setStep('preview')
     } catch (error) {
-      alert(`Error parsing file: ${error}`)
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      toast.error(`Failed to parse file: ${errorMsg}`)
       setSelectedFile(null)
     }
   }
@@ -456,17 +458,39 @@ export function ImportAnimalsModal({
         setImportProgress(Math.floor(simulatedProgress))
       }, 300)
       
-      const result = await importAnimalsActionWithAuth(farmId, validatedAnimals as any)
+      // Add timeout protection for long-running imports
+      const IMPORT_TIMEOUT = 5 * 60 * 1000  // 5 minutes
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Import operation timed out. Please try again with fewer animals.')), IMPORT_TIMEOUT)
+      )
+      
+      let result
+      try {
+        result = await Promise.race([
+          importAnimalsActionWithAuth(farmId, validatedAnimals as any),
+          timeoutPromise
+        ]) as any
+      } catch (timeoutError) {
+        clearInterval(progressInterval)
+        const errorMsg = timeoutError instanceof Error ? timeoutError.message : 'Unknown timeout error'
+        console.error('⏱️ Timeout error:', errorMsg)
+        throw new Error(errorMsg)
+      }
       
       // Clear the simulated progress interval
       clearInterval(progressInterval)
 
       console.log('📥 Server response:', result)
       
-      // Validate response structure
+      // Validate response structure with detailed error info
       if (!result || typeof result !== 'object') {
-        console.error('❌ Invalid response:', result)
-        throw new Error(`An unexpected response was received from the server. Expected an object but got: ${typeof result}`)
+        console.error('❌ Invalid response type:', typeof result, 'value:', result)
+        throw new Error('Server returned an invalid response. Please try again or contact support.')
+      }
+      
+      if (!('success' in result && 'imported' in result && 'skipped' in result)) {
+        console.error('❌ Invalid response structure:', result)
+        throw new Error('Server returned an incomplete response. Please try again or contact support.')
       }
 
       if (result.success) {
@@ -490,16 +514,41 @@ export function ImportAnimalsModal({
             onAnimalsImported(result.animals)
           }
           
+          // Show success toast
+          if (result.skipped > 0) {
+            toast.success(`Imported ${result.imported} animals (${result.skipped} skipped)`, { duration: 4000 })
+          } else {
+            toast.success(`Successfully imported ${result.imported} animals!`, { duration: 4000 })
+          }
+          
           setStep('complete')
         }, 300)
       } else {
         console.error('❌ Import failed:', result.message, result.errors)
-        throw new Error(result.message || 'Import failed')
+        const userMessage = result.message || 'Import failed for unknown reason'
+        throw new Error(userMessage)
       }
     } catch (error) {
       console.error('❌ Import error:', error)
       const errorMessage = error instanceof Error ? error.message : String(error)
-      alert(`Import failed: ${errorMessage}`)
+      
+      // Extract user-friendly error message
+      let displayMessage = 'Import failed'
+      if (errorMessage.includes('Authentication')) {
+        displayMessage = 'Your session expired. Please log in again and try the import.'
+      } else if (errorMessage.includes('Permission') || errorMessage.includes('access')) {
+        displayMessage = 'You do not have permission to import animals to this farm.'
+      } else if (errorMessage.includes('timeout')) {
+        displayMessage = 'Import took too long. Try importing fewer animals or contact support.'
+      } else if (errorMessage.includes('unexpected response')) {
+        displayMessage = 'Server error: Could not process your request. Please try again.'
+      } else if (errorMessage.length > 0) {
+        displayMessage = errorMessage
+      }
+      
+      // Show error toast with detailed logging
+      toast.error(displayMessage, { duration: 5000 })
+      console.error('Full error details:', { originalError: error, displayMessage })
       setStep('preview')
     } finally {
       setIsImporting(false)

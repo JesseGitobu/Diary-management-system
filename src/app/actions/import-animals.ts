@@ -170,7 +170,7 @@ export async function importAnimalsActionWithAuth(
     let globalParentTagMap = new Map<string, string>()
     const globalOriginalTagToGenerated = new Map<string, string>()
 
-    // FIXED: Process with delays to avoid timeout
+    // FIXED: Process with delays to avoid timeout and wrap in try-catch
     for (let i = 0; i < globalSortedAnimals.length; i += batchSize) {
       const batch = globalSortedAnimals.slice(i, i + batchSize)
       const batchNum = Math.floor(i / batchSize) + 1
@@ -178,21 +178,28 @@ export async function importAnimalsActionWithAuth(
       
       console.log(`📊 Processing batch ${batchNum}/${totalBatches} (${batch.length} animals)`)
       
-      const pass1Result = await processBatchPass1(
-        supabase, 
-        farmId, 
-        batch, 
-        user.id, 
-        globalSortedAnimals,
-        globalParentTagMap,
-        globalOriginalTagToGenerated
-      )
-      
-      results.imported += pass1Result.imported
-      results.skipped += pass1Result.skipped
-      results.animals.push(...pass1Result.animals)
-      results.errors.push(...pass1Result.errors)
-      allInsertedAnimals.push(...pass1Result.insertedAnimals)
+      try {
+        const pass1Result = await processBatchPass1(
+          supabase, 
+          farmId, 
+          batch, 
+          user.id, 
+          globalSortedAnimals,
+          globalParentTagMap,
+          globalOriginalTagToGenerated
+        )
+        
+        results.imported += pass1Result.imported
+        results.skipped += pass1Result.skipped
+        results.animals.push(...pass1Result.animals)
+        results.errors.push(...pass1Result.errors)
+        allInsertedAnimals.push(...pass1Result.insertedAnimals)
+      } catch (batchError) {
+        const errorMsg = batchError instanceof Error ? batchError.message : String(batchError)
+        console.error(`❌ Batch ${batchNum} PASS 1 failed:`, errorMsg)
+        results.errors.push(`Batch ${batchNum} failed: ${errorMsg}`)
+        // Continue to next batch instead of crashing entire import
+      }
       
       // Add delay between batches to avoid overwhelming server
       if (i + batchSize < globalSortedAnimals.length) {
@@ -211,16 +218,23 @@ export async function importAnimalsActionWithAuth(
     for (let idx = 0; idx < allInsertedAnimals.length; idx++) {
       const entry = allInsertedAnimals[idx]
       
-      await processSingleAnimalPass2(
-        supabase,
-        farmId,
-        globalSortedAnimals,
-        entry,
-        user.id,
-        globalParentTagMap,
-        globalOriginalTagToGenerated,
-        pass2Errors
-      )
+      try {
+        await processSingleAnimalPass2(
+          supabase,
+          farmId,
+          globalSortedAnimals,
+          entry,
+          user.id,
+          globalParentTagMap,
+          globalOriginalTagToGenerated,
+          pass2Errors
+        )
+      } catch (pass2Error) {
+        const errorMsg = pass2Error instanceof Error ? pass2Error.message : String(pass2Error)
+        console.error(`❌ PASS 2 failed for ${entry.raw.tag_number}:`, errorMsg)
+        pass2Errors.push(`Failed to create records for ${entry.raw.tag_number}: ${errorMsg}`)
+        // Continue to next animal instead of crashing
+      }
       
       // Add small delay every 10 records to prevent overwhelming
       if ((idx + 1) % 10 === 0 && idx + 1 < allInsertedAnimals.length) {
@@ -252,13 +266,30 @@ export async function importAnimalsActionWithAuth(
     const errorStack = error instanceof Error ? error.stack : ''
     console.error('Error stack:', errorStack)
     
+    // Format user-friendly error message
+    let userMessage = 'Import operation failed'
+    
+    if (errorMessage.includes('Authentication') || errorMessage.includes('auth')) {
+      userMessage = 'Authentication error. Please log in again and try the import.'
+    } else if (errorMessage.includes('Permission') || errorMessage.includes('access')) {
+      userMessage = 'You do not have permission to import animals to this farm.'
+    } else if (errorMessage.includes('timeout') || errorMessage.includes('Cloudflare')) {
+      userMessage = 'The operation took too long. Try importing fewer animals at once.'
+    } else if (errorMessage.includes('UNIQUE') || errorMessage.includes('duplicate')) {
+      userMessage = 'Some animals already exist in the system (duplicate tag numbers).'
+    } else if (errorMessage.includes('foreign key')) {
+      userMessage = 'Failed to create relationships between animals. Please check parent references.'
+    } else if (errorMessage) {
+      userMessage = errorMessage.substring(0, 200) // Limit to first 200 chars
+    }
+    
     return {
       success: false,
       imported: 0,
       skipped: 0,
       animals: [],
       errors: [errorMessage || 'Unknown error occurred'],
-      message: `Import failed: ${errorMessage || 'An unexpected error occurred'}`
+      message: `Import failed: ${userMessage}`
     }
   }
 }
@@ -701,8 +732,8 @@ async function createProductionCycles(
         // TABLE 4: Create pregnancy_records (if successful)
         const gestationDays = calculateGestation(serviceDate, actualCalvingDate)
         
-        // Determine pregnancy status: completed if actual calving date exists, otherwise confirmed
-        let pregnancyStatus: 'confirmed' | 'completed' = 'confirmed'
+        // Determine pregnancy status: completed if actual calving date exists, otherwise confirmed/suspected
+        let pregnancyStatus: 'confirmed' | 'completed' | 'suspected' = 'confirmed'
         let confirmedDate: string | null = null
         let confirmationMethodValue: string | null = null
         
@@ -712,9 +743,21 @@ async function createProductionCycles(
           // confirmation_method not required for 'completed' status
           confirmationMethodValue = null
         } else if (outcome === 'success') {
-          pregnancyStatus = 'confirmed'
-          confirmedDate = new Date().toISOString().split('T')[0]  // Today's date for confirmation
-          confirmationMethodValue = 'visual'  // Generic confirmation method for imported records
+          // Calculate days since service date to today (import date)
+          const importDate = new Date()
+          const serviceDateObj = new Date(serviceDate)
+          const daysSinceService = Math.floor((importDate.getTime() - serviceDateObj.getTime()) / (1000 * 60 * 60 * 24))
+          
+          // If less than 90 days (3 months), mark as suspected; otherwise confirmed
+          if (daysSinceService < 90) {
+            pregnancyStatus = 'suspected'
+            confirmedDate = null
+            confirmationMethodValue = null
+          } else {
+            pregnancyStatus = 'confirmed'
+            confirmedDate = new Date().toISOString().split('T')[0]  // Today's date for confirmation
+            confirmationMethodValue = 'visual'  // Generic confirmation method for imported records
+          }
         }
         
         const steamingDate = animal[`steaming_date_${cycleNum}` as keyof ImportAnimal] as string

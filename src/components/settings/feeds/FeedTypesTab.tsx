@@ -39,7 +39,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/AlertDialog'
-import { AddFeedTypeModal } from '@/components/feed/AddFeedTypeModal'
+import { AddFeedTypeModal } from '@/components/settings/feeds/AddFeedTypeModal'
 
 const PAGE_SIZE = 10
 

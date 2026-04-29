@@ -175,6 +175,68 @@ export async function POST(request: NextRequest) {
         console.error('⚠️ [API] Failed to update production status:', insemResult.error)
       }
 
+      // Auto-fill follow-up for the preceding heat detection event
+      try {
+        const { data: precedingHeat } = await (supabase as any)
+          .from('breeding_events')
+          .select('id')
+          .eq('animal_id', eventData.animal_id)
+          .eq('farm_id', eventData.farm_id)
+          .eq('event_type', 'heat_detection')
+          .order('event_date', { ascending: false })
+          .limit(1)
+          .single()
+
+        if (precedingHeat) {
+          // Preserve the datetime exactly as entered — strip timezone offset if present
+          const eventDateLocal = eventData.event_date.replace(/([+-]\d{2}:\d{2}|Z)$/, '')
+          const isNaturalBreeding = eventData.insemination_method === 'natural_breeding'
+
+          const now = new Date().toISOString()
+
+          const { data: existingFollowUp } = await (supabase as any)
+            .from('breeding_follow_ups')
+            .select('id')
+            .eq('event_id', precedingHeat.id)
+            .single()
+
+          if (existingFollowUp) {
+            const updateFields: Record<string, any> = { updated_at: now }
+            if (isNaturalBreeding) {
+              updateFields.natural_breeding_end = eventDateLocal
+            } else {
+              updateFields.insemination_scheduled_at = eventDateLocal
+              updateFields.insemination_confirmed = true
+            }
+            await (supabase as any)
+              .from('breeding_follow_ups')
+              .update(updateFields)
+              .eq('id', existingFollowUp.id)
+            console.log('✅ [API] Updated heat follow-up with insemination data:', precedingHeat.id)
+          } else {
+            const insertFields: Record<string, any> = {
+              event_id: precedingHeat.id,
+              farm_id: eventData.farm_id,
+              created_at: now,
+              updated_at: now,
+              created_by: user.id,
+            }
+            if (isNaturalBreeding) {
+              insertFields.natural_breeding_end = eventDateLocal
+            } else {
+              insertFields.insemination_scheduled_at = eventDateLocal
+              insertFields.insemination_confirmed = true
+            }
+            await (supabase as any)
+              .from('breeding_follow_ups')
+              .insert(insertFields)
+            console.log('✅ [API] Created heat follow-up with insemination data:', precedingHeat.id)
+          }
+        }
+      } catch (followUpErr) {
+        console.error('⚠️ [API] Failed to auto-fill heat follow-up:', followUpErr)
+      }
+
       return NextResponse.json({ success: true, event, message: 'Breeding event recorded successfully' })
     }
 
