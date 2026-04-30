@@ -47,7 +47,7 @@ async function resolveOrCreateMilkingSession(
       farm_id: farmId,
       session_name: sessionName,
       session_start: `${recordDate}T00:00:00`,
-      milking_type: 'individual',
+      milking_type: 'routine',
       recorded_by: recordedBy,
     })
     .select('id')

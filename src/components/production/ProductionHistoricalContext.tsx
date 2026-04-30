@@ -69,8 +69,11 @@ export function ProductionHistoricalContext({
         
         abortControllerRef.current = new AbortController()
 
+        const sessionNameParam = currentSessionName
+          ? `&session_name=${encodeURIComponent(currentSessionName)}`
+          : ''
         const response = await fetch(
-          `/api/production/history?farmId=${farmId}&animalId=${animalId}&date=${currentDate}&session=${currentSession}`,
+          `/api/production/history?farmId=${farmId}&animalId=${animalId}&date=${currentDate}&session=${currentSession}${sessionNameParam}`,
           { signal: abortControllerRef.current.signal }
         )
 

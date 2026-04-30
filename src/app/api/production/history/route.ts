@@ -40,14 +40,16 @@ export async function GET(request: NextRequest) {
       }, { status: 400 })
     }
     
+    const sessionName = searchParams.get('session_name')
+
     const supabase = await createServerSupabaseClient()
-    
+
     // Get yesterday's date
     const currentDateObj = new Date(currentDate)
     const yesterdayObj = new Date(currentDateObj)
     yesterdayObj.setDate(yesterdayObj.getDate() - 1)
     const yesterdayDate = yesterdayObj.toISOString().split('T')[0]
-    
+
     // Fetch yesterday's total volume for this animal
     const { data: yesterdayRecords } = await supabase
       .from('production_records')
@@ -55,45 +57,35 @@ export async function GET(request: NextRequest) {
       .eq('farm_id', farmId)
       .eq('animal_id', animalId)
       .eq('record_date', yesterdayDate)
-    
+
     const typedYesterdayRecords = yesterdayRecords as any
     const yesterdayTotal = typedYesterdayRecords && typedYesterdayRecords.length > 0
       ? typedYesterdayRecords.reduce((sum: number, r: any) => sum + (r.milk_volume || 0), 0)
       : null
-    
-    // Fetch previous session volume (today's earlier sessions)
-    console.log('[ProductionHistory] Fetching previous sessions:', {
-      farmId,
-      animalId,
-      currentDate,
-      currentSession,
-      excludedSessionId: currentSession
-    })
-    
+
+    // Fetch previous session volume (today's earlier sessions).
+    // The current session hasn't been created in milking_sessions yet, so no UUID to exclude —
+    // any today record belongs to an earlier session.
     const { data: previousSessionRecords, error: prevError } = await supabase
       .from('production_records')
       .select('milk_volume, milking_session_id')
       .eq('farm_id', farmId)
       .eq('animal_id', animalId)
       .eq('record_date', currentDate)
-      .neq('milking_session_id', currentSession)
       .not('milking_session_id', 'is', null)
       .order('created_at', { ascending: false })
       .limit(1)
-    
+
     if (prevError) {
       console.error('[ProductionHistory] Error fetching previous session:', prevError)
     }
-    
-    console.log('[ProductionHistory] Previous session records found:', previousSessionRecords?.length, previousSessionRecords)
-    
+
     let typedPreviousSessionRecords = previousSessionRecords as any
     let previousSessionVolume: number | null = null
     let previousSessionId: string | null = null
-    
+
     // If no previous session today, get last session from yesterday
     if (!typedPreviousSessionRecords || typedPreviousSessionRecords.length === 0) {
-      console.log('[ProductionHistory] No previous session today, fetching last session from yesterday')
       const { data: yesterdayLastSessionRecords, error: yesterdayError } = await supabase
         .from('production_records')
         .select('milk_volume, milking_session_id')
@@ -103,39 +95,54 @@ export async function GET(request: NextRequest) {
         .not('milking_session_id', 'is', null)
         .order('created_at', { ascending: false })
         .limit(1)
-      
+
       if (yesterdayError) {
         console.error('[ProductionHistory] Error fetching yesterday last session:', yesterdayError)
       }
-      
+
       typedPreviousSessionRecords = yesterdayLastSessionRecords as any
-      console.log('[ProductionHistory] Yesterday last session records found:', typedPreviousSessionRecords?.length, typedPreviousSessionRecords)
     }
-    
+
     previousSessionVolume = typedPreviousSessionRecords && typedPreviousSessionRecords.length > 0
       ? typedPreviousSessionRecords[0].milk_volume
       : null
     previousSessionId = typedPreviousSessionRecords && typedPreviousSessionRecords.length > 0
       ? typedPreviousSessionRecords[0].milking_session_id
       : null
-    
-    // Fetch same session yesterday's volume
-    const { data: sameTimeYesterdayRecords } = await supabase
-      .from('production_records')
-      .select('milk_volume, milking_session_id')
-      .eq('farm_id', farmId)
-      .eq('animal_id', animalId)
-      .eq('record_date', yesterdayDate)
-      .eq('milking_session_id', currentSession)
-      .limit(1)
-    
-    const typedSameTimeYesterdayRecords = sameTimeYesterdayRecords as any
-    const sameTimeYesterdayVolume = typedSameTimeYesterdayRecords && typedSameTimeYesterdayRecords.length > 0
-      ? typedSameTimeYesterdayRecords[0].milk_volume
-      : null
-    const sameTimeYesterdaySessionId = typedSameTimeYesterdayRecords && typedSameTimeYesterdayRecords.length > 0
-      ? typedSameTimeYesterdayRecords[0].milking_session_id
-      : null
+
+    // Fetch same session yesterday's volume.
+    // Resolve yesterday's milking_session UUID by session_name to avoid UUID type errors.
+    let sameTimeYesterdayVolume: number | null = null
+    let sameTimeYesterdaySessionId: string | null = null
+
+    if (sessionName) {
+      const { data: yesterdaySession } = await (supabase as any)
+        .from('milking_sessions')
+        .select('id')
+        .eq('farm_id', farmId)
+        .eq('session_name', sessionName)
+        .gte('session_start', `${yesterdayDate}T00:00:00`)
+        .lte('session_start', `${yesterdayDate}T23:59:59`)
+        .limit(1)
+
+      const yesterdaySessionUUID: string | null =
+        yesterdaySession && yesterdaySession.length > 0 ? yesterdaySession[0].id : null
+
+      if (yesterdaySessionUUID) {
+        const { data: sameTimeYesterdayRecords } = await supabase
+          .from('production_records')
+          .select('milk_volume, milking_session_id')
+          .eq('farm_id', farmId)
+          .eq('animal_id', animalId)
+          .eq('record_date', yesterdayDate)
+          .eq('milking_session_id', yesterdaySessionUUID)
+          .limit(1)
+
+        const typed = sameTimeYesterdayRecords as any
+        sameTimeYesterdayVolume = typed && typed.length > 0 ? typed[0].milk_volume : null
+        sameTimeYesterdaySessionId = typed && typed.length > 0 ? typed[0].milking_session_id : null
+      }
+    }
     
     return NextResponse.json({
       yesterdayTotal,
