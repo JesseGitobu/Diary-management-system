@@ -63,11 +63,14 @@ export async function GET(
       .eq('farm_id', farmId)
       .order('name', { ascending: true })
 
-    // If specific animal category is requested, filter feed types
+    // If specific animal category is requested, filter feed types.
+    // animal_categories is jsonb, so the RHS of @> must be a valid JSON string.
+    // Passing JSON.stringify([id]) sends ["uuid"] instead of the postgres array
+    // literal {uuid} (which is not valid JSON and causes a parse error).
     if (animalCategoryId) {
-      // Use the PostgreSQL array contains operator to find feed types
-      // that include this animal category in their animal_categories array
-      feedTypesQuery = feedTypesQuery.contains('animal_categories', [animalCategoryId])
+      feedTypesQuery = feedTypesQuery.filter(
+        'animal_categories', 'cs', JSON.stringify([animalCategoryId])
+      )
     }
 
     const { data: feedTypes, error: feedTypesError } = await feedTypesQuery as { 

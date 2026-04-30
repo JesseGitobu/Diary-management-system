@@ -565,25 +565,43 @@ export async function getUnifiedBreedingHistory(
         service_records(
           service_type,
           bull_tag_or_semen_code,
+          bull_name_or_semen_source,
+          semen_type,
           technician_name,
           expected_calving_date
         ),
         pregnancy_records(
+          id,
+          service_record_id,
           confirmation_method,
           veterinarian,
           expected_calving_date,
-          pregnancy_status
+          pregnancy_status,
+          steaming_date,
+          gestation_length_days
         ),
         calving_records(
+          calving_date,
+          calving_time,
           calving_difficulty,
           calf_alive,
           assistance_required,
           veterinarian,
+          complications,
+          colostrum_quality,
+          colostrum_produced,
           calf_records(
             gender,
             birth_weight,
+            birth_date,
+            breed,
             registration_number,
-            health_status
+            sire_tag,
+            sire_name,
+            health_status,
+            weaning_date,
+            weaning_weight,
+            notes
           )
         )
       `)
@@ -615,6 +633,8 @@ export async function getUnifiedBreedingHistory(
       if (sr) {
         normalized.insemination_method = sr.service_type === 'artificial_insemination' ? 'artificial_insemination' : 'natural_breeding'
         normalized.semen_bull_code = sr.bull_tag_or_semen_code
+        normalized.bull_name_or_semen_source = sr.bull_name_or_semen_source
+        normalized.semen_type = sr.semen_type
         normalized.technician_name = sr.technician_name
         normalized.estimated_due_date = sr.expected_calving_date
       }
@@ -628,6 +648,8 @@ export async function getUnifiedBreedingHistory(
         normalized.examination_method = pr.confirmation_method
         normalized.veterinarian_name = pr.veterinarian
         normalized.estimated_due_date = pr.expected_calving_date
+        normalized.steaming_date = pr.steaming_date
+        normalized.gestation_length_days = pr.gestation_length_days
         normalized.pregnancy_result = pr.pregnancy_status === 'confirmed' ? 'pregnant' :
           pr.pregnancy_status === 'false' ? 'not_pregnant' : 'uncertain'
       }
@@ -639,6 +661,13 @@ export async function getUnifiedBreedingHistory(
       const cr = Array.isArray(event.calving_records) ? event.calving_records[0] : event.calving_records
       if (cr) {
         normalized.calving_outcome = cr.calving_difficulty || 'normal'
+        normalized.calving_actual_date = cr.calving_date
+        normalized.calving_actual_time = cr.calving_time
+        normalized.calf_alive = cr.calf_alive
+        normalized.assistance_required = cr.assistance_required
+        normalized.complications = cr.complications
+        normalized.colostrum_quality = cr.colostrum_quality
+        normalized.colostrum_produced = cr.colostrum_produced
         normalized.veterinarian_name = cr.veterinarian
 
         // Extract calf information from nested calf_records
@@ -647,8 +676,15 @@ export async function getUnifiedBreedingHistory(
           if (calfRecs) {
             normalized.calf_gender = calfRecs.gender
             normalized.calf_weight = calfRecs.birth_weight
+            normalized.calf_birth_date = calfRecs.birth_date
+            normalized.calf_breed = calfRecs.breed
             normalized.calf_tag_number = calfRecs.registration_number
+            normalized.calf_sire_tag = calfRecs.sire_tag
+            normalized.calf_sire_name = calfRecs.sire_name
             normalized.calf_health_status = calfRecs.health_status
+            normalized.calf_weaning_date = calfRecs.weaning_date
+            normalized.calf_weaning_weight = calfRecs.weaning_weight
+            normalized.calf_notes = calfRecs.notes
           }
         }
       }

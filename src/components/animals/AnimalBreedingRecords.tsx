@@ -69,6 +69,8 @@ interface PregnancyCheck {
   veterinarian_name?: string
   notes?: string
   estimated_due_date?: string
+  steaming_date?: string
+  gestation_length_days?: number
   created_at?: string
 }
 
@@ -87,10 +89,25 @@ interface CalvingEvent {
   event_date: string
   estimated_due_date?: string
   calving_outcome?: string
+  calving_actual_date?: string
+  calving_actual_time?: string
+  calf_alive?: boolean
+  assistance_required?: boolean
+  complications?: string
+  colostrum_quality?: string
+  colostrum_produced?: number
+  veterinarian_name?: string
   calf_tag_number?: string
   calf_weight?: number
   calf_gender?: string
+  calf_birth_date?: string
+  calf_breed?: string
   calf_health_status?: string
+  calf_sire_tag?: string
+  calf_sire_name?: string
+  calf_weaning_date?: string
+  calf_weaning_weight?: number
+  calf_notes?: string
   created_at?: string
 }
 
@@ -140,8 +157,11 @@ interface InseminationEvent {
   event_date: string
   insemination_method: string
   semen_bull_code?: string
+  bull_name_or_semen_source?: string
+  semen_type?: string
   technician_name?: string
   estimated_due_date?: string
+  notes?: string
   created_at?: string
 }
 
@@ -1229,7 +1249,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                       if (item.type === 'insemination') {
                         const insem = item.data as InseminationEvent
                         const createdTime = insem.created_at ? parseISO(insem.created_at) : (insem.event_date ? parseISO(insem.event_date) : new Date())
-                        console.log('💉 [render:overview] Insemination event:', { id: insem.id, event_date: insem.event_date, insemination_method: insem.insemination_method, semen_bull_code: insem.semen_bull_code, technician_name: insem.technician_name, estimated_due_date: insem.estimated_due_date })
+                        const sireDisplay = insem.bull_name_or_semen_source || insem.semen_bull_code
                         return (
                           <div key={`insem-${insem.id}`} className="border rounded-lg p-4 bg-green-50 border-green-100">
                             <div className="flex items-start justify-between">
@@ -1242,10 +1262,14 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                                   <Badge variant="outline" className="bg-white text-green-700 border-green-200">Insemination</Badge>
                                 </div>
                                 <p className="text-sm text-gray-600 ml-6 mb-2">
-                                  Method: <span className="capitalize">{insem.insemination_method?.replace(/_/g, ' ')}</span>
-                                  {insem.semen_bull_code && ` • Code: ${insem.semen_bull_code}`}
-                                  {insem.technician_name && ` • Technician: ${insem.technician_name}`}
+                                  <span className="capitalize">{insem.insemination_method?.replace(/_/g, ' ')}</span>
+                                  {sireDisplay && ` • Sire: ${sireDisplay}`}
+                                  {insem.semen_type && ` • ${insem.semen_type}`}
+                                  {insem.technician_name && ` • Tech: ${insem.technician_name}`}
                                 </p>
+                                {insem.notes && (
+                                  <p className="text-xs text-gray-500 ml-6 italic mb-1">{insem.notes}</p>
+                                )}
                                 <p className="text-xs text-gray-500 ml-6">
                                   Added: {format(createdTime, 'MMM dd, yyyy • h:mm a')}
                                 </p>
@@ -1358,7 +1382,7 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                       if (item.type === 'calving') {
                         const calving = item.data as CalvingEvent
                         const createdTime = calving.created_at ? parseISO(calving.created_at) : (calving.event_date ? parseISO(calving.event_date) : new Date())
-                        console.log('🐣 [render:overview] Calving event:', { id: calving.id, event_date: calving.event_date, calving_outcome: calving.calving_outcome, calf_tag_number: calving.calf_tag_number, calf_weight: calving.calf_weight, calf_gender: calving.calf_gender, calf_health_status: calving.calf_health_status })
+                        const calfAliveColor = calving.calf_alive === false ? 'text-red-600' : 'text-green-700'
                         return (
                           <div key={`calving-${calving.id}`} className="border rounded-lg p-4 bg-purple-50 border-purple-100">
                             <div className="flex items-start justify-between">
@@ -1369,22 +1393,31 @@ export function AnimalBreedingRecords({ animalId, animal, farmId, canAddRecords 
                                     {format(parseISO(calving.event_date), 'MMMM dd, yyyy • h:mm a')}
                                   </span>
                                   <Badge variant="outline" className="bg-white text-purple-700 border-purple-200">Calving</Badge>
+                                  {calving.calf_alive === false && (
+                                    <Badge className="bg-red-100 text-red-700 border-red-200">Calf Deceased</Badge>
+                                  )}
                                 </div>
-                                <div className="ml-6 pt-2 border-t border-purple-100 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-gray-600 mb-2">
+                                <div className="ml-6 pt-2 border-t border-purple-100 grid grid-cols-2 md:grid-cols-3 gap-2 text-xs text-gray-600 mb-2">
                                   {calving.calving_outcome && (
                                     <span>Outcome: <span className="font-semibold capitalize">{calving.calving_outcome.replace(/_/g, ' ')}</span></span>
                                   )}
+                                  {calving.calf_alive !== undefined && (
+                                    <span>Calf Alive: <span className={`font-semibold ${calfAliveColor}`}>{calving.calf_alive ? 'Yes' : 'No'}</span></span>
+                                  )}
                                   {calving.calf_gender && (
-                                    <span>Calf: <span className="font-semibold capitalize">{calving.calf_gender}</span></span>
+                                    <span>Calf Sex: <span className="font-semibold capitalize">{calving.calf_gender}</span></span>
                                   )}
                                   {calving.calf_tag_number && (
                                     <span>Calf Tag: <span className="font-semibold">{calving.calf_tag_number}</span></span>
                                   )}
                                   {calving.calf_weight && (
-                                    <span>Birth Weight: <span className="font-semibold">{calving.calf_weight} kg</span></span>
+                                    <span>Birth Wt: <span className="font-semibold">{calving.calf_weight} kg</span></span>
                                   )}
                                   {calving.calf_health_status && (
                                     <span>Calf Health: <span className="font-semibold capitalize">{calving.calf_health_status}</span></span>
+                                  )}
+                                  {calving.assistance_required && (
+                                    <span className="text-amber-700">Assistance required</span>
                                   )}
                                 </div>
                                 <p className="text-xs text-gray-500 ml-6">
