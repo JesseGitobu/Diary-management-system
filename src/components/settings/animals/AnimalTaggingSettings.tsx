@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { toast } from 'react-hot-toast'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -37,6 +37,7 @@ import {
   Baby,
   Truck
 } from 'lucide-react'
+import { GiCow } from 'react-icons/gi'
 
 // Mock data structure for different tagging methods
 const taggingMethods = {
@@ -83,6 +84,44 @@ const colorOptions: ColorOption[] = [
   { name: 'Quarantined', color: 'bg-gray-800', value: 'quarantined', description: 'Isolated for health/safety reasons', active: true }
 ]
 
+// ============================================================================
+// Helper Functions for NaN Handling
+// ============================================================================
+
+/**
+ * Safely convert value to number, returns defaultValue if NaN
+ */
+const safeParseNumber = (value: any, defaultValue: number = 0): number => {
+  const parsed = typeof value === 'string' ? parseFloat(value) : value
+  return isNaN(parsed) ? defaultValue : parsed
+}
+
+/**
+ * Safely convert value to integer, returns defaultValue if NaN
+ */
+const safeParseInt = (value: any, defaultValue: number = 0): number => {
+  const parsed = typeof value === 'string' ? parseInt(value, 10) : value
+  return isNaN(parsed) ? defaultValue : parsed
+}
+
+/**
+ * Safely format numeric value for display
+ */
+const safeNumericValue = (value: any, defaultValue: number = 0): number | string => {
+  if (value === '' || value === null || value === undefined) return ''
+  const num = safeParseNumber(value, defaultValue)
+  return num
+}
+
+/**
+ * Safely format integer value for display
+ */
+const safeIntValue = (value: any, defaultValue: number = 0): number | string => {
+  if (value === '' || value === null || value === undefined) return ''
+  const num = safeParseInt(value, defaultValue)
+  return num
+}
+
 export default function AnimalTaggingSettings({
   farmId,
   userRole,
@@ -98,6 +137,7 @@ export default function AnimalTaggingSettings({
 }) {
   type TaggingMethodKey = keyof typeof taggingMethods;
   const [selectedMethod, setSelectedMethod] = useState<TaggingMethodKey>('basic')
+  const [activeTab, setActiveTab] = useState<'tagging' | 'calf'>('tagging')
   const { isMobile } = useDeviceInfo()
   const canEdit = ['farm_owner', 'farm_manager'].includes(userRole)
 
@@ -170,11 +210,207 @@ export default function AnimalTaggingSettings({
       }
     }
   })
+  const [calfSettings, setCalfSettings] = useState({
+    // Growth & Weight
+    birthWeightStandards: {
+      global: 40,
+      byBreed: {
+        'holstein': 45,
+        'jersey': 30,
+        'ayrshire': 38,
+        'guernsey': 38,
+      }
+    },
+    expectedDailyGain: 0.65, // kg/day
+    weightMeasurementFrequency: 'weekly', // daily, weekly, bi-weekly, custom
+    customMeasurementDays: 7,
+
+    // Colostrum Management
+    colostrumFirstFeedingHours: 2,
+    colostrumQuantityPercent: 10, // % of body weight
+    colostrumFeedingFrequency: 3, // times per day
+    colostrumDurationDays: 3,
+    colostrumQuantityPerFeeding: 2, // liters
+    enableColostrumQualityTracking: true,
+
+    // Milk Feeding Plan
+    milkQuantityPerDay: 8, // liters (reference value for initialization)
+    milkFeedingFrequency: 2, // times per day
+    milkAdjustmentPeriod: 'weekly', // daily, weekly, bi-weekly, custom
+    customMilkAdjustmentDays: 7,
+    enableTaperingBeforeWeaning: true,
+    taperingDaysBeforeWeaning: 7,
+    milkAdjustmentSchedule: [] as Array<{
+      periodNum: number
+      startDay: number
+      endDay: number
+      dailyMilk: number
+      feedingsPerDay: number
+    }>,
+
+    // Dry Feed (Starter)
+    starterFeedStartAge: 7, // days
+    starterFeedInitialQuantity: 0.5, // kg/day
+    starterFeedTargetBeforeWeaning: 1.5, // kg/day
+    enableGradualIntroduction: true,
+
+    // Weaning Configuration
+    weaningAge: 56, // days (8 weeks)
+    weaningType: 'fixed', // fixed or conditional
+    weaningMinWeight: 90, // kg
+    weaningMinStarterIntake: 1.5, // kg/day
+    weaningDaysAtStarterIntake: 3,
+    enableSmartWeaningLogic: true,
+
+    // Health & Interventions
+    vaccinations: [
+      { name: 'DF10', ageInDays: 7, frequency: 'once' },
+      { name: 'Pneumonia Vaccine', ageInDays: 21, frequency: 'annual' },
+    ],
+    deworming: [
+      { name: 'Internal Deworming', ageInDays: 28, frequency: 'every-4-weeks' },
+    ],
+    vitaminSupplements: [
+      { name: 'Vitamin A-D-E', ageInDays: 1, frequency: 'daily', until: 'weaning' },
+    ],
+
+    // Alerts Configuration
+    enableWeightAlerts: true,
+    weightDeviationThreshold: -10, // % below expected
+    enableMilkingAlerts: true,
+    enableHealthAlerts: true,
+    enableMissedMeasurementAlerts: true,
+
+    // Custom Protocols
+    savedProtocols: [
+      {
+        id: 'intensive',
+        name: 'Intensive Dairy System',
+        description: 'High-quality milk feeding with early weaning',
+        isDefault: true
+      },
+      {
+        id: 'low-cost',
+        name: 'Low-Cost Rearing',
+        description: 'Economical approach with extended milk feeding',
+        isDefault: false
+      },
+      {
+        id: 'organic',
+        name: 'Organic System',
+        description: 'Organic feeds and natural rearing practices',
+        isDefault: false
+      },
+    ],
+    selectedProtocol: 'intensive'
+  })
+
   const [newColor, setNewColor] = useState({
     name: '',
     description: '',
     color: 'bg-gray-500'
   })
+
+  const [newVaccine, setNewVaccine] = useState({ name: '', ageInDays: '', frequency: 'once' })
+  const [isLoadingCalf, setIsLoadingCalf] = useState(false)
+  const [isLoadingCalfData, setIsLoadingCalfData] = useState(true)
+  const [calfSettingsError, setCalfSettingsError] = useState<string | null>(null)
+  const [hasUnsavedCalfChanges, setHasUnsavedCalfChanges] = useState(false)
+
+  // Prevents the auto-generate effect from overwriting a schedule that was
+  // just loaded from the server. Set to true before setCalfSettings inside
+  // fetchCalfSettings; the auto-generate effect reads and resets it once.
+  const scheduleLoadedFromServerRef = useRef(false)
+
+  const handleSaveCalfSettings = async () => {
+    setIsLoadingCalf(true)
+    try {
+      const payload = {
+        farmId,
+        settings: {
+          birthWeightGlobal: calfSettings.birthWeightStandards.global,
+          birthWeightStandards: calfSettings.birthWeightStandards.byBreed,
+          expectedDailyGain: calfSettings.expectedDailyGain,
+          weightMeasurementFrequency: calfSettings.weightMeasurementFrequency,
+          customMeasurementDays: calfSettings.customMeasurementDays,
+          colostrumFirstFeedingHours: calfSettings.colostrumFirstFeedingHours,
+          colostrumQuantityPercent: calfSettings.colostrumQuantityPercent,
+          colostrumFeedingFrequency: calfSettings.colostrumFeedingFrequency,
+          colostrumDurationDays: calfSettings.colostrumDurationDays,
+          colostrumQuantityPerFeeding: calfSettings.colostrumQuantityPerFeeding,
+          enableColostrumQualityTracking: calfSettings.enableColostrumQualityTracking,
+          milkQuantityPerDay: calfSettings.milkQuantityPerDay,
+          milkFeedingFrequency: calfSettings.milkFeedingFrequency,
+          milkAdjustmentPeriod: calfSettings.milkAdjustmentPeriod,
+          customMilkAdjustmentDays: calfSettings.customMilkAdjustmentDays,
+          enableTaperingBeforeWeaning: calfSettings.enableTaperingBeforeWeaning,
+          taperingDaysBeforeWeaning: calfSettings.taperingDaysBeforeWeaning,
+          milkAdjustmentSchedule: calfSettings.milkAdjustmentSchedule,
+          starterFeedStartAge: calfSettings.starterFeedStartAge,
+          starterFeedInitialQuantity: calfSettings.starterFeedInitialQuantity,
+          starterFeedTargetBeforeWeaning: calfSettings.starterFeedTargetBeforeWeaning,
+          enableGradualIntroduction: calfSettings.enableGradualIntroduction,
+          weaningAge: calfSettings.weaningAge,
+          weaningType: calfSettings.weaningType,
+          weaningMinWeight: calfSettings.weaningMinWeight,
+          weaningMinStarterIntake: calfSettings.weaningMinStarterIntake,
+          weaningDaysAtStarterIntake: calfSettings.weaningDaysAtStarterIntake,
+          enableSmartWeaningLogic: calfSettings.enableSmartWeaningLogic,
+          enableWeightAlerts: calfSettings.enableWeightAlerts,
+          weightDeviationThreshold: calfSettings.weightDeviationThreshold,
+          enableMilkingAlerts: calfSettings.enableMilkingAlerts,
+          enableHealthAlerts: calfSettings.enableHealthAlerts,
+          enableMissedMeasurementAlerts: calfSettings.enableMissedMeasurementAlerts,
+          selectedProtocol: calfSettings.selectedProtocol,
+          vaccinations: calfSettings.vaccinations,
+          deworming: calfSettings.deworming,
+          vitaminSupplements: calfSettings.vitaminSupplements,
+        },
+      }
+
+      const response = await fetch('/api/settings/calf-management', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to save settings')
+      }
+
+      setHasUnsavedCalfChanges(false)
+
+      toast.custom(() => (
+        <div className="bg-green-50 border border-green-200 rounded-lg shadow-lg p-4 max-w-md">
+          <div className="space-y-2">
+            <p className="font-semibold text-green-900">✅ Calf Management Saved!</p>
+            <p className="text-sm text-green-800">Your calf rearing protocols have been updated successfully.</p>
+          </div>
+        </div>
+      ), { duration: 5000, position: 'top-right' })
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      toast.custom((t) => (
+        <div className="bg-red-50 border border-red-200 rounded-lg shadow-lg p-4 max-w-md">
+          <div className="space-y-2">
+            <p className="font-semibold text-red-900">❌ Failed to Save</p>
+            <p className="text-sm text-red-800">{errorMessage}</p>
+            <button
+              onClick={() => toast.dismiss(t.id)}
+              className="mt-2 w-full px-3 py-2 text-sm rounded bg-red-100 text-red-700 hover:bg-red-200 transition"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      ), { duration: 8000, position: 'top-right' })
+    } finally {
+      setIsLoadingCalf(false)
+    }
+  }
 
   const resetCustomFormat = () => {
     const defaultFormat = settings.includeYearInTag
@@ -420,7 +656,7 @@ export default function AnimalTaggingSettings({
           }
         }
       }
-      
+
       const result: any = {}
       data.forEach((format: any) => {
         result[format.sourceKey] = {
@@ -466,7 +702,7 @@ export default function AnimalTaggingSettings({
 
       try {
         const response = await fetch(`/api/settings/animal-tagging?farmId=${farmId}`)
-        
+
         if (!response.ok) {
           return
         }
@@ -529,10 +765,128 @@ export default function AnimalTaggingSettings({
     fetchTaggingSettings()
   }, [farmId])
 
+  // Fetch calf management settings from API when component mounts or farmId changes
+  useEffect(() => {
+    const fetchCalfSettings = async () => {
+      if (!farmId) return
+
+      try {
+        const response = await fetch(`/api/settings/calf-management?farmId=${farmId}`)
+
+        if (!response.ok) {
+          // 404 or other error - use defaults (not an error condition for new farms)
+          return
+        }
+
+        const data = await response.json()
+
+        if (data.settings) {
+          scheduleLoadedFromServerRef.current = true
+          setCalfSettings({
+            // Growth & Weight
+            birthWeightStandards: {
+              global: data.settings.birthWeightGlobal || 40,
+              byBreed: data.settings.birthWeightStandards || {
+                'holstein': 45,
+                'jersey': 30,
+                'ayrshire': 38,
+                'guernsey': 38,
+              }
+            },
+            expectedDailyGain: safeParseNumber(data.settings.expectedDailyGain, 0.65),
+            weightMeasurementFrequency: data.settings.weightMeasurementFrequency || 'weekly',
+            customMeasurementDays: safeParseInt(data.settings.customMeasurementDays, 7),
+
+            // Colostrum Management
+            colostrumFirstFeedingHours: safeParseNumber(data.settings.colostrumFirstFeedingHours, 2),
+            colostrumQuantityPercent: safeParseNumber(data.settings.colostrumQuantityPercent, 10),
+            colostrumFeedingFrequency: safeParseInt(data.settings.colostrumFeedingFrequency, 3),
+            colostrumDurationDays: safeParseInt(data.settings.colostrumDurationDays, 3),
+            colostrumQuantityPerFeeding: safeParseNumber(data.settings.colostrumQuantityPerFeeding, 2),
+            enableColostrumQualityTracking: data.settings.enableColostrumQualityTracking ?? true,
+
+            // Milk Feeding Plan
+            milkQuantityPerDay: safeParseNumber(data.settings.milkQuantityPerDay, 8),
+            milkFeedingFrequency: safeParseInt(data.settings.milkFeedingFrequency, 2),
+            milkAdjustmentPeriod: data.settings.milkAdjustmentPeriod || 'weekly',
+            customMilkAdjustmentDays: safeParseInt(data.settings.customMilkAdjustmentDays, 7),
+            enableTaperingBeforeWeaning: data.settings.enableTaperingBeforeWeaning ?? true,
+            taperingDaysBeforeWeaning: safeParseInt(data.settings.taperingDaysBeforeWeaning, 7),
+            milkAdjustmentSchedule: Array.isArray(data.settings.milkAdjustmentSchedule) 
+              ? data.settings.milkAdjustmentSchedule.map((item: any) => ({
+                  periodNum: safeParseInt(item.periodNum, 0),
+                  startDay: safeParseInt(item.startDay, 0),
+                  endDay: safeParseInt(item.endDay, 0),
+                  dailyMilk: safeParseNumber(item.dailyMilk, 0),
+                  feedingsPerDay: safeParseInt(item.feedingsPerDay, 2)
+                }))
+              : [],
+
+            // Dry Feed (Starter)
+            starterFeedStartAge: safeParseInt(data.settings.starterFeedStartAge, 7),
+            starterFeedInitialQuantity: safeParseNumber(data.settings.starterFeedInitialQuantity, 0.5),
+            starterFeedTargetBeforeWeaning: safeParseNumber(data.settings.starterFeedTargetBeforeWeaning, 1.5),
+            enableGradualIntroduction: data.settings.enableGradualIntroduction ?? true,
+
+            // Weaning Configuration
+            weaningAge: safeParseInt(data.settings.weaningAge, 56),
+            weaningType: data.settings.weaningType || 'fixed',
+            weaningMinWeight: safeParseInt(data.settings.weaningMinWeight, 90),
+            weaningMinStarterIntake: safeParseNumber(data.settings.weaningMinStarterIntake, 1.5),
+            weaningDaysAtStarterIntake: safeParseInt(data.settings.weaningDaysAtStarterIntake, 3),
+            enableSmartWeaningLogic: data.settings.enableSmartWeaningLogic ?? true,
+
+            // Health & Interventions
+            vaccinations: Array.isArray(data.settings.vaccinations) 
+              ? data.settings.vaccinations.map((v: any) => ({
+                  name: v.name || '',
+                  ageInDays: safeParseInt(v.ageInDays, 0),
+                  frequency: v.frequency || 'once'
+                }))
+              : [{ name: 'DF10', ageInDays: 7, frequency: 'once' }, { name: 'Pneumonia Vaccine', ageInDays: 21, frequency: 'annual' }],
+            deworming: Array.isArray(data.settings.deworming)
+              ? data.settings.deworming.map((d: any) => ({
+                  name: d.name || '',
+                  ageInDays: safeParseInt(d.ageInDays, 0),
+                  frequency: d.frequency || 'once'
+                }))
+              : [{ name: 'Internal Deworming', ageInDays: 28, frequency: 'every-4-weeks' }],
+            vitaminSupplements: Array.isArray(data.settings.vitaminSupplements)
+              ? data.settings.vitaminSupplements.map((v: any) => ({
+                  name: v.name || '',
+                  ageInDays: safeParseInt(v.ageInDays, 0),
+                  frequency: v.frequency || 'once',
+                  until: v.until || 'weaning'
+                }))
+              : [{ name: 'Vitamin A-D-E', ageInDays: 1, frequency: 'daily', until: 'weaning' }],
+
+            // Alerts Configuration
+            enableWeightAlerts: data.settings.enableWeightAlerts ?? true,
+            weightDeviationThreshold: safeParseInt(data.settings.weightDeviationThreshold, -10),
+            enableMilkingAlerts: data.settings.enableMilkingAlerts ?? true,
+            enableHealthAlerts: data.settings.enableHealthAlerts ?? true,
+            enableMissedMeasurementAlerts: data.settings.enableMissedMeasurementAlerts ?? true,
+
+            // Protocols
+            savedProtocols: calfSettings.savedProtocols, // Keep existing protocols
+            selectedProtocol: data.settings.selectedProtocol || 'intensive'
+          })
+
+          setHasUnsavedCalfChanges(false)
+        }
+      } catch (error) {
+        console.error('Error fetching calf settings:', error)
+        // Continue with defaults on error
+      }
+    }
+
+    fetchCalfSettings()
+  }, [farmId])
+
   useEffect(() => {
     if (initialSettings) {
       const transformedFormats = transformSourceFormats(initialSettings.sourceSpecificFormats)
-      
+
       setSettings({
         tagPrefix: initialSettings.tagPrefix || 'COW',
         tagNumbering: initialSettings.numberingSystem || 'sequential',
@@ -588,6 +942,11 @@ export default function AnimalTaggingSettings({
     setHasUnsavedChanges(true)
   }, [settings, selectedMethod])
 
+  useEffect(() => {
+    // Track calf settings changes
+    setHasUnsavedCalfChanges(true)
+  }, [calfSettings])
+
   // Auto-suggest method based on herd size
   useEffect(() => {
     if (!currentHerdSize) return
@@ -599,6 +958,58 @@ export default function AnimalTaggingSettings({
       setSelectedMethod('automated')
     }
   }, [currentHerdSize])
+
+  // Initialize milk adjustment schedule when period or weaning age changes.
+  // Skip when state was just populated from the server to avoid overwriting saved values.
+  useEffect(() => {
+    if (scheduleLoadedFromServerRef.current) {
+      scheduleLoadedFromServerRef.current = false
+      return
+    }
+    setCalfSettings(prev => {
+      let intervalSize = 1
+      if (prev.milkAdjustmentPeriod === 'weekly') intervalSize = 7
+      else if (prev.milkAdjustmentPeriod === 'bi-weekly') intervalSize = 14
+      else if (prev.milkAdjustmentPeriod === 'custom') intervalSize = prev.customMilkAdjustmentDays
+
+      const totalDays = prev.weaningAge
+      const schedule = []
+
+      for (let startDay = 0; startDay < totalDays; startDay += intervalSize) {
+        const endDay = Math.min(startDay + intervalSize - 1, totalDays - 1)
+        const periodNum = Math.floor(startDay / intervalSize) + 1
+
+        // Calculate initial daily milk based on linear reduction or tapering
+        let dailyMilk = prev.milkQuantityPerDay
+
+        if (prev.enableTaperingBeforeWeaning) {
+          const taperingStartDay = totalDays - prev.taperingDaysBeforeWeaning
+          if (endDay >= taperingStartDay) {
+            const daysIntoTapering = endDay - taperingStartDay + 1
+            const taperedPercent = 1 - (daysIntoTapering / prev.taperingDaysBeforeWeaning)
+            dailyMilk = prev.milkQuantityPerDay * Math.max(0, taperedPercent)
+          }
+        } else {
+          const daysFromEnd = totalDays - endDay
+          const reductionPercent = 1 - (daysFromEnd / totalDays)
+          dailyMilk = prev.milkQuantityPerDay * (1 - reductionPercent)
+        }
+
+        schedule.push({
+          periodNum,
+          startDay,
+          endDay,
+          dailyMilk: parseFloat(dailyMilk.toFixed(2)),
+          feedingsPerDay: prev.milkFeedingFrequency
+        })
+      }
+
+      return {
+        ...prev,
+        milkAdjustmentSchedule: schedule
+      }
+    })
+  }, [calfSettings.milkAdjustmentPeriod, calfSettings.customMilkAdjustmentDays, calfSettings.weaningAge, calfSettings.milkQuantityPerDay, calfSettings.enableTaperingBeforeWeaning, calfSettings.taperingDaysBeforeWeaning])
 
   interface MethodSettings {
     enableRFID: boolean
@@ -765,7 +1176,7 @@ export default function AnimalTaggingSettings({
               // Source-specific formats - convert object to array
               useSourceSpecificFormats: settings.useSourceSpecificFormats,
               sourceSpecificFormats: (() => {
-                
+
                 const converted = Object.entries(settings.sourceSpecificFormats || {}).map(
                   ([sourceKey, format]: [string, any]) => ({
                     sourceKey,
@@ -776,7 +1187,7 @@ export default function AnimalTaggingSettings({
                     description: format.description
                   })
                 )
-                
+
                 return converted
               })()
             }
@@ -1045,14 +1456,39 @@ export default function AnimalTaggingSettings({
     setHasUnsavedChanges(false)
   }
 
+  // Generate milk adjustment schedule based on period
+  const generateMilkAdjustmentSchedule = () => {
+    let intervalSize = 1
+    if (calfSettings.milkAdjustmentPeriod === 'weekly') intervalSize = 7
+    else if (calfSettings.milkAdjustmentPeriod === 'bi-weekly') intervalSize = 14
+    else if (calfSettings.milkAdjustmentPeriod === 'custom') intervalSize = calfSettings.customMilkAdjustmentDays
+
+    const totalDays = calfSettings.weaningAge
+    const schedule = []
+
+    for (let startDay = 0; startDay < totalDays; startDay += intervalSize) {
+      const endDay = Math.min(startDay + intervalSize - 1, totalDays - 1)
+      const periodNum = Math.floor(startDay / intervalSize) + 1
+
+      schedule.push({
+        periodNum,
+        startDay,
+        endDay,
+        feedingsPerDay: calfSettings.milkFeedingFrequency
+      })
+    }
+
+    return schedule
+  }
+
   return (
     <div className={`
       ${isMobile ? 'px-4 py-4' : 'dashboard-container'}
       pb-20 lg:pb-6
     `}>
       {/* Header */}
-      <div className={`mb-6 ${isMobile ? 'space-y-3' : 'space-y-4'}`}>
-        <div className="flex items-center space-x-2 mb-3">
+      <div className="mb-6">
+        <div className="flex items-center justify-between gap-3 mb-4">
           <Button
             variant="ghost"
             size={isMobile ? "sm" : "default"}
@@ -1062,1358 +1498,2255 @@ export default function AnimalTaggingSettings({
             <ArrowLeft className="w-4 h-4" />
             <span className={isMobile ? "text-sm" : ""}>Back</span>
           </Button>
+          {/* {canManageSettings && <QuickActionsMenu />} */}
         </div>
 
-        <div className={`flex flex-col ${isMobile ? 'space-y-2' : 'items-center space-x-3'}`}>
-          <div className={`w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0`}>
-            <Tag className="w-5 h-5 text-blue-600" />
+        <div className="flex items-center space-x-3 mb-4">
+          <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+            <GiCow className="w-5 h-5 text-green-600" />
           </div>
-          <div className="flex-1">
-            <h1 className={`font-bold text-gray-900 ${isMobile ? 'text-lg' : 'text-3xl'} leading-tight`}>
-              Animal Tagging Configuration
+          <div>
+            <h1 className={`font-bold text-gray-900 ${isMobile ? 'text-2xl' : 'text-3xl'}`}>
+              Animal Classification and Management Settings
             </h1>
-            <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-base'} mt-1`}>
-              Configure tagging methods for {currentHerdSize} animals
+            <p className={`text-gray-600 ${isMobile ? 'text-sm' : 'text-base'}`}>
+              Configure various animal management settings including tagging methods, calf management, and more to optimize your farm operations.
             </p>
           </div>
-          <Badge variant="outline" className={`px-2 py-1 flex-shrink-0 ${isMobile ? 'text-xs' : ''}`}>
-            <span className={isMobile ? "hidden sm:inline" : ""}>Method: </span>{taggingMethods[selectedMethod].title}
-          </Badge>
         </div>
+
+        {/* {!canManageSettings && (
+          <Card className="border-amber-200 bg-amber-50 mb-6">
+            <CardContent className="p-4">
+              <div className="flex items-start space-x-3">
+                <Info className="w-5 h-5 text-amber-600 mt-0.5" />
+                <div>
+                  <h4 className="font-medium text-amber-800">Read-Only Access</h4>
+                  <p className="text-sm text-amber-700">
+                    Contact your farm owner or manager to make changes to these settings.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )} */}
       </div>
 
 
-      {/* Method Selection */}
-      <Card>
+
+      {/* Tab Navigation */}
+      <div className="mb-6 border-b border-gray-200">
+        <div className="flex space-x-8">
+          <button
+            onClick={() => setActiveTab('tagging')}
+            className={`py-3 px-1 font-medium text-sm border-b-2 transition-colors ${activeTab === 'tagging'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-600 hover:text-gray-900'
+              }`}
+          >
+            <div className="flex items-center space-x-2">
+              <Tag className="w-4 h-4" />
+              <span>Animal Tagging</span>
+            </div>
+          </button>
+          <button
+            onClick={() => setActiveTab('calf')}
+            className={`py-3 px-1 font-medium text-sm border-b-2 transition-colors ${activeTab === 'calf'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-600 hover:text-gray-900'
+              }`}
+          >
+            <div className="flex items-center space-x-2">
+              <Baby className="w-4 h-4" />
+              <span>Calf Management</span>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      {/* Animal Tagging Tab Content */}
+      {activeTab === 'tagging' && (
+        <>
+          {/* Calf Management Header */}
+          <div className="mb-6">
+            <div className="flex items-center space-x-2 mb-4">
+              <Tag className="w-6 h-6 text-pink-600" />
+              <h2 className={`${isMobile ? 'text-lg' : 'text-2xl'} font-bold text-gray-900`}>
+                Animal Tagging Configuration
+              </h2>
+            </div>
+            <p className={`text-gray-600 ${isMobile ? 'text-sm' : ''}`}>
+              Configure tagging methods for {currentHerdSize} animals
+            </p>
+          </div>
+
+          {/* Method Selection */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center space-x-2">
+                <Settings className="h-5 w-5" />
+                <span>Choose Tagging Method</span>
+              </CardTitle>
+              <CardDescription>
+                Select the tagging approach that best fits your farm size and technical requirements
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-3'}`}>
+                {Object.entries(taggingMethods).map(([key, method]) => (
+                  <button
+                    key={key}
+                    className={`border-2 rounded-lg p-3 text-left cursor-pointer transition-all ${selectedMethod === key
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                      }`}
+                    onClick={() => handleMethodChange(key as TaggingMethodKey)}
+                  >
+                    <div className={`flex ${isMobile ? 'flex-col items-start space-y-2' : 'items-center space-x-3'} mb-3`}>
+                      <div className={`w-10 h-10 ${method.color} rounded-lg flex items-center justify-center text-white flex-shrink-0`}>
+                        {method.icon}
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className={`font-semibold text-gray-900 ${isMobile ? 'text-sm' : ''}`}>{method.title}</h3>
+                        <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>{method.description}</p>
+                      </div>
+                    </div>
+                    <div className={`space-y-1 ${isMobile ? 'ml-0' : ''}`}>
+                      {method.features.map((feature, index) => (
+                        <div key={index} className={`flex items-center text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>
+                          <div className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-2 flex-shrink-0"></div>
+                          <span className="truncate">{feature}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Basic Settings - Only show for basic method */}
+          {selectedMethod === 'basic' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Basic Identification Settings</CardTitle>
+                <CardDescription>Configure fundamental animal identification parameters</CardDescription>
+              </CardHeader>
+              <CardContent className={`space-y-4 ${isMobile ? 'space-y-3' : 'space-y-6'}`}>
+                <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2 gap-4'}`}>
+                  <div>
+                    <Label htmlFor="tagPrefix" className={isMobile ? 'text-sm' : ''}>Tag Prefix</Label>
+                    <Input
+                      id="tagPrefix"
+                      value={settings.tagPrefix}
+                      onChange={(e) => setSettings(prev => ({ ...prev, tagPrefix: e.target.value }))}
+                      placeholder="COW"
+                      className={isMobile ? 'text-sm' : ''}
+                    />
+                    <p className={`text-gray-500 mt-1 ${isMobile ? 'text-xs' : 'text-sm'}`}>Prefix for auto-generated tags</p>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="tagNumbering" className={isMobile ? 'text-sm' : ''}>Numbering System</Label>
+                    <Select
+                      value={settings.tagNumbering}
+                      onValueChange={(value) => setSettings(prev => ({ ...prev, tagNumbering: value }))}
+                    >
+                      <SelectTrigger className={isMobile ? 'text-sm' : ''}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="sequential">Sequential (COW-001...)</SelectItem>
+                        <SelectItem value="custom">Custom Format</SelectItem>
+                        <SelectItem value="barcode">Barcode Compatible</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Source-Specific Tag Formats - Full Width */}
+                {settings.tagNumbering === 'custom' && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <Label className="text-base font-semibold">Source-Specific Tag Formats</Label>
+                        <p className="text-xs text-gray-500">(Different formats for newborn vs. purchased animals)</p>
+                      </div>
+                      <Switch
+                        checked={settings.useSourceSpecificFormats}
+                        onCheckedChange={(checked) => setSettings(prev => ({ ...prev, useSourceSpecificFormats: checked }))}
+                      />
+                    </div>
+
+                    {settings.useSourceSpecificFormats && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Newborn Calves Format */}
+                        <div className="p-4 bg-green-50 border-2 border-green-200 rounded-lg space-y-3">
+                          <div className="flex items-center space-x-2 mb-3">
+                            <Baby className="h-5 w-5 text-green-600" />
+                            <Label className="font-semibold text-green-900">Animals Born On Farm (Calves)</Label>
+                          </div>
+
+                          <div>
+                            <Label className="text-sm">Prefix</Label>
+                            <Input
+                              value={settings.sourceSpecificFormats?.newborn?.prefix || 'CALF'}
+                              onChange={(e) => setSettings(prev => ({
+                                ...prev,
+                                sourceSpecificFormats: {
+                                  ...prev.sourceSpecificFormats || {},
+                                  newborn: { ...(prev.sourceSpecificFormats?.newborn || {}), prefix: e.target.value }
+                                }
+                              }))}
+                              placeholder="CALF"
+                              className="text-sm"
+                            />
+                          </div>
+
+                          <div>
+                            <Label className="text-sm">Format Pattern</Label>
+                            <Input
+                              value={settings.sourceSpecificFormats?.newborn?.format || ''}
+                              onChange={(e) => setSettings(prev => ({
+                                ...prev,
+                                sourceSpecificFormats: {
+                                  ...prev.sourceSpecificFormats || {},
+                                  newborn: { ...(prev.sourceSpecificFormats?.newborn || {}), format: e.target.value }
+                                }
+                              }))}
+                              placeholder="{PREFIX}-{YEAR}-{COHORT:2}-{NUMBER:3}"
+                              className="text-sm"
+                            />
+                            <p className="text-xs text-gray-600 mt-1">Example: CALF-2026-03-001</p>
+                            <p className="text-xs text-gray-500 mt-2">Available: {'{PREFIX}'}, {'{YEAR}'}, {'{MONTH}'}, {'{NUMBER:3}'}, {'{MOTHER_TAG}'}</p>
+                          </div>
+
+                          <div>
+                            <Label className="text-sm">Starting Number</Label>
+                            <Input
+                              type="number"
+                              value={settings.sourceSpecificFormats?.newborn?.startNumber || 1}
+                              onChange={(e) => setSettings(prev => ({
+                                ...prev,
+                                sourceSpecificFormats: {
+                                  ...prev.sourceSpecificFormats || {},
+                                  newborn: { ...(prev.sourceSpecificFormats?.newborn || {}), startNumber: parseInt(e.target.value) }
+                                }
+                              }))}
+                              min="1"
+                              className="text-sm"
+                            />
+                          </div>
+
+                          <div>
+                            <Label className="text-sm">Description</Label>
+                            <Input
+                              value={settings.sourceSpecificFormats?.newborn?.description || ''}
+                              onChange={(e) => setSettings(prev => ({
+                                ...prev,
+                                sourceSpecificFormats: {
+                                  ...prev.sourceSpecificFormats || {},
+                                  newborn: { ...(prev.sourceSpecificFormats?.newborn || {}), description: e.target.value }
+                                }
+                              }))}
+                              placeholder="e.g., Format for calves born on the farm"
+                              className="text-sm"
+                            />
+                          </div>
+
+                          {/* Quick Format Builder for Newborn */}
+                          <div className="p-3 bg-white rounded border">
+                            <div className="flex items-center justify-between mb-2">
+                              <Label className="text-sm font-medium">Quick Format Builder</Label>
+                              <div className="flex items-center space-x-1">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setSettings(prev => ({
+                                    ...prev,
+                                    sourceSpecificFormats: {
+                                      ...prev.sourceSpecificFormats || {},
+                                      newborn: { ...(prev.sourceSpecificFormats?.newborn || {}), format: '' }
+                                    }
+                                  }))}
+                                  className="text-xs text-red-600 hover:text-red-700"
+                                >
+                                  <X className="h-3 w-3 mr-1" />
+                                  Clear
+                                </Button>
+                              </div>
+                            </div>
+
+                            <div className={`grid gap-2 ${isMobile ? 'grid-cols-2' : 'grid-cols-2 md:grid-cols-3'}`}>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setSettings(prev => {
+                                  const currentFormat = prev.sourceSpecificFormats?.newborn?.format || '';
+                                  return {
+                                    ...prev,
+                                    sourceSpecificFormats: {
+                                      ...prev.sourceSpecificFormats || {},
+                                      newborn: {
+                                        ...(prev.sourceSpecificFormats?.newborn || {}),
+                                        format: currentFormat ? currentFormat + '-{PREFIX}' : '{PREFIX}'
+                                      }
+                                    }
+                                  }
+                                })}
+                                className={isMobile ? 'text-xs' : 'text-sm'}
+                              >
+                                + Prefix
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setSettings(prev => {
+                                  const currentFormat = prev.sourceSpecificFormats?.newborn?.format || '';
+                                  return {
+                                    ...prev,
+                                    sourceSpecificFormats: {
+                                      ...prev.sourceSpecificFormats || {},
+                                      newborn: {
+                                        ...(prev.sourceSpecificFormats?.newborn || {}),
+                                        format: currentFormat ? currentFormat + '-{YEAR}' : '{YEAR}'
+                                      }
+                                    }
+                                  }
+                                })}
+                                className={isMobile ? 'text-xs' : 'text-sm'}
+                              >
+                                + Year
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setSettings(prev => {
+                                  const currentFormat = prev.sourceSpecificFormats?.newborn?.format || '';
+                                  return {
+                                    ...prev,
+                                    sourceSpecificFormats: {
+                                      ...prev.sourceSpecificFormats || {},
+                                      newborn: {
+                                        ...(prev.sourceSpecificFormats?.newborn || {}),
+                                        format: currentFormat ? currentFormat + '-{MONTH:2}' : '{MONTH:2}'
+                                      }
+                                    }
+                                  }
+                                })}
+                                className={isMobile ? 'text-xs' : 'text-sm'}
+                              >
+                                + Month
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setSettings(prev => {
+                                  const currentFormat = prev.sourceSpecificFormats?.newborn?.format || '';
+                                  return {
+                                    ...prev,
+                                    sourceSpecificFormats: {
+                                      ...prev.sourceSpecificFormats || {},
+                                      newborn: {
+                                        ...(prev.sourceSpecificFormats?.newborn || {}),
+                                        format: currentFormat ? currentFormat + '-{NUMBER:3}' : '{NUMBER:3}'
+                                      }
+                                    }
+                                  }
+                                })}
+                                className={isMobile ? 'text-xs' : 'text-sm'}
+                              >
+                                + Number
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setSettings(prev => {
+                                  const currentFormat = prev.sourceSpecificFormats?.newborn?.format || '';
+                                  return {
+                                    ...prev,
+                                    sourceSpecificFormats: {
+                                      ...prev.sourceSpecificFormats || {},
+                                      newborn: {
+                                        ...(prev.sourceSpecificFormats?.newborn || {}),
+                                        format: currentFormat ? currentFormat + '-{MOTHER_TAG}' : '{MOTHER_TAG}'
+                                      }
+                                    }
+                                  }
+                                })}
+                                className={isMobile ? 'text-xs' : 'text-sm'}
+                              >
+                                + Mother's Tag
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div className="p-3 bg-white rounded border">
+                            <p className="text-xs text-gray-600 mb-2">Preview:</p>
+                            <p className="font-mono text-sm text-green-700 bg-green-50 p-2 rounded">
+                              {generateTagPreview(
+                                settings.sourceSpecificFormats?.newborn?.prefix || 'CALF',
+                                settings.sourceSpecificFormats?.newborn?.format,
+                                settings.sourceSpecificFormats?.newborn?.startNumber || 1,
+                                settings.customAttributes
+                              )}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Purchased Animals Format */}
+                        <div className="p-4 bg-purple-50 border-2 border-purple-200 rounded-lg space-y-3">
+                          <div className="flex items-center space-x-2 mb-3">
+                            <Truck className="h-5 w-5 text-purple-600" />
+                            <Label className="font-semibold text-purple-900">Purchased Animals</Label>
+                          </div>
+
+                          <div>
+                            <Label className="text-sm">Prefix</Label>
+                            <Input
+                              value={settings.sourceSpecificFormats?.purchased?.prefix || 'PUR'}
+                              onChange={(e) => setSettings(prev => ({
+                                ...prev,
+                                sourceSpecificFormats: {
+                                  ...prev.sourceSpecificFormats || {},
+                                  purchased: { ...(prev.sourceSpecificFormats?.purchased || {}), prefix: e.target.value }
+                                }
+                              }))}
+                              placeholder="PUR"
+                              className="text-sm"
+                            />
+                          </div>
+
+                          <div>
+                            <Label className="text-sm">Format Pattern</Label>
+                            <Input
+                              value={settings.sourceSpecificFormats?.purchased?.format || ''}
+                              onChange={(e) => setSettings(prev => ({
+                                ...prev,
+                                sourceSpecificFormats: {
+                                  ...prev.sourceSpecificFormats || {},
+                                  purchased: { ...(prev.sourceSpecificFormats?.purchased || {}), format: e.target.value }
+                                }
+                              }))}
+                              placeholder="{PREFIX}-{BREED:2}-{GENDER}-{NUMBER:3}"
+                              className="text-sm"
+                            />
+                            <p className="text-xs text-gray-600 mt-1">Example: PUR-HO-F-001</p>
+                          </div>
+
+                          <div>
+                            <Label className="text-sm">Starting Number</Label>
+                            <Input
+                              type="number"
+                              value={settings.sourceSpecificFormats?.purchased?.startNumber || 1}
+                              onChange={(e) => setSettings(prev => ({
+                                ...prev,
+                                sourceSpecificFormats: {
+                                  ...prev.sourceSpecificFormats || {},
+                                  purchased: { ...(prev.sourceSpecificFormats?.purchased || {}), startNumber: parseInt(e.target.value) }
+                                }
+                              }))}
+                              min="1"
+                              className="text-sm"
+                            />
+                          </div>
+
+                          <div>
+                            <Label className="text-sm">Description</Label>
+                            <Input
+                              value={settings.sourceSpecificFormats?.purchased?.description || ''}
+                              onChange={(e) => setSettings(prev => ({
+                                ...prev,
+                                sourceSpecificFormats: {
+                                  ...prev.sourceSpecificFormats || {},
+                                  purchased: { ...(prev.sourceSpecificFormats?.purchased || {}), description: e.target.value }
+                                }
+                              }))}
+                              placeholder="e.g., Format for purchased animals"
+                              className="text-sm"
+                            />
+                          </div>
+
+                          {/* Quick Format Builder for Purchased */}
+                          <div className="p-3 bg-white rounded border">
+                            <div className="flex items-center justify-between mb-2">
+                              <Label className="text-sm font-medium">Quick Format Builder</Label>
+                              <div className="flex items-center space-x-1">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setSettings(prev => ({
+                                    ...prev,
+                                    sourceSpecificFormats: {
+                                      ...prev.sourceSpecificFormats || {},
+                                      purchased: { ...(prev.sourceSpecificFormats?.purchased || {}), format: '' }
+                                    }
+                                  }))}
+                                  className="text-xs text-red-600 hover:text-red-700"
+                                >
+                                  <X className="h-3 w-3 mr-1" />
+                                  Clear
+                                </Button>
+                              </div>
+                            </div>
+
+                            <div className={`grid gap-2 ${isMobile ? 'grid-cols-2' : 'grid-cols-2 md:grid-cols-3'}`}>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setSettings(prev => {
+                                  const currentFormat = prev.sourceSpecificFormats?.purchased?.format || '';
+                                  return {
+                                    ...prev,
+                                    sourceSpecificFormats: {
+                                      ...prev.sourceSpecificFormats || {},
+                                      purchased: {
+                                        ...(prev.sourceSpecificFormats?.purchased || {}),
+                                        format: currentFormat ? currentFormat + '-{PREFIX}' : '{PREFIX}'
+                                      }
+                                    }
+                                  }
+                                })}
+                                className={isMobile ? 'text-xs' : 'text-sm'}
+                              >
+                                + Prefix
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setSettings(prev => {
+                                  const currentFormat = prev.sourceSpecificFormats?.purchased?.format || '';
+                                  return {
+                                    ...prev,
+                                    sourceSpecificFormats: {
+                                      ...prev.sourceSpecificFormats || {},
+                                      purchased: {
+                                        ...(prev.sourceSpecificFormats?.purchased || {}),
+                                        format: currentFormat ? currentFormat + '-{YEAR}' : '{YEAR}'
+                                      }
+                                    }
+                                  }
+                                })}
+                                className={isMobile ? 'text-xs' : 'text-sm'}
+                              >
+                                + Year
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setSettings(prev => {
+                                  const currentFormat = prev.sourceSpecificFormats?.purchased?.format || '';
+                                  return {
+                                    ...prev,
+                                    sourceSpecificFormats: {
+                                      ...prev.sourceSpecificFormats || {},
+                                      purchased: {
+                                        ...(prev.sourceSpecificFormats?.purchased || {}),
+                                        format: currentFormat ? currentFormat + '-{MONTH:2}' : '{MONTH:2}'
+                                      }
+                                    }
+                                  }
+                                })}
+                                className={isMobile ? 'text-xs' : 'text-sm'}
+                              >
+                                + Month
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setSettings(prev => {
+                                  const currentFormat = prev.sourceSpecificFormats?.purchased?.format || '';
+                                  return {
+                                    ...prev,
+                                    sourceSpecificFormats: {
+                                      ...prev.sourceSpecificFormats || {},
+                                      purchased: {
+                                        ...(prev.sourceSpecificFormats?.purchased || {}),
+                                        format: currentFormat ? currentFormat + '-{NUMBER:3}' : '{NUMBER:3}'
+                                      }
+                                    }
+                                  }
+                                })}
+                                className={isMobile ? 'text-xs' : 'text-sm'}
+                              >
+                                + Number
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div className="p-3 bg-white rounded border">
+                            <p className="text-xs text-gray-600 mb-2">Preview:</p>
+                            <p className="font-mono text-sm text-purple-700 bg-purple-50 p-2 rounded">
+                              {generateTagPreview(
+                                settings.sourceSpecificFormats?.purchased?.prefix || 'PUR',
+                                settings.sourceSpecificFormats?.purchased?.format,
+                                settings.sourceSpecificFormats?.purchased?.startNumber || 1,
+                                settings.customAttributes
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Custom Format Configuration - Full Width */}
+                {settings.tagNumbering === 'custom' && !settings.useSourceSpecificFormats && (
+                  <div className={`p-4 bg-gray-50 rounded-lg space-y-3 ${isMobile ? 'text-sm' : ''}`}>
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <Label className="text-sm font-medium">Custom Format Pattern</Label>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => resetCustomFormat()}
+                          className="text-xs text-gray-600 hover:text-gray-800"
+                        >
+                          <RotateCcw className="h-3 w-3 mr-1" />
+                          Reset Format
+                        </Button>
+                      </div>
+                      <Input
+                        placeholder="e.g., {PREFIX}-{YEAR}-{BREED_GROUP:2}-{NUMBER:3}"
+                        value={settings.customFormat || ''}
+                        onChange={(e) => setSettings(prev => ({ ...prev, customFormat: e.target.value }))}
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Available placeholders: {'{PREFIX}'}, {'{YEAR}'}, {'{MONTH}'}
+                        {settings.customAttributes.length > 0 && (
+                          <span>
+                            , {settings.customAttributes.map(attr =>
+                              `{${attr.name.toUpperCase().replace(/\s+/g, '_')}:X}`
+                            ).join(', ')}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+
+                    {/* Quick Format Builder */}
+                    <div className="p-3 bg-white rounded border">
+                      <div className="flex items-center justify-between mb-2">
+                        <Label className="text-sm font-medium">Quick Format Builder</Label>
+                        <div className="flex items-center space-x-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => clearCustomFormat()}
+                            className="text-xs text-red-600 hover:text-red-700"
+                          >
+                            <X className="h-3 w-3 mr-1" />
+                            Clear All
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => resetCustomFormat()}
+                            className="text-xs text-blue-600 hover:text-blue-700"
+                          >
+                            <RotateCcw className="h-3 w-3 mr-1" />
+                            Reset
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className={`grid gap-2 ${isMobile ? 'grid-cols-2' : 'grid-cols-2 md:grid-cols-4'}`}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => appendToFormat('{PREFIX}')}
+                          className={isMobile ? 'text-xs' : ''}
+                        >
+                          + Prefix
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => appendToFormat('{YEAR}')}
+                          className={isMobile ? 'text-xs' : ''}
+                        >
+                          + Year
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => appendToFormat('{MONTH:2}')}
+                          className={isMobile ? 'text-xs' : ''}
+                        >
+                          + Month
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => appendToFormat('{NUMBER:3}')}
+                          className={isMobile ? 'text-xs' : ''}
+                        >
+                          + Number
+                        </Button>
+
+                        {/* Dynamic buttons for custom attributes */}
+                        {settings.customAttributes.slice(0, 4).map((attr, index) => (
+                          <Button
+                            key={index}
+                            variant="outline"
+                            size="sm"
+                            onClick={() => appendToFormat(`{${attr.name.toUpperCase().replace(/\s+/g, '_')}:2}`)}
+                            className="text-xs"
+                          >
+                            + {attr.name}
+                          </Button>
+                        ))}
+                      </div>
+
+                      <div className="mt-2 text-xs text-gray-500">
+                        Current format: <code className="bg-gray-100 px-1 rounded">
+                          {settings.customFormat || '{PREFIX}-{NUMBER:3}'}
+                        </code>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <Label className="text-sm">Starting Number</Label>
+                        <Input
+                          type="number"
+                          min="1"
+                          value={settings.customStartNumber || 1}
+                          onChange={(e) => setSettings(prev => ({ ...prev, customStartNumber: parseInt(e.target.value) }))}
+                        />
+                      </div>
+
+                      {/* Include Year switch remains the same */}
+                      <div className="flex flex-col justify-end">
+                        <div className="flex items-center justify-between p-3 border rounded-lg bg-white">
+                          <Label className="text-sm font-medium">Include Year</Label>
+                          <Switch
+                            checked={settings.includeYearInTag || false}
+                            onCheckedChange={(checked) => {
+                              setSettings(prev => {
+                                let newFormat = prev.customFormat || '{PREFIX}-{NUMBER:3}'
+
+                                if (checked) {
+                                  if (!newFormat.includes('{YEAR}')) {
+                                    newFormat = newFormat.replace('{PREFIX}', '{PREFIX}-{YEAR}')
+                                  }
+                                } else {
+                                  newFormat = newFormat
+                                    .replace('-{YEAR}', '')
+                                    .replace('_{YEAR}', '')
+                                    .replace('{YEAR}-', '')
+                                    .replace('{YEAR}_', '')
+                                    .replace('{YEAR}', '')
+                                }
+
+                                return {
+                                  ...prev,
+                                  includeYearInTag: checked,
+                                  customFormat: newFormat
+                                }
+                              })
+                            }}
+                          />
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Auto adds/removes year
+                        </p>
+                      </div>
+
+                      {/* Format templates */}
+                      <div>
+                        <Label className="text-sm">Quick Templates</Label>
+                        <Select
+                          value=""
+                          onValueChange={(value) => {
+                            if (value) {
+                              setSettings(prev => ({ ...prev, customFormat: value }))
+                            }
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Choose template" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="{PREFIX}-{NUMBER:3}">Simple: COW-001</SelectItem>
+                            <SelectItem value="{PREFIX}-{YEAR}-{NUMBER:3}">With Year: COW-2024-001</SelectItem>
+                            <SelectItem value="{PREFIX}-{MONTH:2}-{NUMBER:2}">Monthly: COW-01-01</SelectItem>
+                            {settings.customAttributes.length > 0 && (
+                              <>
+                                <SelectItem value={`{PREFIX}-{${settings.customAttributes[0].name.toUpperCase().replace(/\s+/g, '_')}:2}-{NUMBER:3}`}>
+                                  With {settings.customAttributes[0].name}
+                                </SelectItem>
+                                {settings.customAttributes.length > 1 && (
+                                  <SelectItem value={`{PREFIX}-{${settings.customAttributes[0].name.toUpperCase().replace(/\s+/g, '_')}:1}{${settings.customAttributes[1].name.toUpperCase().replace(/\s+/g, '_')}:1}-{NUMBER:3}`}>
+                                    Multi-Attribute
+                                  </SelectItem>
+                                )}
+                              </>
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    {/* Enhanced Preview */}
+                    <div className="p-3 bg-white rounded border">
+                      <Label className="text-xs text-gray-600 mb-2 block">Preview Examples:</Label>
+                      <div className="space-y-1">
+                        {[1, 2, 3].map(num => (
+                          <div key={num} className="font-mono text-sm text-gray-800">
+                            {generateTagPreview(
+                              settings.tagPrefix,
+                              settings.customFormat,
+                              (settings.customStartNumber || 1) + num - 1,
+                              settings.customAttributes
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Format validation and tips */}
+                    <div className="text-xs text-gray-600">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <div className="font-medium mb-1">Available Placeholders:</div>
+                          <div className="space-y-1 ml-2">
+                            <div>• <code>{'{PREFIX}'}</code> → Your tag prefix</div>
+                            <div>• <code>{'{YEAR}'}</code> → 2024 | <code>{'{YEAR:2}'}</code> → 24</div>
+                            <div>• <code>{'{MONTH}'}</code> → 01-12 | <code>{'{MONTH:1}'}</code> → 1-12</div>
+                            <div>• <code>{'{NUMBER:X}'}</code> → Padded numbers</div>
+                            {settings.customAttributes.map(attr => (
+                              <div key={attr.name}>
+                                • <code>{`{${attr.name.toUpperCase().replace(/\s+/g, '_')}:X}`}</code> → {attr.values[0].substring(0, 2).toUpperCase()}...
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="font-medium mb-1">Tips:</div>
+                          <div className="space-y-1 ml-2">
+                            <div>• Use :X to specify character length</div>
+                            <div>• First attribute value is used in previews</div>
+                            <div>• Keep total tag length under 20 characters</div>
+                            <div>• Use Reset button if format gets messy</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+
+
+                {/* Barcode Compatible Configuration */}
+                {settings.tagNumbering === 'barcode' && (
+                  <div className="p-4 bg-gray-50 rounded-lg space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label className="text-sm">Barcode Type</Label>
+                        <Select
+                          value={settings.barcodeType || 'code128'}
+                          onValueChange={(value) => {
+                            setSettings(prev => {
+                              // Auto-adjust settings based on barcode type
+                              let newSettings = { ...prev, barcodeType: value }
+
+                              switch (value) {
+                                case 'ean13':
+                                  newSettings.barcodeLength = 13
+                                  newSettings.includeCheckDigit = true
+                                  newSettings.paddingZeros = true
+                                  break
+                                case 'upc':
+                                  newSettings.barcodeLength = 12
+                                  newSettings.includeCheckDigit = true
+                                  newSettings.paddingZeros = true
+                                  break
+                                case 'code39':
+                                  // Code 39 has character limitations
+                                  newSettings.barcodeLength = Math.min(newSettings.barcodeLength || 8, 15)
+                                  break
+                                case 'code128':
+                                default:
+                                  // Most flexible, keep current settings
+                                  break
+                              }
+
+                              return newSettings
+                            })
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="code128">Code 128 (Alphanumeric)</SelectItem>
+                            <SelectItem value="code39">Code 39 (Basic)</SelectItem>
+                            <SelectItem value="ean13">EAN-13 (Numeric only)</SelectItem>
+                            <SelectItem value="upc">UPC-A (Numeric only)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div>
+                        <Label className="text-sm">Number Length</Label>
+                        <Select
+                          value={settings.barcodeLength?.toString() || '8'}
+                          onValueChange={(value) => setSettings(prev => ({ ...prev, barcodeLength: parseInt(value) }))}
+                          disabled={settings.barcodeType === 'ean13' || settings.barcodeType === 'upc'}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {settings.barcodeType === 'ean13' ? (
+                              <SelectItem value="13">13 digits (Fixed)</SelectItem>
+                            ) : settings.barcodeType === 'upc' ? (
+                              <SelectItem value="12">12 digits (Fixed)</SelectItem>
+                            ) : (
+                              <>
+                                <SelectItem value="6">6 digits</SelectItem>
+                                <SelectItem value="8">8 digits</SelectItem>
+                                <SelectItem value="10">10 digits</SelectItem>
+                                <SelectItem value="12">12 digits</SelectItem>
+                                {settings.barcodeType === 'code128' && <SelectItem value="15">15 digits</SelectItem>}
+                              </>
+                            )}
+                          </SelectContent>
+                        </Select>
+                        {(settings.barcodeType === 'ean13' || settings.barcodeType === 'upc') && (
+                          <p className="text-xs text-gray-500 mt-1">Fixed length for {settings.barcodeType.toUpperCase()}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Include Check Digit Switch */}
+                      <div className="flex items-center justify-between p-3 border rounded-lg bg-white">
+                        <div className="flex flex-col">
+                          <Label className="text-sm font-medium">Include Check Digit</Label>
+                          <p className="text-xs text-gray-500">
+                            {settings.barcodeType === 'ean13' || settings.barcodeType === 'upc'
+                              ? 'Required for this barcode type'
+                              : 'Adds error detection capability'
+                            }
+                          </p>
+                        </div>
+                        <Switch
+                          checked={settings.includeCheckDigit || settings.barcodeType === 'ean13' || settings.barcodeType === 'upc'}
+                          onCheckedChange={(checked) => {
+                            // Force check digit for EAN13 and UPC
+                            if (settings.barcodeType === 'ean13' || settings.barcodeType === 'upc') return
+                            setSettings(prev => ({ ...prev, includeCheckDigit: checked }))
+                          }}
+                          disabled={settings.barcodeType === 'ean13' || settings.barcodeType === 'upc'}
+                        />
+                      </div>
+
+                      {/* Leading Zeros Switch */}
+                      <div className="flex items-center justify-between p-3 border rounded-lg bg-white">
+                        <div className="flex flex-col">
+                          <Label className="text-sm font-medium">Leading Zeros</Label>
+                          <p className="text-xs text-gray-500">
+                            {settings.barcodeType === 'ean13' || settings.barcodeType === 'upc'
+                              ? 'Required for proper scanning'
+                              : 'Pads numbers with zeros (001 vs 1)'
+                            }
+                          </p>
+                        </div>
+                        <Switch
+                          checked={settings.paddingZeros ?? true}
+                          onCheckedChange={(checked) => {
+                            // Force padding for EAN13 and UPC
+                            if (settings.barcodeType === 'ean13' || settings.barcodeType === 'upc') return
+                            setSettings(prev => ({ ...prev, paddingZeros: checked }))
+                          }}
+                          disabled={settings.barcodeType === 'ean13' || settings.barcodeType === 'upc'}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Enhanced Barcode Preview with validation */}
+                    <div className="p-3 bg-white rounded border">
+                      <Label className="text-xs text-gray-600 mb-2 block">Barcode Preview Examples:</Label>
+                      <div className="space-y-2">
+                        {[1, 2, 3].map(num => {
+                          const preview = generateBarcodePreview(
+                            settings.tagPrefix,
+                            settings.barcodeType,
+                            settings.barcodeLength,
+                            settings.paddingZeros,
+                            settings.includeCheckDigit,
+                            num
+                          )
+                          return (
+                            <div key={num} className="flex items-center justify-between">
+                              <span className="font-mono text-sm text-gray-800">{preview.display}</span>
+                              {preview.isValid ? (
+                                <span className="text-xs text-green-600">✓ Valid</span>
+                              ) : (
+                                <span className="text-xs text-red-600">⚠ Check format</span>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Dynamic Barcode Guidance */}
+                    <div className="text-xs text-gray-600 space-y-2">
+                      <div className="font-medium">Barcode Guidelines for {settings.barcodeType?.toUpperCase()}:</div>
+                      <div className="ml-2 space-y-1">
+                        {settings.barcodeType === 'code128' && (
+                          <>
+                            <div>• Most versatile: supports letters, numbers, and symbols</div>
+                            <div>• Variable length: 1-48 characters recommended</div>
+                            <div>• Best for: complex identification with alphanumeric data</div>
+                          </>
+                        )}
+                        {settings.barcodeType === 'code39' && (
+                          <>
+                            <div>• Basic format: supports A-Z, 0-9, and limited symbols</div>
+                            <div>• Variable length: up to 43 characters</div>
+                            <div>• Best for: simple numeric or basic alphanumeric codes</div>
+                          </>
+                        )}
+                        {settings.barcodeType === 'ean13' && (
+                          <>
+                            <div>• International retail standard: exactly 13 digits</div>
+                            <div>• First 3 digits: country/manufacturer code</div>
+                            <div>• Last digit: automatically calculated check digit</div>
+                            <div>• Best for: retail products and inventory</div>
+                          </>
+                        )}
+                        {settings.barcodeType === 'upc' && (
+                          <>
+                            <div>• North American retail standard: exactly 12 digits</div>
+                            <div>• First digit: number system (usually 0-9)</div>
+                            <div>• Last digit: automatically calculated check digit</div>
+                            <div>• Best for: US/Canada retail operations</div>
+                          </>
+                        )}
+                        <div>• Test scan sample tags before bulk printing</div>
+                        <div>• Ensure your scanner supports {settings.barcodeType?.toUpperCase()}</div>
+                      </div>
+                    </div>
+
+                    {/* Validation warnings */}
+                    {getValidationWarnings(settings).length > 0 && (
+                      <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                        <div className="flex items-start space-x-2">
+                          <AlertTriangle className="h-4 w-4 text-yellow-600 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <div className="text-sm font-medium text-yellow-800">Configuration Warnings:</div>
+                            <ul className="text-xs text-yellow-700 mt-1 space-y-1">
+                              {getValidationWarnings(settings).map((warning, index) => (
+                                <li key={index}>• {warning}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <Camera className="h-4 w-4" />
+                    <Label>Photo Identification</Label>
+                  </div>
+                  <Switch
+                    checked={settings.enablePhotoTags}
+                    onCheckedChange={(checked) => setSettings(prev => ({ ...prev, enablePhotoTags: checked }))}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <Palette className="h-4 w-4" />
+                    <div>
+                      <Label>Color Coding System</Label>
+                      <p className="text-xs text-gray-500">Visual status indicators for quick animal identification</p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={settings.enableColorCoding}
+                    onCheckedChange={(checked) => setSettings(prev => ({ ...prev, enableColorCoding: checked }))}
+                  />
+                </div>
+
+                {/* Static Color Categories Display */}
+                <div className="ml-6 p-4 bg-gray-50 rounded-lg">
+                  <div className="flex items-center justify-between mb-4">
+                    <Label className="text-sm font-medium">Standard Color Categories</Label>
+                    <div className="text-xs text-gray-500">
+                      {settings.enableColorCoding ? 'Active' : 'Disabled'}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {colorOptions.map((color, index) => (
+                      <div key={index} className={`flex items-center justify-between p-3 rounded-lg border transition-all ${settings.enableColorCoding
+                        ? 'bg-white border-gray-200'
+                        : 'bg-gray-100 border-gray-100'
+                        }`}>
+                        <div className="flex items-center space-x-3">
+                          <div className={`w-5 h-5 ${color.color} rounded-full ${settings.enableColorCoding ? '' : 'opacity-50'
+                            }`}></div>
+                          <div>
+                            <div className={`text-sm font-medium ${settings.enableColorCoding ? 'text-gray-900' : 'text-gray-500'
+                              }`}>
+                              {color.name}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {color.description}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Status indicator for each color */}
+                        <div className={`text-xs px-2 py-1 rounded-full ${settings.enableColorCoding
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-gray-200 text-gray-500'
+                          }`}>
+                          {settings.enableColorCoding ? 'Available' : 'Disabled'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Information footer */}
+                  <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-start space-x-2">
+                      <Info className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                      <div className="text-xs text-blue-700">
+                        <div className="font-medium mb-1">Color Coding Benefits:</div>
+                        <ul className="space-y-0.5 ml-2">
+                          <li>• Quick visual identification of animal status</li>
+                          <li>• Easier herd management and decision making</li>
+                          <li>• Immediate alerts for animals needing attention</li>
+                          <li>• Streamlined workflow for farm workers</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Coming Soon - Structured Tagging */}
+          {selectedMethod === 'structured' && (
+            <Card className="border-blue-200 bg-blue-50">
+              <CardHeader>
+                <CardTitle className="text-blue-900">Semi-Structured Tagging</CardTitle>
+                <CardDescription className="text-blue-700">Balanced approach with some automation</CardDescription>
+              </CardHeader>
+              <CardContent className="py-12 text-center">
+                <div className="flex flex-col items-center justify-center space-y-4">
+                  <div className="w-16 h-16 bg-blue-200 rounded-full flex items-center justify-center">
+                    <QrCode className="h-8 w-8 text-blue-600" />
+                  </div>
+                  <div className="space-y-2">
+                    <h3 className="text-xl font-semibold text-blue-900">Coming Soon</h3>
+                    <p className="text-blue-700 max-w-md">
+                      Advanced structured tagging features with hierarchical organization, batch operations, and QR code integration will be available shortly.
+                    </p>
+                  </div>
+                  <div className="mt-6 p-4 bg-blue-100 rounded-lg max-w-md">
+                    <p className="text-sm text-blue-800 font-medium mb-2">Expected Features:</p>
+                    <ul className="text-sm text-blue-700 space-y-1">
+                      <li>✓ Hierarchical tag organization</li>
+                      <li>✓ Batch tagging operations</li>
+                      <li>✓ QR code generation</li>
+                      <li>✓ Smart alert configuration</li>
+                    </ul>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Coming Soon - Automated/Tech-Integrated */}
+          {selectedMethod === 'automated' && (
+            <Card className="border-purple-200 bg-purple-50">
+              <CardHeader>
+                <CardTitle className="text-purple-900">Automated/Tech-Integrated Tagging</CardTitle>
+                <CardDescription className="text-purple-700">Advanced automation for large operations</CardDescription>
+              </CardHeader>
+              <CardContent className="py-12 text-center">
+                <div className="flex flex-col items-center justify-center space-y-4">
+                  <div className="w-16 h-16 bg-purple-200 rounded-full flex items-center justify-center">
+                    <Wifi className="h-8 w-8 text-purple-600" />
+                  </div>
+                  <div className="space-y-2">
+                    <h3 className="text-xl font-semibold text-purple-900">Coming Soon</h3>
+                    <p className="text-purple-700 max-w-md">
+                      Enterprise-grade automated tagging with RFID, NFC, GPS, and biometric identification will be available shortly.
+                    </p>
+                  </div>
+                  <div className="mt-6 p-4 bg-purple-100 rounded-lg max-w-md">
+                    <p className="text-sm text-purple-800 font-medium mb-2">Expected Features:</p>
+                    <ul className="text-sm text-purple-700 space-y-1">
+                      <li>✓ RFID integration</li>
+                      <li>✓ NFC support</li>
+                      <li>✓ GPS tracking</li>
+                      <li>✓ Biometric identification</li>
+                    </ul>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Structured Tagging Features */}
+          {(selectedMethod === 'structured' || selectedMethod === 'automated') && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Advanced Tagging Features</CardTitle>
+                <CardDescription>Semi-automated and structured tagging options</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Users className="h-4 w-4" />
+                      <Label>Hierarchical Organization</Label>
+                    </div>
+                    <Switch
+                      checked={settings.enableHierarchicalTags}
+                      onCheckedChange={(checked) => setSettings(prev => ({ ...prev, enableHierarchicalTags: checked }))}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Hash className="h-4 w-4" />
+                      <Label>Batch Tagging Operations</Label>
+                    </div>
+                    <Switch
+                      checked={settings.enableBatchTagging}
+                      onCheckedChange={(checked) => setSettings(prev => ({ ...prev, enableBatchTagging: checked }))}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <QrCode className="h-4 w-4" />
+                      <Label>QR Code Generation</Label>
+                    </div>
+                    <Switch
+                      checked={settings.enableQRCodes}
+                      onCheckedChange={(checked) => setSettings(prev => ({ ...prev, enableQRCodes: checked }))}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Zap className="h-4 w-4" />
+                      <Label>Smart Alerts</Label>
+                    </div>
+                    <Switch
+                      checked={settings.enableSmartAlerts}
+                      onCheckedChange={(checked) => setSettings(prev => ({ ...prev, enableSmartAlerts: checked }))}
+                    />
+                  </div>
+                </div>
+
+                {settings.enableQRCodes && (
+                  <div className="p-4 bg-gray-50 rounded-lg">
+                    <div className="flex items-center justify-between mb-3">
+                      <Label className="text-sm font-medium">QR Code Configuration</Label>
+                      <Button variant="outline" size="sm" onClick={generateQRCodes}>
+                        <Download className="h-4 w-4 mr-2" />
+                        Generate QR Codes
+                      </Button>
+                    </div>
+                    <Select
+                      value={settings.qrCodeSize}
+                      onValueChange={(value) => setSettings(prev => ({ ...prev, qrCodeSize: value }))}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="small">Small (2x2 cm)</SelectItem>
+                        <SelectItem value="medium">Medium (3x3 cm)</SelectItem>
+                        <SelectItem value="large">Large (4x4 cm)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Automated/Tech Features */}
+          {selectedMethod === 'automated' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Automated Technology Integration</CardTitle>
+                <CardDescription>High-tech identification and tracking systems</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Radio className="h-4 w-4" />
+                      <Label>RFID Integration</Label>
+                    </div>
+                    <Switch
+                      checked={settings.enableRFID}
+                      onCheckedChange={(checked) => setSettings(prev => ({ ...prev, enableRFID: checked }))}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Smartphone className="h-4 w-4" />
+                      <Label>NFC Support</Label>
+                    </div>
+                    <Switch
+                      checked={settings.enableNFC}
+                      onCheckedChange={(checked) => setSettings(prev => ({ ...prev, enableNFC: checked }))}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <MapPin className="h-4 w-4" />
+                      <Label>GPS Tracking</Label>
+                    </div>
+                    <Switch
+                      checked={settings.enableGPS}
+                      onCheckedChange={(checked) => setSettings(prev => ({ ...prev, enableGPS: checked }))}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Eye className="h-4 w-4" />
+                      <Label>Biometric Identification</Label>
+                    </div>
+                    <Switch
+                      checked={settings.enableBiometric}
+                      onCheckedChange={(checked) => setSettings(prev => ({ ...prev, enableBiometric: checked }))}
+                    />
+                  </div>
+                </div>
+
+                {settings.enableRFID && (
+                  <div className="p-4 bg-gray-50 rounded-lg">
+                    <Label className="text-sm font-medium mb-2 block">RFID Configuration</Label>
+                    <Select
+                      value={settings.rfidFrequency}
+                      onValueChange={(value) => setSettings(prev => ({ ...prev, rfidFrequency: value }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="134.2khz">134.2 kHz (ISO Standard)</SelectItem>
+                        <SelectItem value="125khz">125 kHz (Basic)</SelectItem>
+                        <SelectItem value="13.56mhz">13.56 MHz (High Frequency)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {settings.enableGPS && (
+                  <div className="p-4 bg-gray-50 rounded-lg">
+                    <Label className="text-sm font-medium mb-2 block">GPS Update Interval (minutes)</Label>
+                    <Input
+                      type="number"
+                      value={settings.gpsUpdateInterval}
+                      onChange={(e) => setSettings(prev => ({ ...prev, gpsUpdateInterval: parseInt(e.target.value) }))}
+                      min="5"
+                      max="120"
+                    />
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Action Buttons */}
+          <div className={`pt-6 border-t mb-8 ${isMobile ? 'space-y-3' : 'space-y-4'}`}>
+            <div className={`flex ${isMobile ? 'flex-col space-y-2' : 'items-center justify-between'}`}>
+              <div className={`flex items-center space-x-2 ${isMobile ? 'text-xs flex-wrap gap-2' : ''}`}>
+                <Info className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                <span className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>
+                  Changes apply to new animals only
+                </span>
+                {hasUnsavedChanges && (
+                  <div className="flex items-center space-x-1 px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs flex-shrink-0">
+                    <AlertTriangle className="h-3 w-3" />
+                    <span>Unsaved</span>
+                  </div>
+                )}
+              </div>
+              <div className={`flex ${isMobile ? 'w-full flex-col-reverse space-y-reverse space-y-2' : 'space-x-3'}`}>
+                <Button
+                  variant="outline"
+                  onClick={resetToDefaults}
+                  size={isMobile ? "sm" : "default"}
+                  className={`${isMobile ? 'w-full' : ''} hover:bg-red-50 hover:border-red-200 hover:text-red-700`}
+                >
+                  <RotateCcw className={`${isMobile ? 'h-3 w-3' : 'h-4 w-4'} ${isMobile ? '' : 'mr-2'}`} />
+                  <span className={isMobile ? "hidden" : ""}>Reset</span>
+                </Button>
+                <Button
+                  onClick={handleSaveSettings}
+                  disabled={isLoading}
+                  size={isMobile ? "sm" : "default"}
+                  className={`${isMobile ? 'w-full' : ''} ${hasUnsavedChanges ? 'bg-blue-600 hover:bg-blue-700 text-white' : ''}`}
+                >
+                  <Save className={`${isMobile ? 'h-3 w-3' : 'h-4 w-4'} ${isMobile ? '' : 'mr-2'}`} />
+                  <span>{isLoading ? (isMobile ? 'Saving...' : 'Saving...') : isMobile ? 'Save' : 'Save Settings'}</span>
+                  {hasUnsavedChanges && (
+                    <span className="ml-1 w-2 h-2 bg-white rounded-full animate-pulse"></span>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Calf Management Tab Content */}
+      {activeTab === 'calf' && (
+        <>
+
+          {/* Calf Management Header */}
+          <div className="mb-6">
+            <div className="flex items-center space-x-2 mb-4">
+              <Baby className="w-6 h-6 text-pink-600" />
+              <h2 className={`${isMobile ? 'text-lg' : 'text-2xl'} font-bold text-gray-900`}>
+                Calf Rearing Management
+              </h2>
+            </div>
+            <p className={`text-gray-600 ${isMobile ? 'text-sm' : ''}`}>
+              Configure comprehensive calf management protocols including growth expectations, feeding plans, and health schedules
+            </p>
+          </div>
+
+          {/* Loading State */}
+          {/* {isLoadingCalfData && (
+            <Card className="mb-6 border-blue-200 bg-blue-50">
+              <CardContent className="p-6">
+                <div className="flex items-center space-x-3">
+                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-blue-500 border-t-transparent"></div>
+                  <p className="text-sm text-blue-700">Loading calf management settings...</p>
+                </div>
+              </CardContent>
+            </Card>
+          )} */}
+
+          {/* Error State */}
+          {calfSettingsError && (
+            <Card className="mb-6 border-amber-200 bg-amber-50">
+              <CardContent className="p-4">
+                <div className="flex items-start space-x-3">
+                  <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="font-medium text-amber-900">Note</p>
+                    <p className="text-sm text-amber-800 mt-1">{calfSettingsError}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Data Loaded Indicator */}
+          {!isLoadingCalfData && !calfSettingsError && (
+            <Card className="mb-6 border-green-200 bg-green-50">
+              <CardContent className="p-4">
+                <div className="flex items-start space-x-3">
+                  <div className="w-2 h-2 bg-green-600 rounded-full mt-1.5 flex-shrink-0"></div>
+                  <p className="text-sm text-green-800">✓ Calf management settings loaded and ready to edit</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Protocol Selection */}
+          {/* <Card className="mb-6">
         <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Settings className="h-5 w-5" />
-            <span>Choose Tagging Method</span>
-          </CardTitle>
-          <CardDescription>
-            Select the tagging approach that best fits your farm size and technical requirements
-          </CardDescription>
+          <CardTitle>Select Rearing Protocol</CardTitle>
+          <CardDescription>Choose a predefined protocol or customize your own</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-3'}`}>
-            {Object.entries(taggingMethods).map(([key, method]) => (
+          <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-3'}`}>
+            {calfSettings.savedProtocols.map(protocol => (
               <button
-                key={key}
-                className={`border-2 rounded-lg p-3 text-left cursor-pointer transition-all ${selectedMethod === key
-                  ? 'border-blue-500 bg-blue-50'
-                  : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                  }`}
-                onClick={() => handleMethodChange(key as TaggingMethodKey)}
+                key={protocol.id}
+                onClick={() => setCalfSettings(prev => ({ ...prev, selectedProtocol: protocol.id }))}
+                className={`p-4 border-2 rounded-lg text-left transition-all ${
+                  calfSettings.selectedProtocol === protocol.id
+                    ? 'border-pink-500 bg-pink-50'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
               >
-                <div className={`flex ${isMobile ? 'flex-col items-start space-y-2' : 'items-center space-x-3'} mb-3`}>
-                  <div className={`w-10 h-10 ${method.color} rounded-lg flex items-center justify-center text-white flex-shrink-0`}>
-                    {method.icon}
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className={`font-semibold text-gray-900 ${isMobile ? 'text-sm' : ''}`}>{method.title}</h3>
-                    <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>{method.description}</p>
-                  </div>
-                </div>
-                <div className={`space-y-1 ${isMobile ? 'ml-0' : ''}`}>
-                  {method.features.map((feature, index) => (
-                    <div key={index} className={`flex items-center text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>
-                      <div className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-2 flex-shrink-0"></div>
-                      <span className="truncate">{feature}</span>
-                    </div>
-                  ))}
-                </div>
+                <h3 className="font-semibold text-gray-900">{protocol.name}</h3>
+                <p className="text-sm text-gray-600 mt-1">{protocol.description}</p>
               </button>
             ))}
           </div>
         </CardContent>
-      </Card>
+      </Card> */}
 
-      {/* Basic Settings - Only show for basic method */}
-      {selectedMethod === 'basic' && (
-      <Card>
-        <CardHeader>
-          <CardTitle>Basic Identification Settings</CardTitle>
-          <CardDescription>Configure fundamental animal identification parameters</CardDescription>
-        </CardHeader>
-        <CardContent className={`space-y-4 ${isMobile ? 'space-y-3' : 'space-y-6'}`}>
-          <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2 gap-4'}`}>
-            <div>
-              <Label htmlFor="tagPrefix" className={isMobile ? 'text-sm' : ''}>Tag Prefix</Label>
-              <Input
-                id="tagPrefix"
-                value={settings.tagPrefix}
-                onChange={(e) => setSettings(prev => ({ ...prev, tagPrefix: e.target.value }))}
-                placeholder="COW"
-                className={isMobile ? 'text-sm' : ''}
-              />
-              <p className={`text-gray-500 mt-1 ${isMobile ? 'text-xs' : 'text-sm'}`}>Prefix for auto-generated tags</p>
-            </div>
-
-            <div>
-              <Label htmlFor="tagNumbering" className={isMobile ? 'text-sm' : ''}>Numbering System</Label>
-              <Select
-                value={settings.tagNumbering}
-                onValueChange={(value) => setSettings(prev => ({ ...prev, tagNumbering: value }))}
-              >
-                <SelectTrigger className={isMobile ? 'text-sm' : ''}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="sequential">Sequential (COW-001...)</SelectItem>
-                  <SelectItem value="custom">Custom Format</SelectItem>
-                  <SelectItem value="barcode">Barcode Compatible</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* Source-Specific Tag Formats - Full Width */}
-          {settings.tagNumbering === 'custom' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <Label className="text-base font-semibold">Source-Specific Tag Formats</Label>
-                  <p className="text-xs text-gray-500">(Different formats for newborn vs. purchased animals)</p>
+          {/* Weaning Configuration */}
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>📅 Weaning Configuration</CardTitle>
+              <CardDescription>Define weaning age and criteria</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                <div>
+                  <Label>Weaning Type</Label>
+                  <Select
+                    value={calfSettings.weaningType}
+                    onValueChange={(value) => setCalfSettings(prev => ({
+                      ...prev,
+                      weaningType: value
+                    }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="fixed">Fixed Age (Days)</SelectItem>
+                      <SelectItem value="conditional">Conditional (Smart Logic)</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-                <Switch
-                  checked={settings.useSourceSpecificFormats}
-                  onCheckedChange={(checked) => setSettings(prev => ({ ...prev, useSourceSpecificFormats: checked }))}
-                />
+                {calfSettings.weaningType === 'fixed' && (
+                  <div>
+                    <Label>Weaning Age (days)</Label>
+                    <Input
+                      type="number"
+                      min="28"
+                      max="180"
+                      value={safeIntValue(calfSettings.weaningAge, 56)}
+                      onChange={(e) => setCalfSettings(prev => ({
+                        ...prev,
+                        weaningAge: safeParseInt(e.target.value, 56)
+                      }))}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Typical: 56-70 days (8-10 weeks)</p>
+                  </div>
+                )}
               </div>
 
-              {settings.useSourceSpecificFormats && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Newborn Calves Format */}
-                  <div className="p-4 bg-green-50 border-2 border-green-200 rounded-lg space-y-3">
-                    <div className="flex items-center space-x-2 mb-3">
-                      <Baby className="h-5 w-5 text-green-600" />
-                      <Label className="font-semibold text-green-900">Animals Born On Farm (Calves)</Label>
-                    </div>
-
+              {calfSettings.weaningType === 'conditional' && (
+                <div className="space-y-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <Label className="text-base font-semibold">Smart Weaning Logic</Label>
+                  <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                     <div>
-                      <Label className="text-sm">Prefix</Label>
-                      <Input
-                        value={settings.sourceSpecificFormats?.newborn?.prefix || 'CALF'}
-                        onChange={(e) => setSettings(prev => ({
-                          ...prev,
-                          sourceSpecificFormats: {
-                            ...prev.sourceSpecificFormats || {},
-                            newborn: { ...(prev.sourceSpecificFormats?.newborn || {}), prefix: e.target.value }
-                          }
-                        }))}
-                        placeholder="CALF"
-                        className="text-sm"
-                      />
-                    </div>
-
-                    <div>
-                      <Label className="text-sm">Format Pattern</Label>
-                      <Input
-                        value={settings.sourceSpecificFormats?.newborn?.format || ''}
-                        onChange={(e) => setSettings(prev => ({
-                          ...prev,
-                          sourceSpecificFormats: {
-                            ...prev.sourceSpecificFormats || {},
-                            newborn: { ...(prev.sourceSpecificFormats?.newborn || {}), format: e.target.value }
-                          }
-                        }))}
-                        placeholder="{PREFIX}-{YEAR}-{COHORT:2}-{NUMBER:3}"
-                        className="text-sm"
-                      />
-                      <p className="text-xs text-gray-600 mt-1">Example: CALF-2026-03-001</p>
-                      <p className="text-xs text-gray-500 mt-2">Available: {'{PREFIX}'}, {'{YEAR}'}, {'{MONTH}'}, {'{NUMBER:3}'}, {'{MOTHER_TAG}'}</p>
-                    </div>
-
-                    <div>
-                      <Label className="text-sm">Starting Number</Label>
+                      <Label>Minimum Weight (kg)</Label>
                       <Input
                         type="number"
-                        value={settings.sourceSpecificFormats?.newborn?.startNumber || 1}
-                        onChange={(e) => setSettings(prev => ({
+                        value={safeIntValue(calfSettings.weaningMinWeight, 90)}
+                        onChange={(e) => setCalfSettings(prev => ({
                           ...prev,
-                          sourceSpecificFormats: {
-                            ...prev.sourceSpecificFormats || {},
-                            newborn: { ...(prev.sourceSpecificFormats?.newborn || {}), startNumber: parseInt(e.target.value) }
-                          }
+                          weaningMinWeight: safeParseInt(e.target.value, 90)
                         }))}
-                        min="1"
-                        className="text-sm"
                       />
                     </div>
-
                     <div>
-                      <Label className="text-sm">Description</Label>
+                      <Label>Min Starter Intake (kg/day)</Label>
                       <Input
-                        value={settings.sourceSpecificFormats?.newborn?.description || ''}
-                        onChange={(e) => setSettings(prev => ({
+                        type="number"
+                        step="0.1"
+                        value={safeNumericValue(calfSettings.weaningMinStarterIntake, 1.5)}
+                        onChange={(e) => setCalfSettings(prev => ({
                           ...prev,
-                          sourceSpecificFormats: {
-                            ...prev.sourceSpecificFormats || {},
-                            newborn: { ...(prev.sourceSpecificFormats?.newborn || {}), description: e.target.value }
-                          }
+                          weaningMinStarterIntake: safeParseNumber(e.target.value, 1.5)
                         }))}
-                        placeholder="e.g., Format for calves born on the farm"
-                        className="text-sm"
                       />
-                    </div>
-
-                    {/* Quick Format Builder for Newborn */}
-                    <div className="p-3 bg-white rounded border">
-                      <div className="flex items-center justify-between mb-2">
-                        <Label className="text-sm font-medium">Quick Format Builder</Label>
-                        <div className="flex items-center space-x-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setSettings(prev => ({
-                              ...prev,
-                              sourceSpecificFormats: {
-                                ...prev.sourceSpecificFormats || {},
-                                newborn: { ...(prev.sourceSpecificFormats?.newborn || {}), format: '' }
-                              }
-                            }))}
-                            className="text-xs text-red-600 hover:text-red-700"
-                          >
-                            <X className="h-3 w-3 mr-1" />
-                            Clear
-                          </Button>
-                        </div>
-                      </div>
-
-                      <div className={`grid gap-2 ${isMobile ? 'grid-cols-2' : 'grid-cols-2 md:grid-cols-3'}`}>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setSettings(prev => {
-                            const currentFormat = prev.sourceSpecificFormats?.newborn?.format || '';
-                            return {
-                              ...prev,
-                              sourceSpecificFormats: {
-                                ...prev.sourceSpecificFormats || {},
-                                newborn: {
-                                  ...(prev.sourceSpecificFormats?.newborn || {}),
-                                  format: currentFormat ? currentFormat + '-{PREFIX}' : '{PREFIX}'
-                                }
-                              }
-                            }
-                          })}
-                          className={isMobile ? 'text-xs' : 'text-sm'}
-                        >
-                          + Prefix
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setSettings(prev => {
-                            const currentFormat = prev.sourceSpecificFormats?.newborn?.format || '';
-                            return {
-                              ...prev,
-                              sourceSpecificFormats: {
-                                ...prev.sourceSpecificFormats || {},
-                                newborn: {
-                                  ...(prev.sourceSpecificFormats?.newborn || {}),
-                                  format: currentFormat ? currentFormat + '-{YEAR}' : '{YEAR}'
-                                }
-                              }
-                            }
-                          })}
-                          className={isMobile ? 'text-xs' : 'text-sm'}
-                        >
-                          + Year
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setSettings(prev => {
-                            const currentFormat = prev.sourceSpecificFormats?.newborn?.format || '';
-                            return {
-                              ...prev,
-                              sourceSpecificFormats: {
-                                ...prev.sourceSpecificFormats || {},
-                                newborn: {
-                                  ...(prev.sourceSpecificFormats?.newborn || {}),
-                                  format: currentFormat ? currentFormat + '-{MONTH:2}' : '{MONTH:2}'
-                                }
-                              }
-                            }
-                          })}
-                          className={isMobile ? 'text-xs' : 'text-sm'}
-                        >
-                          + Month
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setSettings(prev => {
-                            const currentFormat = prev.sourceSpecificFormats?.newborn?.format || '';
-                            return {
-                              ...prev,
-                              sourceSpecificFormats: {
-                                ...prev.sourceSpecificFormats || {},
-                                newborn: {
-                                  ...(prev.sourceSpecificFormats?.newborn || {}),
-                                  format: currentFormat ? currentFormat + '-{NUMBER:3}' : '{NUMBER:3}'
-                                }
-                              }
-                            }
-                          })}
-                          className={isMobile ? 'text-xs' : 'text-sm'}
-                        >
-                          + Number
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setSettings(prev => {
-                            const currentFormat = prev.sourceSpecificFormats?.newborn?.format || '';
-                            return {
-                              ...prev,
-                              sourceSpecificFormats: {
-                                ...prev.sourceSpecificFormats || {},
-                                newborn: {
-                                  ...(prev.sourceSpecificFormats?.newborn || {}),
-                                  format: currentFormat ? currentFormat + '-{MOTHER_TAG}' : '{MOTHER_TAG}'
-                                }
-                              }
-                            }
-                          })}
-                          className={isMobile ? 'text-xs' : 'text-sm'}
-                        >
-                          + Mother's Tag
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div className="p-3 bg-white rounded border">
-                      <p className="text-xs text-gray-600 mb-2">Preview:</p>
-                      <p className="font-mono text-sm text-green-700 bg-green-50 p-2 rounded">
-                        {generateTagPreview(
-                          settings.sourceSpecificFormats?.newborn?.prefix || 'CALF',
-                          settings.sourceSpecificFormats?.newborn?.format,
-                          settings.sourceSpecificFormats?.newborn?.startNumber || 1,
-                          settings.customAttributes
-                        )}
-                      </p>
                     </div>
                   </div>
-
-                  {/* Purchased Animals Format */}
-                  <div className="p-4 bg-purple-50 border-2 border-purple-200 rounded-lg space-y-3">
-                    <div className="flex items-center space-x-2 mb-3">
-                      <Truck className="h-5 w-5 text-purple-600" />
-                      <Label className="font-semibold text-purple-900">Purchased Animals</Label>
-                    </div>
-
-                    <div>
-                      <Label className="text-sm">Prefix</Label>
-                      <Input
-                        value={settings.sourceSpecificFormats?.purchased?.prefix || 'PUR'}
-                        onChange={(e) => setSettings(prev => ({
-                          ...prev,
-                          sourceSpecificFormats: {
-                            ...prev.sourceSpecificFormats || {},
-                            purchased: { ...(prev.sourceSpecificFormats?.purchased || {}), prefix: e.target.value }
-                          }
-                        }))}
-                        placeholder="PUR"
-                        className="text-sm"
-                      />
-                    </div>
-
-                    <div>
-                      <Label className="text-sm">Format Pattern</Label>
-                      <Input
-                        value={settings.sourceSpecificFormats?.purchased?.format || ''}
-                        onChange={(e) => setSettings(prev => ({
-                          ...prev,
-                          sourceSpecificFormats: {
-                            ...prev.sourceSpecificFormats || {},
-                            purchased: { ...(prev.sourceSpecificFormats?.purchased || {}), format: e.target.value }
-                          }
-                        }))}
-                        placeholder="{PREFIX}-{BREED:2}-{GENDER}-{NUMBER:3}"
-                        className="text-sm"
-                      />
-                      <p className="text-xs text-gray-600 mt-1">Example: PUR-HO-F-001</p>
-                    </div>
-
-                    <div>
-                      <Label className="text-sm">Starting Number</Label>
-                      <Input
-                        type="number"
-                        value={settings.sourceSpecificFormats?.purchased?.startNumber || 1}
-                        onChange={(e) => setSettings(prev => ({
-                          ...prev,
-                          sourceSpecificFormats: {
-                            ...prev.sourceSpecificFormats || {},
-                            purchased: { ...(prev.sourceSpecificFormats?.purchased || {}), startNumber: parseInt(e.target.value) }
-                          }
-                        }))}
-                        min="1"
-                        className="text-sm"
-                      />
-                    </div>
-
-                    <div>
-                      <Label className="text-sm">Description</Label>
-                      <Input
-                        value={settings.sourceSpecificFormats?.purchased?.description || ''}
-                        onChange={(e) => setSettings(prev => ({
-                          ...prev,
-                          sourceSpecificFormats: {
-                            ...prev.sourceSpecificFormats || {},
-                            purchased: { ...(prev.sourceSpecificFormats?.purchased || {}), description: e.target.value }
-                          }
-                        }))}
-                        placeholder="e.g., Format for purchased animals"
-                        className="text-sm"
-                      />
-                    </div>
-
-                    {/* Quick Format Builder for Purchased */}
-                    <div className="p-3 bg-white rounded border">
-                      <div className="flex items-center justify-between mb-2">
-                        <Label className="text-sm font-medium">Quick Format Builder</Label>
-                        <div className="flex items-center space-x-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setSettings(prev => ({
-                              ...prev,
-                              sourceSpecificFormats: {
-                                ...prev.sourceSpecificFormats || {},
-                                purchased: { ...(prev.sourceSpecificFormats?.purchased || {}), format: '' }
-                              }
-                            }))}
-                            className="text-xs text-red-600 hover:text-red-700"
-                          >
-                            <X className="h-3 w-3 mr-1" />
-                            Clear
-                          </Button>
-                        </div>
-                      </div>
-
-                      <div className={`grid gap-2 ${isMobile ? 'grid-cols-2' : 'grid-cols-2 md:grid-cols-3'}`}>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setSettings(prev => {
-                            const currentFormat = prev.sourceSpecificFormats?.purchased?.format || '';
-                            return {
-                              ...prev,
-                              sourceSpecificFormats: {
-                                ...prev.sourceSpecificFormats || {},
-                                purchased: {
-                                  ...(prev.sourceSpecificFormats?.purchased || {}),
-                                  format: currentFormat ? currentFormat + '-{PREFIX}' : '{PREFIX}'
-                                }
-                              }
-                            }
-                          })}
-                          className={isMobile ? 'text-xs' : 'text-sm'}
-                        >
-                          + Prefix
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setSettings(prev => {
-                            const currentFormat = prev.sourceSpecificFormats?.purchased?.format || '';
-                            return {
-                              ...prev,
-                              sourceSpecificFormats: {
-                                ...prev.sourceSpecificFormats || {},
-                                purchased: {
-                                  ...(prev.sourceSpecificFormats?.purchased || {}),
-                                  format: currentFormat ? currentFormat + '-{YEAR}' : '{YEAR}'
-                                }
-                              }
-                            }
-                          })}
-                          className={isMobile ? 'text-xs' : 'text-sm'}
-                        >
-                          + Year
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setSettings(prev => {
-                            const currentFormat = prev.sourceSpecificFormats?.purchased?.format || '';
-                            return {
-                              ...prev,
-                              sourceSpecificFormats: {
-                                ...prev.sourceSpecificFormats || {},
-                                purchased: {
-                                  ...(prev.sourceSpecificFormats?.purchased || {}),
-                                  format: currentFormat ? currentFormat + '-{MONTH:2}' : '{MONTH:2}'
-                                }
-                              }
-                            }
-                          })}
-                          className={isMobile ? 'text-xs' : 'text-sm'}
-                        >
-                          + Month
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setSettings(prev => {
-                            const currentFormat = prev.sourceSpecificFormats?.purchased?.format || '';
-                            return {
-                              ...prev,
-                              sourceSpecificFormats: {
-                                ...prev.sourceSpecificFormats || {},
-                                purchased: {
-                                  ...(prev.sourceSpecificFormats?.purchased || {}),
-                                  format: currentFormat ? currentFormat + '-{NUMBER:3}' : '{NUMBER:3}'
-                                }
-                              }
-                            }
-                          })}
-                          className={isMobile ? 'text-xs' : 'text-sm'}
-                        >
-                          + Number
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div className="p-3 bg-white rounded border">
-                      <p className="text-xs text-gray-600 mb-2">Preview:</p>
-                      <p className="font-mono text-sm text-purple-700 bg-purple-50 p-2 rounded">
-                        {generateTagPreview(
-                          settings.sourceSpecificFormats?.purchased?.prefix || 'PUR',
-                          settings.sourceSpecificFormats?.purchased?.format,
-                          settings.sourceSpecificFormats?.purchased?.startNumber || 1,
-                          settings.customAttributes
-                        )}
-                      </p>
-                    </div>
+                  <div>
+                    <Label>Days at Target Intake Before Weaning</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max="7"
+                      value={safeIntValue(calfSettings.weaningDaysAtStarterIntake, 3)}
+                      onChange={(e) => setCalfSettings(prev => ({
+                        ...prev,
+                        weaningDaysAtStarterIntake: safeParseInt(e.target.value, 3)
+                      }))}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Example: "Wean when eating 1.5kg starter/day for 3 days"</p>
                   </div>
                 </div>
               )}
-            </div>
-          )}
 
-          {/* Custom Format Configuration - Full Width */}
-          {settings.tagNumbering === 'custom' && !settings.useSourceSpecificFormats && (
-            <div className={`p-4 bg-gray-50 rounded-lg space-y-3 ${isMobile ? 'text-sm' : ''}`}>
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <Label className="text-sm font-medium">Custom Format Pattern</Label>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => resetCustomFormat()}
-                    className="text-xs text-gray-600 hover:text-gray-800"
-                  >
-                    <RotateCcw className="h-3 w-3 mr-1" />
-                    Reset Format
-                  </Button>
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div className="flex items-center space-x-2">
+                  <Badge className="bg-green-100 text-green-800">Smart Logic</Badge>
+                  <span className="text-sm text-gray-700">Enable smart weaning recommendations</span>
                 </div>
-                <Input
-                  placeholder="e.g., {PREFIX}-{YEAR}-{BREED_GROUP:2}-{NUMBER:3}"
-                  value={settings.customFormat || ''}
-                  onChange={(e) => setSettings(prev => ({ ...prev, customFormat: e.target.value }))}
+                <Switch
+                  checked={calfSettings.enableSmartWeaningLogic}
+                  onCheckedChange={(checked) => setCalfSettings(prev => ({
+                    ...prev,
+                    enableSmartWeaningLogic: checked
+                  }))}
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  Available placeholders: {'{PREFIX}'}, {'{YEAR}'}, {'{MONTH}'}
-                  {settings.customAttributes.length > 0 && (
-                    <span>
-                      , {settings.customAttributes.map(attr =>
-                        `{${attr.name.toUpperCase().replace(/\s+/g, '_')}:X}`
-                      ).join(', ')}
-                    </span>
-                  )}
-                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Weight Measurement Plan */}
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>Weight Measurement Schedule</CardTitle>
+              <CardDescription>Define how frequently calves should be weighed</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                <div>
+                  <Label>Measurement Frequency</Label>
+                  <Select
+                    value={calfSettings.weightMeasurementFrequency}
+                    onValueChange={(value) => setCalfSettings(prev => ({
+                      ...prev,
+                      weightMeasurementFrequency: value
+                    }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="daily">Daily</SelectItem>
+                      <SelectItem value="weekly">Weekly</SelectItem>
+                      <SelectItem value="bi-weekly">Bi-Weekly</SelectItem>
+                      <SelectItem value="custom">Custom</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {calfSettings.weightMeasurementFrequency === 'custom' && (
+                  <div>
+                    <Label>Days Between Measurements</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={safeIntValue(calfSettings.customMeasurementDays, 7)}
+                      onChange={(e) => setCalfSettings(prev => ({
+                        ...prev,
+                        customMeasurementDays: safeParseInt(e.target.value, 7)
+                      }))}
+                    />
+                  </div>
+                )}
               </div>
 
-              {/* Quick Format Builder */}
-              <div className="p-3 bg-white rounded border">
-                <div className="flex items-center justify-between mb-2">
-                  <Label className="text-sm font-medium">Quick Format Builder</Label>
-                  <div className="flex items-center space-x-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => clearCustomFormat()}
-                      className="text-xs text-red-600 hover:text-red-700"
-                    >
-                      <X className="h-3 w-3 mr-1" />
-                      Clear All
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => resetCustomFormat()}
-                      className="text-xs text-blue-600 hover:text-blue-700"
-                    >
-                      <RotateCcw className="h-3 w-3 mr-1" />
-                      Reset
-                    </Button>
+              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-start space-x-2">
+                  <Info className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                  <div className="text-sm text-blue-800">
+                    <p className="font-medium mb-1">Weight Tracking Benefits:</p>
+                    <ul className="list-disc list-inside space-y-1 text-xs">
+                      <li>Automated alerts for below-target growth</li>
+                      <li>Health issue early detection</li>
+                      <li>Optimal weaning timing</li>
+                    </ul>
                   </div>
                 </div>
+              </div>
+            </CardContent>
+          </Card>
 
-                <div className={`grid gap-2 ${isMobile ? 'grid-cols-2' : 'grid-cols-2 md:grid-cols-4'}`}>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => appendToFormat('{PREFIX}')}
-                    className={isMobile ? 'text-xs' : ''}
-                  >
-                    + Prefix
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => appendToFormat('{YEAR}')}
-                    className={isMobile ? 'text-xs' : ''}
-                  >
-                    + Year
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => appendToFormat('{MONTH:2}')}
-                    className={isMobile ? 'text-xs' : ''}
-                  >
-                    + Month
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => appendToFormat('{NUMBER:3}')}
-                    className={isMobile ? 'text-xs' : ''}
-                  >
-                    + Number
-                  </Button>
-
-                  {/* Dynamic buttons for custom attributes */}
-                  {settings.customAttributes.slice(0, 4).map((attr, index) => (
-                    <Button
-                      key={index}
-                      variant="outline"
-                      size="sm"
-                      onClick={() => appendToFormat(`{${attr.name.toUpperCase().replace(/\s+/g, '_')}:2}`)}
-                      className="text-xs"
-                    >
-                      + {attr.name}
-                    </Button>
-                  ))}
+          {/* Growth & Weight Expectations */}
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle className="flex items-center space-x-2">
+                <Truck className="w-5 h-5" />
+                <span>Growth & Weight Expectations</span>
+              </CardTitle>
+              <CardDescription>Define birth weight standards and growth targets</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                <div>
+                  <Label>Global Birth Weight (kg)</Label>
+                  <Input
+                    type="number"
+                    step="0.5"
+                    value={safeNumericValue(calfSettings.birthWeightStandards.global, 40)}
+                    onChange={(e) => setCalfSettings(prev => ({
+                      ...prev,
+                      birthWeightStandards: {
+                        ...prev.birthWeightStandards,
+                        global: safeParseNumber(e.target.value, 40)
+                      }
+                    }))}
+                  />
                 </div>
+                <div>
+                  <Label>
+                    Expected Weight Gain (kg/
+                    {calfSettings.weightMeasurementFrequency === 'daily' && 'day'}
+                    {calfSettings.weightMeasurementFrequency === 'weekly' && 'week'}
+                    {calfSettings.weightMeasurementFrequency === 'bi-weekly' && '14-days'}
+                    {calfSettings.weightMeasurementFrequency === 'custom' && `${calfSettings.customMeasurementDays}-days`}
+                    )
+                  </Label>
+                  <Input
+                    type="number"
+                    step="0.05"
+                    value={safeNumericValue(calfSettings.expectedDailyGain, 0.65)}
+                    onChange={(e) => setCalfSettings(prev => ({
+                      ...prev,
+                      expectedDailyGain: safeParseNumber(e.target.value, 0.65)
+                    }))}
+                    placeholder={
+                      calfSettings.weightMeasurementFrequency === 'daily'
+                        ? 'e.g., 0.65 kg/day'
+                        : calfSettings.weightMeasurementFrequency === 'weekly'
+                          ? 'e.g., 4.5 kg/week'
+                          : calfSettings.weightMeasurementFrequency === 'bi-weekly'
+                            ? 'e.g., 9.0 kg/14-days'
+                            : `e.g., ${(0.65 * safeParseInt(calfSettings.customMeasurementDays, 7)).toFixed(1)} kg/${calfSettings.customMeasurementDays}-days`
+                    }
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {calfSettings.weightMeasurementFrequency === 'daily' && 'Expected daily weight gain (0.5-0.8 kg/day typical)'}
+                    {calfSettings.weightMeasurementFrequency === 'weekly' && 'Expected weekly weight gain (3.5-5.6 kg/week typical)'}
+                    {calfSettings.weightMeasurementFrequency === 'bi-weekly' && 'Expected bi-weekly weight gain (7.0-11.2 kg/14-days typical)'}
+                    {calfSettings.weightMeasurementFrequency === 'custom' && `Expected weight gain per ${calfSettings.customMeasurementDays}-day period`}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
-                <div className="mt-2 text-xs text-gray-500">
-                  Current format: <code className="bg-gray-100 px-1 rounded">
-                    {settings.customFormat || '{PREFIX}-{NUMBER:3}'}
-                  </code>
+          {/* Colostrum Management */}
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>🥛 Colostrum Management</CardTitle>
+              <CardDescription>Critical first feeding configuration</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                <div>
+                  <Label>First Feeding Within (hours)</Label>
+                  <Input
+                    type="number"
+                    min="0.5"
+                    max="6"
+                    step="0.5"
+                    value={safeNumericValue(calfSettings.colostrumFirstFeedingHours, 2)}
+                    onChange={(e) => setCalfSettings(prev => ({
+                      ...prev,
+                      colostrumFirstFeedingHours: safeParseNumber(e.target.value, 2)
+                    }))}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Recommended: Within 2 hours of birth</p>
+                </div>
+                <div>
+                  <Label>Quantity per Feeding (liters)</Label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    value={safeNumericValue(calfSettings.colostrumQuantityPerFeeding, 2)}
+                    onChange={(e) => setCalfSettings(prev => ({
+                      ...prev,
+                      colostrumQuantityPerFeeding: safeParseNumber(e.target.value, 2)
+                    }))}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Recommended: 2-3 liters per feeding</p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 <div>
-                  <Label className="text-sm">Starting Number</Label>
+                  <Label>Daily Feedings (first 3 days)</Label>
                   <Input
                     type="number"
                     min="1"
-                    value={settings.customStartNumber || 1}
-                    onChange={(e) => setSettings(prev => ({ ...prev, customStartNumber: parseInt(e.target.value) }))}
+                    max="6"
+                    value={safeIntValue(calfSettings.colostrumFeedingFrequency, 3)}
+                    onChange={(e) => setCalfSettings(prev => ({
+                      ...prev,
+                      colostrumFeedingFrequency: safeParseInt(e.target.value, 3)
+                    }))}
                   />
+                  <p className="text-xs text-gray-500 mt-1">Recommended: 3 times daily</p>
                 </div>
-
-                {/* Include Year switch remains the same */}
-                <div className="flex flex-col justify-end">
-                  <div className="flex items-center justify-between p-3 border rounded-lg bg-white">
-                    <Label className="text-sm font-medium">Include Year</Label>
-                    <Switch
-                      checked={settings.includeYearInTag || false}
-                      onCheckedChange={(checked) => {
-                        setSettings(prev => {
-                          let newFormat = prev.customFormat || '{PREFIX}-{NUMBER:3}'
-
-                          if (checked) {
-                            if (!newFormat.includes('{YEAR}')) {
-                              newFormat = newFormat.replace('{PREFIX}', '{PREFIX}-{YEAR}')
-                            }
-                          } else {
-                            newFormat = newFormat
-                              .replace('-{YEAR}', '')
-                              .replace('_{YEAR}', '')
-                              .replace('{YEAR}-', '')
-                              .replace('{YEAR}_', '')
-                              .replace('{YEAR}', '')
-                          }
-
-                          return {
-                            ...prev,
-                            includeYearInTag: checked,
-                            customFormat: newFormat
-                          }
-                        })
-                      }}
-                    />
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Auto adds/removes year
-                  </p>
-                </div>
-
-                {/* Format templates */}
                 <div>
-                  <Label className="text-sm">Quick Templates</Label>
-                  <Select
-                    value=""
-                    onValueChange={(value) => {
-                      if (value) {
-                        setSettings(prev => ({ ...prev, customFormat: value }))
-                      }
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Choose template" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="{PREFIX}-{NUMBER:3}">Simple: COW-001</SelectItem>
-                      <SelectItem value="{PREFIX}-{YEAR}-{NUMBER:3}">With Year: COW-2024-001</SelectItem>
-                      <SelectItem value="{PREFIX}-{MONTH:2}-{NUMBER:2}">Monthly: COW-01-01</SelectItem>
-                      {settings.customAttributes.length > 0 && (
-                        <>
-                          <SelectItem value={`{PREFIX}-{${settings.customAttributes[0].name.toUpperCase().replace(/\s+/g, '_')}:2}-{NUMBER:3}`}>
-                            With {settings.customAttributes[0].name}
-                          </SelectItem>
-                          {settings.customAttributes.length > 1 && (
-                            <SelectItem value={`{PREFIX}-{${settings.customAttributes[0].name.toUpperCase().replace(/\s+/g, '_')}:1}{${settings.customAttributes[1].name.toUpperCase().replace(/\s+/g, '_')}:1}-{NUMBER:3}`}>
-                              Multi-Attribute
-                            </SelectItem>
-                          )}
-                        </>
-                      )}
-                    </SelectContent>
-                  </Select>
+                  <Label>Colostrum Duration (days)</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="7"
+                    value={safeIntValue(calfSettings.colostrumDurationDays, 3)}
+                    onChange={(e) => setCalfSettings(prev => ({
+                      ...prev,
+                      colostrumDurationDays: safeParseInt(e.target.value, 3)
+                    }))}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Recommended: 3 days</p>
                 </div>
               </div>
 
-              {/* Enhanced Preview */}
-              <div className="p-3 bg-white rounded border">
-                <Label className="text-xs text-gray-600 mb-2 block">Preview Examples:</Label>
-                <div className="space-y-1">
-                  {[1, 2, 3].map(num => (
-                    <div key={num} className="font-mono text-sm text-gray-800">
-                      {generateTagPreview(
-                        settings.tagPrefix,
-                        settings.customFormat,
-                        (settings.customStartNumber || 1) + num - 1,
-                        settings.customAttributes
-                      )}
-                    </div>
-                  ))}
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div className="flex items-center space-x-2">
+                  <Badge className="bg-green-100 text-green-800">Best Practice</Badge>
+                  <span className="text-sm text-gray-700">Track colostrum quality</span>
                 </div>
+                <Switch
+                  checked={calfSettings.enableColostrumQualityTracking}
+                  onCheckedChange={(checked) => setCalfSettings(prev => ({
+                    ...prev,
+                    enableColostrumQualityTracking: checked
+                  }))}
+                />
               </div>
+            </CardContent>
+          </Card>
 
-              {/* Format validation and tips */}
-              <div className="text-xs text-gray-600">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <div className="font-medium mb-1">Available Placeholders:</div>
-                    <div className="space-y-1 ml-2">
-                      <div>• <code>{'{PREFIX}'}</code> → Your tag prefix</div>
-                      <div>• <code>{'{YEAR}'}</code> → 2024 | <code>{'{YEAR:2}'}</code> → 24</div>
-                      <div>• <code>{'{MONTH}'}</code> → 01-12 | <code>{'{MONTH:1}'}</code> → 1-12</div>
-                      <div>• <code>{'{NUMBER:X}'}</code> → Padded numbers</div>
-                      {settings.customAttributes.map(attr => (
-                        <div key={attr.name}>
-                          • <code>{`{${attr.name.toUpperCase().replace(/\s+/g, '_')}:X}`}</code> → {attr.values[0].substring(0, 2).toUpperCase()}...
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="font-medium mb-1">Tips:</div>
-                    <div className="space-y-1 ml-2">
-                      <div>• Use :X to specify character length</div>
-                      <div>• First attribute value is used in previews</div>
-                      <div>• Keep total tag length under 20 characters</div>
-                      <div>• Use Reset button if format gets messy</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-
-
-          {/* Barcode Compatible Configuration */}
-          {settings.tagNumbering === 'barcode' && (
-            <div className="p-4 bg-gray-50 rounded-lg space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+          {/* Milk Feeding Plan */}
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>🍼 Milk Feeding Plan</CardTitle>
+              <CardDescription>Pre-weaning milk management</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                {/* <div>
+                  <Label>Daily Milk Quantity (liters)</Label>
+                  <Input
+                    type="number"
+                    step="0.5"
+                    value={calfSettings.milkQuantityPerDay}
+                    onChange={(e) => setCalfSettings(prev => ({
+                      ...prev,
+                      milkQuantityPerDay: parseFloat(e.target.value)
+                    }))}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Typical range: 6-10 liters/day</p>
+                </div> */}
                 <div>
-                  <Label className="text-sm">Barcode Type</Label>
+                  <Label>Milk Adjustment Period</Label>
                   <Select
-                    value={settings.barcodeType || 'code128'}
-                    onValueChange={(value) => {
-                      setSettings(prev => {
-                        // Auto-adjust settings based on barcode type
-                        let newSettings = { ...prev, barcodeType: value }
-
-                        switch (value) {
-                          case 'ean13':
-                            newSettings.barcodeLength = 13
-                            newSettings.includeCheckDigit = true
-                            newSettings.paddingZeros = true
-                            break
-                          case 'upc':
-                            newSettings.barcodeLength = 12
-                            newSettings.includeCheckDigit = true
-                            newSettings.paddingZeros = true
-                            break
-                          case 'code39':
-                            // Code 39 has character limitations
-                            newSettings.barcodeLength = Math.min(newSettings.barcodeLength || 8, 15)
-                            break
-                          case 'code128':
-                          default:
-                            // Most flexible, keep current settings
-                            break
-                        }
-
-                        return newSettings
-                      })
-                    }}
+                    value={calfSettings.milkAdjustmentPeriod}
+                    onValueChange={(value) => setCalfSettings(prev => ({
+                      ...prev,
+                      milkAdjustmentPeriod: value
+                    }))}
                   >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="code128">Code 128 (Alphanumeric)</SelectItem>
-                      <SelectItem value="code39">Code 39 (Basic)</SelectItem>
-                      <SelectItem value="ean13">EAN-13 (Numeric only)</SelectItem>
-                      <SelectItem value="upc">UPC-A (Numeric only)</SelectItem>
+                      <SelectItem value="daily">Daily</SelectItem>
+                      <SelectItem value="weekly">Weekly (7 days)</SelectItem>
+                      <SelectItem value="bi-weekly">Bi-Weekly (14 days)</SelectItem>
+                      <SelectItem value="custom">Custom Days</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
 
+              {calfSettings.milkAdjustmentPeriod === 'custom' && (
                 <div>
-                  <Label className="text-sm">Number Length</Label>
-                  <Select
-                    value={settings.barcodeLength?.toString() || '8'}
-                    onValueChange={(value) => setSettings(prev => ({ ...prev, barcodeLength: parseInt(value) }))}
-                    disabled={settings.barcodeType === 'ean13' || settings.barcodeType === 'upc'}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {settings.barcodeType === 'ean13' ? (
-                        <SelectItem value="13">13 digits (Fixed)</SelectItem>
-                      ) : settings.barcodeType === 'upc' ? (
-                        <SelectItem value="12">12 digits (Fixed)</SelectItem>
-                      ) : (
-                        <>
-                          <SelectItem value="6">6 digits</SelectItem>
-                          <SelectItem value="8">8 digits</SelectItem>
-                          <SelectItem value="10">10 digits</SelectItem>
-                          <SelectItem value="12">12 digits</SelectItem>
-                          {settings.barcodeType === 'code128' && <SelectItem value="15">15 digits</SelectItem>}
-                        </>
-                      )}
-                    </SelectContent>
-                  </Select>
-                  {(settings.barcodeType === 'ean13' || settings.barcodeType === 'upc') && (
-                    <p className="text-xs text-gray-500 mt-1">Fixed length for {settings.barcodeType.toUpperCase()}</p>
-                  )}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Include Check Digit Switch */}
-                <div className="flex items-center justify-between p-3 border rounded-lg bg-white">
-                  <div className="flex flex-col">
-                    <Label className="text-sm font-medium">Include Check Digit</Label>
-                    <p className="text-xs text-gray-500">
-                      {settings.barcodeType === 'ean13' || settings.barcodeType === 'upc'
-                        ? 'Required for this barcode type'
-                        : 'Adds error detection capability'
-                      }
-                    </p>
-                  </div>
-                  <Switch
-                    checked={settings.includeCheckDigit || settings.barcodeType === 'ean13' || settings.barcodeType === 'upc'}
-                    onCheckedChange={(checked) => {
-                      // Force check digit for EAN13 and UPC
-                      if (settings.barcodeType === 'ean13' || settings.barcodeType === 'upc') return
-                      setSettings(prev => ({ ...prev, includeCheckDigit: checked }))
-                    }}
-                    disabled={settings.barcodeType === 'ean13' || settings.barcodeType === 'upc'}
+                  <Label>Custom Period (days)</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={safeIntValue(calfSettings.customMilkAdjustmentDays, 7)}
+                    onChange={(e) => setCalfSettings(prev => ({
+                      ...prev,
+                      customMilkAdjustmentDays: safeParseInt(e.target.value, 7)
+                    }))}
                   />
-                </div>
-
-                {/* Leading Zeros Switch */}
-                <div className="flex items-center justify-between p-3 border rounded-lg bg-white">
-                  <div className="flex flex-col">
-                    <Label className="text-sm font-medium">Leading Zeros</Label>
-                    <p className="text-xs text-gray-500">
-                      {settings.barcodeType === 'ean13' || settings.barcodeType === 'upc'
-                        ? 'Required for proper scanning'
-                        : 'Pads numbers with zeros (001 vs 1)'
-                      }
-                    </p>
-                  </div>
-                  <Switch
-                    checked={settings.paddingZeros ?? true}
-                    onCheckedChange={(checked) => {
-                      // Force padding for EAN13 and UPC
-                      if (settings.barcodeType === 'ean13' || settings.barcodeType === 'upc') return
-                      setSettings(prev => ({ ...prev, paddingZeros: checked }))
-                    }}
-                    disabled={settings.barcodeType === 'ean13' || settings.barcodeType === 'upc'}
-                  />
-                </div>
-              </div>
-
-              {/* Enhanced Barcode Preview with validation */}
-              <div className="p-3 bg-white rounded border">
-                <Label className="text-xs text-gray-600 mb-2 block">Barcode Preview Examples:</Label>
-                <div className="space-y-2">
-                  {[1, 2, 3].map(num => {
-                    const preview = generateBarcodePreview(
-                      settings.tagPrefix,
-                      settings.barcodeType,
-                      settings.barcodeLength,
-                      settings.paddingZeros,
-                      settings.includeCheckDigit,
-                      num
-                    )
-                    return (
-                      <div key={num} className="flex items-center justify-between">
-                        <span className="font-mono text-sm text-gray-800">{preview.display}</span>
-                        {preview.isValid ? (
-                          <span className="text-xs text-green-600">✓ Valid</span>
-                        ) : (
-                          <span className="text-xs text-red-600">⚠ Check format</span>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {/* Dynamic Barcode Guidance */}
-              <div className="text-xs text-gray-600 space-y-2">
-                <div className="font-medium">Barcode Guidelines for {settings.barcodeType?.toUpperCase()}:</div>
-                <div className="ml-2 space-y-1">
-                  {settings.barcodeType === 'code128' && (
-                    <>
-                      <div>• Most versatile: supports letters, numbers, and symbols</div>
-                      <div>• Variable length: 1-48 characters recommended</div>
-                      <div>• Best for: complex identification with alphanumeric data</div>
-                    </>
-                  )}
-                  {settings.barcodeType === 'code39' && (
-                    <>
-                      <div>• Basic format: supports A-Z, 0-9, and limited symbols</div>
-                      <div>• Variable length: up to 43 characters</div>
-                      <div>• Best for: simple numeric or basic alphanumeric codes</div>
-                    </>
-                  )}
-                  {settings.barcodeType === 'ean13' && (
-                    <>
-                      <div>• International retail standard: exactly 13 digits</div>
-                      <div>• First 3 digits: country/manufacturer code</div>
-                      <div>• Last digit: automatically calculated check digit</div>
-                      <div>• Best for: retail products and inventory</div>
-                    </>
-                  )}
-                  {settings.barcodeType === 'upc' && (
-                    <>
-                      <div>• North American retail standard: exactly 12 digits</div>
-                      <div>• First digit: number system (usually 0-9)</div>
-                      <div>• Last digit: automatically calculated check digit</div>
-                      <div>• Best for: US/Canada retail operations</div>
-                    </>
-                  )}
-                  <div>• Test scan sample tags before bulk printing</div>
-                  <div>• Ensure your scanner supports {settings.barcodeType?.toUpperCase()}</div>
-                </div>
-              </div>
-
-              {/* Validation warnings */}
-              {getValidationWarnings(settings).length > 0 && (
-                <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                  <div className="flex items-start space-x-2">
-                    <AlertTriangle className="h-4 w-4 text-yellow-600 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <div className="text-sm font-medium text-yellow-800">Configuration Warnings:</div>
-                      <ul className="text-xs text-yellow-700 mt-1 space-y-1">
-                        {getValidationWarnings(settings).map((warning, index) => (
-                          <li key={index}>• {warning}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
                 </div>
               )}
-            </div>
-          )}
 
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <Camera className="h-4 w-4" />
-              <Label>Photo Identification</Label>
-            </div>
-            <Switch
-              checked={settings.enablePhotoTags}
-              onCheckedChange={(checked) => setSettings(prev => ({ ...prev, enablePhotoTags: checked }))}
-            />
-          </div>
+              
 
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <Palette className="h-4 w-4" />
-              <div>
-                <Label>Color Coding System</Label>
-                <p className="text-xs text-gray-500">Visual status indicators for quick animal identification</p>
-              </div>
-            </div>
-            <Switch
-              checked={settings.enableColorCoding}
-              onCheckedChange={(checked) => setSettings(prev => ({ ...prev, enableColorCoding: checked }))}
-            />
-          </div>
+              {/* Milk Adjustment Schedule */}
+              <div className="border-t pt-6">
+                <h3 className="font-semibold text-gray-900 mb-4 flex items-center space-x-2">
+                  <span>📊 Milk Adjustment Schedule</span>
+                  <Badge className="bg-blue-100 text-blue-800 text-xs">Editable</Badge>
+                </h3>
+                
+                <div className="bg-gray-50 rounded-lg overflow-hidden border border-gray-200">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gradient-to-r from-gray-100 to-gray-50 border-b-2 border-gray-300">
+                        <tr>
+                          <th className="px-4 py-3 text-left font-semibold text-gray-900">Period</th>
+                          <th className="px-4 py-3 text-left font-semibold text-gray-900">Days Range</th>
+                          <th className="px-4 py-3 text-center font-semibold text-gray-900">Daily Milk</th>
+                          <th className="px-4 py-3 text-center font-semibold text-gray-900">Feedings</th>
+                          <th className="px-4 py-3 text-center font-semibold text-gray-900">Per Feeding</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(() => {
+                          if (!calfSettings.milkAdjustmentSchedule || calfSettings.milkAdjustmentSchedule.length === 0) {
+                            return (
+                              <tr>
+                                <td colSpan={5} className="px-3 py-8 text-center text-gray-500">
+                                  No schedule periods configured
+                                </td>
+                              </tr>
+                            )
+                          }
 
-          {/* Static Color Categories Display */}
-          <div className="ml-6 p-4 bg-gray-50 rounded-lg">
-            <div className="flex items-center justify-between mb-4">
-              <Label className="text-sm font-medium">Standard Color Categories</Label>
-              <div className="text-xs text-gray-500">
-                {settings.enableColorCoding ? 'Active' : 'Disabled'}
-              </div>
-            </div>
+                          return calfSettings.milkAdjustmentSchedule.map((item, idx) => {
+                            // Safe calculation with NaN handling
+                            const dailyMilkValue = typeof item.dailyMilk === 'number' && !isNaN(item.dailyMilk) ? item.dailyMilk : 0
+                            const feedingsPerDayValue = typeof item.feedingsPerDay === 'number' && !isNaN(item.feedingsPerDay) ? item.feedingsPerDay : 1
+                            
+                            // Prevent division by zero and NaN
+                            let perFeedingValue = '—'
+                            if (feedingsPerDayValue > 0 && dailyMilkValue >= 0) {
+                              const calculated = dailyMilkValue / feedingsPerDayValue
+                              perFeedingValue = isNaN(calculated) ? '—' : calculated.toFixed(2)
+                            }
+                            
+                            const periodLabel = calfSettings.milkAdjustmentPeriod === 'daily' ? `Day ${item.periodNum}` : `Week ${item.periodNum}`
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {colorOptions.map((color, index) => (
-                <div key={index} className={`flex items-center justify-between p-3 rounded-lg border transition-all ${settings.enableColorCoding
-                  ? 'bg-white border-gray-200'
-                  : 'bg-gray-100 border-gray-100'
-                  }`}>
-                  <div className="flex items-center space-x-3">
-                    <div className={`w-5 h-5 ${color.color} rounded-full ${settings.enableColorCoding ? '' : 'opacity-50'
-                      }`}></div>
-                    <div>
-                      <div className={`text-sm font-medium ${settings.enableColorCoding ? 'text-gray-900' : 'text-gray-500'
-                        }`}>
-                        {color.name}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {color.description}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Status indicator for each color */}
-                  <div className={`text-xs px-2 py-1 rounded-full ${settings.enableColorCoding
-                    ? 'bg-green-100 text-green-700'
-                    : 'bg-gray-200 text-gray-500'
-                    }`}>
-                    {settings.enableColorCoding ? 'Available' : 'Disabled'}
+                            return (
+                              <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50 hover:bg-gray-100'}>
+                                <td className="px-4 py-3 text-gray-900 font-medium whitespace-nowrap">{periodLabel}</td>
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center justify-center gap-0.5">
+                                    <div className="flex flex-col items-center">
+                                      <Input
+                                        type="number"
+                                        min="1"
+                                        max={calfSettings.weaningAge}
+                                        value={item.startDay + 1}
+                                        onChange={(e) => {
+                                          const newStartDay = Math.max(0, safeParseInt(e.target.value, item.startDay + 1) - 1)
+                                          setCalfSettings(prev => ({
+                                            ...prev,
+                                            milkAdjustmentSchedule: prev.milkAdjustmentSchedule.map((s, i) =>
+                                              i === idx ? { ...s, startDay: Math.min(newStartDay, s.endDay) } : s
+                                            )
+                                          }))
+                                        }}
+                                        className="w-12 px-1 py-1 text-center border border-gray-300 rounded text-xs font-medium"
+                                      />
+                                      <span className="text-xs text-gray-400 mt-0.5">Start</span>
+                                    </div>
+                                    <span className="text-gray-400 font-medium">–</span>
+                                    <div className="flex flex-col items-center">
+                                      <Input
+                                        type="number"
+                                        min="1"
+                                        max={calfSettings.weaningAge}
+                                        value={item.endDay + 1}
+                                        onChange={(e) => {
+                                          const newEndDay = Math.max(0, Math.min(calfSettings.weaningAge - 1, safeParseInt(e.target.value, item.endDay + 1) - 1))
+                                          setCalfSettings(prev => ({
+                                            ...prev,
+                                            milkAdjustmentSchedule: prev.milkAdjustmentSchedule.map((s, i) =>
+                                              i === idx ? { ...s, endDay: Math.max(s.startDay, newEndDay) } : s
+                                            )
+                                          }))
+                                        }}
+                                        className="w-12 px-1 py-1 text-center border border-gray-300 rounded text-xs font-medium"
+                                      />
+                                      <span className="text-xs text-gray-400 mt-0.5">End</span>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center justify-center">
+                                    <Input
+                                      type="number"
+                                      step="0.5"
+                                      min="0"
+                                      max="20"
+                                      value={dailyMilkValue === 0 && item.dailyMilk !== 0 ? '' : dailyMilkValue}
+                                      onChange={(e) => {
+                                        const val = e.target.value === '' ? 0 : parseFloat(e.target.value)
+                                        setCalfSettings(prev => ({
+                                          ...prev,
+                                          milkAdjustmentSchedule: prev.milkAdjustmentSchedule.map((s, i) =>
+                                            i === idx ? { ...s, dailyMilk: isNaN(val) ? 0 : val } : s
+                                          )
+                                        }))
+                                      }}
+                                      placeholder="0"
+                                      className="w-16 px-2 py-2 text-center border border-gray-300 rounded text-sm font-medium"
+                                    />
+                                    <span className="text-xs text-gray-500 font-medium -ml-1 px-1">L</span>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center justify-center">
+                                    <Input
+                                      type="number"
+                                      min="1"
+                                      max="6"
+                                      value={feedingsPerDayValue === 1 && item.feedingsPerDay !== 1 ? '' : feedingsPerDayValue}
+                                      onChange={(e) => {
+                                        const val = e.target.value === '' ? 1 : parseInt(e.target.value)
+                                        setCalfSettings(prev => ({
+                                          ...prev,
+                                          milkAdjustmentSchedule: prev.milkAdjustmentSchedule.map((s, i) =>
+                                            i === idx ? { ...s, feedingsPerDay: isNaN(val) || val < 1 ? 1 : val } : s
+                                          )
+                                        }))
+                                      }}
+                                      placeholder="1"
+                                      className="w-14 px-2 py-2 text-center border border-gray-300 rounded text-sm font-medium"
+                                    />
+                                    <span className="text-xs text-gray-500 font-medium -ml-1 px-1">x/day</span>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 text-center">
+                                  <div className="text-sm font-semibold text-gray-900 bg-blue-50 rounded px-3 py-2 min-w-16 inline-block">
+                                    {perFeedingValue === '—' ? '—' : `${perFeedingValue} L`}
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })
+                        })()}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
-              ))}
-            </div>
 
-            {/* Information footer */}
-            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-              <div className="flex items-start space-x-2">
-                <Info className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
-                <div className="text-xs text-blue-700">
-                  <div className="font-medium mb-1">Color Coding Benefits:</div>
-                  <ul className="space-y-0.5 ml-2">
-                    <li>• Quick visual identification of animal status</li>
-                    <li>• Easier herd management and decision making</li>
-                    <li>• Immediate alerts for animals needing attention</li>
-                    <li>• Streamlined workflow for farm workers</li>
+                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
+                  <p className="font-medium mb-1">📌 How to use this schedule:</p>
+                  <ul className="list-disc list-inside space-y-1 text-xs">
+                    <li>This schedule breaks your {calfSettings.weaningAge}-day weaning period into {calfSettings.milkAdjustmentPeriod === 'daily' ? 'daily' : calfSettings.milkAdjustmentPeriod === 'weekly' ? 'weekly (7-day)' : calfSettings.milkAdjustmentPeriod === 'bi-weekly' ? 'bi-weekly (14-day)' : `${calfSettings.customMilkAdjustmentDays}-day`} intervals</li>
+                    <li><strong>Edit day ranges</strong> - Adjust start and end days for each period to customize the schedule</li>
+                    <li><strong>Edit daily milk (L) for each period</strong> - Adjust based on your farm's needs</li>
+                    <li><strong>Edit feedings/day for each period</strong> - Per feeding amount auto-calculates as: Daily Milk ÷ Feedings/Day</li>
+                    <li>The final period shows remaining days if it doesn't fill a complete interval</li>
+                    <li>Changes apply immediately and persist when you save settings</li>
                   </ul>
                 </div>
               </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-      )}
+            </CardContent>
+          </Card>
 
-      {/* Coming Soon - Structured Tagging */}
-      {selectedMethod === 'structured' && (
-        <Card className="border-blue-200 bg-blue-50">
-          <CardHeader>
-            <CardTitle className="text-blue-900">Semi-Structured Tagging</CardTitle>
-            <CardDescription className="text-blue-700">Balanced approach with some automation</CardDescription>
-          </CardHeader>
-          <CardContent className="py-12 text-center">
-            <div className="flex flex-col items-center justify-center space-y-4">
-              <div className="w-16 h-16 bg-blue-200 rounded-full flex items-center justify-center">
-                <QrCode className="h-8 w-8 text-blue-600" />
-              </div>
-              <div className="space-y-2">
-                <h3 className="text-xl font-semibold text-blue-900">Coming Soon</h3>
-                <p className="text-blue-700 max-w-md">
-                  Advanced structured tagging features with hierarchical organization, batch operations, and QR code integration will be available shortly.
-                </p>
-              </div>
-              <div className="mt-6 p-4 bg-blue-100 rounded-lg max-w-md">
-                <p className="text-sm text-blue-800 font-medium mb-2">Expected Features:</p>
-                <ul className="text-sm text-blue-700 space-y-1">
-                  <li>✓ Hierarchical tag organization</li>
-                  <li>✓ Batch tagging operations</li>
-                  <li>✓ QR code generation</li>
-                  <li>✓ Smart alert configuration</li>
-                </ul>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Coming Soon - Automated/Tech-Integrated */}
-      {selectedMethod === 'automated' && (
-        <Card className="border-purple-200 bg-purple-50">
-          <CardHeader>
-            <CardTitle className="text-purple-900">Automated/Tech-Integrated Tagging</CardTitle>
-            <CardDescription className="text-purple-700">Advanced automation for large operations</CardDescription>
-          </CardHeader>
-          <CardContent className="py-12 text-center">
-            <div className="flex flex-col items-center justify-center space-y-4">
-              <div className="w-16 h-16 bg-purple-200 rounded-full flex items-center justify-center">
-                <Wifi className="h-8 w-8 text-purple-600" />
-              </div>
-              <div className="space-y-2">
-                <h3 className="text-xl font-semibold text-purple-900">Coming Soon</h3>
-                <p className="text-purple-700 max-w-md">
-                  Enterprise-grade automated tagging with RFID, NFC, GPS, and biometric identification will be available shortly.
-                </p>
-              </div>
-              <div className="mt-6 p-4 bg-purple-100 rounded-lg max-w-md">
-                <p className="text-sm text-purple-800 font-medium mb-2">Expected Features:</p>
-                <ul className="text-sm text-purple-700 space-y-1">
-                  <li>✓ RFID integration</li>
-                  <li>✓ NFC support</li>
-                  <li>✓ GPS tracking</li>
-                  <li>✓ Biometric identification</li>
-                </ul>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Structured Tagging Features */}
-      {(selectedMethod === 'structured' || selectedMethod === 'automated') && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Advanced Tagging Features</CardTitle>
-            <CardDescription>Semi-automated and structured tagging options</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <Users className="h-4 w-4" />
-                  <Label>Hierarchical Organization</Label>
+          {/* Dry Feed / Starter Introduction */}
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>🌾 Dry Feed (Starter) Introduction</CardTitle>
+              <CardDescription>Progressive starter feed implementation</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                <div>
+                  <Label>Start Age (days)</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="21"
+                    value={safeIntValue(calfSettings.starterFeedStartAge, 7)}
+                    onChange={(e) => setCalfSettings(prev => ({
+                      ...prev,
+                      starterFeedStartAge: safeParseInt(e.target.value, 7)
+                    }))}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Recommended: Day 5-7</p>
                 </div>
-                <Switch
-                  checked={settings.enableHierarchicalTags}
-                  onCheckedChange={(checked) => setSettings(prev => ({ ...prev, enableHierarchicalTags: checked }))}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <Hash className="h-4 w-4" />
-                  <Label>Batch Tagging Operations</Label>
+                <div>
+                  <Label>Initial Quantity (kg/day)</Label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    value={safeNumericValue(calfSettings.starterFeedInitialQuantity, 0.5)}
+                    onChange={(e) => setCalfSettings(prev => ({
+                      ...prev,
+                      starterFeedInitialQuantity: safeParseNumber(e.target.value, 0.5)
+                    }))}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Recommended: 0.3-0.5 kg</p>
                 </div>
-                <Switch
-                  checked={settings.enableBatchTagging}
-                  onCheckedChange={(checked) => setSettings(prev => ({ ...prev, enableBatchTagging: checked }))}
-                />
               </div>
 
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <QrCode className="h-4 w-4" />
-                  <Label>QR Code Generation</Label>
-                </div>
-                <Switch
-                  checked={settings.enableQRCodes}
-                  onCheckedChange={(checked) => setSettings(prev => ({ ...prev, enableQRCodes: checked }))}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <Zap className="h-4 w-4" />
-                  <Label>Smart Alerts</Label>
-                </div>
-                <Switch
-                  checked={settings.enableSmartAlerts}
-                  onCheckedChange={(checked) => setSettings(prev => ({ ...prev, enableSmartAlerts: checked }))}
-                />
-              </div>
-            </div>
-
-            {settings.enableQRCodes && (
-              <div className="p-4 bg-gray-50 rounded-lg">
-                <div className="flex items-center justify-between mb-3">
-                  <Label className="text-sm font-medium">QR Code Configuration</Label>
-                  <Button variant="outline" size="sm" onClick={generateQRCodes}>
-                    <Download className="h-4 w-4 mr-2" />
-                    Generate QR Codes
-                  </Button>
-                </div>
-                <Select
-                  value={settings.qrCodeSize}
-                  onValueChange={(value) => setSettings(prev => ({ ...prev, qrCodeSize: value }))}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="small">Small (2x2 cm)</SelectItem>
-                    <SelectItem value="medium">Medium (3x3 cm)</SelectItem>
-                    <SelectItem value="large">Large (4x4 cm)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Automated/Tech Features */}
-      {selectedMethod === 'automated' && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Automated Technology Integration</CardTitle>
-            <CardDescription>High-tech identification and tracking systems</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <Radio className="h-4 w-4" />
-                  <Label>RFID Integration</Label>
-                </div>
-                <Switch
-                  checked={settings.enableRFID}
-                  onCheckedChange={(checked) => setSettings(prev => ({ ...prev, enableRFID: checked }))}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <Smartphone className="h-4 w-4" />
-                  <Label>NFC Support</Label>
-                </div>
-                <Switch
-                  checked={settings.enableNFC}
-                  onCheckedChange={(checked) => setSettings(prev => ({ ...prev, enableNFC: checked }))}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <MapPin className="h-4 w-4" />
-                  <Label>GPS Tracking</Label>
-                </div>
-                <Switch
-                  checked={settings.enableGPS}
-                  onCheckedChange={(checked) => setSettings(prev => ({ ...prev, enableGPS: checked }))}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <Eye className="h-4 w-4" />
-                  <Label>Biometric Identification</Label>
-                </div>
-                <Switch
-                  checked={settings.enableBiometric}
-                  onCheckedChange={(checked) => setSettings(prev => ({ ...prev, enableBiometric: checked }))}
-                />
-              </div>
-            </div>
-
-            {settings.enableRFID && (
-              <div className="p-4 bg-gray-50 rounded-lg">
-                <Label className="text-sm font-medium mb-2 block">RFID Configuration</Label>
-                <Select
-                  value={settings.rfidFrequency}
-                  onValueChange={(value) => setSettings(prev => ({ ...prev, rfidFrequency: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="134.2khz">134.2 kHz (ISO Standard)</SelectItem>
-                    <SelectItem value="125khz">125 kHz (Basic)</SelectItem>
-                    <SelectItem value="13.56mhz">13.56 MHz (High Frequency)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            {settings.enableGPS && (
-              <div className="p-4 bg-gray-50 rounded-lg">
-                <Label className="text-sm font-medium mb-2 block">GPS Update Interval (minutes)</Label>
+              <div>
+                <Label>Target Intake Before Weaning (kg/day)</Label>
                 <Input
                   type="number"
-                  value={settings.gpsUpdateInterval}
-                  onChange={(e) => setSettings(prev => ({ ...prev, gpsUpdateInterval: parseInt(e.target.value) }))}
-                  min="5"
-                  max="120"
+                  step="0.1"
+                  value={safeNumericValue(calfSettings.starterFeedTargetBeforeWeaning, 1.5)}
+                  onChange={(e) => setCalfSettings(prev => ({
+                    ...prev,
+                    starterFeedTargetBeforeWeaning: safeParseNumber(e.target.value, 1.5)
+                  }))}
+                />
+                <p className="text-xs text-gray-500 mt-1">Recommended: 1.5-2.0 kg/day for successful weaning</p>
+              </div>
+
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div className="flex items-center space-x-2">
+                  <Badge className="bg-orange-100 text-orange-800">Gradual Process</Badge>
+                  <span className="text-sm text-gray-700">Enable gradual introduction curve</span>
+                </div>
+                <Switch
+                  checked={calfSettings.enableGradualIntroduction}
+                  onCheckedChange={(checked) => setCalfSettings(prev => ({
+                    ...prev,
+                    enableGradualIntroduction: checked
+                  }))}
                 />
               </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+            </CardContent>
+          </Card>
 
-      {/* Action Buttons */}
-      <div className={`pt-6 border-t mb-8 ${isMobile ? 'space-y-3' : 'space-y-4'}`}>
-        <div className={`flex ${isMobile ? 'flex-col space-y-2' : 'items-center justify-between'}`}>
-          <div className={`flex items-center space-x-2 ${isMobile ? 'text-xs flex-wrap gap-2' : ''}`}>
-            <Info className="h-4 w-4 text-blue-500 flex-shrink-0" />
-            <span className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>
-              Changes apply to new animals only
-            </span>
-            {hasUnsavedChanges && (
-              <div className="flex items-center space-x-1 px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs flex-shrink-0">
-                <AlertTriangle className="h-3 w-3" />
-                <span>Unsaved</span>
+          {/* Alerts Configuration */}
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>🚨 Alert & Notification Settings</CardTitle>
+              <CardDescription>Configure monitoring thresholds</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div>
+                  <p className="font-medium text-gray-900">Weight Deviation Alerts</p>
+                  <p className="text-sm text-gray-600">Alert when below target</p>
+                </div>
+                <Switch
+                  checked={calfSettings.enableWeightAlerts}
+                  onCheckedChange={(checked) => setCalfSettings(prev => ({
+                    ...prev,
+                    enableWeightAlerts: checked
+                  }))}
+                />
               </div>
-            )}
-          </div>
-          <div className={`flex ${isMobile ? 'w-full flex-col-reverse space-y-reverse space-y-2' : 'space-x-3'}`}>
-            <Button
-              variant="outline"
-              onClick={resetToDefaults}
-              size={isMobile ? "sm" : "default"}
-              className={`${isMobile ? 'w-full' : ''} hover:bg-red-50 hover:border-red-200 hover:text-red-700`}
-            >
-              <RotateCcw className={`${isMobile ? 'h-3 w-3' : 'h-4 w-4'} ${isMobile ? '' : 'mr-2'}`} />
-              <span className={isMobile ? "hidden" : ""}>Reset</span>
-            </Button>
-            <Button
-              onClick={handleSaveSettings}
-              disabled={isLoading}
-              size={isMobile ? "sm" : "default"}
-              className={`${isMobile ? 'w-full' : ''} ${hasUnsavedChanges ? 'bg-blue-600 hover:bg-blue-700 text-white' : ''}`}
-            >
-              <Save className={`${isMobile ? 'h-3 w-3' : 'h-4 w-4'} ${isMobile ? '' : 'mr-2'}`} />
-              <span>{isLoading ? (isMobile ? 'Saving...' : 'Saving...') : isMobile ? 'Save' : 'Save Settings'}</span>
-              {hasUnsavedChanges && (
-                <span className="ml-1 w-2 h-2 bg-white rounded-full animate-pulse"></span>
+
+              {calfSettings.enableWeightAlerts && (
+                <div className="ml-4">
+                  <Label>Deviation Threshold (%)</Label>
+                  <Input
+                    type="number"
+                    value={safeIntValue(calfSettings.weightDeviationThreshold, -10)}
+                    onChange={(e) => setCalfSettings(prev => ({
+                      ...prev,
+                      weightDeviationThreshold: safeParseInt(e.target.value, -10)
+                    }))}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Alert when weight is below {Math.abs(safeParseInt(calfSettings.weightDeviationThreshold, -10))}% of expected</p>
+                </div>
               )}
-            </Button>
+
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div>
+                  <p className="font-medium text-gray-900">Feeding Schedule Alerts</p>
+                  <p className="text-sm text-gray-600">Missed feeding notifications</p>
+                </div>
+                <Switch
+                  checked={calfSettings.enableMilkingAlerts}
+                  onCheckedChange={(checked) => setCalfSettings(prev => ({
+                    ...prev,
+                    enableMilkingAlerts: checked
+                  }))}
+                />
+              </div>
+
+              
+
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div>
+                  <p className="font-medium text-gray-900">Measurement Alerts</p>
+                  <p className="text-sm text-gray-600">Missed weight measurement reminders</p>
+                </div>
+                <Switch
+                  checked={calfSettings.enableMissedMeasurementAlerts}
+                  onCheckedChange={(checked) => setCalfSettings(prev => ({
+                    ...prev,
+                    enableMissedMeasurementAlerts: checked
+                  }))}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Action Buttons */}
+          <div className={`pt-6 border-t mb-8 ${isMobile ? 'space-y-3' : 'space-y-4'}`}>
+            <div className={`flex ${isMobile ? 'flex-col space-y-2' : 'items-center justify-between'}`}>
+              <div className={`flex items-center space-x-2 ${isMobile ? 'text-xs flex-wrap gap-2' : ''}`}>
+                <Info className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                <span className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>
+                  Calf management protocols apply to all new calves
+                </span>
+                {hasUnsavedCalfChanges && (
+                  <div className="flex items-center space-x-1 px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs flex-shrink-0">
+                    <AlertTriangle className="h-3 w-3" />
+                    Unsaved
+                  </div>
+                )}
+              </div>
+              <div className={`flex ${isMobile ? 'w-full flex-col space-y-2' : 'space-x-3'}`}>
+                <Button
+                  onClick={() => setCalfSettings({
+                    birthWeightStandards: { global: 40, byBreed: { 'holstein': 45, 'jersey': 30, 'ayrshire': 38, 'guernsey': 38 } },
+                    expectedDailyGain: 0.65,
+                    weightMeasurementFrequency: 'weekly',
+                    customMeasurementDays: 7,
+                    colostrumFirstFeedingHours: 2,
+                    colostrumQuantityPercent: 10,
+                    colostrumFeedingFrequency: 3,
+                    colostrumDurationDays: 3,
+                    colostrumQuantityPerFeeding: 2,
+                    enableColostrumQualityTracking: true,
+                    milkQuantityPerDay: 8,
+                    milkFeedingFrequency: 2,
+                    milkAdjustmentPeriod: 'weekly',
+                    customMilkAdjustmentDays: 7,
+                    enableTaperingBeforeWeaning: true,
+                    taperingDaysBeforeWeaning: 7,
+                    milkAdjustmentSchedule: [],
+                    starterFeedStartAge: 7,
+                    starterFeedInitialQuantity: 0.5,
+                    starterFeedTargetBeforeWeaning: 1.5,
+                    enableGradualIntroduction: true,
+                    weaningAge: 56,
+                    weaningType: 'fixed',
+                    weaningMinWeight: 90,
+                    weaningMinStarterIntake: 1.5,
+                    weaningDaysAtStarterIntake: 3,
+                    enableSmartWeaningLogic: true,
+                    vaccinations: [{ name: 'DF10', ageInDays: 7, frequency: 'once' }, { name: 'Pneumonia Vaccine', ageInDays: 21, frequency: 'annual' }],
+                    deworming: [{ name: 'Internal Deworming', ageInDays: 28, frequency: 'every-4-weeks' }],
+                    vitaminSupplements: [{ name: 'Vitamin A-D-E', ageInDays: 1, frequency: 'daily', until: 'weaning' }],
+                    enableWeightAlerts: true,
+                    weightDeviationThreshold: -10,
+                    enableMilkingAlerts: true,
+                    enableHealthAlerts: true,
+                    enableMissedMeasurementAlerts: true,
+                    savedProtocols: [{ id: 'intensive', name: 'Intensive Dairy System', description: 'High-quality milk feeding with early weaning', isDefault: true }, { id: 'low-cost', name: 'Low-Cost Rearing', description: 'Economical approach with extended milk feeding', isDefault: false }, { id: 'organic', name: 'Organic System', description: 'Organic feeds and natural rearing practices', isDefault: false }],
+                    selectedProtocol: 'intensive'
+                  })}
+                  variant="outline"
+                  size={isMobile ? "sm" : "default"}
+                  className={`${isMobile ? 'w-full' : ''} hover:bg-red-50 hover:border-red-200 hover:text-red-700`}
+                >
+                  <RotateCcw className={`${isMobile ? 'h-3 w-3' : 'h-4 w-4'} ${isMobile ? '' : 'mr-2'}`} />
+                  <span className={isMobile ? "hidden" : ""}>Reset</span>
+                </Button>
+                <Button
+                  onClick={handleSaveCalfSettings}
+                  disabled={isLoadingCalf}
+                  size={isMobile ? "sm" : "default"}
+                  className={`${isMobile ? 'w-full' : ''} ${hasUnsavedCalfChanges ? 'bg-blue-600 hover:bg-blue-700 text-white' : ''}`}
+                >
+                  <Save className={`${isMobile ? 'h-3 w-3' : 'h-4 w-4'} ${isMobile ? '' : 'mr-2'}`} />
+                  <span>Save Settings</span>
+                </Button>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+        </>
+      )}
 
       {/* Unsaved Changes Confirmation Dialog */}
       {confirmUnsavedDialog.show && (

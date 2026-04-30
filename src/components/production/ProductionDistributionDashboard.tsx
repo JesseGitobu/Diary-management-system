@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select'
 
 // Production components
 import { ProductionChart } from '@/components/production/ProductionChart'
@@ -195,6 +196,7 @@ export function ProductionDistributionDashboard({
   const [showProductionEditModal, setShowProductionEditModal] = useState(false)
   const [showMilkingGroupsModal, setShowMilkingGroupsModal] = useState(false)
   const [showTargetsModal, setShowTargetsModal] = useState(false)
+  const [selectedChartType, setSelectedChartType] = useState<'volume-revenue' | 'daily-volume' | 'daily-revenue' | 'performance'>('volume-revenue')
 
   useEffect(() => {
     const handleMobileNavAction = (event: Event) => {
@@ -544,7 +546,7 @@ export function ProductionDistributionDashboard({
   return (
     <div className="space-y-6 pb-20 lg:pb-0">
       {/* Header code ... */}
-      <div className={`${isMobile ? 'px-4' : ''}`}>
+      <div className={`${isMobile ? 'px-1' : ''}`}>
         <div className="flex items-center justify-between">
           <div>
             <h1 className={`${isMobile ? 'text-2xl' : 'text-3xl'} font-bold text-gray-900 flex items-center space-x-2`}>
@@ -591,7 +593,7 @@ export function ProductionDistributionDashboard({
         </div>
       </div>
 
-      <div className={`${isMobile ? 'px-4' : ''}`}>
+      <div className={`${isMobile ? 'px-1' : ''}`}>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="production">Production</TabsTrigger>
@@ -619,7 +621,7 @@ export function ProductionDistributionDashboard({
               />
             </div>
 
-            <Card className={`${isMobile ? 'mx-4' : ''}`}>
+            <Card className={`${isMobile ? 'mx-2' : ''}`}>
               <CardHeader className={`${isMobile ? 'pb-2' : ''}`}>
                 <CardTitle>Production Trends</CardTitle>
               </CardHeader>
@@ -642,7 +644,7 @@ export function ProductionDistributionDashboard({
               </CardContent>
             </Card>
 
-            <Card className={`${isMobile ? 'mx-4 mb-20' : ''}`}>
+            <Card className={`${isMobile ? 'mx-2 mb-20' : ''}`}>
               <CardHeader className={`${isMobile ? 'pb-2' : ''}`}>
                 <CardTitle>Recent Records</CardTitle>
               </CardHeader>
@@ -669,16 +671,27 @@ export function ProductionDistributionDashboard({
                 totalChannels={distributionStats.totalChannels}
               />
             </div>
-             <Card className={`${isMobile ? 'mx-4' : ''}`}>
+             <Card className={`${isMobile ? 'mx-2' : ''}`}>
                {/* Distribution Chart Content */}
-                <CardHeader>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
                   <CardTitle>Distribution Trends</CardTitle>
+                  <Select value={selectedChartType} onValueChange={(value) => setSelectedChartType(value as 'volume-revenue' | 'daily-volume' | 'daily-revenue' | 'performance')}>
+                    <SelectTrigger className="w-[200px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="volume-revenue">Volume & Revenue Trends</SelectItem>
+                      <SelectItem value="daily-volume">Daily Volume Distribution</SelectItem>
+                      <SelectItem value="daily-revenue">Daily Revenue Trend</SelectItem>
+                      <SelectItem value="performance">Distribution Performance</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </CardHeader>
                 <CardContent>
-                   <DistributionChart data={distributionStats.dailySummaries} isMobile={isMobile} />
+                   <DistributionChart data={distributionStats.dailySummaries} isMobile={isMobile} chartType={selectedChartType} />
                 </CardContent>
              </Card>
-             <Card className={`${isMobile ? 'mx-4 mb-20' : ''}`}>
+             <Card className={`${isMobile ? 'mx-2 mb-20' : ''}`}>
                 <CardHeader>
                   <CardTitle>Recent Distributions</CardTitle>
                 </CardHeader>

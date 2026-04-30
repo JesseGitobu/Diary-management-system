@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const {
-      farmId, // Accept farmId from request body
+      farmId,
       name,
       type,
       contact,
@@ -55,37 +55,86 @@ export async function POST(request: NextRequest) {
       location,
       paymentTerms,
       notes,
-      isActive
+      isActive,
+      isPaidFor,
+      // Retail specific
+      storeType,
+      customerCount,
+      retailOutlets,
+      deliveryOptions,
+      // Direct Sales specific
+      salesMethod,
+      customerType,
+      salesFrequency,
+      buyerDetails,
+      // Other specific
+      useReason,
+      customReason,
+      authorizationPerson
     } = body
 
-    // Validate required fields
-    if (!farmId || !name || !type || !contact || !pricePerLiter) {
+    // Validate required common fields
+    if (!farmId || !name || !type) {
       return NextResponse.json({ 
-        error: 'Missing required fields: farmId, name, type, contact, pricePerLiter' 
+        error: 'Missing required fields: farmId, name, type' 
       }, { status: 400 })
     }
 
     // Validate type
-    if (!['cooperative', 'processor', 'direct', 'retail'].includes(type)) {
+    if (!['cooperative', 'processor', 'direct', 'retail', 'other'].includes(type)) {
       return NextResponse.json({ 
-        error: 'Invalid type. Must be one of: cooperative, processor, direct, retail' 
+        error: 'Invalid type. Must be one of: cooperative, processor, direct, retail, other' 
+      }, { status: 400 })
+    }
+
+    // Conditional validation based on type
+    if (type !== 'other' && !contact) {
+      return NextResponse.json({ 
+        error: 'Contact is required for this channel type' 
+      }, { status: 400 })
+    }
+
+    if ((type !== 'other' || (type === 'other' && isPaidFor)) && !pricePerLiter) {
+      return NextResponse.json({ 
+        error: 'Price per liter is required for this channel type and payment status' 
       }, { status: 400 })
     }
 
     const supabase = await createServerSupabaseClient()
     
+    // Build metadata object based on channel type
+    const metadata: Record<string, any> = {}
+    
+    if (type === 'retail') {
+      metadata.storeType = storeType
+      metadata.customerCount = customerCount
+      metadata.retailOutlets = retailOutlets
+      metadata.deliveryOptions = deliveryOptions
+    } else if (type === 'direct') {
+      metadata.salesMethod = salesMethod
+      metadata.customerType = customerType
+      metadata.salesFrequency = salesFrequency
+      metadata.buyerDetails = buyerDetails
+    } else if (type === 'other') {
+      metadata.useReason = useReason
+      metadata.customReason = customReason
+      metadata.authorizationPerson = authorizationPerson
+    }
+    
     const insertData = {
       farm_id: farmId,
       name: name.trim(),
       type,
-      contact: contact.trim(),
+      contact: contact?.trim() || null,
       email: email?.trim() || null,
       contact_person: contactPerson?.trim() || null,
-      price_per_liter: parseFloat(pricePerLiter),
+      price_per_liter: pricePerLiter ? parseFloat(pricePerLiter) : null,
       location: location?.trim() || null,
-      payment_terms: paymentTerms || 'Monthly Payment',
+      payment_terms: paymentTerms || null,
       notes: notes?.trim() || null,
-      is_active: isActive !== false
+      is_active: isActive !== false,
+      is_paid_for: isPaidFor !== false,
+      metadata
     }
 
     console.log('Inserting channel data:', insertData)

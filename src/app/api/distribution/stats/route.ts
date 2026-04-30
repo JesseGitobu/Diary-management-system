@@ -30,8 +30,8 @@ export async function GET(request: NextRequest) {
         *,
         distribution_channels (
           id,
-          channel_name,
-          channel_type
+          name,
+          type
         )
       `)
       .eq('farm_id', userRole.farm_id)
@@ -102,7 +102,7 @@ export async function GET(request: NextRequest) {
     const topChannels = Array.from(channelStats.entries())
       .map(([id, stats]) => ({
         id,
-        name: stats.channelData?.channel_name || 'Unknown Channel',
+        name: stats.channelData?.name || 'Unknown Channel',
         type: stats.channelData?.type || 'direct',
         volume: stats.volume,
         revenue: stats.revenue,

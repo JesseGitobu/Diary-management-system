@@ -28,15 +28,65 @@ export async function GET(
     const { id: animalId } = await params
     
     const animal = await getAnimalById(animalId)
+    console.log('✅✅✅ [API] Animal fetched:', {
+      found: !!animal,
+      tag_number: (animal as any)?.tag_number,
+      has_current_daily_production: (animal as any)?.current_daily_production !== undefined,
+      current_daily_production_value: (animal as any)?.current_daily_production,
+      has_latest_calving: (animal as any)?.latest_calving !== undefined,
+      has_breeding_events: Array.isArray((animal as any)?.breeding_events),
+      breeding_events_count: (animal as any)?.breeding_events?.length || 0,
+    })
     
     if (!animal) {
+      console.warn('[API] ❌ Animal not found:', { animalId })
       return NextResponse.json({ error: 'Animal not found' }, { status: 404 })
     }
+    
+    console.log('[API] 🎯 HeatDetectionForm expected fields:', {
+      tag_number: (animal as any)?.tag_number,
+      name: (animal as any)?.name,
+      breed: (animal as any)?.breed,
+      production_status: (animal as any)?.production_status,
+      current_daily_production: (animal as any)?.current_daily_production,
+      latest_calving: (animal as any)?.latest_calving,
+      breeding_events: (animal as any)?.breeding_events,
+      breeding_events_count: (animal as any)?.breeding_events?.length || 0,
+    })
+    
+    console.log('[API] ========== FIELD ANALYSIS ==========')
+    console.log('[API] current_daily_production status:', {
+      value: (animal as any)?.current_daily_production,
+      isNull: (animal as any)?.current_daily_production === null,
+      type: typeof (animal as any)?.current_daily_production,
+    })
+    console.log('[API] latest_calving status:', {
+      value: (animal as any)?.latest_calving,
+      isDefined: (animal as any)?.latest_calving !== undefined,
+      hasCalvingDate: !!(animal as any)?.latest_calving?.calving_date,
+    })
+    console.log('[API] breeding_events status:', {
+      count: (animal as any)?.breeding_events?.length || 0,
+      isEmpty: (animal as any)?.breeding_events?.length === 0,
+      types: (animal as any)?.breeding_events?.map((e: any) => e.event_type) || [],
+    })
+    console.log('[API] ======================================')
+    
+    console.log('[API] 📋 Full animal object structure:', {
+      keys: Object.keys(animal as any),
+      object: animal,
+    })
     
     const response = { 
       success: true, 
       animal 
     }
+    
+    console.log('[API] ✅ Returning response:', {
+      status: 'success',
+      animalId,
+      hasAnimal: !!response.animal,
+    })
     
     return NextResponse.json(response)
     

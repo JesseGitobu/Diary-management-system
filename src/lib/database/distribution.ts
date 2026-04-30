@@ -39,8 +39,8 @@ export async function getDistributionStats(farmId: string, days: number = 30): P
         *,
         distribution_channels (
           id,
-          channel_name,
-          channel_type
+          name,
+          type
         )
       `)
       .eq('farm_id', farmId)
@@ -113,8 +113,8 @@ export async function getDistributionStats(farmId: string, days: number = 30): P
     const topChannels = Array.from(channelStats.entries())
       .map(([id, stats]) => ({
         id,
-        name: stats.channelData?.channel_name || 'Unknown Channel',
-        type: stats.channelData?.channel_type || 'direct',
+        name: stats.channelData?.name || 'Unknown Channel',
+        type: stats.channelData?.type || 'direct',
         volume: stats.volume,
         revenue: stats.revenue,
         lastDelivery: stats.lastDelivery
@@ -157,8 +157,8 @@ export async function getDistributionRecords(
         *,
         distribution_channels (
           id,
-          channel_name,
-          channel_type,
+          name,
+          type,
           contact_person
         )
       `)
@@ -195,8 +195,8 @@ export async function getDistributionRecords(
     return  (records as any[]).map(record => ({
       id: record.id,
       date: record.distribution_date,
-      channelName: record.distribution_channels?.channel_name || 'Unknown Channel',
-      channelType: record.distribution_channels?.channel_type || 'direct',
+      channelName: record.distribution_channels?.name || 'Unknown Channel',
+      channelType: record.distribution_channels?.type || 'direct',
       volume: record.quantity_distributed || record.volume,
       pricePerLiter: record.unit_price,
       totalAmount: record.total_amount,

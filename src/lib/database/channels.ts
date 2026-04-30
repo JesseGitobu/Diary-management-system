@@ -34,7 +34,7 @@ export async function getDistributionChannels(farmId: string): Promise<Distribut
     return (channels as any[])?.map(channel => ({
       id: channel.id,
       name: channel.name,
-      type: channel.channel_type,
+      type: channel.type,
       contact: channel.contact,
       email: channel.email,
       contactPerson: channel.contact_person,

@@ -28,8 +28,8 @@ export async function GET(request: NextRequest) {
         *,
         distribution_channels (
           id,
-          channel_name,
-          channel_type,
+          name,
+          type,
           contact_person
         )
       `)
@@ -134,8 +134,8 @@ export async function POST(request: NextRequest) {
         *,
         distribution_channels (
           id,
-          channel_name,
-          channel_type,
+          name,
+          type,
           contact_person
         )
       `)

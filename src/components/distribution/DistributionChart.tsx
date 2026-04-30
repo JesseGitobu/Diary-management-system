@@ -11,9 +11,10 @@ interface DistributionChartProps {
     channels: number
   }>
   isMobile: boolean
+  chartType?: 'volume-revenue' | 'daily-volume' | 'daily-revenue' | 'performance'
 }
 
-export function DistributionChart({ data, isMobile }: DistributionChartProps) {
+export function DistributionChart({ data, isMobile, chartType = 'volume-revenue' }: DistributionChartProps) {
   // Format data for charts
   const chartData = data.map(item => ({
     ...item,
@@ -70,6 +71,7 @@ export function DistributionChart({ data, isMobile }: DistributionChartProps) {
   return (
     <div className="space-y-6">
       {/* Volume and Revenue Combined Chart */}
+      {chartType === 'volume-revenue' && (
       <div>
         <h4 className={`font-medium text-gray-900 mb-3 ${isMobile ? 'text-sm' : ''}`}>
           Volume & Revenue Trends
@@ -134,8 +136,10 @@ export function DistributionChart({ data, isMobile }: DistributionChartProps) {
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+      )}
 
       {/* Daily Volume Trend */}
+      {chartType === 'daily-volume' && (
       <div>
         <h4 className={`font-medium text-gray-900 mb-3 ${isMobile ? 'text-sm' : ''}`}>
           Daily Volume Distribution
@@ -178,8 +182,10 @@ export function DistributionChart({ data, isMobile }: DistributionChartProps) {
           </AreaChart>
         </ResponsiveContainer>
       </div>
+      )}
 
       {/* Revenue Trend */}
+      {chartType === 'daily-revenue' && (
       <div>
         <h4 className={`font-medium text-gray-900 mb-3 ${isMobile ? 'text-sm' : ''}`}>
           Daily Revenue Trend
@@ -217,46 +223,10 @@ export function DistributionChart({ data, isMobile }: DistributionChartProps) {
           </LineChart>
         </ResponsiveContainer>
       </div>
-
-      {/* Channel Activity Chart */}
-      {chartData.some(d => d.channels > 0) && (
-        <div>
-          <h4 className={`font-medium text-gray-900 mb-3 ${isMobile ? 'text-sm' : ''}`}>
-            Active Channels per Day
-          </h4>
-          <ResponsiveContainer width="100%" height={isMobile ? 160 : 180}>
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis 
-                dataKey="date" 
-                tick={{ fontSize: isMobile ? 11 : 12 }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis 
-                tick={{ fontSize: isMobile ? 11 : 12 }}
-                axisLine={false}
-                tickLine={false}
-                label={{ 
-                  value: 'Channels', 
-                  angle: -90, 
-                  position: 'insideLeft',
-                  style: { textAnchor: 'middle', fontSize: isMobile ? 11 : 12 }
-                }}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              <Bar
-                dataKey="channels"
-                fill="#8b5cf6"
-                radius={[2, 2, 0, 0]}
-                name="Active Channels"
-              />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
       )}
 
       {/* Performance Indicators */}
+      {chartType === 'performance' && (
       <div>
         <h4 className={`font-medium text-gray-900 mb-3 ${isMobile ? 'text-sm' : ''}`}>
           Distribution Performance
@@ -352,6 +322,7 @@ export function DistributionChart({ data, isMobile }: DistributionChartProps) {
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+      )}
 
       {/* Summary Statistics */}
       <div className={`grid ${isMobile ? 'grid-cols-2' : 'grid-cols-4'} gap-4 pt-4 border-t border-gray-200`}>
@@ -430,18 +401,6 @@ export function DistributionChart({ data, isMobile }: DistributionChartProps) {
           })()}
         </div>
       </div>
-
-      {/* Chart Navigation for Mobile */}
-      {isMobile && (
-        <div className="flex justify-center space-x-2 pt-4">
-          <div className="flex space-x-1">
-            <div className="w-2 h-2 rounded-full bg-blue-600"></div>
-            <div className="w-2 h-2 rounded-full bg-gray-300"></div>
-            <div className="w-2 h-2 rounded-full bg-gray-300"></div>
-            <div className="w-2 h-2 rounded-full bg-gray-300"></div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

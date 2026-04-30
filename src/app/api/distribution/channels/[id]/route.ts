@@ -28,8 +28,42 @@ export async function PUT(request: NextRequest, context: any) {
       location,
       paymentTerms,
       notes,
-      isActive
+      isActive,
+      isPaidFor,
+      // Retail specific
+      storeType,
+      customerCount,
+      retailOutlets,
+      deliveryOptions,
+      // Direct Sales specific
+      salesMethod,
+      customerType,
+      salesFrequency,
+      buyerDetails,
+      // Other specific
+      useReason,
+      customReason,
+      authorizationPerson
     } = body
+
+    // Build metadata object based on channel type
+    const metadata: Record<string, any> = {}
+    
+    if (type === 'retail') {
+      metadata.storeType = storeType
+      metadata.customerCount = customerCount
+      metadata.retailOutlets = retailOutlets
+      metadata.deliveryOptions = deliveryOptions
+    } else if (type === 'direct') {
+      metadata.salesMethod = salesMethod
+      metadata.customerType = customerType
+      metadata.salesFrequency = salesFrequency
+      metadata.buyerDetails = buyerDetails
+    } else if (type === 'other') {
+      metadata.useReason = useReason
+      metadata.customReason = customReason
+      metadata.authorizationPerson = authorizationPerson
+    }
 
     const supabase = await createServerSupabaseClient()
     
@@ -39,14 +73,16 @@ export async function PUT(request: NextRequest, context: any) {
       .update({
         name: name?.trim(),
         type,
-        contact: contact?.trim(),
+        contact: contact?.trim() || null,
         email: email?.trim() || null,
         contact_person: contactPerson?.trim() || null,
-        price_per_liter: pricePerLiter ? parseFloat(pricePerLiter) : undefined,
+        price_per_liter: pricePerLiter ? parseFloat(pricePerLiter) : null,
         location: location?.trim() || null,
-        payment_terms: paymentTerms,
+        payment_terms: paymentTerms || null,
         notes: notes?.trim() || null,
-        is_active: isActive
+        is_active: isActive,
+        is_paid_for: isPaidFor !== false,
+        metadata
       })
       .eq('id', channelId)
       .eq('farm_id', userRole.farm_id)

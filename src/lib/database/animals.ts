@@ -192,6 +192,7 @@ export async function getAnimalById(animalId: string) {
   }
   
   if (!data) {
+    console.warn('[getAnimalById] No data returned for animal:', animalId)
     return null
   }
   
@@ -658,6 +659,9 @@ export async function updateAnimal(animalId: string, farmId: string, animalData:
       }
     })
     
+    // 🔍 Log BEFORE update to see what we're sending
+    console.log('🔍 [DB] Updating animal:', animalId, 'with data:', updateData)
+    
     // Update the animal
     // FIXED: Cast to any to bypass 'never' type on update
     const { data, error } = await (supabase
@@ -685,6 +689,9 @@ export async function updateAnimal(animalId: string, farmId: string, animalData:
       return { success: false, error: error.message }
     }
 
+    // ✅ FIXED: Log the returned data (which has the ID)
+    console.log('✅ [DB] Animal updated:', data.id, 'Weight:', data.weight)
+    
     return { success: true, data }
   } catch (error) {
     console.error('❌ [DB] Error in updateAnimal:', error)
@@ -720,6 +727,7 @@ export async function updateAnimalProductionStatusByAge(
     
     // Don't auto-update if animal has health issues (optional - you may want to update anyway)
     if (animal.health_status && ['sick', 'quarantined'].includes(animal.health_status)) {
+      console.log('Skipping production status update for animal with health issues')
       return { success: false, error: 'Animal has health issues - status not auto-updated' }
     }
     

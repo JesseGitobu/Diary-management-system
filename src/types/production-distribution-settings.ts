@@ -178,8 +178,8 @@ export interface DistributionSettings {
   requireChannelApproval: boolean
   approvalRequiredBy: string
   
-  channelTypesEnabled: ('cooperative' | 'processor' | 'direct' | 'retail')[]
-  defaultChannelType: 'cooperative' | 'processor' | 'direct' | 'retail'
+  channelTypesEnabled: ('cooperative' | 'processor' | 'direct' | 'retail' | 'other')[]
+  defaultChannelType: 'cooperative' | 'processor' | 'direct' | 'retail' | 'other'
   
   // 3. Inventory & Volume Management
   enableInventoryTracking: boolean
@@ -502,7 +502,7 @@ export const getDefaultDistributionSettings = (): DistributionSettings => ({
   maxActiveChannels: 10,
   requireChannelApproval: false,
   approvalRequiredBy: 'farm_manager',
-  channelTypesEnabled: ['cooperative', 'processor', 'direct', 'retail'],
+  channelTypesEnabled: ['cooperative', 'processor', 'direct', 'retail', 'other'],
   defaultChannelType: 'cooperative',
   enableInventoryTracking: true,
   inventoryUpdateMethod: 'automatic',

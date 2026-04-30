@@ -202,20 +202,8 @@ export function HeatDetectionForm({ farmId, onEventCreated, onCancel, preSelecte
     setError(null)
 
     try {
-      // 🔍 DEBUG: Log raw form input
-      console.log('🔥 [FORM] Raw form data:', {
-        event_date: data.event_date,
-        event_time: data.event_time,
-        animal_id: data.animal_id,
-        heat_action_taken: data.heat_action_taken,
-        heat_signs: selectedSigns,
-      })
-
       const dateTime = `${data.event_date}T${data.event_time}:00`
       const { event_time, ...restData } = data
-
-      // 🔍 DEBUG: Log combined datetime
-      console.log('🔥 [FORM] Combined datetime:', dateTime)
 
       const payload = {
         ...restData,
@@ -224,9 +212,6 @@ export function HeatDetectionForm({ farmId, onEventCreated, onCancel, preSelecte
         event_type: 'heat_detection',
         heat_signs: selectedSigns,
       }
-
-      // 🔍 DEBUG: Log final payload before sending
-      console.log('🔥 [FORM] Payload being sent to API:', payload)
 
       const url = eventId ? `/api/breeding-events/${eventId}` : '/api/breeding-events'
       const method = eventId ? 'PATCH' : 'POST'
@@ -242,23 +227,12 @@ export function HeatDetectionForm({ farmId, onEventCreated, onCancel, preSelecte
 
       const result = await response.json()
 
-      // 🔍 DEBUG: Log API response
-      console.log('🔥 [FORM] API Response:', {
-        status: response.status,
-        success: result.success,
-        event: result.event,
-        message: result.message,
-        error: result.error,
-      })
-
       if (response.ok && result.success) {
-        console.log('✅ [FORM] Heat detection event saved successfully')
         onEventCreated()
       } else {
         setError(result.error || `Failed to ${eventId ? 'update' : 'create'} heat detection event`)
       }
     } catch (error) {
-      console.error('❌ [FORM] Error during submission:', error)
       setError('An unexpected error occurred')
     } finally {
       setLoading(false)

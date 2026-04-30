@@ -47,8 +47,8 @@ export async function PATCH(
         *,
         distribution_channels (
           id,
-          channel_name,
-          channel_type,
+          name,
+          type,
           contact_person
         )
       `)
