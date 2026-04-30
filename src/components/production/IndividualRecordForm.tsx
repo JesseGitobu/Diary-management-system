@@ -70,6 +70,8 @@ export function IndividualRecordForm({
   const [step, setStep] = useState<'select' | 'form'>('select')
   const [selectedAnimal, setSelectedAnimal] = useState<typeof animals[0] | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [pickerQuery, setPickerQuery] = useState('')
+  const [showAnimalPicker, setShowAnimalPicker] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [preRecordedAnimalIds, setPreRecordedAnimalIds] = useState<Set<string>>(new Set())
@@ -77,7 +79,6 @@ export function IndividualRecordForm({
 
   // Reset form when date or session changes
   useEffect(() => {
-    console.log(`[IndividualRecordForm] Date/Session changed - recordDate: ${recordDate}, session: ${session}`)
     setStep('select')
     setSelectedAnimal(null)
     setSearchQuery('')
@@ -98,44 +99,42 @@ export function IndividualRecordForm({
   // Fetch already-recorded animals for this date and session
   useEffect(() => {
     const fetchPreRecordedAnimals = async () => {
+      if (!sessionName) {
+      }
+
       try {
-        console.log(`[IndividualRecordForm] Fetching pre-recorded animals for date: ${recordDate}, session: ${session}`)
-        // Note: API filters by date only (start_date=end_date). Session filtering will be done in-app
-        const response = await fetch(
-          `/api/production?start_date=${recordDate}&end_date=${recordDate}`
-        )
-        
-        console.log(`[IndividualRecordForm] Fetch response status: ${response.status}`)
-        
+        // Filter server-side by session_name (resolves to milking_sessions UUIDs)
+        const url = sessionName
+          ? `/api/production?start_date=${recordDate}&end_date=${recordDate}&session_name=${encodeURIComponent(sessionName)}`
+          : `/api/production?start_date=${recordDate}&end_date=${recordDate}`
+
+        const response = await fetch(url)
+
         if (response.ok) {
           const result = await response.json()
-          console.log(`[IndividualRecordForm] Pre-recorded animals result:`, result)
           const records = Array.isArray(result.data) ? result.data : []
-          
-          // Filter by session since API doesn't support that parameter
-          const sessionFilteredRecords = records.filter((r: any) => r.milking_session_id === session)
-          console.log(`[IndividualRecordForm] Filtered to session "${session}": ${sessionFilteredRecords.length} pre-recorded animals`)
-          
-          const preRecordedIds = new Set<string>(sessionFilteredRecords.map((r: any) => r.animal_id))
-          console.log(`[IndividualRecordForm] Pre-recorded animal IDs:`, Array.from(preRecordedIds))
+
+          // Server already filters by milking_session_id when sessionId is provided.
+          // Client-side guard: if no sessionId was sent, fall back to matching by sessionId field.
+          const preRecordedIds = new Set<string>(records.map((r: any) => r.animal_id))
+
           setPreRecordedAnimalIds(preRecordedIds)
         } else {
-          console.error(`[IndividualRecordForm] Fetch failed with status ${response.status}`)
+          const errBody = await response.json().catch(() => ({}))
           setPreRecordedAnimalIds(new Set())
         }
       } catch (err) {
-        console.error('[IndividualRecordForm] Error fetching pre-recorded animals:', err)
         setPreRecordedAnimalIds(new Set())
       }
     }
 
     fetchPreRecordedAnimals()
-  }, [recordDate, session])
+  }, [recordDate, session, sessionId, sessionName])
 
   // Auto-select animal when in group recording mode with single animal
   useEffect(() => {
     if (recordingType === 'group' && animals.length === 1 && step === 'select' && !selectedAnimal) {
-      console.log('[IndividualRecordForm] Auto-selecting animal in group mode:', animals[0])
+
       setSelectedAnimal(animals[0])
       setStep('form')
       setSearchQuery('')
@@ -255,18 +254,15 @@ export function IndividualRecordForm({
     if (mastitisResult === 'severe') {
       // Automatically set safety status to unsafe due to animal health when severe mastitis is detected
       form.setValue('milk_safety_status', 'unsafe_health', { shouldValidate: true })
-      console.log('[IndividualRecordForm] Mastitis severity is SEVERE - automatically setting milk_safety_status to unsafe_health')
     } else if (mastitisResult === 'negative' || mastitisResult === null) {
       // When mastitis is negative or cleared, reset to safe
       form.setValue('milk_safety_status', 'safe', { shouldValidate: true })
-      console.log('[IndividualRecordForm] Mastitis result is negative/cleared - resetting milk_safety_status to safe')
     }
   }, [mastitisResult, form])
 
   // Update form when animal is selected
   useEffect(() => {
     if (selectedAnimal) {
-      console.log('[IndividualRecordForm] Setting form animal_id to:', selectedAnimal.id)
       form.setValue('animal_id', selectedAnimal.id)
     }
   }, [selectedAnimal])
@@ -304,17 +300,10 @@ export function IndividualRecordForm({
     // - excludeSickAnimals: requires animal health_status
     // - excludeTreatmentWithdrawal: requires animal active_treatments
     
-    console.log(`[IndividualRecordForm] eligibleAnimals computed:`, {
-      totalAnimals: animals.length,
-      femaleAnimals: baseAnimals.length,
-      preRecordedCount: preRecordedAnimalIds.size,
-      eligibleCount: filtered.length
-    })
-    
     return filtered
   }, [animals, settings, preRecordedAnimalIds])
 
-  // Filter based on search query
+  // Filter based on search query (select step)
   const filteredAnimals = useMemo(() => {
     if (!searchQuery.trim()) return eligibleAnimals
     const query = searchQuery.toLowerCase()
@@ -323,6 +312,17 @@ export function IndividualRecordForm({
       (a.name?.toLowerCase().includes(query) ?? false)
     )
   }, [eligibleAnimals, searchQuery])
+
+  // Animals available in the inline picker (exclude currently selected animal)
+  const pickerAnimals = useMemo(() => {
+    const withoutCurrent = eligibleAnimals.filter(a => a.id !== selectedAnimal?.id)
+    if (!pickerQuery.trim()) return withoutCurrent
+    const query = pickerQuery.toLowerCase()
+    return withoutCurrent.filter(a =>
+      a.tag_number.toLowerCase().includes(query) ||
+      (a.name?.toLowerCase().includes(query) ?? false)
+    )
+  }, [eligibleAnimals, selectedAnimal, pickerQuery])
 
   const selectAnimal = (animal: typeof animals[0]) => {
     setSelectedAnimal(animal)
@@ -333,10 +333,33 @@ export function IndividualRecordForm({
   }
 
   const handleChangeAnimal = () => {
-    setStep('select')
-    setSelectedAnimal(null)
-    form.reset()
-    setSearchQuery('')
+    setShowAnimalPicker(true)
+    setPickerQuery('')
+  }
+
+  const selectNewAnimal = (animal: typeof animals[0]) => {
+    setSelectedAnimal(animal)
+    form.reset({
+      animal_id: animal.id,
+      record_date: recordDate,
+      milking_session: session,
+      milking_time: getCurrentTime(),
+      milk_volume: undefined,
+      milk_safety_status: 'safe',
+      temperature: null,
+      mastitis_test_performed: false,
+      mastitis_result: null,
+      affected_quarters: null,
+      fat_content: null,
+      protein_content: null,
+      somatic_cell_count: null,
+      lactose_content: null,
+      ph_level: null,
+      notes: '',
+    })
+    setShowAnimalPicker(false)
+    setPickerQuery('')
+    setError(null)
   }
 
   // Helper function to create health issue for mastitis
@@ -367,8 +390,6 @@ export function IndividualRecordForm({
         illness_appetite: null,
       }
 
-      console.log('[IndividualRecordForm] Creating health issue for mastitis:', healthIssuePayload)
-
       const healthResponse = await fetch('/api/health/issues', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -377,11 +398,9 @@ export function IndividualRecordForm({
 
       if (!healthResponse.ok) {
         const errorData = await healthResponse.json()
-        console.warn('[IndividualRecordForm] Failed to create health issue:', errorData)
         // Don't throw - health issue creation failure shouldn't prevent production record from being saved
       } else {
         const healthData = await healthResponse.json()
-        console.log('[IndividualRecordForm] Health issue created successfully:', healthData)
         
         // Set success message
         const severityLabel = mastitisResult === 'severe' ? 'Severe Mastitis' : 'Mild Mastitis'
@@ -391,15 +410,12 @@ export function IndividualRecordForm({
         return true
       }
     } catch (err) {
-      console.error('[IndividualRecordForm] Error creating health issue:', err)
       // Don't throw - we don't want to fail the production record save if health issue creation fails
     }
     return false
   }
 
   const handleSubmit = async (data: ProductionFormData) => {
-    console.log('[IndividualRecordForm] Form submitted with data:', data)
-    
     // Validate mastitis test requirement at submission time
     if (settings?.requireMastitisTest && !data.mastitis_test_performed) {
       setError('Mastitis test is required for this record before it can be saved')
@@ -423,9 +439,10 @@ export function IndividualRecordForm({
         body: JSON.stringify({
           ...data,
           farm_id: farmId,
+          session_name: sessionName || 'Session',   // used by server to resolve milking_sessions UUID
           recording_type: recordingType,
           milking_group_id: milkingGroupId || null,
-          milking_session_id: sessionId || null,
+          milking_session_id: sessionId || null,    // kept for reference; server resolves the real UUID
           milking_time: data.milking_time || null,
           temperature: data.temperature === undefined ? null : data.temperature,
           mastitis_test_performed: data.mastitis_test_performed || false,
@@ -449,7 +466,6 @@ export function IndividualRecordForm({
 
       // Create health issue if mastitis is detected (mild or severe)
       if (data.mastitis_result === 'mild' || data.mastitis_result === 'severe') {
-        console.log(`[IndividualRecordForm] Mastitis ${data.mastitis_result} detected - creating health issue`)
         await createMastitisHealthIssue(animalId, data.mastitis_result, data)
       }
 
@@ -583,6 +599,57 @@ export function IndividualRecordForm({
           Change Animal
         </Button>
       </div>
+
+      {/* Inline animal picker */}
+      {showAnimalPicker && (
+        <div className="border border-stone-200 rounded-lg bg-white shadow-md p-3 space-y-2">
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-sm font-medium text-stone-700">Select a different animal</p>
+            <button
+              type="button"
+              onClick={() => setShowAnimalPicker(false)}
+              className="text-xs text-stone-500 hover:text-stone-800"
+            >
+              Cancel
+            </button>
+          </div>
+          <div className="relative">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-stone-400" />
+            <input
+              type="text"
+              placeholder="Search by tag or name..."
+              value={pickerQuery}
+              onChange={(e) => setPickerQuery(e.target.value)}
+              autoFocus
+              className="w-full pl-9 pr-4 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            />
+          </div>
+          <div className="space-y-1 max-h-52 overflow-y-auto">
+            {pickerAnimals.length === 0 ? (
+              <p className="text-sm text-center py-4 text-stone-500">No other unmilked animals</p>
+            ) : (
+              pickerAnimals.map(animal => (
+                <button
+                  key={animal.id}
+                  type="button"
+                  onClick={() => selectNewAnimal(animal)}
+                  className="w-full flex items-center space-x-3 p-2 rounded-lg hover:bg-green-50 hover:border-green-300 border border-transparent transition-colors text-left"
+                >
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
+                    <span className="text-xs font-semibold text-green-700">
+                      {animal.tag_number.charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-stone-900">{animal.tag_number}</p>
+                    <p className="text-xs text-stone-500">{animal.name || 'Unnamed'}</p>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start space-x-2 text-red-700 text-sm">

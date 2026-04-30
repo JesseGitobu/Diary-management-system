@@ -33,12 +33,21 @@ export async function createProductionRecord(
 }
 
 export async function getProductionRecords(
-  farmId: string, 
-  animalId?: string, 
-  startDate?: string, 
-  endDate?: string
+  farmId: string,
+  animalId?: string,
+  startDate?: string,
+  endDate?: string,
+  sessionUUIDs?: string[]          // resolved UUIDs from milking_sessions table
 ) {
   const supabase = await createServerSupabaseClient()
+
+  console.log('[DB:getProductionRecords] Query params:', {
+    farmId,
+    animalId: animalId ?? null,
+    startDate: startDate ?? null,
+    endDate: endDate ?? null,
+    sessionUUIDs: sessionUUIDs ?? null,
+  })
 
   let query = supabase
     .from('production_records')
@@ -53,28 +62,42 @@ export async function getProductionRecords(
     .eq('farm_id', farmId)
     .order('record_date', { ascending: false })
     .order('created_at', { ascending: false })
-  
+
   if (animalId) {
     query = query.eq('animal_id', animalId)
   }
-  
+
   if (startDate) {
     query = query.gte('record_date', startDate)
   }
-  
+
   if (endDate) {
     query = query.lte('record_date', endDate)
   }
-  
-  const { data, error } = await query
-  
-  if (error) {
-    console.error('Error fetching production records:', error)
+
+  if (sessionUUIDs && sessionUUIDs.length > 0) {
+    query = (query as any).in('milking_session_id', sessionUUIDs)
+  } else if (sessionUUIDs && sessionUUIDs.length === 0) {
+    // Session name was given but no matching milking_session rows exist yet → no records
+    console.log('[DB:getProductionRecords] No session UUIDs matched — returning empty')
     return []
   }
-  
-  // FIXED: Cast to any[]
-  return (data as any[]) || []
+
+  const { data, error } = await query
+
+  if (error) {
+    console.error('[DB:getProductionRecords] Query error:', error)
+    return []
+  }
+
+  const records = (data as any[]) || []
+  console.log('[DB:getProductionRecords] Returned records:', {
+    count: records.length,
+    animalIds: records.map((r: any) => r.animal_id),
+    sessionIds: [...new Set(records.map((r: any) => r.milking_session_id))],
+  })
+
+  return records
 }
 
 export async function updateProductionRecord(

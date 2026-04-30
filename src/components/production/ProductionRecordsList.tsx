@@ -132,20 +132,14 @@ export function ProductionRecordsList({
 
     const fetchMilkingSessions = async () => {
       try {
-        console.log(`[SessionFilter] Fetching sessions for farm: ${farmId}`)
         const response = await fetch(`/api/farms/${farmId}/production/milking-sessions-list`)
         if (response.ok) {
           const result = await response.json()
-          console.log('[SessionFilter] API Response:', result)
-          console.log('[SessionFilter] Sessions to populate dropdown:', result.data?.map((s: any) => ({ id: s.id, name: s.name })))
           setAvailableSessions(result.data || [])
         } else {
           const error = await response.text()
-          console.error('[SessionFilter] API returned error:', response.status, error)
         }
       } catch (error) {
-        console.error('[SessionFilter] Error fetching milking sessions:', error)
-        console.log('[SessionFilter] Using fallback default sessions')
         setAvailableSessions([
           { id: 'morning', name: 'Morning' },
           { id: 'afternoon', name: 'Afternoon' },
@@ -174,7 +168,6 @@ export function ProductionRecordsList({
           setMilkingGroups(groupMap)
         }
       } catch (error) {
-        console.error('Error fetching milking groups:', error)
       }
     }
 
@@ -261,8 +254,6 @@ export function ProductionRecordsList({
   }
 
   const handleFilterSessionChange = (session: string) => {
-    console.log('[SessionFilter] Selected session:', session)
-    console.log('[SessionFilter] Available sessions:', availableSessions)
     setFilterSession(session)
     resetPagination()
   }
@@ -312,7 +303,6 @@ export function ProductionRecordsList({
         window.location.reload()
       }
     } catch (error) {
-      console.error('Error deleting record:', error)
       alert('Failed to delete record. Please try again.')
     } finally {
       setDeletingId(null)
@@ -556,7 +546,7 @@ export function ProductionRecordsList({
   if (records.length === 0) {
     return (
       <div className="text-center py-12">
-        <Droplets className="mx-auto h-12 w-12 text-gray-400" />
+        <Droplets className={`mx-auto text-gray-400 ${isMobile ? 'h-8 w-8' : 'h-12 w-12'}`} />
         <h3 className="mt-4 text-lg font-medium text-gray-900">No production records</h3>
         <p className="mt-2 text-sm text-gray-500">
           Start by recording your first milk production data.
@@ -572,7 +562,7 @@ export function ProductionRecordsList({
   return (
     <div className="space-y-6">
       {/* Filter Section */}
-      <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+      <div className={`bg-gray-50 rounded-lg border border-gray-200 ${isMobile ? 'p-3' : 'p-4'}`}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold text-gray-900 flex items-center">
             <Filter className="w-4 h-4 mr-2" />
@@ -677,27 +667,27 @@ export function ProductionRecordsList({
 
       {/* View Tab Selector */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-        <div className="flex items-center p-1">
+        <div className={`flex items-center ${isMobile ? 'p-0.5' : 'p-1'}`}>
           <button
             onClick={() => handleViewTabChange('individual')}
-            className={`flex-1 px-4 py-3 rounded-lg font-semibold text-sm transition-all duration-200 flex items-center justify-center space-x-2 ${
+            className={`flex-1 ${isMobile ? 'px-2 py-2' : 'px-4 py-3'} rounded-lg font-semibold ${isMobile ? 'text-xs' : 'text-sm'} transition-all duration-200 flex items-center justify-center ${isMobile ? 'gap-1' : 'space-x-2'} ${
               viewTab === 'individual'
                 ? 'bg-gradient-to-r from-farm-green/20 to-farm-green/10 text-farm-green shadow-sm border border-farm-green/30'
                 : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
             }`}
           >
-            <Droplets className={`w-4 h-4 ${viewTab === 'individual' ? 'text-farm-green' : 'text-gray-400'}`} />
+            <Droplets className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'} ${viewTab === 'individual' ? 'text-farm-green' : 'text-gray-400'}`} />
             <span>Individual Animals</span>
           </button>
           <button
             onClick={() => handleViewTabChange('groups')}
-            className={`flex-1 px-4 py-3 rounded-lg font-semibold text-sm transition-all duration-200 flex items-center justify-center space-x-2 ${
+            className={`flex-1 ${isMobile ? 'px-2 py-2' : 'px-4 py-3'} rounded-lg font-semibold ${isMobile ? 'text-xs' : 'text-sm'} transition-all duration-200 flex items-center justify-center ${isMobile ? 'gap-1' : 'space-x-2'} ${
               viewTab === 'groups'
                 ? 'bg-gradient-to-r from-farm-green/20 to-farm-green/10 text-farm-green shadow-sm border border-farm-green/30'
                 : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
             }`}
           >
-            <Users className={`w-4 h-4 ${viewTab === 'groups' ? 'text-farm-green' : 'text-gray-400'}`} />
+            <Users className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'} ${viewTab === 'groups' ? 'text-farm-green' : 'text-gray-400'}`} />
             <span>Milking Groups</span>
           </button>
         </div>

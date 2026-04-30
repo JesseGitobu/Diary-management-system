@@ -56,19 +56,23 @@ export function ProductionStatsCards({ stats }: ProductionStatsCardsProps) {
         {/* Header */}
         <h2 className="font-semibold text-gray-900 text-sm px-4">Production</h2>
 
-        {/* Stack cards — 1 col on very small phones, 2 col on larger phones */}
-        <div className={`grid gap-2 px-4 ${isSmallMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
-          {stats.map((card) => {
-            const IconComponent = card.icon
-            const currentIndex = getCurrentItemIndex(card.title)
-            const currentItem = card.items[currentIndex]
-            const totalItems = card.items.length
-            
-            return (
-              <Card
-                key={card.title}
-                className="shadow-sm"
-              >
+        {/* Horizontal scrollable cards with adaptive sizing */}
+        <div className="overflow-x-auto scroll-smooth -mx-4">
+          <div className="flex gap-2 px-4 pb-2">
+            {stats.map((card) => {
+              const IconComponent = card.icon
+              const currentIndex = getCurrentItemIndex(card.title)
+              const currentItem = card.items[currentIndex]
+              const totalItems = card.items.length
+              
+              return (
+                <Card
+                  key={card.title}
+                  className="shadow-sm flex-shrink-0"
+                  style={{
+                    width: isSmallMobile ? '85vw' : '70vw'
+                  }}
+                >
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="font-medium text-xs line-clamp-1">
                     {card.title}
@@ -127,6 +131,7 @@ export function ProductionStatsCards({ stats }: ProductionStatsCardsProps) {
               </Card>
             )
           })}
+        </div>
         </div>
       </div>
     )

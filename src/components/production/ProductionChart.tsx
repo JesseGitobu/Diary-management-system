@@ -41,6 +41,11 @@ interface TargetValues {
 }
 
 export function ProductionChart({ data, isMobile, settings }: ProductionChartProps) {
+  // Determine device size for finer optimization
+  const isVerySmall = typeof window !== 'undefined' && window.innerWidth < 480
+  const isSmallMobile = typeof window !== 'undefined' && window.innerWidth < 640
+  const isTablet = typeof window !== 'undefined' && window.innerWidth >= 768 && window.innerWidth < 1024
+  
   // Helper function to convert period string to days
   const getPeriodDays = (period: string | undefined): number => {
     switch (period) {
@@ -191,22 +196,27 @@ export function ProductionChart({ data, isMobile, settings }: ProductionChartPro
   const canShowTrendlines = !isBasicMode // Trendlines only in advanced and quality_focused
   const canShowAverages = !isBasicMode // Averages only in advanced and quality_focused
 
-  const chartHeight = isMobile ? 250 : 300
+  // Responsive chart height based on device size
+  const chartHeight = isVerySmall ? 220 : isMobile ? 260 : isTablet ? 300 : 350
+  
+  // Responsive font size
+  const axisFontSize = isVerySmall ? 10 : isSmallMobile ? 11 : 12
+  const labelFontSize = isVerySmall ? 10 : isSmallMobile ? 11 : 12
 
   return (
-    <div className="space-y-6">
+    <div className={`space-y-${isMobile ? '3' : '6'}`}>
       {/* Chart Controls */}
-      <div className="bg-white rounded-lg p-4 border border-gray-200 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className={`bg-white rounded-lg ${isMobile ? 'p-3' : 'p-4'} border border-gray-200 space-y-3`}>
+        <div className={`flex flex-col ${isTablet ? 'lg:flex-row' : 'sm:flex-row'} items-start ${isTablet ? 'lg:items-center lg:justify-between' : 'sm:items-center sm:justify-between'} ${isMobile ? 'gap-2' : 'gap-4'}`}>
           {/* Chart Type Selector */}
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-gray-700">Chart Type:</span>
-            <div className="flex gap-2">
+          <div className={`flex items-center ${isMobile ? 'gap-1' : 'gap-2'}`}>
+            <span className={`${isMobile ? 'text-xs' : 'text-sm'} font-medium text-gray-700`}>Chart:</span>
+            <div className={`flex ${isMobile ? 'gap-1' : 'gap-2'}`}>
               {(['bar', 'line', 'area'] as const).map(type => (
                 <button
                   key={type}
                   onClick={() => setChartType(type)}
-                  className={`px-3 py-1 rounded text-sm font-medium capitalize transition-all ${
+                  className={`${isMobile ? 'px-2 py-0.5 text-xs' : 'px-3 py-1 text-sm'} rounded font-medium capitalize transition-all ${
                     chartType === type
                       ? 'bg-farm-green text-white'
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -224,7 +234,7 @@ export function ProductionChart({ data, isMobile, settings }: ProductionChartPro
               onClick={handleExportChart}
               variant="outline"
               size="sm"
-              className="flex items-center gap-2 w-full sm:w-auto"
+              className={`flex items-center ${isMobile ? 'gap-1' : 'gap-2'} w-full ${isSmallMobile ? 'sm:w-auto' : 'sm:w-auto'}`}
             >
               <Download className="w-4 h-4" />
               Export Chart
@@ -233,7 +243,7 @@ export function ProductionChart({ data, isMobile, settings }: ProductionChartPro
         </div>
 
         {/* Feature Toggles */}
-        <div className="flex flex-wrap gap-3 items-center">
+        <div className={`flex flex-wrap ${isMobile ? 'gap-2' : 'gap-3'} items-center`}>
           {canShowTrendlines && (
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -255,7 +265,7 @@ export function ProductionChart({ data, isMobile, settings }: ProductionChartPro
                 onChange={(e) => setShowAverages(e.target.checked)}
                 className="w-4 h-4 rounded border-gray-300"
               />
-              <span className="text-sm text-gray-700">Show Averages</span>
+              <span className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-700`}>Show Averages</span>
             </label>
           )}
           {canShowTargets && (
@@ -274,37 +284,37 @@ export function ProductionChart({ data, isMobile, settings }: ProductionChartPro
         </div>
 
         {/* Statistics Summary */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
-          <div className="bg-blue-50 p-2 rounded">
-            <p className="text-gray-600">Avg Volume</p>
-            <p className="font-bold text-blue-600">{statistics.avgVolume.toFixed(1)}L</p>
+        <div className={`grid ${isVerySmall ? 'grid-cols-2' : 'grid-cols-2'} ${isSmallMobile ? 'sm:grid-cols-2' : 'sm:grid-cols-3'} ${isTablet ? 'lg:grid-cols-4' : 'md:grid-cols-3'} ${isMobile ? 'gap-1.5 text-xs' : 'gap-2 text-sm'}`}>
+          <div className={`bg-blue-50 ${isMobile ? 'p-1.5' : 'p-2'} rounded`}>
+            <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>Avg Volume</p>
+            <p className={`font-bold text-blue-600 ${isMobile ? 'text-sm' : 'text-base'}`}>{statistics.avgVolume.toFixed(1)}L</p>
           </div>
           {!isBasicMode && (
             <>
-              <div className="bg-orange-50 p-2 rounded">
-                <p className="text-gray-600">Avg Fat</p>
-                <p className="font-bold text-orange-600">{statistics.avgFat.toFixed(2)}%</p>
+              <div className={`bg-orange-50 ${isMobile ? 'p-1.5' : 'p-2'} rounded`}>
+                <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>Avg Fat</p>
+                <p className={`font-bold text-orange-600 ${isMobile ? 'text-sm' : 'text-base'}`}>{statistics.avgFat.toFixed(2)}%</p>
               </div>
-              <div className="bg-green-50 p-2 rounded">
-                <p className="text-gray-600">Avg Protein</p>
-                <p className="font-bold text-green-600">{statistics.avgProtein.toFixed(2)}%</p>
+              <div className={`bg-green-50 ${isMobile ? 'p-1.5' : 'p-2'} rounded`}>
+                <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>Avg Protein</p>
+                <p className={`font-bold text-green-600 ${isMobile ? 'text-sm' : 'text-base'}`}>{statistics.avgProtein.toFixed(2)}%</p>
               </div>
             </>
           )}
-          <div className="bg-purple-50 p-2 rounded">
-            <p className="text-gray-600">Max Volume</p>
-            <p className="font-bold text-purple-600">{statistics.maxVolume.toFixed(1)}L</p>
+          <div className={`bg-purple-50 ${isMobile ? 'p-1.5' : 'p-2'} rounded`}>
+            <p className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'}`}>Max Volume</p>
+            <p className={`font-bold text-purple-600 ${isMobile ? 'text-sm' : 'text-base'}`}>{statistics.maxVolume.toFixed(1)}L</p>
           </div>
         </div>
       </div>
 
       {/* Targets Configuration - Only show in non-basic modes */}
       {!isBasicMode && canShowTargets && showTargets && (
-        <div className="bg-white rounded-lg p-4 border border-gray-200">
-          <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+        <div className={`bg-white rounded-lg ${isMobile ? 'p-3' : 'p-4'} border border-gray-200`}>
+          <h4 className={`font-semibold text-gray-900 ${isMobile ? 'mb-2 text-xs' : 'mb-3 text-sm'} flex items-center ${isMobile ? 'gap-1' : 'gap-2'}`}>
             <Target className="w-4 h-4" /> Production Targets
           </h4>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <div className={`grid grid-cols-2 ${isSmallMobile ? 'gap-2' : 'gap-3'} md:grid-cols-3`}>
             {/* Volume Target */}
             <div className="space-y-1">
               <label className="text-xs font-medium text-gray-700">Milk Volume Target (L)</label>
@@ -400,20 +410,20 @@ export function ProductionChart({ data, isMobile, settings }: ProductionChartPro
       {/* Volume Chart */}
       {volumeVisible && (
         <div className="bg-white rounded-lg p-4 border border-gray-200" ref={chartRef}>
-          <h4 className="text-sm font-medium text-gray-900 mb-4">Daily Milk Volume ({settings?.productionUnit || 'Liters'})</h4>
+          <h4 className={`font-medium text-gray-900 ${isMobile ? 'mb-3 text-xs' : 'mb-4 text-sm'}`}>Daily Milk Volume ({settings?.productionUnit || 'Liters'})</h4>
           <ResponsiveContainer width="100%" height={chartHeight}>
             {chartType === 'bar' ? (
               <BarChart data={trendLineData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
                 <XAxis 
                   dataKey="date" 
-                  fontSize={12}
+                  fontSize={axisFontSize}
                   tickLine={false}
                   axisLine={false}
                   tick={{ fill: '#6b7280' }}
                 />
                 <YAxis 
-                  fontSize={12}
+                  fontSize={axisFontSize}
                   tickLine={false}
                   axisLine={false}
                   tick={{ fill: '#6b7280' }}
@@ -444,13 +454,13 @@ export function ProductionChart({ data, isMobile, settings }: ProductionChartPro
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
                 <XAxis 
                   dataKey="date" 
-                  fontSize={12}
+                  fontSize={axisFontSize}
                   tickLine={false}
                   axisLine={false}
                   tick={{ fill: '#6b7280' }}
                 />
                 <YAxis 
-                  fontSize={12}
+                  fontSize={axisFontSize}
                   tickLine={false}
                   axisLine={false}
                   tick={{ fill: '#6b7280' }}
@@ -470,13 +480,13 @@ export function ProductionChart({ data, isMobile, settings }: ProductionChartPro
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
                 <XAxis 
                   dataKey="date" 
-                  fontSize={12}
+                  fontSize={axisFontSize}
                   tickLine={false}
                   axisLine={false}
                   tick={{ fill: '#6b7280' }}
                 />
                 <YAxis 
-                  fontSize={12}
+                  fontSize={axisFontSize}
                   tickLine={false}
                   axisLine={false}
                   tick={{ fill: '#6b7280' }}
@@ -501,7 +511,7 @@ export function ProductionChart({ data, isMobile, settings }: ProductionChartPro
               </LineChart>
             )}
           </ResponsiveContainer>
-          <div className="flex justify-center gap-4 mt-3 text-xs flex-wrap">
+          <div className={`flex justify-center ${isMobile ? 'gap-2 flex-wrap' : 'gap-4'} mt-3 ${isMobile ? 'text-xs' : 'text-xs'} flex-wrap`}>
             <div className="flex items-center gap-1">
               <div className="w-3 h-3 rounded-full bg-green-600"></div>
               <span>Volume</span>
@@ -531,19 +541,19 @@ export function ProductionChart({ data, isMobile, settings }: ProductionChartPro
       {/* Quality Charts */}
       {qualityVisible && (
         <div className="bg-white rounded-lg p-4 border border-gray-200">
-          <h4 className="text-sm font-medium text-gray-900 mb-4">Milk Quality (%)</h4>
+          <h4 className={`font-medium text-gray-900 mb-4 ${isMobile ? 'text-xs' : 'text-sm'}`}>Milk Quality (%)</h4>
           <ResponsiveContainer width="100%" height={chartHeight}>
             <LineChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
               <XAxis 
                 dataKey="date" 
-                fontSize={12}
+                fontSize={axisFontSize}
                 tickLine={false}
                 axisLine={false}
                 tick={{ fill: '#6b7280' }}
               />
               <YAxis 
-                fontSize={12}
+                fontSize={axisFontSize}
                 tickLine={false}
                 axisLine={false}
                 domain={[2, 6]}
@@ -590,7 +600,7 @@ export function ProductionChart({ data, isMobile, settings }: ProductionChartPro
               )}
             </LineChart>
           </ResponsiveContainer>
-          <div className="flex justify-center gap-4 mt-3 text-xs flex-wrap">
+          <div className={`flex justify-center ${isMobile ? 'gap-2 flex-wrap' : 'gap-4'} mt-3 ${isMobile ? 'text-xs' : 'text-xs'} flex-wrap`}>
             {settings?.trackFatContent && (
               <div className="flex items-center gap-1">
                 <div className="w-3 h-3 rounded-full bg-blue-500"></div>

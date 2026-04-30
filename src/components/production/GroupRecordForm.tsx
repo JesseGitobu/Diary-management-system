@@ -66,7 +66,6 @@ export function GroupRecordForm({
 
   // Reset form state when date or session changes
   useEffect(() => {
-    console.log(`[GroupRecordForm] Date/Session changed - recordDate: ${recordDate}, session: ${session}`)
     // Clear current session state - but sessionRecordedByGroup persists for group list
     setSelectedGroupId(null)
     setSelectedAnimalId(null)
@@ -78,32 +77,24 @@ export function GroupRecordForm({
   useEffect(() => {
     const fetchPreRecordedAnimals = async () => {
       try {
-        console.log(`[GroupRecordForm] Fetching pre-recorded animals for date: ${recordDate}, session: ${session}`)
         // Note: API filters by date only (start_date=end_date). Session filtering will be done in-app
         const response = await fetch(
           `/api/production?start_date=${recordDate}&end_date=${recordDate}`
         )
         
-        console.log(`[GroupRecordForm] Fetch response status: ${response.status}`)
-        
         if (response.ok) {
           const result = await response.json()
-          console.log(`[GroupRecordForm] Pre-recorded animals result:`, result)
           const records = Array.isArray(result.data) ? result.data : []
           
           // Filter by session since API doesn't support that parameter
           const sessionFilteredRecords = records.filter((r: any) => r.milking_session_id === session)
-          console.log(`[GroupRecordForm] Filtered to session "${session}": ${sessionFilteredRecords.length} pre-recorded animals`)
           
           const preRecordedIds = new Set<string>(sessionFilteredRecords.map((r: any) => r.animal_id))
-          console.log(`[GroupRecordForm] Pre-recorded animal IDs:`, Array.from(preRecordedIds))
           setPreRecordedAnimalIds(preRecordedIds)
         } else {
-          console.error(`[GroupRecordForm] Fetch failed with status ${response.status}`)
           setPreRecordedAnimalIds(new Set())
         }
       } catch (err) {
-        console.error('[GroupRecordForm] Error fetching pre-recorded animals:', err)
         // Don't fail silently - just continue
         setPreRecordedAnimalIds(new Set())
       }
@@ -161,7 +152,6 @@ export function GroupRecordForm({
               
               return group
             } catch (err) {
-              console.error(`Error fetching animals for group ${group.category_id}:`, err)
               return group
             }
           })
@@ -169,7 +159,6 @@ export function GroupRecordForm({
 
         setMilkingGroups(groupsWithAnimals)
       } catch (err) {
-        console.error('Error fetching milking groups:', err)
         setError(err instanceof Error ? err.message : 'Failed to load milking groups')
       } finally {
         setLoading(false)
@@ -228,13 +217,6 @@ export function GroupRecordForm({
     const pending = selectedGroup.animals.filter(a => 
       !recordedAnimalIds.has(a.id) && !preRecordedAnimalIds.has(a.id)
     )
-    console.log(`[GroupRecordForm] pendingAnimals computed:`, {
-      groupId: selectedGroup.id,
-      groupSize: selectedGroup.animals.length,
-      preRecordedCount: preRecordedAnimalIds.size,
-      currentRecordedCount: recordedAnimalIds.size,
-      pendingCount: pending.length
-    })
     return pending
   }, [selectedGroup, recordedAnimalIds, preRecordedAnimalIds])
 
@@ -556,13 +538,13 @@ export function GroupRecordForm({
           </div>
           <IndividualRecordForm
             farmId={farmId}
-            animals={[{
-              id: selectedAnimal.id,
-              tag_number: selectedAnimal.tag_number,
-              name: selectedAnimal.name || undefined,
-              gender: selectedAnimal.gender,
-              production_status: selectedAnimal.production_status
-            }]}
+            animals={selectedGroup?.animals?.map(a => ({
+              id: a.id,
+              tag_number: a.tag_number,
+              name: a.name || undefined,
+              gender: a.gender,
+              production_status: a.production_status
+            })) || []}
             session={session}
             sessionId={sessionId}
             recordDate={recordDate}
@@ -595,7 +577,6 @@ export function GroupRecordForm({
                 setSearchQuery('')
               } else {
                 // Auto-advance to next pending animal
-                console.log('[GroupRecordForm] Auto-advancing to next animal:', stillPending[0])
                 setSelectedAnimalId(stillPending[0].id)
               }
             }}
