@@ -83,18 +83,15 @@ export async function GET(
     const matchingAnimals = await getMatchingAnimals(farmId, typedCategory, 1000)
 
     // Get ALL animals with matching production status(es) (for manual mode)
-    // This allows users to manually add any animal regardless of characteristics
     const allAnimalsByProductionStatus: any[] = []
-    
-    // Support both single production_status and multiple production_statuses
+
     const targetStatuses = typedCategory.production_statuses && typedCategory.production_statuses.length > 0
       ? typedCategory.production_statuses
-      : typedCategory.production_status 
+      : typedCategory.production_status
         ? [typedCategory.production_status]
         : []
-    
+
     if (targetStatuses.length > 0) {
-      // Query base animal data for all target production statuses
       const { data: baseAnimals, error: animalsError } = await supabase
         .from('animals')
         .select('id, tag_number, name, gender, birth_date, production_status, status')
@@ -110,22 +107,18 @@ export async function GET(
       })
 
       if (baseAnimals && baseAnimals.length > 0) {
-        // Get lactation data for enrichment
         const animalIds = (baseAnimals as any[]).map(a => a.id)
         const { data: lactationData } = await supabase
           .from('lactation_cycle_records')
           .select('animal_id, days_in_milk, current_average_production')
           .in('animal_id', animalIds)
-          .is('actual_end_date', null) // Get active lactation records
+          .is('actual_end_date', null)
 
         const lactationMap = new Map()
         ;(lactationData as any[] || []).forEach(rec => {
-          if (!lactationMap.has(rec.animal_id)) {
-            lactationMap.set(rec.animal_id, rec)
-          }
+          if (!lactationMap.has(rec.animal_id)) lactationMap.set(rec.animal_id, rec)
         })
 
-        // Enrich animals with lactation data and calculated fields
         const today = new Date()
         const enrichedAnimals = (baseAnimals as any[]).map(animal => {
           const lactRec = lactationMap.get(animal.id)
@@ -147,20 +140,50 @@ export async function GET(
       console.log('⚠️ No production_status or production_statuses defined for category')
     }
 
+    // Fetch active assignments in OTHER categories so we can flag animals already placed
+    const allCandidateIds = [
+      ...new Set([
+        ...matchingAnimals.map(a => a.id),
+        ...allAnimalsByProductionStatus.map(a => a.id)
+      ])
+    ]
+
+    const assignedElsewhereMap = new Map<string, { category_id: string; category_name: string }>()
+    if (allCandidateIds.length > 0) {
+      const { data: otherAssignments } = await (supabase as any)
+        .from('animal_category_assignments')
+        .select('animal_id, category_id, animal_categories(name)')
+        .in('animal_id', allCandidateIds)
+        .neq('category_id', categoryId)
+        .is('removed_at', null)
+
+      for (const row of (otherAssignments || [])) {
+        assignedElsewhereMap.set(row.animal_id, {
+          category_id: row.category_id,
+          category_name: row.animal_categories?.name ?? 'Unknown category'
+        })
+      }
+    }
+
+    const attachCurrentCategory = (animal: any) => ({
+      ...animal,
+      current_category: assignedElsewhereMap.get(animal.id) ?? null
+    })
+
     // Determine animals that don't match anymore (assigned but not in matching list)
     const matchingAnimalIds = matchingAnimals.map(a => a.id)
     const assignedButNotMatching = (assignedAnimals as any[] || [])
       .filter(a => !matchingAnimalIds.includes(a.animal_id))
       .map(a => a.animals)
-      .filter(a => a) // Remove null entries
+      .filter(a => a)
 
     return NextResponse.json({
       success: true,
       data: {
         category: typedCategory,
         assignedAnimals: assignedAnimals || [],
-        matchingAnimals: matchingAnimals || [],
-        allAnimalsByProductionStatus: allAnimalsByProductionStatus || [],
+        matchingAnimals: matchingAnimals.map(attachCurrentCategory),
+        allAnimalsByProductionStatus: allAnimalsByProductionStatus.map(attachCurrentCategory),
         animalsToRemove: assignedButNotMatching || []
       },
       debug: {
@@ -265,18 +288,28 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
 
-    // Check if assignment already exists
-    const { data: existingAssignment } = await supabase
+    // Check if animal is already actively assigned to ANY category
+    const { data: existingAnyAssignment } = await (supabase as any)
       .from('animal_category_assignments')
-      .select('id')
+      .select('id, category_id, animal_categories(name)')
       .eq('animal_id', animal_id)
-      .eq('category_id', categoryId)
       .is('removed_at', null)
-      .single()
+      .maybeSingle()
 
-    if (existingAssignment) {
+    if (existingAnyAssignment) {
+      const isSameCategory = existingAnyAssignment.category_id === categoryId
+      if (isSameCategory) {
+        return NextResponse.json(
+          { error: 'Animal already assigned to this category' },
+          { status: 409 }
+        )
+      }
       return NextResponse.json(
-        { error: 'Animal already assigned to this category' },
+        {
+          error: 'Animal is already assigned to another category. Use the transfer endpoint to move it.',
+          current_category_id: existingAnyAssignment.category_id,
+          current_category_name: existingAnyAssignment.animal_categories?.name ?? 'Unknown category'
+        },
         { status: 409 }
       )
     }

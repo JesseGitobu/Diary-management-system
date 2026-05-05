@@ -5,7 +5,8 @@ export async function saveSettings(
   endpoint: string,
   farmId: string,
   settings: any,
-  onSuccess: () => void
+  onSuccess: () => void,
+  successMessage?: string
 ): Promise<void> {
   try {
     const response = await fetch(endpoint, {
@@ -25,7 +26,7 @@ export async function saveSettings(
     }
 
     const data = await response.json()
-    toast.success('Settings saved successfully', { duration: 3000 })
+    toast.success(successMessage || 'Settings saved successfully', { duration: 3000 })
     onSuccess()
     
     return data

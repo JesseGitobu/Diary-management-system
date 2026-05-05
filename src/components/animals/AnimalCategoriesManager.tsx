@@ -77,6 +77,13 @@ interface MatchingAnimal {
   days_in_milk: number | null
   current_daily_production: number | null
   age_days: number | null
+  current_category?: { category_id: string; category_name: string } | null
+}
+
+interface TransferRecommendation {
+  category: AnimalCategory
+  score: number
+  reasons: string[]
 }
 
 interface AnimalAssignment {
@@ -303,6 +310,13 @@ export function AnimalCategoriesManager({
   const [assignmentTab, setAssignmentTab] = useState<'assigned' | 'suggested' | 'remove'>('assigned')
   const [manualModeSearch, setManualModeSearch] = useState('')
   const [selectedAnimalForPreview, setSelectedAnimalForPreview] = useState<string | null>(null)
+  // Transfer state
+  const [transferAnimal, setTransferAnimal] = useState<MatchingAnimal | null>(null)
+  const [transferRecommendations, setTransferRecommendations] = useState<TransferRecommendation[]>([])
+  const [loadingTransferRecs, setLoadingTransferRecs] = useState(false)
+  const [transferNotes, setTransferNotes] = useState('')
+  const [selectedTransferTarget, setSelectedTransferTarget] = useState<string>('')
+  const [transferring, setTransferring] = useState(false)
   // Milking schedule management state
   const [showScheduleForm, setShowScheduleForm] = useState(false)
   const [editingSchedule, setEditingSchedule] = useState<MilkingSchedule | null>(null)
@@ -804,6 +818,60 @@ export function AnimalCategoriesManager({
       return { ...prev, [key]: value }
     })
   }, [])
+
+  const handleInitiateTransfer = async (animal: MatchingAnimal) => {
+    setTransferAnimal(animal)
+    setSelectedTransferTarget('')
+    setTransferNotes('')
+    setTransferRecommendations([])
+    setLoadingTransferRecs(true)
+    try {
+      const res = await fetch(`/api/farms/${farmId}/animals/${animal.id}/category-recommendations`)
+      if (res.ok) {
+        const data = await res.json()
+        setTransferRecommendations(data.data?.recommendations ?? [])
+      }
+    } catch {
+      // leave recommendations empty — user can still pick manually
+    } finally {
+      setLoadingTransferRecs(false)
+    }
+  }
+
+  const executeTransfer = async () => {
+    if (!transferAnimal || !selectedTransferTarget) return
+    setTransferring(true)
+    try {
+      const res = await fetch(
+        `/api/farms/${farmId}/animal-categories/${selectedTransferTarget}/transfer`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ animal_id: transferAnimal.id, notes: transferNotes || undefined })
+        }
+      )
+      if (!res.ok) {
+        const err = await res.json()
+        alert(err.error || 'Transfer failed')
+        return
+      }
+      setTransferAnimal(null)
+      // Refresh the current assignment panel
+      if (viewingAnimals) await handleViewAnimals(viewingAnimals)
+      // Refresh category counts
+      try {
+        const catRes = await fetch(`/api/farms/${farmId}/feed-management/animal-categories`)
+        if (catRes.ok) {
+          const catData = await catRes.json()
+          if (catData.data) onCategoriesUpdate(catData.data)
+        }
+      } catch { /* ignore */ }
+    } catch {
+      alert('Transfer failed')
+    } finally {
+      setTransferring(false)
+    }
+  }
 
   const formatAge = (minAge?: number, maxAge?: number) => {
     if (!minAge && !maxAge) return 'Any age'
@@ -2069,28 +2137,45 @@ export function AnimalCategoriesManager({
                         )
                         return suggestedAnimals.length > 0 ? (
                           <div className="divide-y">
-                            {suggestedAnimals.map((animal: any) => (
-                              <div key={animal.id} className="p-3 hover:bg-green-50">
-                                <div className="flex items-center space-x-3 mb-1">
-                                  <span className="font-medium">#{animal.tag_number}</span>
-                                  {animal.name && <span className="text-gray-600">({animal.name})</span>}
-                                  <Badge variant="outline" className="text-xs">
-                                    {animal.gender || 'Unknown'}
-                                  </Badge>
-                                  {animal.production_status && (
-                                    <Badge variant="secondary" className="text-xs">
-                                      {animal.production_status}
-                                    </Badge>
+                            {suggestedAnimals.map((animal: any) => {
+                              const inOtherCategory = !!animal.current_category
+                              return (
+                                <div key={animal.id} className={`p-3 ${inOtherCategory ? 'bg-amber-50' : 'hover:bg-green-50'}`}>
+                                  <div className="flex items-center justify-between mb-1">
+                                    <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                                      <span className="font-medium">#{animal.tag_number}</span>
+                                      {animal.name && <span className="text-gray-600">({animal.name})</span>}
+                                      <Badge variant="outline" className="text-xs">{animal.gender || 'Unknown'}</Badge>
+                                      {animal.production_status && (
+                                        <Badge variant="secondary" className="text-xs">{animal.production_status}</Badge>
+                                      )}
+                                      {inOtherCategory && (
+                                        <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+                                          🔒 In: {animal.current_category.category_name}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {inOtherCategory && (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="text-amber-700 border-amber-300 hover:bg-amber-100 shrink-0 ml-2"
+                                        onClick={() => handleInitiateTransfer(animal)}
+                                      >
+                                        ↔ Transfer
+                                      </Button>
+                                    )}
+                                  </div>
+                                  <div className="text-xs text-gray-500 mb-2">
+                                    Age: {formatAnimalAge(animal.age_days)}{animal.days_in_milk ? ` • DIM: ${animal.days_in_milk}` : ''}
+                                    {inOtherCategory && <span className="ml-2 text-amber-600">— transfer required to add to this category</span>}
+                                  </div>
+                                  {viewingAnimals && (
+                                    <CharacteristicMatchDisplay animal={animal} category={viewingAnimals} />
                                   )}
                                 </div>
-                                <div className="text-xs text-gray-500 mb-2">
-                                  Age: {formatAnimalAge(animal.age_days)}{animal.days_in_milk ? ` • DIM: ${animal.days_in_milk}` : ''}
-                                </div>
-                                {viewingAnimals && (
-                                  <CharacteristicMatchDisplay animal={animal} category={viewingAnimals} />
-                                )}
-                              </div>
-                            ))}
+                              )
+                            })}
                           </div>
                         ) : (
                           <div className="p-6 text-center text-gray-500">
@@ -2195,49 +2280,71 @@ export function AnimalCategoriesManager({
                         })
 
                         return filteredAnimals.length > 0 ? (
-                          filteredAnimals.map((animal: any) => (
-                            <div 
-                              key={animal.id} 
-                              className="p-3 hover:bg-green-50 cursor-pointer border-b"
-                              onClick={() => setSelectedAnimalForPreview(selectedAnimalForPreview === animal.id ? null : animal.id)}
-                            >
-                              <label className="flex items-center space-x-3 mb-2">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedForAdd.has(animal.id)}
-                                  onChange={() => {
-                                    const newSet = new Set(selectedForAdd)
-                                    if (newSet.has(animal.id)) {
-                                      newSet.delete(animal.id)
-                                    } else {
-                                      newSet.add(animal.id)
-                                    }
-                                    setSelectedForAdd(newSet)
-                                  }}
-                                  className="h-4 w-4 rounded border-gray-300"
-                                  onClick={(e) => e.stopPropagation()}
-                                />
-                                <div className="flex-1 min-w-0">
-                                  <div className="font-medium text-sm truncate">#{animal.tag_number}</div>
-                                  {animal.name && <div className="text-xs text-gray-600 truncate">{animal.name}</div>}
-                                  <div className="text-xs text-gray-500 mt-1">
-                                    Age: {formatAnimalAge(animal.age_days)}{animal.days_in_milk ? ` • DIM: ${animal.days_in_milk}` : ''}
+                          filteredAnimals.map((animal: any) => {
+                            const inOtherCategory = !!animal.current_category
+                            return (
+                              <div
+                                key={animal.id}
+                                className={`p-3 border-b ${inOtherCategory ? 'bg-amber-50' : 'hover:bg-green-50 cursor-pointer'}`}
+                                onClick={() => !inOtherCategory && setSelectedAnimalForPreview(selectedAnimalForPreview === animal.id ? null : animal.id)}
+                              >
+                                {inOtherCategory ? (
+                                  /* Locked — in another category */
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="font-medium text-sm truncate">#{animal.tag_number}</div>
+                                      {animal.name && <div className="text-xs text-gray-600 truncate">{animal.name}</div>}
+                                      <div className="text-xs text-amber-700 mt-1 flex items-center gap-1">
+                                        🔒 In: <span className="font-medium">{animal.current_category.category_name}</span>
+                                      </div>
+                                    </div>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="text-amber-700 border-amber-300 hover:bg-amber-100 shrink-0 ml-2"
+                                      onClick={(e) => { e.stopPropagation(); handleInitiateTransfer(animal) }}
+                                    >
+                                      ↔ Transfer
+                                    </Button>
                                   </div>
-                                </div>
-                              </label>
-                              
-                              {/* Characteristic Preview when selected */}
-                              {selectedAnimalForPreview === animal.id && viewingAnimals && (
-                                <div className="mt-3 pt-3 border-t border-green-200">
-                                  <p className="text-xs font-medium text-gray-700 mb-2">Characteristic Match:</p>
-                                  <CharacteristicMatchDisplay animal={animal} category={viewingAnimals} />
-                                  <p className="text-xs text-amber-600 mt-2 italic">
-                                    ℹ️ You can add this animal even if not all characteristics match the category
-                                  </p>
-                                </div>
-                              )}
-                            </div>
-                          ))
+                                ) : (
+                                  /* Free — can be selected */
+                                  <>
+                                    <label className="flex items-center space-x-3 mb-2">
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedForAdd.has(animal.id)}
+                                        onChange={() => {
+                                          const newSet = new Set(selectedForAdd)
+                                          if (newSet.has(animal.id)) newSet.delete(animal.id)
+                                          else newSet.add(animal.id)
+                                          setSelectedForAdd(newSet)
+                                        }}
+                                        className="h-4 w-4 rounded border-gray-300"
+                                        onClick={(e) => e.stopPropagation()}
+                                      />
+                                      <div className="flex-1 min-w-0">
+                                        <div className="font-medium text-sm truncate">#{animal.tag_number}</div>
+                                        {animal.name && <div className="text-xs text-gray-600 truncate">{animal.name}</div>}
+                                        <div className="text-xs text-gray-500 mt-1">
+                                          Age: {formatAnimalAge(animal.age_days)}{animal.days_in_milk ? ` • DIM: ${animal.days_in_milk}` : ''}
+                                        </div>
+                                      </div>
+                                    </label>
+                                    {selectedAnimalForPreview === animal.id && viewingAnimals && (
+                                      <div className="mt-3 pt-3 border-t border-green-200">
+                                        <p className="text-xs font-medium text-gray-700 mb-2">Characteristic Match:</p>
+                                        <CharacteristicMatchDisplay animal={animal} category={viewingAnimals} />
+                                        <p className="text-xs text-amber-600 mt-2 italic">
+                                          ℹ️ You can add this animal even if not all characteristics match the category
+                                        </p>
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            )
+                          })
                         ) : (
                           <div className="p-6 text-center text-gray-500 text-sm">
                             <Users className="mx-auto h-6 w-6 text-gray-400 mb-2" />
@@ -2381,6 +2488,106 @@ export function AnimalCategoriesManager({
           </div>
         </div>
       </Modal>
+
+      {/* Transfer Dialog */}
+      <AlertDialog open={!!transferAnimal} onOpenChange={(open) => { if (!open) setTransferAnimal(null) }}>
+        <AlertDialogContent className="max-w-lg">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Transfer Animal to Another Category</AlertDialogTitle>
+            <AlertDialogDescription>
+              <strong>#{transferAnimal?.tag_number}{transferAnimal?.name ? ` — ${transferAnimal.name}` : ''}</strong>
+              {transferAnimal?.current_category && (
+                <span> is currently in <strong>{transferAnimal.current_category.category_name}</strong>.</span>
+              )}
+              {' '}Select the category to transfer it to.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Recommendations */}
+            {loadingTransferRecs ? (
+              <div className="flex items-center justify-center py-4">
+                <LoadingSpinner size="sm" />
+                <span className="ml-2 text-sm text-gray-500">Loading recommendations…</span>
+              </div>
+            ) : transferRecommendations.length > 0 ? (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-gray-700">Recommended categories (best match first):</p>
+                {transferRecommendations.slice(0, 5).map((rec) => (
+                  <button
+                    key={rec.category.id}
+                    type="button"
+                    onClick={() => setSelectedTransferTarget(rec.category.id)}
+                    className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                      selectedTransferTarget === rec.category.id
+                        ? 'border-green-500 bg-green-50'
+                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-sm">{rec.category.name}</span>
+                      <span className="text-xs text-gray-500">Score: {rec.score}</span>
+                    </div>
+                    {rec.reasons.length > 0 && (
+                      <ul className="mt-1 space-y-0.5">
+                        {rec.reasons.map((r, i) => (
+                          <li key={i} className="text-xs text-green-700">✓ {r}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500 italic">No category recommendations available for this animal.</p>
+            )}
+
+            {/* Manual category selector */}
+            <div>
+              <label className="text-xs font-medium text-gray-700 block mb-1">
+                Or choose any category:
+              </label>
+              <select
+                value={selectedTransferTarget}
+                onChange={(e) => setSelectedTransferTarget(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+              >
+                <option value="">— select a category —</option>
+                {categories
+                  .filter((c) => c.id !== transferAnimal?.current_category?.category_id)
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+              </select>
+            </div>
+
+            {/* Optional notes */}
+            <div>
+              <label className="text-xs font-medium text-gray-700 block mb-1">Notes (optional)</label>
+              <input
+                type="text"
+                value={transferNotes}
+                onChange={(e) => setTransferNotes(e.target.value)}
+                placeholder="Reason for transfer…"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+            </div>
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={transferring} onClick={() => setTransferAnimal(null)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={executeTransfer}
+              disabled={transferring || !selectedTransferTarget}
+              className="bg-amber-600 hover:bg-amber-700"
+            >
+              {transferring ? <LoadingSpinner size="sm" /> : 'Transfer Animal'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Delete Confirmation */}
       <AlertDialog open={!!deletingCategory} onOpenChange={() => setDeletingCategory(null)}>

@@ -50,6 +50,9 @@ interface ProductionRecord {
   recording_type?: 'individual' | 'group'
   milking_group_id?: string
   milking_session_id?: string
+  mastitis_test_performed?: boolean
+  mastitis_result?: 'negative' | 'mild' | 'severe' | null
+  affected_quarters?: string[] | null
   animals?: {
     id: string
     tag_number: string
@@ -124,6 +127,7 @@ export function ProductionRecordsList({
   const [availableSessions, setAvailableSessions] = useState<Array<{ id: string; name: string }>>([])
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set())
   const [selectedSession, setSelectedSession] = useState<string | null>(null) // Format: "${cycleDate}-${animalId}-${sessionId}"
+  const [activeSessionBadge, setActiveSessionBadge] = useState<Record<string, string>>({}) // summaryKey → sessionId
   const RECORDS_PER_PAGE = 10
 
   // Fetch milking sessions on mount
@@ -174,12 +178,19 @@ export function ProductionRecordsList({
     fetchMilkingGroups()
   }, [farmId])
 
+  // UUID → session name map (all pairs, no dedup — needed so every UUID resolves)
+  const sessionNameMap = useMemo(
+    () => new Map(availableSessions.map(s => [s.id, s.name])),
+    [availableSessions]
+  )
+
   // Apply filters
   const filteredRecords = useMemo(() => {
     return records.filter(record => {
-      // Session filter - use milking_session_id
-      if (filterSession !== 'all' && record.milking_session_id !== filterSession) {
-        return false
+      // Session filter — compare by resolved name so all UUIDs for the same session type match
+      if (filterSession !== 'all') {
+        const recordSessionName = sessionNameMap.get(record.milking_session_id || '') || null
+        if (recordSessionName !== filterSession) return false
       }
 
       // Safety status filter
@@ -310,16 +321,16 @@ export function ProductionRecordsList({
   }
   
   const getSessionBadgeColor = (sessionId?: string) => {
-    // Get session name from availableSessions to determine color
-    const sessionName = availableSessions.find(s => s.id === sessionId)?.name?.toLowerCase() || ''
-    if (sessionName.includes('morning')) return 'bg-blue-100 text-blue-800'
-    if (sessionName.includes('afternoon')) return 'bg-yellow-100 text-yellow-800'
-    if (sessionName.includes('evening')) return 'bg-purple-100 text-purple-800'
+    const name = (sessionId ? sessionNameMap.get(sessionId) : undefined)?.toLowerCase() || ''
+    if (name.includes('morning')) return 'bg-blue-100 text-blue-800'
+    if (name.includes('afternoon')) return 'bg-yellow-100 text-yellow-800'
+    if (name.includes('evening')) return 'bg-purple-100 text-purple-800'
     return 'bg-gray-100 text-gray-800'
   }
 
   const getSessionName = (sessionId?: string) => {
-    return availableSessions.find(s => s.id === sessionId)?.name || sessionId || 'Unknown Session'
+    if (!sessionId) return 'Unknown Session'
+    return sessionNameMap.get(sessionId) || sessionId
   }
 
   // Helper function to get first and last session times
@@ -762,55 +773,57 @@ export function ProductionRecordsList({
                               </div>
                             </div>
 
+                            {/* Mastitis Test and Temperature Info */}
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-1 text-xs">
+                              <div className="p-1.5 bg-white rounded border border-gray-200">
+                                <p className="font-semibold text-gray-700">Mastitis Test</p>
+                                <p className="text-gray-900">{record.mastitis_test_performed ? (record.mastitis_result ? record.mastitis_result.charAt(0).toUpperCase() + record.mastitis_result.slice(1) : 'Tested') : 'N/A'}</p>
+                              </div>
+                              <div className="p-1.5 bg-white rounded border border-gray-200">
+                                <p className="font-semibold text-gray-700">Temperature</p>
+                                <p className="text-gray-900">{record.temperature !== null && record.temperature !== undefined ? record.temperature.toFixed(1) + '°C' : 'N/A'}</p>
+                              </div>
+                              <div className="p-1.5 bg-white rounded border border-gray-200">
+                                <p className="font-semibold text-gray-700">Milk Safety</p>
+                                <p className="text-gray-900">{safetyStatus.label}</p>
+                              </div>
+                            </div>
+
                             {/* Core Metrics */}
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-1">
                               <div className="text-center p-1.5 bg-blue-50 rounded">
-                                <p className="text-sm md:text-base font-bold text-blue-600">{record.milk_volume?.toFixed(1) || '-'}</p>
+                                <p className="text-sm md:text-base font-bold text-blue-600">{record.milk_volume?.toFixed(1) || 'N/A'}</p>
                                 <p className="text-xs text-blue-600 font-medium">Volume (L)</p>
                               </div>
-                              {record.temperature && (
-                                <div className="text-center p-1.5 bg-red-50 rounded">
-                                  <p className="text-sm md:text-base font-bold text-red-600">{record.temperature.toFixed(1)}</p>
-                                  <p className="text-xs text-red-600 font-medium">Temp (°C)</p>
-                                </div>
-                              )}
-                              {record.fat_content !== null && record.fat_content !== undefined && (
-                                <div className="text-center p-1.5 bg-orange-50 rounded">
-                                  <p className="text-sm md:text-base font-bold text-orange-600">{record.fat_content.toFixed(2)}</p>
-                                  <p className="text-xs text-orange-600 font-medium">Fat %</p>
-                                </div>
-                              )}
-                              {record.protein_content !== null && record.protein_content !== undefined && (
-                                <div className="text-center p-1.5 bg-green-50 rounded">
-                                  <p className="text-sm md:text-base font-bold text-green-600">{record.protein_content.toFixed(2)}</p>
-                                  <p className="text-xs text-green-600 font-medium">Protein %</p>
-                                </div>
-                              )}
+                              <div className="text-center p-1.5 bg-red-50 rounded">
+                                <p className="text-sm md:text-base font-bold text-red-600">{record.temperature ? record.temperature.toFixed(1) : 'N/A'}</p>
+                                <p className="text-xs text-red-600 font-medium">Temp (°C)</p>
+                              </div>
+                              <div className="text-center p-1.5 bg-orange-50 rounded">
+                                <p className="text-sm md:text-base font-bold text-orange-600">{record.fat_content !== null && record.fat_content !== undefined ? record.fat_content.toFixed(2) : 'N/A'}</p>
+                                <p className="text-xs text-orange-600 font-medium">Fat %</p>
+                              </div>
+                              <div className="text-center p-1.5 bg-green-50 rounded">
+                                <p className="text-sm md:text-base font-bold text-green-600">{record.protein_content !== null && record.protein_content !== undefined ? record.protein_content.toFixed(2) : 'N/A'}</p>
+                                <p className="text-xs text-green-600 font-medium">Protein %</p>
+                              </div>
                             </div>
 
                             {/* Additional Metrics */}
-                            {(record.somatic_cell_count || record.lactose_content || record.ph_level) && (
-                              <div className="grid grid-cols-2 md:grid-cols-3 gap-1">
-                                {record.somatic_cell_count !== null && record.somatic_cell_count !== undefined && (
-                                  <div className="text-center p-1.5 bg-yellow-50 rounded">
-                                    <p className="text-xs md:text-sm font-bold text-yellow-600">{record.somatic_cell_count.toLocaleString()}</p>
-                                    <p className="text-xs text-yellow-600 font-medium">SCC</p>
-                                  </div>
-                                )}
-                                {record.lactose_content !== null && record.lactose_content !== undefined && (
-                                  <div className="text-center p-1.5 bg-cyan-50 rounded">
-                                    <p className="text-xs md:text-sm font-bold text-cyan-600">{record.lactose_content.toFixed(2)}</p>
-                                    <p className="text-xs text-cyan-600 font-medium">Lactose %</p>
-                                  </div>
-                                )}
-                                {record.ph_level !== null && record.ph_level !== undefined && (
-                                  <div className="text-center p-1.5 bg-indigo-50 rounded">
-                                    <p className="text-xs md:text-sm font-bold text-indigo-600">{record.ph_level.toFixed(2)}</p>
-                                    <p className="text-xs text-indigo-600 font-medium">pH</p>
-                                  </div>
-                                )}
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-1">
+                              <div className="text-center p-1.5 bg-yellow-50 rounded">
+                                <p className="text-xs md:text-sm font-bold text-yellow-600">{record.somatic_cell_count !== null && record.somatic_cell_count !== undefined ? record.somatic_cell_count.toLocaleString() : 'N/A'}</p>
+                                <p className="text-xs text-yellow-600 font-medium">SCC</p>
                               </div>
-                            )}
+                              <div className="text-center p-1.5 bg-cyan-50 rounded">
+                                <p className="text-xs md:text-sm font-bold text-cyan-600">{record.lactose_content !== null && record.lactose_content !== undefined ? record.lactose_content.toFixed(2) : 'N/A'}</p>
+                                <p className="text-xs text-cyan-600 font-medium">Lactose %</p>
+                              </div>
+                              <div className="text-center p-1.5 bg-indigo-50 rounded">
+                                <p className="text-xs md:text-sm font-bold text-indigo-600">{record.ph_level !== null && record.ph_level !== undefined ? record.ph_level.toFixed(2) : 'N/A'}</p>
+                                <p className="text-xs text-indigo-600 font-medium">pH</p>
+                              </div>
+                            </div>
 
                             {/* Notes */}
                             {record.notes && (
@@ -897,29 +910,84 @@ export function ProductionRecordsList({
                             </div>
                           </div>
                           
-                          {/* Production Metrics Grid */}
-                          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-1 mb-1">
-                            <div className="text-center p-1 md:p-2 bg-blue-50 rounded">
-                              <p className="text-base md:text-lg font-bold text-blue-600">{summary.totalMilkVolume.toFixed(1)}</p>
-                              <p className="text-xs text-blue-600 font-medium">Total L</p>
-                            </div>
-                            {summary.avgFatContent !== null && (
-                              <div className="text-center p-1 md:p-2 bg-orange-50 rounded">
-                                <p className="text-sm md:text-base font-bold text-orange-600">{summary.avgFatContent.toFixed(2)}%</p>
-                                <p className="text-xs text-orange-600 font-medium">Fat</p>
-                              </div>
-                            )}
-                            {summary.avgProteinContent !== null && (
-                              <div className="text-center p-1 md:p-2 bg-green-50 rounded">
-                                <p className="text-sm md:text-base font-bold text-green-600">{summary.avgProteinContent.toFixed(2)}%</p>
-                                <p className="text-xs text-green-600 font-medium">Protein</p>
-                              </div>
-                            )}
-                            <div className="text-center p-1 md:p-2 bg-purple-50 rounded">
-                              <p className="text-sm md:text-base font-bold text-purple-600">{summary.recordCount}</p>
-                              <p className="text-xs text-purple-600 font-medium">Records</p>
-                            </div>
-                          </div>
+                          {/* Production Metrics — reactive to selected session badge */}
+                          {(() => {
+                            const activeId = activeSessionBadge[summaryKey]
+                            const recs: any[] = activeId
+                              ? summary.records.filter((r: any) => r.milking_session_id === activeId)
+                              : summary.records
+
+                            // Volume
+                            const vol = recs.reduce((s: number, r: any) => s + (r.milk_volume || 0), 0)
+
+                            // Fat & Protein averages
+                            const fatVals = recs.map((r: any) => r.fat_content).filter((v: any) => v != null)
+                            const avgFat = fatVals.length ? fatVals.reduce((a: number, b: number) => a + b, 0) / fatVals.length : null
+
+                            const protVals = recs.map((r: any) => r.protein_content).filter((v: any) => v != null)
+                            const avgProt = protVals.length ? protVals.reduce((a: number, b: number) => a + b, 0) / protVals.length : null
+
+                            // Temperature average
+                            const tempVals = recs.map((r: any) => r.temperature).filter((v: any) => v != null)
+                            const avgTemp = tempVals.length ? tempVals.reduce((a: number, b: number) => a + b, 0) / tempVals.length : null
+
+                            // Mastitis: first record that was tested
+                            const mastitisTested = recs.find((r: any) => r.mastitis_test_performed)
+                            const mastitisTxt = mastitisTested
+                              ? mastitisTested.mastitis_result
+                                ? mastitisTested.mastitis_result.charAt(0).toUpperCase() + mastitisTested.mastitis_result.slice(1)
+                                : 'Tested'
+                              : 'N/A'
+
+                            // Milk safety: worst status wins
+                            const statuses = recs.map((r: any) => r.milk_safety_status).filter(Boolean)
+                            const safetyStatus = statuses.includes('unsafe_health') ? 'unsafe_health'
+                              : statuses.includes('unsafe_colostrum') ? 'unsafe_colostrum'
+                              : statuses.length ? 'safe'
+                              : null
+                            const safetyBadge = getSafetyStatusBadge(safetyStatus as any)
+
+                            const isFiltered = !!activeId
+                            const volLabel = isFiltered ? `${getSessionName(activeId)} L` : 'Total L'
+
+                            return (
+                              <>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-1 mb-1">
+                                  <div className={`text-center p-1 md:p-2 rounded transition-colors ${isFiltered ? 'bg-indigo-50' : 'bg-blue-50'}`}>
+                                    <p className={`text-base md:text-lg font-bold ${isFiltered ? 'text-indigo-600' : 'text-blue-600'}`}>{vol.toFixed(1)}</p>
+                                    <p className={`text-xs font-medium ${isFiltered ? 'text-indigo-600' : 'text-blue-600'}`}>{volLabel}</p>
+                                  </div>
+                                  <div className="text-center p-1 md:p-2 bg-orange-50 rounded">
+                                    <p className="text-sm md:text-base font-bold text-orange-600">{avgFat !== null ? avgFat.toFixed(2) + '%' : 'N/A'}</p>
+                                    <p className="text-xs text-orange-600 font-medium">Fat</p>
+                                  </div>
+                                  <div className="text-center p-1 md:p-2 bg-green-50 rounded">
+                                    <p className="text-sm md:text-base font-bold text-green-600">{avgProt !== null ? avgProt.toFixed(2) + '%' : 'N/A'}</p>
+                                    <p className="text-xs text-green-600 font-medium">Protein</p>
+                                  </div>
+                                  <div className="text-center p-1 md:p-2 bg-purple-50 rounded">
+                                    <p className="text-sm md:text-base font-bold text-purple-600">{recs.length}</p>
+                                    <p className="text-xs text-purple-600 font-medium">Records</p>
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-gray-200">
+                                  <div className="text-xs p-2 bg-gray-50 rounded">
+                                    <p className="font-semibold text-gray-700 mb-1">Mastitis Test</p>
+                                    <p className="text-gray-900">{mastitisTxt}</p>
+                                  </div>
+                                  <div className="text-xs p-2 bg-gray-50 rounded">
+                                    <p className="font-semibold text-gray-700 mb-1">Avg Temperature</p>
+                                    <p className="text-gray-900">{avgTemp !== null ? avgTemp.toFixed(1) + '°C' : 'N/A'}</p>
+                                  </div>
+                                  <div className={`text-xs p-2 rounded ${safetyStatus ? safetyBadge.color : 'bg-gray-50'}`}>
+                                    <p className="font-semibold mb-1">Milk Safety</p>
+                                    <p className="font-medium">{safetyBadge.label}</p>
+                                  </div>
+                                </div>
+                              </>
+                            )
+                          })()}
 
                           {/* Sessions in this cycle */}
                           <div className="mt-1 pt-1 border-t border-gray-200">
@@ -943,19 +1011,33 @@ export function ProductionRecordsList({
                             </button>
                             {expandedSessions.has(`${summary.cycleDate}-${summary.animal_id}`) && (
                               <div className="flex flex-wrap gap-1 mt-1">
-                                {summary.sessions.map((sessionId: string) => (
-                                  <button
-                                    key={sessionId}
-                                    onClick={() => setSelectedSession(`${summary.cycleDate}-${summary.animal_id}-${sessionId}`)}
-                                    className="transition-all"
-                                  >
-                                    <Badge 
-                                      className={`${getSessionBadgeColor(sessionId)} cursor-pointer hover:opacity-80 hover:shadow-md transition-all`}
+                                {summary.sessions.map((sessionId: string) => {
+                                  const isActive = activeSessionBadge[summaryKey] === sessionId
+                                  return (
+                                    <button
+                                      key={sessionId}
+                                      onClick={() => setActiveSessionBadge(prev => {
+                                        if (prev[summaryKey] === sessionId) {
+                                          const next = { ...prev }
+                                          delete next[summaryKey]
+                                          return next
+                                        }
+                                        return { ...prev, [summaryKey]: sessionId }
+                                      })}
+                                      className="transition-all"
                                     >
-                                      {getSessionName(sessionId)}
-                                    </Badge>
-                                  </button>
-                                ))}
+                                      <Badge
+                                        className={`cursor-pointer hover:opacity-80 hover:shadow-md transition-all ${
+                                          isActive
+                                            ? 'bg-indigo-200 text-indigo-900 ring-2 ring-indigo-400'
+                                            : getSessionBadgeColor(sessionId)
+                                        }`}
+                                      >
+                                        {getSessionName(sessionId)}
+                                      </Badge>
+                                    </button>
+                                  )
+                                })}
                               </div>
                             )}
                           </div>
@@ -1016,21 +1098,33 @@ export function ProductionRecordsList({
                             <p className="text-lg md:text-2xl font-bold text-blue-600">{summary.totalMilkVolume.toFixed(1)}</p>
                             <p className="text-xs text-blue-600 font-medium">Total Liters</p>
                           </div>
-                          {summary.avgFatContent !== null && (
-                            <div className="text-center p-2 md:p-3 bg-orange-50 rounded">
-                              <p className="text-base md:text-xl font-bold text-orange-600">{summary.avgFatContent.toFixed(2)}%</p>
-                              <p className="text-xs text-orange-600 font-medium">Avg Fat</p>
-                            </div>
-                          )}
-                          {summary.avgProteinContent !== null && (
-                            <div className="text-center p-2 md:p-3 bg-green-50 rounded">
-                              <p className="text-base md:text-xl font-bold text-green-600">{summary.avgProteinContent.toFixed(2)}%</p>
-                              <p className="text-xs text-green-600 font-medium">Avg Protein</p>
-                            </div>
-                          )}
+                          <div className="text-center p-2 md:p-3 bg-orange-50 rounded">
+                            <p className="text-base md:text-xl font-bold text-orange-600">{summary.avgFatContent !== null ? summary.avgFatContent.toFixed(2) + '%' : 'N/A'}</p>
+                            <p className="text-xs text-orange-600 font-medium">Avg Fat</p>
+                          </div>
+                          <div className="text-center p-2 md:p-3 bg-green-50 rounded">
+                            <p className="text-base md:text-xl font-bold text-green-600">{summary.avgProteinContent !== null ? summary.avgProteinContent.toFixed(2) + '%' : 'N/A'}</p>
+                            <p className="text-xs text-green-600 font-medium">Avg Protein</p>
+                          </div>
                           <div className="text-center p-2 md:p-3 bg-purple-50 rounded">
                             <p className="text-base md:text-lg font-bold text-purple-600">{summary.totalRecords}</p>
                             <p className="text-xs text-purple-600 font-medium">Records</p>
+                          </div>
+                        </div>
+
+                        {/* Health and Safety Details */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-4 pt-4 border-t border-gray-200">
+                          <div className="text-sm p-3 bg-gray-50 rounded">
+                            <p className="font-semibold text-gray-700 mb-2">Mastitis Test Status</p>
+                            <p className="text-gray-900">{summary.records.some((r: ProductionRecord) => r.mastitis_test_performed) ? (summary.records.find((r: ProductionRecord) => r.mastitis_result)?.mastitis_result ? summary.records.find((r: ProductionRecord) => r.mastitis_result)?.mastitis_result?.charAt(0).toUpperCase() + summary.records.find((r: ProductionRecord) => r.mastitis_result)?.mastitis_result?.slice(1) : 'Tested') : 'N/A'}</p>
+                          </div>
+                          <div className="text-sm p-3 bg-gray-50 rounded">
+                            <p className="font-semibold text-gray-700 mb-2">Average Temperature</p>
+                            <p className="text-gray-900">{summary.records.filter((r: ProductionRecord) => r.temperature).length > 0 ? (summary.records.filter((r: ProductionRecord) => r.temperature).reduce((sum: number, r: ProductionRecord) => sum + (r.temperature || 0), 0) / summary.records.filter((r: ProductionRecord) => r.temperature).length).toFixed(1) + '°C' : 'N/A'}</p>
+                          </div>
+                          <div className="text-sm p-3 bg-gray-50 rounded">
+                            <p className="font-semibold text-gray-700 mb-2">Milk Safety Status</p>
+                            <p className="text-gray-900">{getSafetyStatusBadge(summary.records[0]?.milk_safety_status).label}</p>
                           </div>
                         </div>
                       </div>
@@ -1113,38 +1207,44 @@ export function ProductionRecordsList({
                             <p className="text-base md:text-lg font-bold text-blue-600">{record.milk_volume}</p>
                             <p className="text-xs text-blue-600 font-medium">L</p>
                           </div>
-                          {record.fat_content && (
-                            <div className="text-center p-1 md:p-2 bg-orange-50 rounded">
-                              <p className="text-sm md:text-base font-bold text-orange-600">{record.fat_content}%</p>
-                              <p className="text-xs text-orange-600 font-medium">Fat</p>
-                            </div>
-                          )}
-                          {record.protein_content && (
-                            <div className="text-center p-1 md:p-2 bg-green-50 rounded">
-                              <p className="text-sm md:text-base font-bold text-green-600">{record.protein_content}%</p>
-                              <p className="text-xs text-green-600 font-medium">Protein</p>
-                            </div>
-                          )}
-                          {record.somatic_cell_count && (
-                            <div className="text-center p-1 md:p-2 bg-purple-50 rounded">
-                              <p className="text-xs md:text-sm font-bold text-purple-600">
-                                {(record.somatic_cell_count / 1000).toFixed(0)}k
-                              </p>
-                              <p className="text-xs text-purple-600 font-medium">SCC</p>
-                            </div>
-                          )}
-                          {record.temperature && (
-                            <div className="text-center p-1 md:p-2 bg-red-50 rounded">
-                              <p className="text-sm md:text-base font-bold text-red-600">{record.temperature}°C</p>
-                              <p className="text-xs text-red-600 font-medium">T</p>
-                            </div>
-                          )}
-                          {record.ph_level && (
-                            <div className="text-center p-1 md:p-2 bg-indigo-50 rounded">
-                              <p className="text-sm md:text-base font-bold text-indigo-600">{record.ph_level}</p>
-                              <p className="text-xs text-indigo-600 font-medium">pH</p>
-                            </div>
-                          )}
+                          <div className="text-center p-1 md:p-2 bg-orange-50 rounded">
+                            <p className="text-sm md:text-base font-bold text-orange-600">{record.fat_content ? record.fat_content + '%' : 'N/A'}</p>
+                            <p className="text-xs text-orange-600 font-medium">Fat</p>
+                          </div>
+                          <div className="text-center p-1 md:p-2 bg-green-50 rounded">
+                            <p className="text-sm md:text-base font-bold text-green-600">{record.protein_content ? record.protein_content + '%' : 'N/A'}</p>
+                            <p className="text-xs text-green-600 font-medium">Protein</p>
+                          </div>
+                          <div className="text-center p-1 md:p-2 bg-purple-50 rounded">
+                            <p className="text-xs md:text-sm font-bold text-purple-600">
+                              {record.somatic_cell_count ? (record.somatic_cell_count / 1000).toFixed(0) + 'k' : 'N/A'}
+                            </p>
+                            <p className="text-xs text-purple-600 font-medium">SCC</p>
+                          </div>
+                          <div className="text-center p-1 md:p-2 bg-red-50 rounded">
+                            <p className="text-sm md:text-base font-bold text-red-600">{record.temperature ? record.temperature + '°C' : 'N/A'}</p>
+                            <p className="text-xs text-red-600 font-medium">T</p>
+                          </div>
+                          <div className="text-center p-1 md:p-2 bg-indigo-50 rounded">
+                            <p className="text-sm md:text-base font-bold text-indigo-600">{record.ph_level ? record.ph_level : 'N/A'}</p>
+                            <p className="text-xs text-indigo-600 font-medium">pH</p>
+                          </div>
+                        </div>
+
+                        {/* Health and Safety Details */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-1 mt-2 pt-2 border-t border-gray-200">
+                          <div className="text-xs p-2 bg-gray-50 rounded">
+                            <p className="font-semibold text-gray-700 mb-0.5">Mastitis Test</p>
+                            <p className="text-gray-900">{record.mastitis_test_performed ? (record.mastitis_result ? record.mastitis_result.charAt(0).toUpperCase() + record.mastitis_result.slice(1) : 'Tested') : 'N/A'}</p>
+                          </div>
+                          <div className="text-xs p-2 bg-gray-50 rounded">
+                            <p className="font-semibold text-gray-700 mb-0.5">Temperature</p>
+                            <p className="text-gray-900">{record.temperature !== null && record.temperature !== undefined ? record.temperature.toFixed(1) + '°C' : 'N/A'}</p>
+                          </div>
+                          <div className="text-xs p-2 bg-gray-50 rounded">
+                            <p className="font-semibold text-gray-700 mb-0.5">Milk Safety</p>
+                            <p className="text-gray-900">{getSafetyStatusBadge(record.milk_safety_status).label}</p>
+                          </div>
                         </div>
                         
                         {/* Notes Section */}
@@ -1313,6 +1413,21 @@ export function ProductionRecordsList({
                                     {getSessionName(record.milking_session_id)}
                                   </span>
                                   <span>{formatDate(record.record_date)}</span>
+                                </div>
+                                {/* Health and Safety Details */}
+                                <div className="grid grid-cols-3 gap-2 mt-3 pt-2 border-t border-gray-300">
+                                  <div className="text-xs p-1.5 bg-white rounded border border-gray-300">
+                                    <p className="font-semibold text-gray-700 mb-0.5">Mastitis</p>
+                                    <p className="text-gray-900">{record.mastitis_test_performed ? (record.mastitis_result ? record.mastitis_result.charAt(0).toUpperCase() + record.mastitis_result.slice(1) : 'Tested') : 'N/A'}</p>
+                                  </div>
+                                  <div className="text-xs p-1.5 bg-white rounded border border-gray-300">
+                                    <p className="font-semibold text-gray-700 mb-0.5">Temp</p>
+                                    <p className="text-gray-900">{record.temperature !== null && record.temperature !== undefined ? record.temperature.toFixed(1) + '°C' : 'N/A'}</p>
+                                  </div>
+                                  <div className="text-xs p-1.5 bg-white rounded border border-gray-300">
+                                    <p className="font-semibold text-gray-700 mb-0.5">Milk Safety</p>
+                                    <p className="text-gray-900">{getSafetyStatusBadge(record.milk_safety_status).label}</p>
+                                  </div>
                                 </div>
                                 <div className="mt-2">
                                   <Badge className={recordingTypeBadge.color}>

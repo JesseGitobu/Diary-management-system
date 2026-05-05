@@ -332,9 +332,9 @@ export async function getFeedStats(farmId: string) {
     try {
       const { data, error } = await supabase
         .from('feed_inventory')
-        .select('feed_type_id, quantity_in_stock, minimum_threshold')
+        .select('feed_type_id, quantity_kg, minimum_threshold')
         .eq('farm_id', farmId)
-        .gt('quantity_in_stock', 0)
+        .gt('quantity_kg', 0)
       
       if (error) throw error
       feedInventoryData = data || []

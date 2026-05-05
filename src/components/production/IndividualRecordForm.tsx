@@ -34,12 +34,12 @@ type ProductionFormData = {
 
 interface IndividualRecordFormProps {
   farmId: string
-  animals: Array<{ 
+  animals: Array<{
     id: string
     tag_number: string
     name?: string
     gender: string
-    production_status: string 
+    production_status: string
   }>
   session: string
   sessionId?: string
@@ -51,6 +51,7 @@ interface IndividualRecordFormProps {
   sessionName?: string
   recordingType?: 'individual' | 'group'
   milkingGroupId?: string
+  preSelectedAnimalId?: string
 }
 
 export function IndividualRecordForm({
@@ -65,7 +66,8 @@ export function IndividualRecordForm({
   closeAfterSuccess = true,
   recordingType = 'individual',
   milkingGroupId,
-  sessionName
+  sessionName,
+  preSelectedAnimalId,
 }: IndividualRecordFormProps) {
   const [step, setStep] = useState<'select' | 'form'>('select')
   const [selectedAnimal, setSelectedAnimal] = useState<typeof animals[0] | null>(null)
@@ -131,15 +133,18 @@ export function IndividualRecordForm({
     fetchPreRecordedAnimals()
   }, [recordDate, session, sessionId, sessionName])
 
-  // Auto-select animal when in group recording mode with single animal
+  // Auto-select the pre-chosen animal when provided (group recording mode)
   useEffect(() => {
-    if (recordingType === 'group' && animals.length === 1 && step === 'select' && !selectedAnimal) {
-
-      setSelectedAnimal(animals[0])
+    if (!preSelectedAnimalId) return
+    const animal = animals.find(a => a.id === preSelectedAnimalId)
+    if (animal) {
+      setSelectedAnimal(animal)
+      form.setValue('animal_id', animal.id)
       setStep('form')
       setSearchQuery('')
+      setError(null)
     }
-  }, [recordingType, animals, step, selectedAnimal])
+  }, [preSelectedAnimalId, animals])
 
   // Schema with dynamic validation
   const productionSchema = useMemo(() => {
@@ -464,6 +469,9 @@ export function IndividualRecordForm({
 
       const animalId = data.animal_id
 
+      // Mark as recorded so the change-animal picker excludes it immediately
+      setPreRecordedAnimalIds(prev => new Set([...prev, animalId]))
+
       // Create health issue if mastitis is detected (mild or severe)
       if (data.mastitis_result === 'mild' || data.mastitis_result === 'severe') {
         await createMastitisHealthIssue(animalId, data.mastitis_result, data)
@@ -479,9 +487,11 @@ export function IndividualRecordForm({
         onSuccess()
       }
 
-      // Reset form for next entry
-      setSelectedAnimal(null)
-      setStep('select')
+      // In group mode the parent manages navigation; only reset in individual mode
+      if (recordingType !== 'group') {
+        setSelectedAnimal(null)
+        setStep('select')
+      }
       setSuccessMessage(null)
       form.reset({
         animal_id: '',

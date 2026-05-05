@@ -44,7 +44,7 @@ export async function GET(request: NextRequest, context: any) {
       }))
     }
 
-    // Fetch milking sessions from production_records
+    // Fetch distinct milking_session UUIDs used in production_records for this farm
     const { data: records, error: recordsError } = await supabase
       .from('production_records')
       .select('milking_session_id')
@@ -56,33 +56,36 @@ export async function GET(request: NextRequest, context: any) {
       return NextResponse.json({ error: 'Failed to fetch records' }, { status: 500 })
     }
 
-    // Collect unique session IDs from records
-    const sessionIdsFromRecords = new Set<string>()
-    records?.forEach((record: any) => {
-      if (record.milking_session_id) {
-        sessionIdsFromRecords.add(record.milking_session_id)
+    const uniqueSessionUuids = [...new Set(
+      (records || []).map((r: any) => r.milking_session_id).filter(Boolean)
+    )]
+
+    // Resolve UUIDs → session_name from the milking_sessions table
+    let resolvedSessions: Array<{ id: string; name: string }> = []
+    if (uniqueSessionUuids.length > 0) {
+      const { data: milkingRows } = await supabase
+        .from('milking_sessions')
+        .select('id, session_name')
+        .in('id', uniqueSessionUuids)
+
+      if (milkingRows) {
+        resolvedSessions = (milkingRows as any[]).map(row => ({
+          id: row.id,
+          name: row.session_name || 'Unknown Session',
+        }))
       }
-    })
-
-    // Build final sessions list: configured sessions are the primary source
-    const allSessions = new Map<string, { id: string; name: string }>()
-    
-    // Add configured sessions
-    configuredSessions.forEach(session => {
-      allSessions.set(session.id, session)
-    })
-
-    // Convert map to array and sort by configured order
-    const sessions = Array.from(allSessions.values())
-
-    // Provide fallback if no sessions are configured
-    if (sessions.length === 0) {
-      sessions.push(
-        { id: 'morning', name: 'Morning' },
-        { id: 'afternoon', name: 'Afternoon' },
-        { id: 'evening', name: 'Evening' }
-      )
     }
+
+    // Build final sessions list: UUID-resolved rows take priority; fall back to config or defaults
+    const sessions: Array<{ id: string; name: string }> = resolvedSessions.length > 0
+      ? resolvedSessions
+      : configuredSessions.length > 0
+        ? configuredSessions
+        : [
+            { id: 'morning', name: 'Morning' },
+            { id: 'afternoon', name: 'Afternoon' },
+            { id: 'evening', name: 'Evening' },
+          ]
 
     console.log(`[MilkingSessions] Returning ${sessions.length} sessions`)
 

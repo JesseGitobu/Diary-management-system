@@ -77,31 +77,29 @@ export function GroupRecordForm({
   useEffect(() => {
     const fetchPreRecordedAnimals = async () => {
       try {
-        // Note: API filters by date only (start_date=end_date). Session filtering will be done in-app
-        const response = await fetch(
-          `/api/production?start_date=${recordDate}&end_date=${recordDate}`
-        )
-        
+        // Use session_name so the server resolves the correct milking_sessions UUID.
+        // Client-side filtering by milking_session_id would never match because the DB
+        // stores the resolved UUID, not the config-level session identifier.
+        const url = sessionName
+          ? `/api/production?start_date=${recordDate}&end_date=${recordDate}&session_name=${encodeURIComponent(sessionName)}`
+          : `/api/production?start_date=${recordDate}&end_date=${recordDate}`
+
+        const response = await fetch(url)
+
         if (response.ok) {
           const result = await response.json()
           const records = Array.isArray(result.data) ? result.data : []
-          
-          // Filter by session since API doesn't support that parameter
-          const sessionFilteredRecords = records.filter((r: any) => r.milking_session_id === session)
-          
-          const preRecordedIds = new Set<string>(sessionFilteredRecords.map((r: any) => r.animal_id))
-          setPreRecordedAnimalIds(preRecordedIds)
+          setPreRecordedAnimalIds(new Set<string>(records.map((r: any) => r.animal_id)))
         } else {
           setPreRecordedAnimalIds(new Set())
         }
       } catch (err) {
-        // Don't fail silently - just continue
         setPreRecordedAnimalIds(new Set())
       }
     }
 
     fetchPreRecordedAnimals()
-  }, [recordDate, session])
+  }, [recordDate, session, sessionName])
 
   // Fetch milking groups data
   useEffect(() => {
@@ -553,6 +551,7 @@ export function GroupRecordForm({
             closeAfterSuccess={false}
             recordingType="group"
             milkingGroupId={selectedGroupId || undefined}
+            preSelectedAnimalId={selectedAnimalId || undefined}
             onRecordSaved={(animalId) => {
               // Mark animal as recorded in current session for this group
               const updated = new Set([...recordedAnimalIds, animalId])

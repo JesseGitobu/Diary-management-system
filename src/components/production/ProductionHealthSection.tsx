@@ -32,7 +32,7 @@ export function ProductionHealthSection({
 
   // Temperature warnings
   const tempWarning = useMemo(() => {
-    if (temperature === null || temperature === undefined) return null
+    if (temperature === null || temperature === undefined || isNaN(temperature)) return null
     if (temperature < 38) return 'low'
     if (temperature > 39.5) return 'high'
     return null
@@ -71,8 +71,11 @@ export function ProductionHealthSection({
                 placeholder="38.5"
                 className="pl-10"
                 {...form.register('temperature', {
-                  valueAsNumber: true,
-                  setValueAs: (value) => value === '' ? null : parseFloat(value) || null
+                  setValueAs: (value) => {
+                    if (value === '' || value === null || value === undefined) return null
+                    const parsed = parseFloat(value)
+                    return isNaN(parsed) ? null : parsed
+                  }
                 })}
               />
             </div>
@@ -88,7 +91,7 @@ export function ProductionHealthSection({
                 </span>
               </p>
             )}
-            {!tempWarning && temperature && (
+            {!tempWarning && temperature != null && !isNaN(temperature) && (
               <p className="text-xs mt-1 text-green-600">Normal temperature</p>
             )}
           </div>

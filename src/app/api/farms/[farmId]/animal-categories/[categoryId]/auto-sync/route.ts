@@ -54,13 +54,30 @@ export async function POST(
 
     const currentAnimalIds = (currentAssignments || []).map((a: any) => a.animal_id)
 
-    // Determine animals to add (match but not assigned)
-    const animalIdsToAdd = matchingAnimalIds.filter((id: string) => !currentAnimalIds.includes(id))
+    // Fetch animals already assigned to a DIFFERENT category so we don't steal them
+    const { data: assignedElsewhere } = await (supabase
+      .from('animal_category_assignments') as any)
+      .select('animal_id')
+      .eq('farm_id', farmId)
+      .neq('category_id', categoryId)
+      .is('removed_at', null)
 
-    // Determine animals to remove (assigned but don't match)
+    const assignedElsewhereIds = new Set<string>(
+      (assignedElsewhere || []).map((a: any) => a.animal_id)
+    )
+
+    // Determine animals to add: match this category, not already here, and not in another category
+    const animalIdsToAdd = matchingAnimalIds.filter(
+      (id: string) => !currentAnimalIds.includes(id) && !assignedElsewhereIds.has(id)
+    )
+    const skippedCount = matchingAnimalIds.filter(
+      (id: string) => !currentAnimalIds.includes(id) && assignedElsewhereIds.has(id)
+    ).length
+
+    // Determine animals to remove (assigned here but no longer match)
     const animalIdsToRemove = currentAnimalIds.filter((id: string) => !matchingAnimalIds.includes(id))
 
-    // Transaction: add new assignments and remove non-matching ones
+    // Add new assignments
     const { data: addedAssignments, error: addError } = await (supabase
       .from('animal_category_assignments') as any)
       .insert(
@@ -108,10 +125,12 @@ export async function POST(
         category,
         added: animalIdsToAdd.length,
         removed: animalIdsToRemove.length,
+        skipped: skippedCount,
         total: matchingAnimalIds.length,
         summary: {
           animalIdsAdded: animalIdsToAdd,
-          animalIdsRemoved: animalIdsToRemove
+          animalIdsRemoved: animalIdsToRemove,
+          skippedAlreadyCategorized: skippedCount
         }
       }
     })

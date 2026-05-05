@@ -14,7 +14,8 @@ import {
   Info,
   Save,
   RotateCcw,
-  Lock
+  Lock,
+  CheckCircle2
 } from 'lucide-react'
 import { getDefaultProductionSettings } from '@/types/production-distribution-settings'
 import { saveSettings } from '@/lib/utils/settings-handlers'
@@ -45,6 +46,8 @@ export default function ProductionSettingsTab({
   const [isLoading, setIsLoading] = useState(false)
   const [activeSection, setActiveSection] = useState('general')
   const isInitialLoad = useRef(true)
+  const [confirmSaveDialog, setConfirmSaveDialog] = useState(false)
+  const [confirmResetDialog, setConfirmResetDialog] = useState(false)
 
   useEffect(() => {
     if (initialSettings && isInitialLoad.current) {
@@ -62,22 +65,36 @@ export default function ProductionSettingsTab({
   }, [settings, onUnsavedChanges])
 
   const handleSave = async () => {
-    if (!window.confirm('Save these production settings?')) return
+    setConfirmSaveDialog(true)
+  }
 
+  const performSave = async () => {
+    setConfirmSaveDialog(false)
     setIsLoading(true)
     try {
       await saveSettings('/api/settings/production', farmId, settings, () => {
         onUnsavedChanges(false)
-      })
+      }, '✓ Production settings saved successfully')
     } finally {
       setIsLoading(false)
     }
   }
 
   const resetToDefaults = () => {
-    if (!window.confirm('Reset all production settings to defaults?')) return
+    setConfirmResetDialog(true)
+  }
+
+  const performReset = () => {
+    setConfirmResetDialog(false)
     setSettings(getDefaultProductionSettings())
-    toast.success('Settings reset to defaults', { duration: 3000 })
+    toast.custom((t) => (
+      <div className="bg-green-50 border border-green-200 rounded-lg shadow-lg p-4 max-w-md">
+        <div className="space-y-2">
+          <p className="font-semibold text-green-900">✓ Settings Reset to Defaults</p>
+          <p className="text-sm text-green-800">All production settings have been reset to their default values.</p>
+        </div>
+      </div>
+    ), { duration: 5000, position: 'top-right' })
   }
 
   const updateSetting = (key: string, value: any) => {
@@ -191,6 +208,79 @@ export default function ProductionSettingsTab({
           </Button>
         </div>
       </div>
+
+      {/* Save Confirmation Dialog */}
+      {confirmSaveDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="p-6 space-y-4">
+              <div className="flex items-start space-x-3">
+                <div className="h-10 w-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <CheckCircle2 className="h-6 w-6 text-blue-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Save Production Settings?</h2>
+                  <p className="text-sm text-gray-600 mt-1">Your production tracking configuration will be updated.</p>
+                </div>
+              </div>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-sm text-blue-900">These changes will apply to all future production entries.</p>
+              </div>
+            </div>
+            <div className="flex gap-3 p-6 border-t bg-gray-50 rounded-b-lg">
+              <button
+                onClick={() => setConfirmSaveDialog(false)}
+                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={performSave}
+                disabled={isLoading}
+                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+              >
+                {isLoading ? 'Saving...' : 'Save Settings'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset Confirmation Dialog */}
+      {confirmResetDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="p-6 space-y-4">
+              <div className="flex items-start space-x-3">
+                <div className="h-10 w-10 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <AlertTriangle className="h-6 w-6 text-amber-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Reset to Defaults?</h2>
+                  <p className="text-sm text-gray-600 mt-1">All production settings will be reset to their default values.</p>
+                </div>
+              </div>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <p className="text-sm text-amber-900">This action cannot be undone. Custom configurations will be lost.</p>
+              </div>
+            </div>
+            <div className="flex gap-3 p-6 border-t bg-gray-50 rounded-b-lg">
+              <button
+                onClick={() => setConfirmResetDialog(false)}
+                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={performReset}
+                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+              >
+                Reset to Defaults
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

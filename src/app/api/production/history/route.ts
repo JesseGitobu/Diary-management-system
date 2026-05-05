@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
     // any today record belongs to an earlier session.
     const { data: previousSessionRecords, error: prevError } = await supabase
       .from('production_records')
-      .select('milk_volume, milking_session_id')
+      .select('milk_volume, milking_session_id, milking_sessions(session_name)')
       .eq('farm_id', farmId)
       .eq('animal_id', animalId)
       .eq('record_date', currentDate)
@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
     if (!typedPreviousSessionRecords || typedPreviousSessionRecords.length === 0) {
       const { data: yesterdayLastSessionRecords, error: yesterdayError } = await supabase
         .from('production_records')
-        .select('milk_volume, milking_session_id')
+        .select('milk_volume, milking_session_id, milking_sessions(session_name)')
         .eq('farm_id', farmId)
         .eq('animal_id', animalId)
         .eq('record_date', yesterdayDate)
@@ -109,16 +109,21 @@ export async function GET(request: NextRequest) {
     previousSessionId = typedPreviousSessionRecords && typedPreviousSessionRecords.length > 0
       ? typedPreviousSessionRecords[0].milking_session_id
       : null
+    const previousSessionName: string | null = typedPreviousSessionRecords && typedPreviousSessionRecords.length > 0
+      ? (typedPreviousSessionRecords[0].milking_sessions as any)?.session_name ?? null
+      : null
 
     // Fetch same session yesterday's volume.
     // Resolve yesterday's milking_session UUID by session_name to avoid UUID type errors.
     let sameTimeYesterdayVolume: number | null = null
     let sameTimeYesterdaySessionId: string | null = null
 
+    let sameTimeYesterdaySessionName: string | null = null
+
     if (sessionName) {
       const { data: yesterdaySession } = await (supabase as any)
         .from('milking_sessions')
-        .select('id')
+        .select('id, session_name')
         .eq('farm_id', farmId)
         .eq('session_name', sessionName)
         .gte('session_start', `${yesterdayDate}T00:00:00`)
@@ -127,6 +132,8 @@ export async function GET(request: NextRequest) {
 
       const yesterdaySessionUUID: string | null =
         yesterdaySession && yesterdaySession.length > 0 ? yesterdaySession[0].id : null
+      sameTimeYesterdaySessionName =
+        yesterdaySession && yesterdaySession.length > 0 ? yesterdaySession[0].session_name : null
 
       if (yesterdaySessionUUID) {
         const { data: sameTimeYesterdayRecords } = await supabase
@@ -143,16 +150,18 @@ export async function GET(request: NextRequest) {
         sameTimeYesterdaySessionId = typed && typed.length > 0 ? typed[0].milking_session_id : null
       }
     }
-    
+
     return NextResponse.json({
       yesterdayTotal,
       previousSessionVolume,
       previousSessionId,
-      previousSessionIsFromYesterday: typedPreviousSessionRecords && typedPreviousSessionRecords.length > 0 
+      previousSessionName,
+      previousSessionIsFromYesterday: typedPreviousSessionRecords && typedPreviousSessionRecords.length > 0
         ? !previousSessionRecords || previousSessionRecords.length === 0
         : false,
       sameTimeYesterdayVolume,
       sameTimeYesterdaySessionId,
+      sameTimeYesterdaySessionName,
     })
     
   } catch (error) {

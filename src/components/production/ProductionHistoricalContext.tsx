@@ -9,9 +9,11 @@ interface HistoricalData {
   yesterdayTotal?: number | null
   previousSessionVolume?: number | null
   previousSessionId?: string | null
+  previousSessionName?: string | null
   previousSessionIsFromYesterday?: boolean
   sameTimeYesterdayVolume?: number | null
   sameTimeYesterdaySessionId?: string | null
+  sameTimeYesterdaySessionName?: string | null
 }
 
 interface CacheEntry {
@@ -173,7 +175,7 @@ export function ProductionHistoricalContext({
         </div>
         {historicalData.previousSessionVolume && (
           <p className="text-xs text-stone-500">
-            {getSessionName(historicalData.previousSessionId)} {historicalData.previousSessionIsFromYesterday ? 'yesterday' : 'earlier today'}
+            {historicalData.previousSessionName || getSessionName(historicalData.previousSessionId)} {historicalData.previousSessionIsFromYesterday ? 'yesterday' : 'earlier today'}
           </p>
         )}
       </div>
@@ -196,7 +198,7 @@ export function ProductionHistoricalContext({
           </div>
         </div>
         {historicalData.sameTimeYesterdayVolume && (
-          <p className="text-xs text-stone-500">{getSessionName(historicalData.sameTimeYesterdaySessionId)} session</p>
+          <p className="text-xs text-stone-500">{historicalData.sameTimeYesterdaySessionName || getSessionName(historicalData.sameTimeYesterdaySessionId)} session</p>
         )}
       </div>
     </div>
