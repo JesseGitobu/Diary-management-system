@@ -10,6 +10,7 @@ export default function Loading() {
           src="/icon.png" 
           alt="DairyTrack Pro Logo"
           fill
+          sizes="96px"
           className="object-contain"
           priority
         />

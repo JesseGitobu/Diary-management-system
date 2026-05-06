@@ -459,9 +459,10 @@ export function ImportAnimalsModal({
       }, 300)
       
       // Add timeout protection for long-running imports
-      const IMPORT_TIMEOUT = 5 * 60 * 1000  // 5 minutes
+      // Increased to 10 minutes for bulk imports of 200+ animals
+      const IMPORT_TIMEOUT = 10 * 60 * 1000  // 10 minutes
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Import operation timed out. Please try again with fewer animals.')), IMPORT_TIMEOUT)
+        setTimeout(() => reject(new Error('Import operation timed out. Please try again with fewer animals or contact support if this persists.')), IMPORT_TIMEOUT)
       )
       
       let result

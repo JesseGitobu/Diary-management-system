@@ -54,7 +54,10 @@ export async function getDashboardStats(farmId: string) {
         return {
           farm,
           farmAge,
-          animals: animalStats,
+          animals: {
+            ...animalStats,
+            milkingCows: productionStats.milkingCows // Add milking cows count from production stats
+          },
           team: teamStats,
           production: productionStats,
           health: healthStats,
@@ -122,14 +125,12 @@ export async function getProductionStats(farmId: string) {
       weeklyProductionData = []
     }
     
-    // Get milking cow count
+    // Get milking cow count - animals with production status LACTATING or SERVED
     const { count: milkingCows } = await supabase
       .from('animals')
       .select('*', { count: 'exact', head: true })
       .eq('farm_id', farmId)
-      .eq('status', 'active')
-      .eq('gender', 'female')
-      .gte('birth_date', new Date(Date.now() - 2 * 365 * 24 * 60 * 60 * 1000).toISOString()) // Assume 2+ years old are milking
+      .in('production_status', ['lactating', 'served'])
     
     // FIXED: Cast to any[] to bypass 'never' type error
     const todayMilk = (todayProductionData as any[])?.reduce((sum, record) => sum + (record.milk_volume || 0), 0) || 0
