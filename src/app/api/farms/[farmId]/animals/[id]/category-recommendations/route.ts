@@ -1,4 +1,4 @@
-// API endpoint: /api/farms/[farmId]/animals/[animalId]/category-recommendations
+// API endpoint: /api/farms/[farmId]/animals/[id]/category-recommendations
 // Purpose: Return categories the animal could be transferred to, ranked by fit.
 //
 // GET response:
@@ -95,11 +95,11 @@ function scoreCategory(animal: any, category: any, ageDays: number | null): { sc
 
 export async function GET(
   _request: NextRequest,
-  props: { params: Promise<{ farmId: string; animalId: string }> }
+  props: { params: Promise<{ farmId: string; id: string }> }
 ) {
   try {
     const params = await props.params
-    const { farmId, animalId } = params
+    const { farmId, id } = params
     const supabase = await createServerSupabaseClient()
 
     const { data: { user } } = await supabase.auth.getUser()
@@ -118,7 +118,7 @@ export async function GET(
     const { data: animal } = await supabase
       .from('animals')
       .select('id, tag_number, name, gender, birth_date, production_status, status')
-      .eq('id', animalId)
+      .eq('id', id)
       .eq('farm_id', farmId)
       .maybeSingle()
 
@@ -130,7 +130,7 @@ export async function GET(
     const { data: lactRec } = await supabase
       .from('lactation_cycle_records')
       .select('days_in_milk, current_average_production')
-      .eq('animal_id', animalId)
+      .eq('animal_id', id)
       .is('actual_end_date', null)
       .maybeSingle()
 
@@ -145,7 +145,7 @@ export async function GET(
     const { data: currentAssignment } = await (supabase as any)
       .from('animal_category_assignments')
       .select('category_id, animal_categories(name)')
-      .eq('animal_id', animalId)
+      .eq('animal_id', id)
       .is('removed_at', null)
       .maybeSingle()
 
