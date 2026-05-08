@@ -46,6 +46,27 @@ interface RecordProductionModalProps {
   }>
   settings: ProductionSettings | null
   onSuccess?: () => void
+  recordingType?: 'individual' | 'group'
+  milkingGroupName?: string
+  editingRecord?: {
+    id: string
+    animal_id: string
+    record_date: string
+    milking_session_id: string
+    milk_volume: number
+    milk_safety_status: 'safe' | 'unsafe_health' | 'unsafe_colostrum'
+    temperature?: number | null
+    mastitis_test_performed?: boolean
+    mastitis_result?: 'negative' | 'mild' | 'severe' | null
+    affected_quarters?: string[] | null
+    fat_content?: number | null
+    protein_content?: number | null
+    somatic_cell_count?: number | null
+    lactose_content?: number | null
+    ph_level?: number | null
+    notes?: string | null
+    milking_time?: string | null
+  } | null
 }
 
 export function RecordProductionModal({
@@ -54,12 +75,19 @@ export function RecordProductionModal({
   farmId,
   animals,
   settings,
-  onSuccess
+  onSuccess,
+  recordingType,
+  milkingGroupName,
+  editingRecord
 }: RecordProductionModalProps) {
+
+  
   const { isMobile, isTablet } = useDeviceInfo()
-  const [activeTab, setActiveTab] = useState<Tab>('individual')
+  const [activeTab, setActiveTab] = useState<Tab>(
+    editingRecord && recordingType ? recordingType : 'individual'
+  )
   const [selectedDate, setSelectedDate] = useState<string>(
-    new Date().toISOString().split('T')[0]
+    editingRecord?.record_date || new Date().toISOString().split('T')[0]
   )
 
   // Get sessions from milking_sessions configuration
@@ -75,17 +103,24 @@ export function RecordProductionModal({
     ]
   }, [settings?.milkingSessions])
 
-  // Initialize selectedSession to the session matching the current time
-  const [selectedSession, setSelectedSession] = useState<string>(() =>
-    getSessionForCurrentTime(sessions)
-  )
+  // Initialize selectedSession to the session matching the current time, or the editing record's session
+  const [selectedSession, setSelectedSession] = useState<string>(() => {
+    if (editingRecord?.milking_session_id) {
+      return editingRecord.milking_session_id
+    }
+    return getSessionForCurrentTime(sessions)
+  })
 
-  // Re-select the time-appropriate session each time the modal is opened
+  // Re-select the time-appropriate session each time the modal is opened, or use editing record's session
   useEffect(() => {
     if (isOpen) {
-      setSelectedSession(getSessionForCurrentTime(sessions))
+      if (editingRecord?.milking_session_id) {
+        setSelectedSession(editingRecord.milking_session_id)
+      } else {
+        setSelectedSession(getSessionForCurrentTime(sessions))
+      }
     }
-  }, [isOpen, sessions])
+  }, [isOpen, sessions, editingRecord])
   
   // Get the session object for selectedSession to pass sessionId to forms
   const currentSessionObject = useMemo(
@@ -137,7 +172,9 @@ export function RecordProductionModal({
     <Modal isOpen={isOpen} onClose={onClose} className="sm:max-w-4xl">
       {/* Header with Title */}
       <div className="bg-stone-50 border-b border-stone-200 px-4 sm:px-6 py-3 flex items-center justify-between">
-        <h2 className="text-base sm:text-lg font-semibold text-stone-900">Record Production</h2>
+        <h2 className="text-base sm:text-lg font-semibold text-stone-900">
+          {editingRecord ? 'Edit Production Record' : 'Record Production'}
+        </h2>
       </div>
 
       {/* Header Bar — stacks vertically on mobile */}
@@ -152,7 +189,7 @@ export function RecordProductionModal({
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
               min={minAllowedDate}
-              max={new Date().toISOString().split('T')[0]}
+              max={(() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split('T')[0]; })()}
               className="flex-1 sm:flex-none px-3 py-1.5 border border-stone-300 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
               title={`Can record up to ${settings?.maxRetroactiveDays || 0} days back`}
             />
@@ -178,65 +215,127 @@ export function RecordProductionModal({
           </div>
         </div>
 
-        {/* Tab Switcher — full width on mobile */}
-        <div className="flex items-center bg-white border border-stone-200 rounded-lg p-1">
-          <button
-            onClick={() => setActiveTab('individual')}
-            className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded font-medium text-sm transition-colors ${
-              activeTab === 'individual'
-                ? 'bg-green-100 text-green-700'
-                : 'text-stone-600 hover:text-stone-900'
-            }`}
-          >
-            {isMobile ? 'Individual' : 'By Individual'}
-          </button>
-          <button
-            onClick={() => setActiveTab('group')}
-            className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded font-medium text-sm transition-colors ${
-              activeTab === 'group'
-                ? 'bg-green-100 text-green-700'
-                : 'text-stone-600 hover:text-stone-900'
-            }`}
-          >
-            {isMobile ? 'Group' : 'By Group'}
-          </button>
-        </div>
+        {/* Tab Switcher — full width on mobile, only show when creating new records */}
+        {!editingRecord && (
+          <div className="flex items-center bg-white border border-stone-200 rounded-lg p-1">
+            <button
+              onClick={() => setActiveTab('individual')}
+              className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded font-medium text-sm transition-colors ${
+                activeTab === 'individual'
+                  ? 'bg-green-100 text-green-700'
+                  : 'text-stone-600 hover:text-stone-900'
+              }`}
+            >
+              {isMobile ? 'Individual' : 'By Individual'}
+            </button>
+            <button
+              onClick={() => setActiveTab('group')}
+              className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded font-medium text-sm transition-colors ${
+                activeTab === 'group'
+                  ? 'bg-green-100 text-green-700'
+                  : 'text-stone-600 hover:text-stone-900'
+              }`}
+            >
+              {isMobile ? 'Group' : 'By Group'}
+            </button>
+          </div>
+        )}
+
+        {/* Recording Method Badge — only show when editing */}
+        {editingRecord && (
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 sm:border-l border-stone-200 sm:pl-3">
+            <span className="text-xs font-semibold text-stone-600 uppercase">Created:</span>
+            <div className="flex items-center gap-2">
+              <Badge className={recordingType === 'group' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}>
+                {recordingType === 'group' ? 'By Group' : 'By Individual'}
+              </Badge>
+              {recordingType === 'group' && milkingGroupName && (
+                <Badge className="bg-stone-100 text-stone-700">
+                  {milkingGroupName}
+                </Badge>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Content Area */}
       <div className="min-h-[300px] sm:min-h-[400px] p-4 sm:p-6">
-        {activeTab === 'individual' && (
-          <IndividualRecordForm
-            farmId={farmId}
-            animals={animals}
-            session={selectedSession}
-            sessionId={selectedSession}
-            recordDate={selectedDate}
-            settings={settings}
-            closeAfterSuccess={false}
-            sessionName={currentSessionObject?.name}
-          />
-        )}
+        {/* When editing, show only the original recording method */}
+        {editingRecord ? (
+          recordingType === 'individual' ? (
+            <>
+              <IndividualRecordForm
+                farmId={farmId}
+                animals={animals}
+                session={selectedSession}
+                sessionId={selectedSession}
+                recordDate={selectedDate}
+                settings={settings}
+                closeAfterSuccess={false}
+                sessionName={currentSessionObject?.name}
+                editingRecord={editingRecord}
+              />
+            </>
+          ) : (
+            <>
+              <GroupRecordForm
+                farmId={farmId}
+                animals={animals}
+                session={selectedSession}
+                sessionId={selectedSession}
+                recordDate={selectedDate}
+                settings={settings}
+                sessionName={currentSessionObject?.name}
+                editingRecord={editingRecord}
+              />
+            </>
+          )
+        ) : (
+          /* When creating new records, show tabs */
+          <>
+            {activeTab === 'individual' && (
+              <>
+                <IndividualRecordForm
+                  farmId={farmId}
+                  animals={animals}
+                  session={selectedSession}
+                  sessionId={selectedSession}
+                  recordDate={selectedDate}
+                  settings={settings}
+                  closeAfterSuccess={false}
+                  sessionName={currentSessionObject?.name}
+                  editingRecord={null}
+                />
+              </>
+            )}
 
-        {activeTab === 'group' && (
-          <GroupRecordForm
-            farmId={farmId}
-            animals={animals}
-            session={selectedSession}
-            sessionId={selectedSession}
-            recordDate={selectedDate}
-            settings={settings}
-            sessionName={currentSessionObject?.name}
-          />
+            {activeTab === 'group' && (
+              <>
+                <GroupRecordForm
+                  farmId={farmId}
+                  animals={animals}
+                  session={selectedSession}
+                  sessionId={selectedSession}
+                  recordDate={selectedDate}
+                  settings={settings}
+                  sessionName={currentSessionObject?.name}
+                  editingRecord={null}
+                />
+              </>
+            )}
+          </>
         )}
       </div>
 
-      {/* Close Button */}
-      <div className="border-t border-stone-200 px-4 sm:px-6 py-3 sm:py-4 flex justify-end">
-        <Button variant="outline" onClick={handleCloseModal}>
-          Close
-        </Button>
-      </div>
+      {/* Footer — rendered only when not in editing mode */}
+      {!editingRecord && (
+        <div className="border-t border-stone-200 px-4 sm:px-6 py-3 sm:py-4 flex justify-end">
+          <Button variant="outline" onClick={handleCloseModal}>
+            Close
+          </Button>
+        </div>
+      )}
     </Modal>
   )
 }

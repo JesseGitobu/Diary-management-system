@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/Label'
 import { Badge } from '@/components/ui/Badge'
 import { Modal } from '@/components/ui/Modal'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/Alert'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,7 +34,11 @@ import {
   Activity,
   Venus,
   Mars,
-  VenetianMask
+  VenetianMask,
+  CheckCircle,
+  AlertCircle,
+  XCircle,
+  Info
 } from 'lucide-react'
 import {
   Select,
@@ -262,7 +267,7 @@ const getRelevantCharacteristics = (productionStatus: string): string[] => {
     lactating: ['lactation', 'health', 'body', 'management', 'feeding'],
     steaming_dry_cows: ['pregnancy', 'health', 'body', 'feeding'],
     open_culling_dry_cows: ['health', 'body', 'feeding', 'breeding'],
-    bull: ['health', 'body', 'breeding', 'management']
+    bull: ['growth', 'health', 'body', 'feeding'] // Bulls: growth, health, body, feeding (no milking schedules or breeding heat cycles)
   }
   return mapping[productionStatus] || []
 }
@@ -342,6 +347,33 @@ export function AnimalCategoriesManager({
   const [farmMilkingSessions, setFarmMilkingSessions] = useState<Array<{ id: string; name: string; time: string; requiresTimeInput?: boolean }>>([])
   const [feedRations, setFeedRations] = useState<Array<{ id: string; name: string; description?: string; is_active: boolean }>>([])
 
+  // Feedback modal state
+  const [feedback, setFeedback] = useState<{
+    type: 'success' | 'error' | 'warning' | 'info'
+    title: string
+    message: string
+    details?: string[] | string
+    isOpen: boolean
+  } | null>(null)
+
+  const showFeedback = useCallback((
+    type: 'success' | 'error' | 'warning' | 'info',
+    title: string,
+    message: string,
+    details?: string[] | string
+  ) => {
+    setFeedback({
+      type,
+      title,
+      message,
+      details,
+      isOpen: true
+    })
+  }, [])
+
+  const closeFeedback = useCallback(() => {
+    setFeedback(prev => prev ? { ...prev, isOpen: false } : null)
+  }, [])
   useEffect(() => {
     const fetchFarmSettings = async () => {
       try {
@@ -676,16 +708,19 @@ export function AnimalCategoriesManager({
         }
       })
 
-      // Add milking schedules
+      // Add milking schedules and selected schedule
       if (formData.milking_schedules && formData.milking_schedules.length > 0) {
         characteristics.milking_schedules = formData.milking_schedules
-        characteristics.selected_milking_schedule_id = formData.selected_milking_schedule_id || ''
+      }
+      
+      // Always save the selected milking schedule if one is chosen (including farm_default)
+      if (formData.selected_milking_schedule_id) {
+        characteristics.selected_milking_schedule_id = formData.selected_milking_schedule_id
       }
 
       // Add feed ration assignment
-      if (formData.milking_schedules && formData.milking_schedules.length > 0) {
-        characteristics.milking_schedules = formData.milking_schedules
-        characteristics.selected_milking_schedule_id = formData.selected_milking_schedule_id || ''
+      if (formData.selected_feed_ration_id) {
+        // Feed ration ID is handled separately via feed_ration_id in payload
       }
 
       const payload = {
@@ -734,16 +769,24 @@ export function AnimalCategoriesManager({
         onCategoriesUpdate(categories.map(cat =>
           cat.id === editingCategory.id ? result.data : cat
         ))
+        showFeedback('success', 'Category Updated', `"${result.data.name}" has been updated successfully.`)
       } else {
         onCategoriesUpdate([...categories, result.data])
+        showFeedback('success', 'Category Created', `"${result.data.name}" has been created successfully.`)
       }
 
       handleModalClose()
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
       console.error('Error saving category:', errorMessage)
-      alert(errorMessage)
-      // You might want to show a toast notification here
+      
+      // Check if it's a validation error with details
+      if (errorMessage.includes('Validation Error:')) {
+        const details = errorMessage.split('Validation Error:\n')[1]
+        showFeedback('error', 'Validation Failed', 'Please correct the following issues:', details.split('\n'))
+      } else {
+        showFeedback('error', editingCategory ? 'Update Failed' : 'Creation Failed', errorMessage)
+      }
     } finally {
       setLoading(false)
     }
@@ -763,10 +806,14 @@ export function AnimalCategoriesManager({
         throw new Error(error.message || 'Failed to delete category')
       }
 
+      const deletedName = deletingCategory.name
       onCategoriesUpdate(categories.filter(cat => cat.id !== deletingCategory.id))
       setDeletingCategory(null)
+      showFeedback('success', 'Category Deleted', `"${deletedName}" has been deleted successfully.`)
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred'
       console.error('Error deleting category:', error)
+      showFeedback('error', 'Deletion Failed', errorMessage)
     } finally {
       setLoading(false)
     }
@@ -852,7 +899,7 @@ export function AnimalCategoriesManager({
       )
       if (!res.ok) {
         const err = await res.json()
-        alert(err.error || 'Transfer failed')
+        showFeedback('error', 'Transfer Failed', err.error || 'Unable to transfer the animal to the selected category.')
         return
       }
       setTransferAnimal(null)
@@ -866,8 +913,9 @@ export function AnimalCategoriesManager({
           if (catData.data) onCategoriesUpdate(catData.data)
         }
       } catch { /* ignore */ }
-    } catch {
-      alert('Transfer failed')
+    } catch (error) {
+      console.error('Transfer error:', error)
+      showFeedback('error', 'Transfer Failed', 'An unexpected error occurred while transferring the animal.')
     } finally {
       setTransferring(false)
     }
@@ -1632,7 +1680,7 @@ export function AnimalCategoriesManager({
                                                   ...prev, 
                                                   selected_milking_schedule_id: 
                                                     prev.selected_milking_schedule_id === 'farm_default' 
-                                                      ? undefined 
+                                                      ? '' 
                                                       : 'farm_default' 
                                                 }));
                                               }}
@@ -1671,7 +1719,7 @@ export function AnimalCategoriesManager({
                                                       ...prev,
                                                       selected_milking_schedule_id: 
                                                         prev.selected_milking_schedule_id === schedule.id 
-                                                          ? undefined 
+                                                          ? '' 
                                                           : schedule.id
                                                     }));
                                                   }}
@@ -2068,11 +2116,11 @@ export function AnimalCategoriesManager({
                             await handleViewAnimals(viewingAnimals)
                           }
                         } else {
-                          alert('Failed to sync animals')
+                          showFeedback('error', 'Sync Failed', 'Unable to synchronize animals. Please try again.')
                         }
                       } catch (error) {
                         console.error('Error syncing animals:', error)
-                        alert('Error syncing animals')
+                        showFeedback('error', 'Sync Error', 'An error occurred while syncing animal assignments.')
                       } finally {
                         setSyncingCategory(false)
                       }
@@ -2461,7 +2509,7 @@ export function AnimalCategoriesManager({
                       }
                     } catch (error) {
                       console.error('Error updating assignments:', error)
-                      alert('Error updating assignments')
+                      showFeedback('error', 'Update Error', 'Failed to update animal assignments.')
                     } finally {
                       setLoading(false)
                     }
@@ -2610,6 +2658,54 @@ export function AnimalCategoriesManager({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Feedback Modal for Errors and Success Messages */}
+      <Modal
+        isOpen={feedback?.isOpen ?? false}
+        onClose={closeFeedback}
+        className="max-w-md"
+      >
+        <div className="p-6">
+          <Alert variant={feedback?.type === 'success' ? 'success' : feedback?.type === 'error' ? 'destructive' : feedback?.type === 'warning' ? 'warning' : 'info'}>
+            <div className="flex items-start gap-3">
+              {feedback?.type === 'success' && <CheckCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />}
+              {feedback?.type === 'error' && <XCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />}
+              {feedback?.type === 'warning' && <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />}
+              {feedback?.type === 'info' && <Info className="w-5 h-5 flex-shrink-0 mt-0.5" />}
+              <div className="flex-1">
+                <AlertTitle className="text-base font-semibold mb-1">
+                  {feedback?.title}
+                </AlertTitle>
+                <AlertDescription className="text-sm mb-3">
+                  {feedback?.message}
+                </AlertDescription>
+                {feedback?.details && (
+                  <div className="mt-3 max-h-48 overflow-y-auto">
+                    {typeof feedback.details === 'string' ? (
+                      <p className="text-xs font-mono bg-black/5 p-2 rounded whitespace-pre-wrap break-words">
+                        {feedback.details}
+                      </p>
+                    ) : Array.isArray(feedback.details) ? (
+                      <ul className="text-xs space-y-1">
+                        {feedback.details.map((detail, idx) => (
+                          <li key={idx} className="text-xs text-current opacity-90">
+                            • {detail}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            </div>
+          </Alert>
+          <div className="flex justify-end gap-2 mt-6">
+            <Button onClick={closeFeedback} className="w-full">
+              {feedback?.type === 'success' ? 'Great!' : feedback?.type === 'error' ? 'Dismiss' : 'OK'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

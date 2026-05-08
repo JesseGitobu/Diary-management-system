@@ -22,7 +22,6 @@ export async function createProductionRecord(
     .single()
   
   if (error) {
-    console.error('Error creating production record:', error)
     return { success: false, error: error.message }
   }
   
@@ -40,14 +39,6 @@ export async function getProductionRecords(
   sessionUUIDs?: string[]          // resolved UUIDs from milking_sessions table
 ) {
   const supabase = await createServerSupabaseClient()
-
-  console.log('[DB:getProductionRecords] Query params:', {
-    farmId,
-    animalId: animalId ?? null,
-    startDate: startDate ?? null,
-    endDate: endDate ?? null,
-    sessionUUIDs: sessionUUIDs ?? null,
-  })
 
   let query = supabase
     .from('production_records')
@@ -79,23 +70,16 @@ export async function getProductionRecords(
     query = (query as any).in('milking_session_id', sessionUUIDs)
   } else if (sessionUUIDs && sessionUUIDs.length === 0) {
     // Session name was given but no matching milking_session rows exist yet → no records
-    console.log('[DB:getProductionRecords] No session UUIDs matched — returning empty')
     return []
   }
 
   const { data, error } = await query
 
   if (error) {
-    console.error('[DB:getProductionRecords] Query error:', error)
     return []
   }
 
   const records = (data as any[]) || []
-  console.log('[DB:getProductionRecords] Returned records:', {
-    count: records.length,
-    animalIds: records.map((r: any) => r.animal_id),
-    sessionIds: [...new Set(records.map((r: any) => r.milking_session_id))],
-  })
 
   return records
 }
@@ -114,8 +98,12 @@ export async function updateProductionRecord(
     .single()
   
   if (error) {
-    console.error('Error updating production record:', error)
     return { success: false, error: error.message }
+  }
+  
+  // Update daily summary after record update
+  if (record) {
+    await updateDailyProductionSummary(record.farm_id, record.record_date)
   }
   
   return { success: true, data: record }
@@ -137,7 +125,6 @@ export async function deleteProductionRecord(recordId: string) {
     .eq('id', recordId)
   
   if (error) {
-    console.error('Error deleting production record:', error)
     return { success: false, error: error.message }
   }
   
@@ -194,7 +181,7 @@ export async function updateDailyProductionSummary(farmId: string, date: string)
       .upsert(summaryData, { onConflict: 'farm_id,record_date' })
     
   } catch (error) {
-    console.error('Error updating daily production summary:', error)
+    // Error silently - summary update is not critical
   }
 }
 
@@ -244,7 +231,6 @@ export async function getProductionStats(farmId: string, days: number = 30) {
       periodDays: days,
     }
   } catch (error) {
-    console.error('Error getting production stats:', error)
     return {
       totalRecords: 0,
       totalVolume: 0,
@@ -272,7 +258,6 @@ export async function getAnimalProductionHistory(animalId: string, days: number 
     .order('record_date', { ascending: true })
   
   if (error) {
-    console.error('Error getting animal production history:', error)
     return []
   }
   

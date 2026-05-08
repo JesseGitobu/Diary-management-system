@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { X, AlertCircle, MapPin, Calendar } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import {
@@ -16,13 +16,20 @@ interface AddBuildingModalProps {
   isOpen: boolean
   onClose: () => void
   onAdd: (building: HousingBuilding) => void
+  onUpdate?: (building: HousingBuilding) => void
+  onDelete?: (buildingId: string) => void
+  editingBuilding?: HousingBuilding | null
 }
 
 export function AddBuildingModal({
   isOpen,
   onClose,
   onAdd,
+  onUpdate,
+  onDelete,
+  editingBuilding,
 }: AddBuildingModalProps) {
+  const isEditing = !!editingBuilding
   const [buildingName, setBuildingName] = useState<string>('')
   const [buildingType, setBuildingType] = useState<string>('dairy_barn')
   const [capacity, setCapacity] = useState<string>('')
@@ -31,7 +38,35 @@ export function AddBuildingModal({
   const [status, setStatus] = useState<'active' | 'inactive' | 'maintenance'>('active')
   const [notes, setNotes] = useState<string>('')
   const [loading, setLoading] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string>('')
+
+  // Pre-populate form when editing
+  useEffect(() => {
+    if (editingBuilding) {
+      setBuildingName(editingBuilding.name)
+      setBuildingType(editingBuilding.type)
+      setCapacity(editingBuilding.total_capacity?.toString() || '')
+      setLocation(editingBuilding.location || '')
+      setYearBuilt(editingBuilding.year_built?.toString() || new Date().getFullYear().toString())
+      setStatus(editingBuilding.status || 'active')
+      setNotes(editingBuilding.notes || '')
+      setError('')
+    } else if (isOpen) {
+      resetForm()
+    }
+  }, [editingBuilding, isOpen])
+
+  const resetForm = () => {
+    setBuildingName('')
+    setBuildingType('dairy_barn')
+    setCapacity('')
+    setLocation('')
+    setYearBuilt(new Date().getFullYear().toString())
+    setStatus('active')
+    setNotes('')
+    setError('')
+  }
 
   const buildingTypes = [
     { value: 'cow_barn', label: 'Cow Barn' },
@@ -40,20 +75,17 @@ export function AddBuildingModal({
     { value: 'milking_parlor', label: 'Milking Parlor' }
   ]
 
-  const handleAdd = async () => {
-  if (!buildingName || !capacity ) {
-    setError('Please fill in all required fields')
-    return
-  }
+  const handleSubmit = async () => {
+    if (!buildingName || !capacity) {
+      setError('Please fill in all required fields')
+      return
+    }
 
-  setLoading(true)
-  setError('')
+    setLoading(true)
+    setError('')
 
-  try {
-    const response = await fetch('/api/housing/buildings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    try {
+      const payload = {
         name: buildingName,
         type: buildingType,
         total_capacity: capacity,
@@ -61,29 +93,68 @@ export function AddBuildingModal({
         year_built: yearBuilt,
         status: status,
         notes: notes
+      }
+
+      const url = isEditing 
+        ? `/api/housing/buildings/${editingBuilding.id}`
+        : '/api/housing/buildings'
+      const method = isEditing ? 'PUT' : 'POST'
+
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
       })
-    })
 
-    const result = await response.json()
+      const result = await response.json()
 
-    if (!response.ok) {
-      throw new Error(result.error || 'Failed to add building')
+      if (!response.ok) {
+        throw new Error(result.error || `Failed to ${isEditing ? 'update' : 'add'} building`)
+      }
+
+      if (isEditing) {
+        onUpdate?.(result.data)
+      } else {
+        onAdd(result.data)
+      }
+
+      resetForm()
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Failed to ${isEditing ? 'update' : 'add'} building`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!editingBuilding || !window.confirm('Are you sure you want to delete this building? This action cannot be undone.')) {
+      return
     }
 
-    // Pass the saved building from DB back to the parent component
-    onAdd(result.data)
+    setDeleting(true)
+    setError('')
 
-    // Reset and Close
-    setBuildingName('')
-    setCapacity('')
-    setLocation('')
-    onClose()
-  } catch (err) {
-    setError(err instanceof Error ? err.message : 'Failed to add building')
-  } finally {
-    setLoading(false)
+    try {
+      const response = await fetch(`/api/housing/buildings/${editingBuilding.id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' }
+      })
+
+      if (!response.ok) {
+        const result = await response.json()
+        throw new Error(result.error || 'Failed to delete building')
+      }
+
+      onDelete?.(editingBuilding.id)
+      resetForm()
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete building')
+    } finally {
+      setDeleting(false)
+    }
   }
-}
 
   if (!isOpen) return null
 
@@ -92,7 +163,9 @@ export function AddBuildingModal({
       <div className="w-full lg:max-w-2xl bg-white rounded-t-2xl lg:rounded-lg shadow-lg max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">Add New Building</h2>
+          <h2 className="text-lg font-semibold text-gray-900">
+            {isEditing ? 'Edit Building' : 'Add New Building'}
+          </h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 p-1"
@@ -247,16 +320,26 @@ export function AddBuildingModal({
               variant="outline"
               onClick={onClose}
               className="flex-1"
-              disabled={loading}
+              disabled={loading || deleting}
             >
               Cancel
             </Button>
+            {isEditing && (
+              <Button
+                variant="outline"
+                onClick={handleDelete}
+                disabled={loading || deleting}
+                className="flex-1 text-red-600 border-red-200 hover:bg-red-50"
+              >
+                {deleting ? 'Deleting...' : 'Delete'}
+              </Button>
+            )}
             <Button
-              onClick={handleAdd}
-              disabled={!buildingName || !capacity || !location || loading}
+              onClick={handleSubmit}
+              disabled={!buildingName || !capacity || !location || loading || deleting}
               className="flex-1"
             >
-              {loading ? 'Adding...' : 'Add Building'}
+              {loading ? (isEditing ? 'Updating...' : 'Adding...') : (isEditing ? 'Update Building' : 'Add Building')}
             </Button>
           </div>
         </div>

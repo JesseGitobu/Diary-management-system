@@ -266,3 +266,158 @@ export async function getHousingAssignments(farmId: string, penId?: string) {
     return { success: false, error: 'Failed to fetch assignments' }
   }
 }
+
+// Update functions
+export async function updateBuilding(buildingId: string, data: Partial<CreateBuildingInput>) {
+  const supabase = await createServerSupabaseClient()
+
+  try {
+    const updateData: any = {}
+    if (data.name) updateData.name = data.name
+    if (data.type) updateData.type = data.type
+    if (data.total_capacity) updateData.total_capacity = data.total_capacity
+    if (data.location !== undefined) updateData.location = data.location
+    if (data.year_built) updateData.year_built = data.year_built
+    if (data.status) updateData.status = data.status
+    if (data.notes !== undefined) updateData.notes = data.notes
+
+    const { data: updatedBuilding, error } = await (supabase as any)
+      .from('housing_buildings')
+      .update(updateData)
+      .eq('id', buildingId)
+      .select()
+      .single()
+
+    if (error) throw error
+
+    return { success: true, data: updatedBuilding as HousingBuilding }
+  } catch (error) {
+    console.error('Error in updateBuilding:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to update building',
+    }
+  }
+}
+
+export async function deleteBuilding(buildingId: string) {
+  const supabase = await createServerSupabaseClient()
+
+  try {
+    const { error } = await (supabase as any)
+      .from('housing_buildings')
+      .delete()
+      .eq('id', buildingId)
+
+    if (error) throw error
+
+    return { success: true, data: { id: buildingId } }
+  } catch (error) {
+    console.error('Error in deleteBuilding:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to delete building',
+    }
+  }
+}
+
+export async function updateHousingUnit(unitId: string, data: Partial<CreateUnitInput>) {
+  const supabase = await createServerSupabaseClient()
+
+  try {
+    const updateData: any = {}
+    if (data.name) updateData.name = data.name
+    if (data.unit_type) updateData.unit_type = data.unit_type
+    if (data.total_capacity) updateData.total_capacity = data.total_capacity
+    if (data.environmental_conditions) updateData.environmental_conditions = data.environmental_conditions
+
+    const { data: updatedUnit, error } = await (supabase as any)
+      .from('housing_units')
+      .update(updateData)
+      .eq('id', unitId)
+      .select()
+      .single()
+
+    if (error) throw error
+
+    return { success: true, data: updatedUnit as HousingUnit }
+  } catch (error) {
+    console.error('Error in updateHousingUnit:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to update unit',
+    }
+  }
+}
+
+export async function deleteHousingUnit(unitId: string) {
+  const supabase = await createServerSupabaseClient()
+
+  try {
+    const { error } = await (supabase as any)
+      .from('housing_units')
+      .delete()
+      .eq('id', unitId)
+
+    if (error) throw error
+
+    return { success: true, data: { id: unitId } }
+  } catch (error) {
+    console.error('Error in deleteHousingUnit:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to delete unit',
+    }
+  }
+}
+
+export async function updateHousingPen(penId: string, data: Partial<CreatePenInput>) {
+  const supabase = await createServerSupabaseClient()
+
+  try {
+    const updateData: any = {}
+    if (data.pen_number) updateData.pen_number = data.pen_number
+    if (data.special_type) updateData.special_type = data.special_type
+    if (data.capacity) updateData.capacity = data.capacity
+    if (data.dimensions) updateData.dimensions = data.dimensions
+    if (data.conditions) updateData.conditions = data.conditions
+
+    const { data: updatedPen, error } = await (supabase as any)
+      .from('housing_pens')
+      .update(updateData)
+      .eq('id', penId)
+      .select()
+      .single()
+
+    if (error) throw error
+
+    return { success: true, data: updatedPen as HousingPen }
+  } catch (error) {
+    console.error('Error in updateHousingPen:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to update pen',
+    }
+  }
+}
+
+export async function deleteHousingPen(penId: string) {
+  const supabase = await createServerSupabaseClient()
+
+  try {
+    const { error } = await (supabase as any)
+      .from('housing_pens')
+      .delete()
+      .eq('id', penId)
+
+    if (error) throw error
+
+    return { success: true, data: { id: penId } }
+  } catch (error) {
+    console.error('Error in deleteHousingPen:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to delete pen',
+    }
+  }
+}

@@ -41,6 +41,25 @@ interface GroupRecordFormProps {
   settings: ProductionSettings | null
   onSuccess?: () => void
   sessionName?: string
+  editingRecord?: {
+    id: string
+    animal_id: string
+    record_date: string
+    milking_session_id: string
+    milk_volume: number
+    milk_safety_status: 'safe' | 'unsafe_health' | 'unsafe_colostrum'
+    temperature?: number | null
+    mastitis_test_performed?: boolean
+    mastitis_result?: 'negative' | 'mild' | 'severe' | null
+    affected_quarters?: string[] | null
+    fat_content?: number | null
+    protein_content?: number | null
+    somatic_cell_count?: number | null
+    lactose_content?: number | null
+    ph_level?: number | null
+    notes?: string | null
+    milking_time?: string | null
+  } | null
 }
 
 export function GroupRecordForm({
@@ -52,8 +71,10 @@ export function GroupRecordForm({
   settings,
   onSuccess,
   sessionName,
+  editingRecord = null,
 }: GroupRecordFormProps) {
   const { isMobile } = useDeviceInfo()
+  
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
   const [selectedAnimalId, setSelectedAnimalId] = useState<string | null>(null)
   const [recordedAnimalIds, setRecordedAnimalIds] = useState<Set<string>>(new Set())
@@ -64,14 +85,20 @@ export function GroupRecordForm({
   const [milkingGroups, setMilkingGroups] = useState<MilkingGroup[]>([])
   const [searchQuery, setSearchQuery] = useState('')
 
-  // Reset form state when date or session changes
+
+
+  // Reset form state when date or session changes (but not when editing)
   useEffect(() => {
+    if (editingRecord) {
+      return // Don't reset when editing
+    }
+    
     // Clear current session state - but sessionRecordedByGroup persists for group list
     setSelectedGroupId(null)
     setSelectedAnimalId(null)
     setRecordedAnimalIds(new Set())
     setSearchQuery('')
-  }, [recordDate, session])
+  }, [recordDate, session, editingRecord])
 
   // Fetch already-recorded animals for this date and session
   useEffect(() => {
@@ -105,7 +132,7 @@ export function GroupRecordForm({
   useEffect(() => {
     const fetchMilkingGroups = async () => {
       try {
-        setLoading(true)
+      setLoading(true)
         setError(null)
 
         // Fetch configured milking groups
@@ -165,6 +192,25 @@ export function GroupRecordForm({
 
     fetchMilkingGroups()
   }, [farmId, settings])
+
+  // Auto-select group and animal when editing
+  useEffect(() => {
+    if (!editingRecord || milkingGroups.length === 0) {
+      return
+    }
+
+    // Find the group that contains the animal being edited
+    const groupContainingAnimal = milkingGroups.find(group => {
+      return group.animals?.some(animal => animal.id === editingRecord.animal_id)
+    })
+
+    if (groupContainingAnimal) {
+      setSelectedGroupId(groupContainingAnimal.id)
+      setSelectedAnimalId(editingRecord.animal_id)
+      // Clear any search query to show all animals
+      setSearchQuery('')
+    }
+  }, [editingRecord, milkingGroups])
 
   // Fallback: if no milking groups, create one from available animals
   const groups = useMemo(() => {
@@ -457,8 +503,8 @@ export function GroupRecordForm({
   // Find the selected animal
   const selectedAnimal = selectedGroup.animals.find(a => a.id === selectedAnimalId)
   
-  // All animals recorded - success state
-  if (recordedAnimals.length === selectedGroup.animals.length) {
+  // All animals recorded - success state (but not when editing an existing record)
+  if (!editingRecord && recordedAnimals.length === selectedGroup.animals.length) {
     return (
       <div className="flex flex-col items-center justify-center py-12 space-y-4">
         <CheckCircle2 className="w-16 h-16 text-green-600" />
@@ -552,6 +598,7 @@ export function GroupRecordForm({
             recordingType="group"
             milkingGroupId={selectedGroupId || undefined}
             preSelectedAnimalId={selectedAnimalId || undefined}
+            editingRecord={editingRecord || null}
             onRecordSaved={(animalId) => {
               // Mark animal as recorded in current session for this group
               const updated = new Set([...recordedAnimalIds, animalId])

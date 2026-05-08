@@ -260,7 +260,35 @@ export function ProductionDistributionDashboard({
         setStats(updatedStats)
       }
     } catch (error) {
-      console.error('Failed to refresh production data:', error)
+    }
+  }
+
+  /**
+   * Fetches production records for a specific date range.
+   * Called when user applies date filters to ensure records are loaded.
+   */
+  const handleFetchProductionRecordsByDateRange = async (startDate?: string, endDate?: string) => {
+    if (!startDate && !endDate) return
+
+    try {
+      const params = new URLSearchParams()
+      if (startDate) params.append('start_date', startDate)
+      if (endDate) params.append('end_date', endDate)
+
+      const response = await fetch(`/api/production?${params.toString()}`)
+      if (response.ok) {
+        const result = await response.json()
+        const records = result.data || []
+        // Merge with existing records (deduplicate by ID) 
+        setProductionRecords(prev => {
+          const existingIds = new Set(prev.map(r => r.id))
+          const newRecords = records.filter((r: any) => !existingIds.has(r.id))
+          return [...prev, ...newRecords].sort((a, b) => 
+            new Date(b.record_date).getTime() - new Date(a.record_date).getTime()
+          )
+        })
+      }
+    } catch (error) {
     }
   }
 
@@ -654,9 +682,12 @@ export function ProductionDistributionDashboard({
                   farmId={farmId}
                   canEdit={canAddRecords}
                   isMobile={isMobile}
+                  animals={animals}
+                  settings={productionSettings}
                   onView={handleViewProductionRecord}
                   onEdit={handleEditProductionRecord}
                   onDelete={handleDeleteProductionRecord}
+                  onFetchDateRange={handleFetchProductionRecordsByDateRange}
                 />
               </CardContent>
             </Card>
@@ -812,7 +843,7 @@ export function ProductionDistributionDashboard({
               </div>
 
               {/* Quality Metrics */}
-              {(selectedProductionRecord.fat_content || selectedProductionRecord.protein_content || 
+              {productionSettings?.productionTrackingMode !== 'basic' && (selectedProductionRecord.fat_content || selectedProductionRecord.protein_content || 
                 selectedProductionRecord.somatic_cell_count || selectedProductionRecord.temperature || 
                 selectedProductionRecord.ph_level || selectedProductionRecord.lactose_content) && (
                 <div>

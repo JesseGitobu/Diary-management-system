@@ -30,6 +30,13 @@ export default async function ProductionPage() {
   if (!userRole?.farm_id) {
     redirect('/dashboard')
   }
+
+  // Calculate date range for initial fetch: last 30 days
+  // This avoids hitting Supabase's 1000-row default limit for large datasets
+  const today = new Date()
+  const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000)
+  const startDate = thirtyDaysAgo.toISOString().split('T')[0]
+  const endDate = today.toISOString().split('T')[0]
   
   // Get both production and distribution data in parallel for better performance
   const [
@@ -48,7 +55,7 @@ export default async function ProductionPage() {
   ] = await Promise.all([
     // Production queries
     getProductionStats(userRole.farm_id, 30),
-    getProductionRecords(userRole.farm_id, undefined, undefined, undefined),
+    getProductionRecords(userRole.farm_id, undefined, startDate, endDate),
     getFarmAnimals(userRole.farm_id), // This returns complete animal data
     getProductionSettings(userRole.farm_id),
     // Distribution queries

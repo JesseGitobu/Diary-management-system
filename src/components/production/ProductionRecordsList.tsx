@@ -6,12 +6,12 @@ import React, { useState, useMemo } from 'react'
 import { Card, CardContent } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
-import { 
-  Eye, 
-  Edit, 
-  Trash2, 
-  Clock, 
-  Droplets, 
+import {
+  Eye,
+  Edit,
+  Trash2,
+  Clock,
+  Droplets,
   Thermometer,
   Activity,
   MoreHorizontal,
@@ -30,6 +30,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/DropdownMenu'
+import { RecordProductionModal } from './RecordProductionModal'
 
 type ViewTab = 'individual' | 'groups'
 
@@ -71,6 +72,7 @@ interface GroupData {
 
 interface MilkingGroup {
   id: string
+  category_id: string
   category_name: string
 }
 
@@ -78,10 +80,19 @@ interface ProductionRecordsListProps {
   records: ProductionRecord[]
   canEdit: boolean
   farmId?: string
+  animals?: Array<{
+    id: string
+    tag_number: string
+    name?: string
+    gender: string
+    production_status: string
+  }>
+  settings?: any
   onEdit?: (record: ProductionRecord) => void
   onDelete?: (recordId: string) => void
   onView?: (record: ProductionRecord) => void
   isMobile?: boolean
+  onFetchDateRange?: (startDate?: string, endDate?: string) => Promise<void>
 }
 
 // Consistent, hydration-safe date formatting
@@ -103,32 +114,45 @@ const formatDateTime = (dateString: string) => {
   })
 }
 
-export function ProductionRecordsList({ 
-  records, 
-  canEdit, 
+export function ProductionRecordsList({
+  records,
+  canEdit,
   farmId,
+  animals = [],
+  settings = null,
   onEdit,
   onDelete,
   onView,
-  isMobile = false 
+  isMobile = false,
+  onFetchDateRange
 }: ProductionRecordsListProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [filterSession, setFilterSession] = useState<string>('all')
   const [filterSafetyStatus, setFilterSafetyStatus] = useState<string>('all')
-  const [filterDateFrom, setFilterDateFrom] = useState<string>(() => {
-    const today = new Date()
-    return today.toISOString().split('T')[0]
-  })
+  const [filterDateFrom, setFilterDateFrom] = useState<string>('')
   const [filterDateTo, setFilterDateTo] = useState<string>('')
+  const [filterDateToTouched, setFilterDateToTouched] = useState(false) // Track if user has focused on "To Date"
   const [viewTab, setViewTab] = useState<ViewTab>('individual')
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [milkingGroups, setMilkingGroups] = useState<Map<string, string>>(new Map())
+  const [groupToCategory, setGroupToCategory] = useState<Map<string, string>>(new Map()) // group ID → category ID
+  const [availableCategories, setAvailableCategories] = useState<Array<{ id: string; name: string }>>([])
+  const [filterCategory, setFilterCategory] = useState<string>('all')
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [editingRecord, setEditingRecord] = useState<ProductionRecord | null>(null)
+  const [editingRecordType, setEditingRecordType] = useState<'individual' | 'group' | undefined>(undefined)
+  const [editingGroupName, setEditingGroupName] = useState<string | undefined>(undefined)
   const [availableSessions, setAvailableSessions] = useState<Array<{ id: string; name: string }>>([])
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set())
-  const [selectedSession, setSelectedSession] = useState<string | null>(null) // Format: "${cycleDate}-${animalId}-${sessionId}"
+  const [selectedSession, setSelectedSession] = useState<string | null>(null) // Format: "${cycleDate}-${animalId}|${sessionId}"
   const [activeSessionBadge, setActiveSessionBadge] = useState<Record<string, string>>({}) // summaryKey → sessionId
+  const [loadedDateRange, setLoadedDateRange] = useState<{ from: string; to: string } | null>(null)
+  const [expandedGroupAnimals, setExpandedGroupAnimals] = useState<Set<string>>(new Set())
+  const [expandedAnimalDetails, setExpandedAnimalDetails] = useState<Set<string>>(new Set()) // Track expanded animal details
   const RECORDS_PER_PAGE = 10
+
+
 
   // Fetch milking sessions on mount
   React.useEffect(() => {
@@ -139,9 +163,11 @@ export function ProductionRecordsList({
         const response = await fetch(`/api/farms/${farmId}/production/milking-sessions-list`)
         if (response.ok) {
           const result = await response.json()
-          setAvailableSessions(result.data || [])
-        } else {
-          const error = await response.text()
+          const sessions = result.data || []
+
+          // Store ALL sessions (with duplicates) for UUID→name mapping
+          // Component will deduplicate only for dropdown display
+          setAvailableSessions(sessions)
         }
       } catch (error) {
         setAvailableSessions([
@@ -155,7 +181,7 @@ export function ProductionRecordsList({
     fetchMilkingSessions()
   }, [farmId])
 
-  // Fetch milking group names on mount
+  // Fetch milking group names and categories on mount
   React.useEffect(() => {
     if (!farmId) return
 
@@ -166,10 +192,20 @@ export function ProductionRecordsList({
           const result = await response.json()
           const groups = result.data || result
           const groupMap = new Map<string, string>()
+          const groupToCategoryMap = new Map<string, string>()
+          const categoriesMap = new Map<string, string>()
+
           groups.forEach((group: any) => {
             groupMap.set(group.id, group.category_name)
+            if (group.category_id) {
+              groupToCategoryMap.set(group.id, group.category_id)
+              categoriesMap.set(group.category_id, group.category_name)
+            }
           })
+
           setMilkingGroups(groupMap)
+          setGroupToCategory(groupToCategoryMap)
+          setAvailableCategories(Array.from(categoriesMap, ([id, name]) => ({ id, name })))
         }
       } catch (error) {
       }
@@ -178,19 +214,69 @@ export function ProductionRecordsList({
     fetchMilkingGroups()
   }, [farmId])
 
+  // Smart date range fetching: if user filters to a date outside loaded range, fetch those records
+  React.useEffect(() => {
+    if (!onFetchDateRange || !filterDateTo || !filterDateFrom) {
+      return
+    }
+
+    // Only fetch if the user has explicitly set the "To Date" filter
+    if (filterDateToTouched) {
+      // Fetch records for this date range to ensure they're loaded
+      onFetchDateRange(filterDateFrom, filterDateTo).catch((error: any) => {
+      })
+    }
+  }, [filterDateFrom, filterDateTo, filterDateToTouched, onFetchDateRange])
+
   // UUID → session name map (all pairs, no dedup — needed so every UUID resolves)
-  const sessionNameMap = useMemo(
-    () => new Map(availableSessions.map(s => [s.id, s.name])),
-    [availableSessions]
-  )
+  const sessionNameMap = useMemo(() => {
+    const map = new Map(availableSessions.map(s => [s.id, s.name]))
+    return map
+  }, [availableSessions])
+
+  // Deduplicated sessions for dropdown display (by name only)
+  const dedupedSessions = useMemo(() => {
+    const seenNames = new Set<string>()
+    const deduped = availableSessions.filter((session) => {
+      if (seenNames.has(session.name)) {
+        return false
+      }
+      seenNames.add(session.name)
+      return true
+    })
+    return deduped
+  }, [availableSessions])
 
   // Apply filters
   const filteredRecords = useMemo(() => {
-    return records.filter(record => {
+    const result = records.filter((record, index) => {
+      // Date range filter - only apply if values are actually set
+      // filterDateFrom has a default value (today), so check if it's set
+      if (filterDateFrom && filterDateFrom.trim() !== '') {
+        const recordDate = new Date(record.record_date).toISOString().split('T')[0]
+        const filterDate = filterDateFrom
+        if (recordDate < filterDate) {
+          return false
+        }
+      }
+      
+      // Only check "to date" if it's explicitly set (not empty)
+      if (filterDateTo && filterDateTo.trim() !== '') {
+        const recordDate = new Date(record.record_date).toISOString().split('T')[0]
+        const filterDate = filterDateTo
+        if (recordDate > filterDate) {
+          return false
+        }
+      }
+
       // Session filter — compare by resolved name so all UUIDs for the same session type match
       if (filterSession !== 'all') {
-        const recordSessionName = sessionNameMap.get(record.milking_session_id || '') || null
-        if (recordSessionName !== filterSession) return false
+        const recordSessionId = record.milking_session_id || ''
+        const recordSessionName = sessionNameMap.get(recordSessionId) || null
+
+        if (recordSessionName !== filterSession) {
+          return false
+        }
       }
 
       // Safety status filter
@@ -198,17 +284,17 @@ export function ProductionRecordsList({
         return false
       }
 
-      // Date range filter
-      if (filterDateFrom && new Date(record.record_date) < new Date(filterDateFrom)) {
-        return false
-      }
-      if (filterDateTo && new Date(record.record_date) > new Date(filterDateTo)) {
-        return false
+      // Category filter
+      if (filterCategory !== 'all' && record.milking_group_id) {
+        const recordCategoryId = groupToCategory.get(record.milking_group_id)
+        if (recordCategoryId !== filterCategory) return false
       }
 
       return true
     })
-  }, [records, filterSession, filterSafetyStatus, filterDateFrom, filterDateTo])
+
+    return result
+  }, [records, filterSession, filterSafetyStatus, filterCategory, filterDateFrom, filterDateTo, groupToCategory, sessionNameMap])
 
   // Individual tab shows ALL records; Groups tab shows aggregated group data
   const individualRecords = useMemo(() => {
@@ -218,7 +304,7 @@ export function ProductionRecordsList({
   // Group records by milking_group_id for groups view
   const groupedRecords = useMemo(() => {
     const groupMap = new Map<string | null, ProductionRecord[]>()
-    
+
     filteredRecords
       .filter(r => r.recording_type === 'group')
       .forEach(record => {
@@ -274,12 +360,21 @@ export function ProductionRecordsList({
     resetPagination()
   }
 
+  const handleFilterCategoryChange = (category: string) => {
+    setFilterCategory(category)
+    resetPagination()
+  }
+
   const handleFilterDateFromChange = (date: string) => {
     setFilterDateFrom(date)
     resetPagination()
   }
 
   const handleFilterDateToChange = (date: string) => {
+    // Only accept changes if the user has actually focused on this field
+    if (!filterDateToTouched) {
+      return
+    }
     setFilterDateTo(date)
     resetPagination()
   }
@@ -287,27 +382,29 @@ export function ProductionRecordsList({
   const clearFilters = () => {
     setFilterSession('all')
     setFilterSafetyStatus('all')
+    setFilterCategory('all')
     setFilterDateFrom('')
     setFilterDateTo('')
+    setFilterDateToTouched(false) // Reset the touched flag
     setCurrentPage(1)
   }
-  
+
   const handleDelete = async (recordId: string) => {
     if (!confirm('Are you sure you want to delete this production record?')) {
       return
     }
-    
+
     setDeletingId(recordId)
-    
+
     try {
       const response = await fetch(`/api/production/${recordId}`, {
         method: 'DELETE',
       })
-      
+
       if (!response.ok) {
         throw new Error('Failed to delete record')
       }
-      
+
       if (onDelete) {
         onDelete(recordId)
       } else {
@@ -319,7 +416,38 @@ export function ProductionRecordsList({
       setDeletingId(null)
     }
   }
-  
+
+  const handleEdit = (record: ProductionRecord) => {
+    setEditingRecord(record)
+    setEditingRecordType(record.recording_type)
+    
+    // Get group name if this is a group record
+    if (record.recording_type === 'group' && record.milking_group_id) {
+      const groupName = milkingGroups.get(record.milking_group_id)
+      setEditingGroupName(groupName)
+    } else {
+      setEditingGroupName(undefined)
+    }
+    
+    setIsEditModalOpen(true)
+  }
+
+  const handleEditModalClose = () => {
+    setIsEditModalOpen(false)
+    setEditingRecord(null)
+    setEditingRecordType(undefined)
+    setEditingGroupName(undefined)
+  }
+
+  const handleEditSuccess = () => {
+    handleEditModalClose()
+    if (onEdit) {
+      onEdit(editingRecord!)
+    } else {
+      window.location.reload()
+    }
+  }
+
   const getSessionBadgeColor = (sessionId?: string) => {
     const name = (sessionId ? sessionNameMap.get(sessionId) : undefined)?.toLowerCase() || ''
     if (name.includes('morning')) return 'bg-blue-100 text-blue-800'
@@ -352,11 +480,11 @@ export function ProductionRecordsList({
   const calculateMilkingCycleDate = (record: ProductionRecord) => {
     const { firstSessionId } = getFirstAndLastSessionTimes()
     if (!firstSessionId) return record.record_date
-    
+
     // Get the index of the record's session in availableSessions
     const recordSessionIndex = availableSessions.findIndex(s => s.id === record.milking_session_id)
     const firstSessionIndex = availableSessions.findIndex(s => s.id === firstSessionId)
-    
+
     // If the record's session comes before the first session in the configured order,
     // it belongs to the previous day's cycle
     if (recordSessionIndex < firstSessionIndex) {
@@ -364,16 +492,16 @@ export function ProductionRecordsList({
       prevDate.setDate(prevDate.getDate() - 1)
       return prevDate.toISOString().split('T')[0]
     }
-    
+
     return record.record_date
   }
 
   // Group records by milking cycle when "All Sessions" is selected
   const milkingCycleGroupedRecords = useMemo(() => {
     if (filterSession !== 'all') return null
-    
+
     const cycleMap = new Map<string, ProductionRecord[]>()
-    
+
     filteredRecords.forEach(record => {
       const cycleDate = calculateMilkingCycleDate(record)
       if (!cycleMap.has(cycleDate)) {
@@ -381,14 +509,14 @@ export function ProductionRecordsList({
       }
       cycleMap.get(cycleDate)!.push(record)
     })
-    
+
     return cycleMap
   }, [filteredRecords, filterSession, availableSessions])
 
   // Create daily summary data for individual animals view
   const dailySummaryRecords = useMemo(() => {
     if (!milkingCycleGroupedRecords) return null
-    
+
     const summaries: Array<{
       cycleDate: string
       animal_id: string
@@ -400,11 +528,13 @@ export function ProductionRecordsList({
       avgProteinContent: number | null
       sessions: string[]
       records: ProductionRecord[]
+      milking_group_id: string | null
+      milking_group_name: string | null
     }> = []
-    
+
     milkingCycleGroupedRecords.forEach((cycleRecords, cycleDate) => {
       const byAnimal = new Map<string, ProductionRecord[]>()
-      
+
       cycleRecords.forEach(record => {
         const animalId = record.animal_id
         if (!byAnimal.has(animalId)) {
@@ -412,12 +542,12 @@ export function ProductionRecordsList({
         }
         byAnimal.get(animalId)!.push(record)
       })
-      
+
       byAnimal.forEach((animalRecords, animalId) => {
         const totalVolume = animalRecords.reduce((sum, r) => sum + (r.milk_volume || 0), 0)
         const fatRecords = animalRecords.filter(r => r.fat_content)
         const proteinRecords = animalRecords.filter(r => r.protein_content)
-        const avgFat = fatRecords.length > 0 
+        const avgFat = fatRecords.length > 0
           ? fatRecords.reduce((sum, r) => sum + (r.fat_content || 0), 0) / fatRecords.length
           : null
         const avgProtein = proteinRecords.length > 0
@@ -425,6 +555,10 @@ export function ProductionRecordsList({
           : null
         const sessions = [...new Set(animalRecords.map(r => r.milking_session_id).filter(Boolean as any))]
         
+        // Get milking group information from first record
+        const milkingGroupId = animalRecords[0].milking_group_id || null
+        const milkingGroupName = milkingGroupId ? milkingGroups.get(milkingGroupId) || null : null
+
         summaries.push({
           cycleDate,
           animal_id: animalId,
@@ -435,11 +569,13 @@ export function ProductionRecordsList({
           avgFatContent: avgFat,
           avgProteinContent: avgProtein,
           sessions: sessions as string[],
-          records: animalRecords
+          records: animalRecords,
+          milking_group_id: milkingGroupId,
+          milking_group_name: milkingGroupName
         })
       })
     })
-    
+
     // Sort by cycle date (most recent first), then by animal name
     return summaries.sort((a, b) => {
       const dateCompare = new Date(b.cycleDate).getTime() - new Date(a.cycleDate).getTime()
@@ -450,7 +586,7 @@ export function ProductionRecordsList({
   // Create daily summary data for groups view
   const dailySummaryGroups = useMemo(() => {
     if (!milkingCycleGroupedRecords) return null
-    
+
     const summaries: Array<{
       cycleDate: string
       milking_group_id: string | null
@@ -462,10 +598,10 @@ export function ProductionRecordsList({
       animalCount: number
       records: ProductionRecord[]
     }> = []
-    
+
     milkingCycleGroupedRecords.forEach((cycleRecords, cycleDate) => {
       const byGroup = new Map<string | null, ProductionRecord[]>()
-      
+
       cycleRecords.forEach(record => {
         const groupId = record.milking_group_id || 'default'
         if (!byGroup.has(groupId)) {
@@ -473,7 +609,7 @@ export function ProductionRecordsList({
         }
         byGroup.get(groupId)!.push(record)
       })
-      
+
       byGroup.forEach((groupRecords, groupId) => {
         const totalVolume = groupRecords.reduce((sum, r) => sum + (r.milk_volume || 0), 0)
         const fatRecords = groupRecords.filter(r => r.fat_content)
@@ -501,7 +637,7 @@ export function ProductionRecordsList({
         })
       })
     })
-    
+
     // Sort by cycle date (most recent first), then by group name
     return summaries.sort((a, b) => {
       const dateCompare = new Date(b.cycleDate).getTime() - new Date(a.cycleDate).getTime()
@@ -516,11 +652,50 @@ export function ProductionRecordsList({
     }
     return viewTab === 'individual' ? individualRecords : groupedRecords
   }, [filterSession, viewTab, dailySummaryRecords, dailySummaryGroups, individualRecords, groupedRecords])
-  
+
   const totalPages = Math.ceil(displayData.length / RECORDS_PER_PAGE)
   const startIndex = (currentPage - 1) * RECORDS_PER_PAGE
   const endIndex = startIndex + RECORDS_PER_PAGE
   const paginatedData = displayData.slice(startIndex, endIndex)
+
+  // Helper function to calculate animal aggregates for a group
+  const calculateAnimalAggregates = (records: ProductionRecord[] | undefined | null) => {
+    if (!records || records.length === 0) {
+      console.log('[ProductionRecordsList] calculateAnimalAggregates: No records provided', { records })
+      return []
+    }
+
+    const aggregates = new Map<string, {
+      animal_id: string
+      animal_name: string
+      animal_tag: string
+      total_volume: number
+      record_count: number
+      records: ProductionRecord[]
+    }>()
+
+    records.forEach((record: ProductionRecord) => {
+      const key = record.animal_id
+      if (!aggregates.has(key)) {
+        aggregates.set(key, {
+          animal_id: record.animal_id,
+          animal_name: record.animals?.name || `Animal #${record.animals?.tag_number}`,
+          animal_tag: record.animals?.tag_number || '',
+          total_volume: 0,
+          record_count: 0,
+          records: []
+        })
+      }
+      const agg = aggregates.get(key)!
+      agg.total_volume += record.milk_volume || 0
+      agg.record_count += 1
+      agg.records.push(record)
+    })
+
+    return Array.from(aggregates.values()).sort((a, b) => 
+      b.total_volume - a.total_volume
+    )
+  }
 
   const getSafetyStatusBadge = (status?: string) => {
     switch (status) {
@@ -534,7 +709,7 @@ export function ProductionRecordsList({
         return { label: 'Unknown', color: 'bg-gray-100 text-gray-800', icon: AlertTriangle }
     }
   }
-  
+
   const getQualityIndicator = (fatContent?: number, proteinContent?: number) => {
     if (!fatContent || !proteinContent) return null
     const fatGood = fatContent >= 3.5 && fatContent <= 4.5
@@ -553,7 +728,7 @@ export function ProductionRecordsList({
         return { label: 'Individual Recording', color: 'bg-blue-100 text-blue-800', icon: Droplets }
     }
   }
-  
+
   if (records.length === 0) {
     return (
       <div className="text-center py-12">
@@ -569,7 +744,7 @@ export function ProductionRecordsList({
       </div>
     )
   }
-  
+
   return (
     <div className="space-y-6">
       {/* Filter Section */}
@@ -579,9 +754,9 @@ export function ProductionRecordsList({
             <Filter className="w-4 h-4 mr-2" />
             Filter Records
           </h3>
-          {(filterSession !== 'all' || filterSafetyStatus !== 'all' || filterDateFrom || filterDateTo) && (
-            <Button 
-              variant="ghost" 
+          {(filterSession !== 'all' || filterSafetyStatus !== 'all' || filterCategory !== 'all' || filterDateFrom || filterDateTo) && (
+            <Button
+              variant="ghost"
               size="sm"
               onClick={clearFilters}
               className="text-blue-600 hover:text-blue-700"
@@ -591,7 +766,7 @@ export function ProductionRecordsList({
           )}
         </div>
 
-        <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4'}`}>
+        <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-5'}`}>
           {/* Session Filter */}
           <div>
             <label htmlFor="filter-session" className="block text-xs font-medium text-gray-700 mb-1">
@@ -604,8 +779,8 @@ export function ProductionRecordsList({
               className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-farm-green"
             >
               <option value="all">All Sessions</option>
-              {availableSessions.map((session) => (
-                <option key={session.id} value={session.id}>
+              {dedupedSessions.map((session) => (
+                <option key={session.id} value={session.name}>
                   {session.name}
                 </option>
               ))}
@@ -630,6 +805,26 @@ export function ProductionRecordsList({
             </select>
           </div>
 
+          {/* Animal Category Filter */}
+          <div>
+            <label htmlFor="filter-category" className="block text-xs font-medium text-gray-700 mb-1">
+              Animal Category
+            </label>
+            <select
+              id="filter-category"
+              value={filterCategory}
+              onChange={(e) => handleFilterCategoryChange(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-farm-green"
+            >
+              <option value="all">All Categories</option>
+              {availableCategories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* Date From Filter */}
           <div>
             <label htmlFor="filter-date-from" className="block text-xs font-medium text-gray-700 mb-1">
@@ -638,8 +833,11 @@ export function ProductionRecordsList({
             <input
               id="filter-date-from"
               type="date"
+              autoComplete="off"
               value={filterDateFrom}
-              onChange={(e) => handleFilterDateFromChange(e.target.value)}
+              onChange={(e) => {
+                handleFilterDateFromChange(e.target.value)
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-farm-green"
             />
           </div>
@@ -652,8 +850,16 @@ export function ProductionRecordsList({
             <input
               id="filter-date-to"
               type="date"
+              autoComplete="off"
               value={filterDateTo}
-              onChange={(e) => handleFilterDateToChange(e.target.value)}
+              onFocus={() => {
+                setFilterDateToTouched(true)
+              }}
+              onBlur={() => {
+              }}
+              onChange={(e) => {
+                handleFilterDateToChange(e.target.value)
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-farm-green"
             />
           </div>
@@ -672,6 +878,9 @@ export function ProductionRecordsList({
                 {displayData.length < filteredRecords.length && ` (${filteredRecords.length - displayData.length} filtered out)`}
               </>
             )}
+            {(filterCategory !== 'all' || filterSession !== 'all' || filterSafetyStatus !== 'all' || filterDateFrom || filterDateTo) && (
+              <span className="ml-2 text-blue-600 font-medium">Filters active</span>
+            )}
           </p>
         </div>
       </div>
@@ -681,22 +890,20 @@ export function ProductionRecordsList({
         <div className={`flex items-center ${isMobile ? 'p-0.5' : 'p-1'}`}>
           <button
             onClick={() => handleViewTabChange('individual')}
-            className={`flex-1 ${isMobile ? 'px-2 py-2' : 'px-4 py-3'} rounded-lg font-semibold ${isMobile ? 'text-xs' : 'text-sm'} transition-all duration-200 flex items-center justify-center ${isMobile ? 'gap-1' : 'space-x-2'} ${
-              viewTab === 'individual'
+            className={`flex-1 ${isMobile ? 'px-2 py-2' : 'px-4 py-3'} rounded-lg font-semibold ${isMobile ? 'text-xs' : 'text-sm'} transition-all duration-200 flex items-center justify-center ${isMobile ? 'gap-1' : 'space-x-2'} ${viewTab === 'individual'
                 ? 'bg-gradient-to-r from-farm-green/20 to-farm-green/10 text-farm-green shadow-sm border border-farm-green/30'
                 : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-            }`}
+              }`}
           >
             <Droplets className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'} ${viewTab === 'individual' ? 'text-farm-green' : 'text-gray-400'}`} />
             <span>Individual Animals</span>
           </button>
           <button
             onClick={() => handleViewTabChange('groups')}
-            className={`flex-1 ${isMobile ? 'px-2 py-2' : 'px-4 py-3'} rounded-lg font-semibold ${isMobile ? 'text-xs' : 'text-sm'} transition-all duration-200 flex items-center justify-center ${isMobile ? 'gap-1' : 'space-x-2'} ${
-              viewTab === 'groups'
+            className={`flex-1 ${isMobile ? 'px-2 py-2' : 'px-4 py-3'} rounded-lg font-semibold ${isMobile ? 'text-xs' : 'text-sm'} transition-all duration-200 flex items-center justify-center ${isMobile ? 'gap-1' : 'space-x-2'} ${viewTab === 'groups'
                 ? 'bg-gradient-to-r from-farm-green/20 to-farm-green/10 text-farm-green shadow-sm border border-farm-green/30'
                 : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-            }`}
+              }`}
           >
             <Users className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'} ${viewTab === 'groups' ? 'text-farm-green' : 'text-gray-400'}`} />
             <span>Milking Groups</span>
@@ -712,9 +919,9 @@ export function ProductionRecordsList({
           <p className="mt-2 text-sm text-gray-500">
             Try adjusting your filter criteria
           </p>
-          <Button 
-            variant="outline" 
-            size="sm" 
+          <Button
+            variant="outline"
+            size="sm"
             onClick={clearFilters}
             className="mt-4"
           >
@@ -728,21 +935,27 @@ export function ProductionRecordsList({
             const qualityIndicator = getQualityIndicator(summary.avgFatContent || undefined, summary.avgProteinContent || undefined)
             const summaryKey = `${summary.cycleDate}-${summary.animal_id}`
             const isSessionViewActive = selectedSession?.startsWith(summaryKey)
-            const selectedSessionId = isSessionViewActive ? selectedSession?.split('-').pop() : null
+            // Extract sessionId after the separator '|' to avoid UUID hyphen conflicts
+            const selectedSessionId = isSessionViewActive ? selectedSession?.split('|')[1] : null
             const sessionRecords = isSessionViewActive
               ? summary.records.filter((r: ProductionRecord) => r.milking_session_id === selectedSessionId)
               : []
-            
+
             return (
               <Card key={`summary-${summary.cycleDate}-${summary.animal_id}`} className="hover:shadow-md transition-shadow overflow-hidden">
                 <CardContent className="p-2 md:p-3">
-                  {/* Session Detail View */}
-                  {isSessionViewActive && sessionRecords.length > 0 ? (
+                  {/* Session Detail View - DEBUG CONDITION */}
+                  {(() => {
+                    const shouldRender = isSessionViewActive && sessionRecords.length > 0
+                    return shouldRender
+                  })() ? (
                     <div className="space-y-3">
                       {/* Back Button and Title */}
                       <div className="flex items-center justify-between mb-3 pb-3 border-b border-gray-200">
                         <button
-                          onClick={() => setSelectedSession(null)}
+                          onClick={() => {
+                            setSelectedSession(null)
+                          }}
                           className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors"
                         >
                           ← Back to Daily View
@@ -766,7 +979,7 @@ export function ProductionRecordsList({
                                 <span className="text-xs md:text-sm font-medium text-gray-900">{formatDateTime(record.created_at)}</span>
                               </div>
                               <div className="flex items-center gap-1">
-                                <Badge className={safetyStatus.color} style={{fontSize: '0.7rem'}}>
+                                <Badge className={safetyStatus.color} style={{ fontSize: '0.7rem' }}>
                                   <SafetyIcon className="w-2 h-2 mr-0.5" />
                                   {safetyStatus.label}
                                 </Badge>
@@ -790,7 +1003,7 @@ export function ProductionRecordsList({
                             </div>
 
                             {/* Core Metrics */}
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-1">
+                            <div className={`grid gap-1 ${settings?.productionTrackingMode === 'basic' ? 'grid-cols-2 md:grid-cols-2' : 'grid-cols-2 md:grid-cols-4'}`}>
                               <div className="text-center p-1.5 bg-blue-50 rounded">
                                 <p className="text-sm md:text-base font-bold text-blue-600">{record.milk_volume?.toFixed(1) || 'N/A'}</p>
                                 <p className="text-xs text-blue-600 font-medium">Volume (L)</p>
@@ -799,31 +1012,37 @@ export function ProductionRecordsList({
                                 <p className="text-sm md:text-base font-bold text-red-600">{record.temperature ? record.temperature.toFixed(1) : 'N/A'}</p>
                                 <p className="text-xs text-red-600 font-medium">Temp (°C)</p>
                               </div>
-                              <div className="text-center p-1.5 bg-orange-50 rounded">
-                                <p className="text-sm md:text-base font-bold text-orange-600">{record.fat_content !== null && record.fat_content !== undefined ? record.fat_content.toFixed(2) : 'N/A'}</p>
-                                <p className="text-xs text-orange-600 font-medium">Fat %</p>
-                              </div>
-                              <div className="text-center p-1.5 bg-green-50 rounded">
-                                <p className="text-sm md:text-base font-bold text-green-600">{record.protein_content !== null && record.protein_content !== undefined ? record.protein_content.toFixed(2) : 'N/A'}</p>
-                                <p className="text-xs text-green-600 font-medium">Protein %</p>
-                              </div>
+                              {settings?.productionTrackingMode !== 'basic' && (
+                                <>
+                                  <div className="text-center p-1.5 bg-orange-50 rounded">
+                                    <p className="text-sm md:text-base font-bold text-orange-600">{record.fat_content !== null && record.fat_content !== undefined ? record.fat_content.toFixed(2) : 'N/A'}</p>
+                                    <p className="text-xs text-orange-600 font-medium">Fat %</p>
+                                  </div>
+                                  <div className="text-center p-1.5 bg-green-50 rounded">
+                                    <p className="text-sm md:text-base font-bold text-green-600">{record.protein_content !== null && record.protein_content !== undefined ? record.protein_content.toFixed(2) : 'N/A'}</p>
+                                    <p className="text-xs text-green-600 font-medium">Protein %</p>
+                                  </div>
+                                </>
+                              )}
                             </div>
 
                             {/* Additional Metrics */}
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-1">
-                              <div className="text-center p-1.5 bg-yellow-50 rounded">
-                                <p className="text-xs md:text-sm font-bold text-yellow-600">{record.somatic_cell_count !== null && record.somatic_cell_count !== undefined ? record.somatic_cell_count.toLocaleString() : 'N/A'}</p>
-                                <p className="text-xs text-yellow-600 font-medium">SCC</p>
+                            {settings?.productionTrackingMode !== 'basic' && (
+                              <div className="grid grid-cols-2 md:grid-cols-3 gap-1">
+                                <div className="text-center p-1.5 bg-yellow-50 rounded">
+                                  <p className="text-xs md:text-sm font-bold text-yellow-600">{record.somatic_cell_count !== null && record.somatic_cell_count !== undefined ? record.somatic_cell_count.toLocaleString() : 'N/A'}</p>
+                                  <p className="text-xs text-yellow-600 font-medium">SCC</p>
+                                </div>
+                                <div className="text-center p-1.5 bg-cyan-50 rounded">
+                                  <p className="text-xs md:text-sm font-bold text-cyan-600">{record.lactose_content !== null && record.lactose_content !== undefined ? record.lactose_content.toFixed(2) : 'N/A'}</p>
+                                  <p className="text-xs text-cyan-600 font-medium">Lactose %</p>
+                                </div>
+                                <div className="text-center p-1.5 bg-indigo-50 rounded">
+                                  <p className="text-xs md:text-sm font-bold text-indigo-600">{record.ph_level !== null && record.ph_level !== undefined ? record.ph_level.toFixed(2) : 'N/A'}</p>
+                                  <p className="text-xs text-indigo-600 font-medium">pH</p>
+                                </div>
                               </div>
-                              <div className="text-center p-1.5 bg-cyan-50 rounded">
-                                <p className="text-xs md:text-sm font-bold text-cyan-600">{record.lactose_content !== null && record.lactose_content !== undefined ? record.lactose_content.toFixed(2) : 'N/A'}</p>
-                                <p className="text-xs text-cyan-600 font-medium">Lactose %</p>
-                              </div>
-                              <div className="text-center p-1.5 bg-indigo-50 rounded">
-                                <p className="text-xs md:text-sm font-bold text-indigo-600">{record.ph_level !== null && record.ph_level !== undefined ? record.ph_level.toFixed(2) : 'N/A'}</p>
-                                <p className="text-xs text-indigo-600 font-medium">pH</p>
-                              </div>
-                            </div>
+                            )}
 
                             {/* Notes */}
                             {record.notes && (
@@ -837,27 +1056,27 @@ export function ProductionRecordsList({
                             {/* Action Buttons */}
                             {canEdit && (
                               <div className="flex gap-1 justify-end pt-1">
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm" 
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
                                   onClick={() => onView?.(record)}
                                   className="h-6 px-2 text-xs"
                                 >
                                   <Eye className="w-3 h-3 mr-1" />
                                   View
                                 </Button>
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm" 
-                                  onClick={() => onEdit?.(record)}
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleEdit(record)}
                                   className="h-6 px-2 text-xs"
                                 >
                                   <Edit className="w-3 h-3 mr-1" />
                                   Edit
                                 </Button>
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm" 
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
                                   onClick={() => handleDelete(record.id)}
                                   disabled={deletingId === record.id}
                                   className="h-6 px-2 text-xs text-red-600 hover:text-red-800"
@@ -880,7 +1099,7 @@ export function ProductionRecordsList({
                             <Droplets className="w-5 h-5 text-farm-green" />
                           </div>
                         </div>
-                        
+
                         <div className="min-w-0 flex-1">
                           {/* Header Row */}
                           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-1 mb-2">
@@ -902,14 +1121,20 @@ export function ProductionRecordsList({
                                 <Clock className="w-2 h-2 mr-0.5" />
                                 {summary.recordCount} session{summary.recordCount !== 1 ? 's' : ''}
                               </Badge>
-                              {qualityIndicator && (
+                              {summary.milking_group_name && (
+                                <Badge className="bg-green-100 text-green-800 text-xs">
+                                  <Users className="w-2 h-2 mr-0.5" />
+                                  {summary.milking_group_name}
+                                </Badge>
+                              )}
+                              {settings?.productionTrackingMode !== 'basic' && qualityIndicator && (
                                 <Badge className={`${qualityIndicator.color} text-xs`}>
                                   {qualityIndicator.label}
                                 </Badge>
                               )}
                             </div>
                           </div>
-                          
+
                           {/* Production Metrics — reactive to selected session badge */}
                           {(() => {
                             const activeId = activeSessionBadge[summaryKey]
@@ -943,8 +1168,8 @@ export function ProductionRecordsList({
                             const statuses = recs.map((r: any) => r.milk_safety_status).filter(Boolean)
                             const safetyStatus = statuses.includes('unsafe_health') ? 'unsafe_health'
                               : statuses.includes('unsafe_colostrum') ? 'unsafe_colostrum'
-                              : statuses.length ? 'safe'
-                              : null
+                                : statuses.length ? 'safe'
+                                  : null
                             const safetyBadge = getSafetyStatusBadge(safetyStatus as any)
 
                             const isFiltered = !!activeId
@@ -952,19 +1177,23 @@ export function ProductionRecordsList({
 
                             return (
                               <>
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-1 mb-1">
+                                <div className={`grid gap-1 mb-1 ${settings?.productionTrackingMode === 'basic' ? 'grid-cols-2 md:grid-cols-2' : 'grid-cols-2 md:grid-cols-4'}`}>
                                   <div className={`text-center p-1 md:p-2 rounded transition-colors ${isFiltered ? 'bg-indigo-50' : 'bg-blue-50'}`}>
                                     <p className={`text-base md:text-lg font-bold ${isFiltered ? 'text-indigo-600' : 'text-blue-600'}`}>{vol.toFixed(1)}</p>
                                     <p className={`text-xs font-medium ${isFiltered ? 'text-indigo-600' : 'text-blue-600'}`}>{volLabel}</p>
                                   </div>
-                                  <div className="text-center p-1 md:p-2 bg-orange-50 rounded">
-                                    <p className="text-sm md:text-base font-bold text-orange-600">{avgFat !== null ? avgFat.toFixed(2) + '%' : 'N/A'}</p>
-                                    <p className="text-xs text-orange-600 font-medium">Fat</p>
-                                  </div>
-                                  <div className="text-center p-1 md:p-2 bg-green-50 rounded">
-                                    <p className="text-sm md:text-base font-bold text-green-600">{avgProt !== null ? avgProt.toFixed(2) + '%' : 'N/A'}</p>
-                                    <p className="text-xs text-green-600 font-medium">Protein</p>
-                                  </div>
+                                  {settings?.productionTrackingMode !== 'basic' && (
+                                    <>
+                                      <div className="text-center p-1 md:p-2 bg-orange-50 rounded">
+                                        <p className="text-sm md:text-base font-bold text-orange-600">{avgFat !== null ? avgFat.toFixed(2) + '%' : 'N/A'}</p>
+                                        <p className="text-xs text-orange-600 font-medium">Fat</p>
+                                      </div>
+                                      <div className="text-center p-1 md:p-2 bg-green-50 rounded">
+                                        <p className="text-sm md:text-base font-bold text-green-600">{avgProt !== null ? avgProt.toFixed(2) + '%' : 'N/A'}</p>
+                                        <p className="text-xs text-green-600 font-medium">Protein</p>
+                                      </div>
+                                    </>
+                                  )}
                                   <div className="text-center p-1 md:p-2 bg-purple-50 rounded">
                                     <p className="text-sm md:text-base font-bold text-purple-600">{recs.length}</p>
                                     <p className="text-xs text-purple-600 font-medium">Records</p>
@@ -1004,7 +1233,7 @@ export function ProductionRecordsList({
                               }}
                               className="flex items-center gap-1 text-xs font-semibold text-gray-600 hover:text-gray-900 transition-colors cursor-pointer"
                             >
-                              <ChevronDown 
+                              <ChevronDown
                                 className={`w-3 h-3 transition-transform ${expandedSessions.has(`${summary.cycleDate}-${summary.animal_id}`) ? 'rotate-180' : ''}`}
                               />
                               Sessions in cycle ({summary.sessions.length})
@@ -1016,22 +1245,28 @@ export function ProductionRecordsList({
                                   return (
                                     <button
                                       key={sessionId}
-                                      onClick={() => setActiveSessionBadge(prev => {
-                                        if (prev[summaryKey] === sessionId) {
-                                          const next = { ...prev }
+                                      onClick={() => {
+
+                                        if (activeSessionBadge[summaryKey] === sessionId) {
+                                          // Toggle OFF: clear both states
+                                          const next = { ...activeSessionBadge }
                                           delete next[summaryKey]
-                                          return next
+                                          setActiveSessionBadge(next)
+                                          setSelectedSession(null)
+                                        } else {
+                                          // Toggle ON: set both states at component level
+                                          const newSelectedSession = `${summaryKey}|${sessionId}`
+                                          setActiveSessionBadge(prev => ({ ...prev, [summaryKey]: sessionId }))
+                                          setSelectedSession(newSelectedSession)
                                         }
-                                        return { ...prev, [summaryKey]: sessionId }
-                                      })}
+                                      }}
                                       className="transition-all"
                                     >
                                       <Badge
-                                        className={`cursor-pointer hover:opacity-80 hover:shadow-md transition-all ${
-                                          isActive
+                                        className={`cursor-pointer hover:opacity-80 hover:shadow-md transition-all ${isActive
                                             ? 'bg-indigo-200 text-indigo-900 ring-2 ring-indigo-400'
                                             : getSessionBadgeColor(sessionId)
-                                        }`}
+                                          }`}
                                       >
                                         {getSessionName(sessionId)}
                                       </Badge>
@@ -1055,7 +1290,7 @@ export function ProductionRecordsList({
         <div className="space-y-4 max-h-[600px] overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-100 [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded pr-2">
           {(paginatedData as any[]).map((summary) => {
             const qualityIndicator = getQualityIndicator(summary.avgFatContent || undefined, summary.avgProteinContent || undefined)
-            
+
             return (
               <Card key={`group-summary-${summary.cycleDate}-${summary.milking_group_id}`} className="hover:shadow-md transition-shadow overflow-hidden">
                 <CardContent className="p-4 md:p-6">
@@ -1066,7 +1301,7 @@ export function ProductionRecordsList({
                           <Users className="w-6 h-6 text-farm-green" />
                         </div>
                       </div>
-                      
+
                       <div className="min-w-0 flex-1">
                         {/* Header Row */}
                         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-3">
@@ -1084,28 +1319,32 @@ export function ProductionRecordsList({
                               <Calendar className="w-3 h-3 mr-1" />
                               {formatDate(summary.cycleDate)}
                             </Badge>
-                            {qualityIndicator && (
+                            {settings?.productionTrackingMode !== 'basic' && qualityIndicator && (
                               <Badge className={qualityIndicator.color}>
                                 {qualityIndicator.label}
                               </Badge>
                             )}
                           </div>
                         </div>
-                        
+
                         {/* Production Metrics Grid */}
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                        <div className={`grid gap-2 ${settings?.productionTrackingMode === 'basic' ? 'grid-cols-2 md:grid-cols-2' : 'grid-cols-2 md:grid-cols-4'}`}>
                           <div className="text-center p-2 md:p-3 bg-blue-50 rounded">
                             <p className="text-lg md:text-2xl font-bold text-blue-600">{summary.totalMilkVolume.toFixed(1)}</p>
                             <p className="text-xs text-blue-600 font-medium">Total Liters</p>
                           </div>
-                          <div className="text-center p-2 md:p-3 bg-orange-50 rounded">
-                            <p className="text-base md:text-xl font-bold text-orange-600">{summary.avgFatContent !== null ? summary.avgFatContent.toFixed(2) + '%' : 'N/A'}</p>
-                            <p className="text-xs text-orange-600 font-medium">Avg Fat</p>
-                          </div>
-                          <div className="text-center p-2 md:p-3 bg-green-50 rounded">
-                            <p className="text-base md:text-xl font-bold text-green-600">{summary.avgProteinContent !== null ? summary.avgProteinContent.toFixed(2) + '%' : 'N/A'}</p>
-                            <p className="text-xs text-green-600 font-medium">Avg Protein</p>
-                          </div>
+                          {settings?.productionTrackingMode !== 'basic' && (
+                            <>
+                              <div className="text-center p-2 md:p-3 bg-orange-50 rounded">
+                                <p className="text-base md:text-xl font-bold text-orange-600">{summary.avgFatContent !== null ? summary.avgFatContent.toFixed(2) + '%' : 'N/A'}</p>
+                                <p className="text-xs text-orange-600 font-medium">Avg Fat</p>
+                              </div>
+                              <div className="text-center p-2 md:p-3 bg-green-50 rounded">
+                                <p className="text-base md:text-xl font-bold text-green-600">{summary.avgProteinContent !== null ? summary.avgProteinContent.toFixed(2) + '%' : 'N/A'}</p>
+                                <p className="text-xs text-green-600 font-medium">Avg Protein</p>
+                              </div>
+                            </>
+                          )}
                           <div className="text-center p-2 md:p-3 bg-purple-50 rounded">
                             <p className="text-base md:text-lg font-bold text-purple-600">{summary.totalRecords}</p>
                             <p className="text-xs text-purple-600 font-medium">Records</p>
@@ -1127,6 +1366,150 @@ export function ProductionRecordsList({
                             <p className="text-gray-900">{getSafetyStatusBadge(summary.records[0]?.milk_safety_status).label}</p>
                           </div>
                         </div>
+
+                        {/* Expandable Animal Details */}
+                        {(() => {
+                          const groupKey = `all-${summary.cycleDate}-${summary.milking_group_id || 'default'}`
+                          const isExpanded = expandedGroupAnimals.has(groupKey)
+                          const animalAggregates = calculateAnimalAggregates(summary.records)
+
+                          return (
+                            <div className="mt-4 pt-4 border-t border-gray-200">
+                              <button
+                                onClick={() => {
+                                  const newSet = new Set(expandedGroupAnimals)
+                                  if (newSet.has(groupKey)) {
+                                    newSet.delete(groupKey)
+                                  } else {
+                                    newSet.add(groupKey)
+                                  }
+                                  setExpandedGroupAnimals(newSet)
+                                }}
+                                className="w-full text-left flex items-center justify-between p-2 hover:bg-gray-50 rounded transition-colors"
+                              >
+                                <span className="font-semibold text-gray-900 text-sm">Animals in this group ({animalAggregates.length})</span>
+                                <ChevronDown
+                                  className={`w-5 h-5 text-gray-600 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`}
+                                />
+                              </button>
+
+                              {isExpanded && (
+                                <div className="mt-3 space-y-2">
+                                  {animalAggregates.length === 0 ? (
+                                    <p className="text-sm text-gray-500 p-3">No animals in this group</p>
+                                  ) : (
+                                    animalAggregates.map((animalData) => {
+                                      const fatRecords = animalData.records.filter(r => r.fat_content)
+                                      const proteinRecords = animalData.records.filter(r => r.protein_content)
+                                      const avgFat = fatRecords.length > 0
+                                        ? fatRecords.reduce((sum, r) => sum + (r.fat_content || 0), 0) / fatRecords.length
+                                        : null
+                                      const avgProtein = proteinRecords.length > 0
+                                        ? proteinRecords.reduce((sum, r) => sum + (r.protein_content || 0), 0) / proteinRecords.length
+                                        : null
+                                      const qualityIndicator = getQualityIndicator(avgFat || undefined, avgProtein || undefined)
+                                      const animalDetailsKey = `all-${summary.cycleDate}-${summary.milking_group_id || 'default'}-${animalData.animal_id}`
+                                      const isAnimalDetailsExpanded = expandedAnimalDetails.has(animalDetailsKey)
+
+                                      return (
+                                        <div key={animalData.animal_id} className="p-3 bg-stone-50 rounded-lg border border-stone-200 space-y-2">
+                                          {/* Animal Header */}
+                                          <div className="flex items-center justify-between">
+                                            <div>
+                                              <p className="font-semibold text-gray-900">{animalData.animal_name}</p>
+                                              <p className="text-xs text-gray-600">Tag: {animalData.animal_tag}</p>
+                                            </div>
+                                            <div className="text-right">
+                                              <p className="text-lg font-bold text-farm-green">{animalData.total_volume.toFixed(1)}L</p>
+                                              <p className="text-xs text-gray-600">{animalData.record_count} record{animalData.record_count !== 1 ? 's' : ''}</p>
+                                            </div>
+                                          </div>
+
+                                          {/* Quality Indicator - Only show in advanced modes */}
+                                          {settings?.productionTrackingMode !== 'basic' && qualityIndicator && (
+                                            <div className="flex gap-1">
+                                              <Badge className={qualityIndicator.color}>{qualityIndicator.label}</Badge>
+                                            </div>
+                                          )}
+
+                                          {/* More Details Button */}
+                                          <button
+                                            onClick={() => {
+                                              const newSet = new Set(expandedAnimalDetails)
+                                              if (newSet.has(animalDetailsKey)) {
+                                                newSet.delete(animalDetailsKey)
+                                              } else {
+                                                newSet.add(animalDetailsKey)
+                                              }
+                                              setExpandedAnimalDetails(newSet)
+                                              console.log('[ProductionRecordsList] Animal details toggled:', {
+                                                animalId: animalData.animal_id,
+                                                animalName: animalData.animal_name,
+                                                isExpanded: newSet.has(animalDetailsKey),
+                                                timestamp: new Date().toISOString()
+                                              })
+                                            }}
+                                            className="w-full flex items-center justify-between p-2 text-xs text-blue-600 hover:bg-white rounded transition-colors"
+                                          >
+                                            <span className="font-medium">More Details</span>
+                                            <ChevronDown
+                                              className={`w-4 h-4 transition-transform ${isAnimalDetailsExpanded ? 'rotate-180' : ''}`}
+                                            />
+                                          </button>
+
+                                          {/* Individual Records */}
+                                          {isAnimalDetailsExpanded && (
+                                            <div className="mt-2 pt-2 border-t border-stone-200 space-y-2">
+                                              {animalData.records.map((record: ProductionRecord) => {
+                                                const safetyStatus = getSafetyStatusBadge(record.milk_safety_status)
+                                                const SafetyIcon = safetyStatus.icon
+
+                                                return (
+                                                  <div key={record.id} className="p-2 bg-white rounded border border-stone-100 text-xs space-y-1">
+                                                    <div className="flex items-center justify-between">
+                                                      <div className="flex items-center gap-1">
+                                                        <Clock className="w-3 h-3 text-gray-500" />
+                                                        <span className="text-gray-700">{formatDateTime(record.created_at)}</span>
+                                                      </div>
+                                                      <div className="flex items-center gap-1">
+                                                        <SafetyIcon className="w-3 h-3" />
+                                                        <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${safetyStatus.color}`}>
+                                                          {safetyStatus.label}
+                                                        </span>
+                                                      </div>
+                                                    </div>
+                                                    <div className={`grid gap-1 ${settings?.productionTrackingMode === 'basic' ? 'grid-cols-1' : 'grid-cols-3'}`}>
+                                                      <div className="text-center p-1 bg-blue-50 rounded">
+                                                        <p className="font-bold text-blue-600">{record.milk_volume.toFixed(1)}L</p>
+                                                        <p className="text-gray-600">Volume</p>
+                                                      </div>
+                                                      {settings?.productionTrackingMode !== 'basic' && record.fat_content && (
+                                                        <div className="text-center p-1 bg-orange-50 rounded">
+                                                          <p className="font-bold text-orange-600">{record.fat_content.toFixed(2)}%</p>
+                                                          <p className="text-gray-600">Fat</p>
+                                                        </div>
+                                                      )}
+                                                      {settings?.productionTrackingMode !== 'basic' && record.protein_content && (
+                                                        <div className="text-center p-1 bg-green-50 rounded">
+                                                          <p className="font-bold text-green-600">{record.protein_content.toFixed(2)}%</p>
+                                                          <p className="text-gray-600">Protein</p>
+                                                        </div>
+                                                      )}
+                                                    </div>
+                                                  </div>
+                                                )
+                                              })}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )
+                                    })
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })()}
                       </div>
                     </div>
                   </div>
@@ -1144,7 +1527,7 @@ export function ProductionRecordsList({
             const recordingTypeBadge = getRecordingTypeBadge(record.recording_type)
             const SafetyIcon = safetyStatus.icon
             const RecordingTypeIcon = recordingTypeBadge.icon
-            
+
             return (
               <Card key={record.id} className="hover:shadow-md transition-shadow overflow-hidden">
                 <CardContent className="p-2 md:p-3">
@@ -1155,7 +1538,7 @@ export function ProductionRecordsList({
                           <Droplets className="w-5 h-5 text-farm-green" />
                         </div>
                       </div>
-                      
+
                       <div className="min-w-0 flex-1">
                         {/* Header Row */}
                         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-1 mb-1">
@@ -1188,7 +1571,7 @@ export function ProductionRecordsList({
                             )}
                           </div>
                         </div>
-                        
+
                         {/* Date Info */}
                         <div className="flex items-center space-x-2 text-xs text-gray-600 mb-2">
                           <span className="flex items-center">
@@ -1200,35 +1583,39 @@ export function ProductionRecordsList({
                             {formatDateTime(record.created_at)}
                           </span>
                         </div>
-                        
+
                         {/* Production Metrics Grid */}
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-1 mb-2">
+                        <div className={`grid gap-1 mb-2 ${settings?.productionTrackingMode === 'basic' ? 'grid-cols-2 md:grid-cols-2 lg:grid-cols-2' : 'grid-cols-2 md:grid-cols-3 lg:grid-cols-6'}`}>
                           <div className="text-center p-1 md:p-2 bg-blue-50 rounded">
                             <p className="text-base md:text-lg font-bold text-blue-600">{record.milk_volume}</p>
                             <p className="text-xs text-blue-600 font-medium">L</p>
-                          </div>
-                          <div className="text-center p-1 md:p-2 bg-orange-50 rounded">
-                            <p className="text-sm md:text-base font-bold text-orange-600">{record.fat_content ? record.fat_content + '%' : 'N/A'}</p>
-                            <p className="text-xs text-orange-600 font-medium">Fat</p>
-                          </div>
-                          <div className="text-center p-1 md:p-2 bg-green-50 rounded">
-                            <p className="text-sm md:text-base font-bold text-green-600">{record.protein_content ? record.protein_content + '%' : 'N/A'}</p>
-                            <p className="text-xs text-green-600 font-medium">Protein</p>
-                          </div>
-                          <div className="text-center p-1 md:p-2 bg-purple-50 rounded">
-                            <p className="text-xs md:text-sm font-bold text-purple-600">
-                              {record.somatic_cell_count ? (record.somatic_cell_count / 1000).toFixed(0) + 'k' : 'N/A'}
-                            </p>
-                            <p className="text-xs text-purple-600 font-medium">SCC</p>
                           </div>
                           <div className="text-center p-1 md:p-2 bg-red-50 rounded">
                             <p className="text-sm md:text-base font-bold text-red-600">{record.temperature ? record.temperature + '°C' : 'N/A'}</p>
                             <p className="text-xs text-red-600 font-medium">T</p>
                           </div>
-                          <div className="text-center p-1 md:p-2 bg-indigo-50 rounded">
-                            <p className="text-sm md:text-base font-bold text-indigo-600">{record.ph_level ? record.ph_level : 'N/A'}</p>
-                            <p className="text-xs text-indigo-600 font-medium">pH</p>
-                          </div>
+                          {settings?.productionTrackingMode !== 'basic' && (
+                            <>
+                              <div className="text-center p-1 md:p-2 bg-orange-50 rounded">
+                                <p className="text-sm md:text-base font-bold text-orange-600">{record.fat_content ? record.fat_content + '%' : 'N/A'}</p>
+                                <p className="text-xs text-orange-600 font-medium">Fat</p>
+                              </div>
+                              <div className="text-center p-1 md:p-2 bg-green-50 rounded">
+                                <p className="text-sm md:text-base font-bold text-green-600">{record.protein_content ? record.protein_content + '%' : 'N/A'}</p>
+                                <p className="text-xs text-green-600 font-medium">Protein</p>
+                              </div>
+                              <div className="text-center p-1 md:p-2 bg-purple-50 rounded">
+                                <p className="text-xs md:text-sm font-bold text-purple-600">
+                                  {record.somatic_cell_count ? (record.somatic_cell_count / 1000).toFixed(0) + 'k' : 'N/A'}
+                                </p>
+                                <p className="text-xs text-purple-600 font-medium">SCC</p>
+                              </div>
+                              <div className="text-center p-1 md:p-2 bg-indigo-50 rounded">
+                                <p className="text-sm md:text-base font-bold text-indigo-600">{record.ph_level ? record.ph_level : 'N/A'}</p>
+                                <p className="text-xs text-indigo-600 font-medium">pH</p>
+                              </div>
+                            </>
+                          )}
                         </div>
 
                         {/* Health and Safety Details */}
@@ -1246,19 +1633,19 @@ export function ProductionRecordsList({
                             <p className="text-gray-900">{getSafetyStatusBadge(record.milk_safety_status).label}</p>
                           </div>
                         </div>
-                        
+
                         {/* Notes Section */}
                         {record.notes && (
                           <div className="mb-1 p-2 bg-gray-50 rounded border border-gray-200">
                             <p className="text-xs text-gray-700">
-                              <span className="font-semibold block mb-0.5">Notes:</span> 
+                              <span className="font-semibold block mb-0.5">Notes:</span>
                               <span className="text-gray-600">{record.notes}</span>
                             </p>
                           </div>
                         )}
                       </div>
                     </div>
-                    
+
                     {/* Action Buttons */}
                     {canEdit && (
                       <div className="flex-shrink-0 flex items-center gap-1">
@@ -1273,11 +1660,11 @@ export function ProductionRecordsList({
                               <Eye className="w-4 h-4 mr-2" />
                               View Details
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => onEdit?.(record)} className="cursor-pointer flex items-center">
+                            <DropdownMenuItem onClick={() => handleEdit(record)} className="cursor-pointer flex items-center">
                               <Edit className="w-4 h-4 mr-2" />
                               Edit Record
                             </DropdownMenuItem>
-                            <DropdownMenuItem 
+                            <DropdownMenuItem
                               onClick={() => handleDelete(record.id)}
                               disabled={deletingId === record.id}
                               className="cursor-pointer flex items-center text-red-600 focus:text-red-600 focus:bg-red-50"
@@ -1301,11 +1688,13 @@ export function ProductionRecordsList({
           {(paginatedData as any[]).map((summary: any, index) => {
             const isExpanded = expandedGroups.has(summary.milking_group_id || 'default')
             const recentQuality = getQualityIndicator(summary.avgFatContent || undefined, summary.avgProteinContent || undefined)
-            const mostRecent = summary.records && summary.records.length > 0 ? summary.records[0] : null
+            // Use records from dailySummaryGroups or animalRecords from groupedRecords
+            const recordsArray = summary.records || summary.animalRecords
+            const mostRecent = recordsArray && recordsArray.length > 0 ? recordsArray[0] : null
             const recentSafety = mostRecent ? getSafetyStatusBadge(mostRecent.milk_safety_status) : null
             const RecentSafetyIcon = recentSafety?.icon
             const displayGroupName = (summary as any).groupName || 'Milking Group'
-            
+
             return (
               <Card key={`group-${index}`} className="hover:shadow-md transition-shadow overflow-hidden">
                 <CardContent className="p-4 md:p-6">
@@ -1314,10 +1703,23 @@ export function ProductionRecordsList({
                     onClick={() => {
                       const newSet = new Set(expandedGroups)
                       const groupKey = summary.milking_group_id || 'default'
+                      const isCurrentlyExpanded = newSet.has(groupKey)
+                      
+                      console.log('[ProductionRecordsList] Group expand/collapse clicked:', {
+                        groupName: displayGroupName,
+                        groupKey: groupKey,
+                        isCurrentlyExpanded: isCurrentlyExpanded,
+                        willBeExpanded: !isCurrentlyExpanded,
+                        totalRecords: summary.records?.length || 0,
+                        timestamp: new Date().toISOString()
+                      })
+                      
                       if (newSet.has(groupKey)) {
                         newSet.delete(groupKey)
+                        console.log('[ProductionRecordsList] Group collapsed:', displayGroupName)
                       } else {
                         newSet.add(groupKey)
+                        console.log('[ProductionRecordsList] Group expanded:', displayGroupName)
                       }
                       setExpandedGroups(newSet)
                     }}
@@ -1330,7 +1732,7 @@ export function ProductionRecordsList({
                             <Users className="w-6 h-6 text-farm-green" />
                           </div>
                         </div>
-                        
+
                         <div className="min-w-0 flex-1">
                           <h4 className="text-base md:text-lg font-semibold text-gray-900">
                             {displayGroupName}
@@ -1338,7 +1740,7 @@ export function ProductionRecordsList({
                           <p className="text-sm text-gray-600 mt-1">
                             {summary.animalCount || summary.recordCount || summary.totalRecords} animal{summary.animalCount !== 1 ? 's' : ''} recorded
                           </p>
-                          
+
                           {/* Most Recent Session Info */}
                           {mostRecent && (
                             <div className="mt-3 space-y-2">
@@ -1366,7 +1768,7 @@ export function ProductionRecordsList({
                           )}
                         </div>
                       </div>
-                      
+
                       {/* Group Stats */}
                       <div className="flex-shrink-0 text-right">
                         <div className="text-2xl font-bold text-farm-green">
@@ -1374,101 +1776,231 @@ export function ProductionRecordsList({
                         </div>
                         <p className="text-xs text-gray-600 font-medium">Total Liters</p>
                         <div className="mt-3 text-gray-500 hover:text-gray-700 flex justify-end pointer-events-none">
-                          <ChevronDown 
+                          <ChevronDown
                             className={`w-5 h-5 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
                           />
                         </div>
                       </div>
                     </div>
                   </button>
-                  
-                  {/* Expanded Animals List */}
-                  {isExpanded && (
-                    <div className="mt-6 pt-6 border-t border-gray-200 space-y-3">
-                      <h5 className="font-semibold text-gray-900 mb-3">Animals in this group:</h5>
-                      {summary.records.map((record: ProductionRecord) => {
-                        const recordingTypeBadge = getRecordingTypeBadge(record.recording_type)
-                        const RecordingTypeIcon = recordingTypeBadge.icon
-                        
-                        return (
-                          <div
-                            key={record.id}
-                            className="p-3 bg-gray-50 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors"
-                          >
-                            <div className="flex items-start justify-between">
-                              <div className="flex-1">
-                                <p className="font-medium text-gray-900">
-                                  {record.animals?.name || `Animal #${record.animals?.tag_number}`}
-                                </p>
-                                <p className="text-xs text-gray-600 mt-1">
-                                  Tag: {record.animals?.tag_number}
-                                </p>
-                                <div className="flex items-center space-x-3 mt-2 text-xs text-gray-600">
-                                  <span className="flex items-center">
-                                    <Droplets className="w-3 h-3 mr-1" />
-                                    {record.milk_volume}L
-                                  </span>
-                                  <span className="flex items-center">
-                                    <Clock className="w-3 h-3 mr-1" />
-                                    {getSessionName(record.milking_session_id)}
-                                  </span>
-                                  <span>{formatDate(record.record_date)}</span>
-                                </div>
-                                {/* Health and Safety Details */}
-                                <div className="grid grid-cols-3 gap-2 mt-3 pt-2 border-t border-gray-300">
-                                  <div className="text-xs p-1.5 bg-white rounded border border-gray-300">
-                                    <p className="font-semibold text-gray-700 mb-0.5">Mastitis</p>
-                                    <p className="text-gray-900">{record.mastitis_test_performed ? (record.mastitis_result ? record.mastitis_result.charAt(0).toUpperCase() + record.mastitis_result.slice(1) : 'Tested') : 'N/A'}</p>
+
+                  {/* Expanded Animals List - Aggregated by animal with total volumes */}
+                  {isExpanded && (() => {
+                    // Use records from dailySummaryGroups or animalRecords from groupedRecords
+                    const recordsArray = summary.records || summary.animalRecords
+                    const animalAggregates = calculateAnimalAggregates(recordsArray)
+                    
+                    console.log('[ProductionRecordsList] Rendering expanded animals list:', {
+                      groupName: displayGroupName,
+                      groupKey: summary.milking_group_id || 'default',
+                      animalCount: animalAggregates.length,
+                      totalRecords: recordsArray?.length || 0,
+                      totalMilkVolume: summary.totalMilkVolume,
+                      animals: animalAggregates.map(a => ({
+                        name: a.animal_name,
+                        tag: a.animal_tag,
+                        totalVolume: a.total_volume,
+                        recordCount: a.record_count
+                      }))
+                    })
+                    
+                    return (
+                      <div className="mt-6 pt-6 border-t border-gray-200 space-y-3">
+                        <h5 className="font-semibold text-gray-900 mb-3">Animals in this group ({animalAggregates.length}):</h5>
+                        {animalAggregates.length === 0 ? (
+                          <p className="text-sm text-gray-500 p-3">No animals in this group</p>
+                        ) : (
+                          animalAggregates.map((animalData) => {
+                            const fatRecords = animalData.records.filter(r => r.fat_content)
+                            const proteinRecords = animalData.records.filter(r => r.protein_content)
+                            
+                            const avgFat = fatRecords.length > 0
+                              ? fatRecords.reduce((sum, r) => sum + (r.fat_content || 0), 0) / fatRecords.length
+                              : null
+                            
+                            const avgProtein = proteinRecords.length > 0
+                              ? proteinRecords.reduce((sum, r) => sum + (r.protein_content || 0), 0) / proteinRecords.length
+                              : null
+                            
+                            const qualityIndicator = getQualityIndicator(avgFat || undefined, avgProtein || undefined)
+                            const animalDetailsKey = `${summary.milking_group_id || 'default'}-${animalData.animal_id}`
+                            const isAnimalDetailsExpanded = expandedAnimalDetails.has(animalDetailsKey)
+
+                            return (
+                              <div
+                                key={animalData.animal_id}
+                                className="p-4 bg-gray-50 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors"
+                              >
+                                {/* Header with name and total */}
+                                <div className="flex items-start justify-between mb-3">
+                                  <div className="flex-1">
+                                    <p className="font-semibold text-gray-900">
+                                      {animalData.animal_name}
+                                    </p>
+                                    <p className="text-xs text-gray-600 mt-0.5">
+                                      Tag: {animalData.animal_tag}
+                                    </p>
                                   </div>
-                                  <div className="text-xs p-1.5 bg-white rounded border border-gray-300">
-                                    <p className="font-semibold text-gray-700 mb-0.5">Temp</p>
-                                    <p className="text-gray-900">{record.temperature !== null && record.temperature !== undefined ? record.temperature.toFixed(1) + '°C' : 'N/A'}</p>
-                                  </div>
-                                  <div className="text-xs p-1.5 bg-white rounded border border-gray-300">
-                                    <p className="font-semibold text-gray-700 mb-0.5">Milk Safety</p>
-                                    <p className="text-gray-900">{getSafetyStatusBadge(record.milk_safety_status).label}</p>
+                                  <div className="text-right flex-shrink-0">
+                                    <p className="text-2xl font-bold text-farm-green">
+                                      {animalData.total_volume.toFixed(1)}
+                                    </p>
+                                    <p className="text-xs text-gray-600 font-medium">Total Liters</p>
                                   </div>
                                 </div>
-                                <div className="mt-2">
-                                  <Badge className={recordingTypeBadge.color}>
-                                    <RecordingTypeIcon className="w-3 h-3 mr-1" />
-                                    {recordingTypeBadge.label}
-                                  </Badge>
+                                
+                                {/* Stats Grid */}
+                                <div className="grid grid-cols-2 gap-2 md:grid-cols-4 text-xs mb-3">
+                                  <div className="p-2 bg-white rounded border border-gray-300">
+                                    <p className="text-gray-600 font-semibold">Records</p>
+                                    <p className="text-gray-900 font-medium">{animalData.record_count}</p>
+                                  </div>
+                                  <div className="p-2 bg-white rounded border border-gray-300">
+                                    <p className="text-gray-600 font-semibold">Avg/Record</p>
+                                    <p className="text-gray-900 font-medium">{(animalData.total_volume / animalData.record_count).toFixed(1)}L</p>
+                                  </div>
+                                  <div className="p-2 bg-white rounded border border-gray-300">
+                                    <p className="text-gray-600 font-semibold">Fat</p>
+                                    <p className="text-gray-900 font-medium">{avgFat ? avgFat.toFixed(2) + '%' : 'N/A'}</p>
+                                  </div>
+                                  <div className="p-2 bg-white rounded border border-gray-300">
+                                    <p className="text-gray-600 font-semibold">Protein</p>
+                                    <p className="text-gray-900 font-medium">{avgProtein ? avgProtein.toFixed(2) + '%' : 'N/A'}</p>
+                                  </div>
                                 </div>
+
+                                {/* Quality Indicator */}
+                                {qualityIndicator && (
+                                  <div className="mb-3 flex items-center gap-2">
+                                    <Badge className={qualityIndicator.color}>
+                                      {qualityIndicator.label}
+                                    </Badge>
+                                  </div>
+                                )}
+
+                                {/* More Details Button */}
+                                <button
+                                  onClick={() => {
+                                    const newSet = new Set(expandedAnimalDetails)
+                                    if (newSet.has(animalDetailsKey)) {
+                                      newSet.delete(animalDetailsKey)
+                                      console.log('[ProductionRecordsList] Animal details collapsed:', {
+                                        animalName: animalData.animal_name,
+                                        animalTag: animalData.animal_tag
+                                      })
+                                    } else {
+                                      newSet.add(animalDetailsKey)
+                                      console.log('[ProductionRecordsList] Animal details expanded:', {
+                                        animalName: animalData.animal_name,
+                                        animalTag: animalData.animal_tag,
+                                        recordCount: animalData.record_count
+                                      })
+                                    }
+                                    setExpandedAnimalDetails(newSet)
+                                  }}
+                                  className="w-full flex items-center justify-between gap-2 p-3 bg-white rounded border border-gray-300 hover:bg-gray-50 transition-colors text-sm font-medium text-gray-900"
+                                >
+                                  <span>More Details</span>
+                                  <ChevronDown 
+                                    className={`w-4 h-4 transition-transform ${isAnimalDetailsExpanded ? 'rotate-180' : ''}`}
+                                  />
+                                </button>
+
+                                {/* Expanded Individual Records */}
+                                {isAnimalDetailsExpanded && (
+                                  <div className="mt-3 pt-3 border-t border-gray-200 space-y-2">
+                                    <h6 className="text-xs font-semibold text-gray-700 uppercase">Individual Records ({animalData.record_count})</h6>
+                                    {animalData.records.map((record: ProductionRecord) => {
+                                      const recordSafetyStatus = getSafetyStatusBadge(record.milk_safety_status)
+                                      const RecordSafetyIcon = recordSafetyStatus.icon
+
+                                      return (
+                                        <div
+                                          key={record.id}
+                                          className="p-3 bg-white rounded border border-gray-200 space-y-2"
+                                        >
+                                          {/* Record Time and Safety Status */}
+                                          <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                              <Clock className="w-3 h-3 text-gray-400" />
+                                              <span className="text-xs font-medium text-gray-700">
+                                                {formatDateTime(record.created_at)}
+                                              </span>
+                                            </div>
+                                            <Badge className={recordSafetyStatus.color}>
+                                              <RecordSafetyIcon className="w-2.5 h-2.5 mr-0.5" />
+                                              {recordSafetyStatus.label}
+                                            </Badge>
+                                          </div>
+
+                                          {/* Record Metrics */}
+                                          <div className="grid grid-cols-2 gap-1 text-xs">
+                                            <div className="p-2 bg-blue-50 rounded">
+                                              <p className="text-gray-600 font-semibold">Volume</p>
+                                              <p className="text-gray-900 font-medium">{record.milk_volume}L</p>
+                                            </div>
+                                            {record.fat_content !== undefined && (
+                                              <div className="p-2 bg-green-50 rounded">
+                                                <p className="text-gray-600 font-semibold">Fat</p>
+                                                <p className="text-gray-900 font-medium">{record.fat_content.toFixed(2)}%</p>
+                                              </div>
+                                            )}
+                                            {record.protein_content !== undefined && (
+                                              <div className="p-2 bg-yellow-50 rounded">
+                                                <p className="text-gray-600 font-semibold">Protein</p>
+                                                <p className="text-gray-900 font-medium">{record.protein_content.toFixed(2)}%</p>
+                                              </div>
+                                            )}
+                                            {record.temperature !== undefined && (
+                                              <div className="p-2 bg-red-50 rounded">
+                                                <p className="text-gray-600 font-semibold">Temp</p>
+                                                <p className="text-gray-900 font-medium">{record.temperature}°C</p>
+                                              </div>
+                                            )}
+                                          </div>
+
+                                          {/* Mastitis Info */}
+                                          {record.mastitis_test_performed && (
+                                            <div className="p-2 bg-purple-50 rounded text-xs">
+                                              <p className="text-gray-600 font-semibold">Mastitis Test</p>
+                                              <p className="text-gray-900 font-medium capitalize">
+                                                {record.mastitis_result || 'Performed'}
+                                                {record.affected_quarters && record.affected_quarters.length > 0 && 
+                                                  ` - Quarters: ${record.affected_quarters.join(', ')}`
+                                                }
+                                              </p>
+                                            </div>
+                                          )}
+
+                                          {/* Notes */}
+                                          {record.notes && (
+                                            <div className="p-2 bg-gray-100 rounded text-xs">
+                                              <p className="text-gray-600 font-semibold">Notes</p>
+                                              <p className="text-gray-700">{record.notes}</p>
+                                            </div>
+                                          )}
+
+                                          {/* Session Badge */}
+                                          {record.milking_session_id && (
+                                            <div className="flex justify-end">
+                                              <Badge className={getSessionBadgeColor(record.milking_session_id)}>
+                                                <Clock className="w-2.5 h-2.5 mr-0.5" />
+                                                {getSessionName(record.milking_session_id)}
+                                              </Badge>
+                                            </div>
+                                          )}
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+                                )}
                               </div>
-                              {canEdit && (
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                      <MoreHorizontal className="w-4 h-4" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onClick={() => onView?.(record)} className="cursor-pointer flex items-center">
-                                      <Eye className="w-4 h-4 mr-2" />
-                                      View Details
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => onEdit?.(record)} className="cursor-pointer flex items-center">
-                                      <Edit className="w-4 h-4 mr-2" />
-                                      Edit Record
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem 
-                                      onClick={() => handleDelete(record.id)}
-                                      disabled={deletingId === record.id}
-                                      className="cursor-pointer flex items-center text-red-600 focus:text-red-600 focus:bg-red-50"
-                                    >
-                                      <Trash2 className="w-4 h-4 mr-2" />
-                                      {deletingId === record.id ? 'Deleting...' : 'Delete'}
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              )}
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
+                            )
+                          })
+                        )}
+                      </div>
+                    )
+                  })()}
                 </CardContent>
               </Card>
             )
@@ -1485,30 +2017,30 @@ export function ProductionRecordsList({
           }
           const pages: (number | string)[] = []
           const range = 2
-          
+
           // Always show first page
           pages.push(1)
-          
+
           // Add ellipsis or pages before current
           if (currentPage - range > 2) {
             pages.push('...')
           }
-          
+
           // Pages around current - always include them, don't skip due to ellipsis
           for (let i = Math.max(2, currentPage - range); i <= Math.min(totalPages - 1, currentPage + range); i++) {
             pages.push(i)
           }
-          
+
           // Add ellipsis or pages after current
           if (currentPage + range < totalPages - 1) {
             pages.push('...')
           }
-          
+
           // Always show last page
           if (!pages.includes(totalPages)) {
             pages.push(totalPages)
           }
-          
+
           return pages
         }
 
@@ -1550,7 +2082,7 @@ export function ProductionRecordsList({
 
               {/* Center: Page Numbers - Hide on mobile, show smart range on desktop */}
               <div className="hidden lg:flex items-center gap-1">
-                {getPagesToShow().map((page, idx) => 
+                {getPagesToShow().map((page, idx) =>
                   page === '...' ? (
                     <span key={`ellipsis-${idx}`} className="px-2 text-gray-400 text-xs font-semibold">
                       …
@@ -1561,11 +2093,10 @@ export function ProductionRecordsList({
                       variant={currentPage === page ? 'default' : 'outline'}
                       size="sm"
                       onClick={() => setCurrentPage(page as number)}
-                      className={`w-9 h-9 p-0 text-sm font-medium transition-all ${
-                        currentPage === page 
-                          ? 'bg-farm-green text-white border-farm-green' 
+                      className={`w-9 h-9 p-0 text-sm font-medium transition-all ${currentPage === page
+                          ? 'bg-farm-green text-white border-farm-green'
                           : 'hover:bg-gray-100'
-                      }`}
+                        }`}
                     >
                       {page}
                     </Button>
@@ -1638,6 +2169,41 @@ export function ProductionRecordsList({
           </div>
         )
       })()}
+
+      {/* Edit Modal */}
+      {isEditModalOpen && editingRecord && (
+        <>
+          <RecordProductionModal
+            isOpen={isEditModalOpen}
+            onClose={handleEditModalClose}
+            farmId={farmId || ''}
+            animals={animals}
+            settings={settings}
+            onSuccess={handleEditSuccess}
+            recordingType={editingRecordType}
+            milkingGroupName={editingGroupName}
+            editingRecord={{
+              id: editingRecord.id,
+              animal_id: editingRecord.animal_id,
+              record_date: editingRecord.record_date,
+              milking_session_id: editingRecord.milking_session_id || '',
+              milk_volume: editingRecord.milk_volume,
+              milk_safety_status: editingRecord.milk_safety_status || 'safe',
+              temperature: editingRecord.temperature,
+              mastitis_test_performed: editingRecord.mastitis_test_performed,
+              mastitis_result: editingRecord.mastitis_result,
+              affected_quarters: editingRecord.affected_quarters,
+              fat_content: editingRecord.fat_content,
+              protein_content: editingRecord.protein_content,
+              somatic_cell_count: editingRecord.somatic_cell_count,
+              lactose_content: editingRecord.lactose_content,
+              ph_level: editingRecord.ph_level,
+              notes: editingRecord.notes,
+              milking_time: editingRecord.created_at?.split('T')[1]?.slice(0, 5)
+            }}
+          />
+        </>
+      )}
     </div>
   )
 }

@@ -29,7 +29,9 @@ import {
   Package,
   Info,
   Hash,
-  Ruler
+  Ruler,
+  Pencil,
+  Trash2
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
@@ -89,6 +91,9 @@ export function HousingAndFacilities({ farmId, isMobile }: HousingAndFacilitiesP
   const [isAddBuildingModalOpen, setIsAddBuildingModalOpen] = useState(false)
   const [isAddUnitModalOpen, setIsAddUnitModalOpen] = useState(false)
   const [isCreatePenModalOpen, setIsCreatePenModalOpen] = useState(false)
+  const [editingBuilding, setEditingBuilding] = useState<HousingBuilding | null>(null)
+  const [editingUnit, setEditingUnit] = useState<HousingUnit | null>(null)
+  const [editingPen, setEditingPen] = useState<HousingPen | null>(null)
 
   // Buildings: fetched from DB
   const [buildings, setBuildings] = useState<HousingBuilding[]>([])
@@ -148,6 +153,70 @@ export function HousingAndFacilities({ farmId, isMobile }: HousingAndFacilitiesP
 
   useEffect(() => { fetchHierarchy() }, [fetchHierarchy])
   useEffect(() => { fetchAnimals() }, [fetchAnimals])
+
+  // Delete handlers
+  const handleDeleteBuilding = async (buildingId: string) => {
+    if (!window.confirm('Are you sure you want to delete this building? This action cannot be undone.')) {
+      return
+    }
+    try {
+      const response = await fetch(`/api/housing/buildings/${buildingId}`, {
+        method: 'DELETE',
+      })
+      if (response.ok) {
+        setBuildings(prev => prev.filter(b => b.id !== buildingId))
+        setSelectedBuilding(null)
+        setSelectedUnit(null)
+        setSelectedPen(null)
+      } else {
+        alert('Failed to delete building')
+      }
+    } catch (err) {
+      console.error('Error deleting building:', err)
+      alert('Error deleting building')
+    }
+  }
+
+  const handleDeleteUnit = async (unitId: string) => {
+    if (!window.confirm('Are you sure you want to delete this unit? This action cannot be undone.')) {
+      return
+    }
+    try {
+      const response = await fetch(`/api/housing/units/${unitId}`, {
+        method: 'DELETE',
+      })
+      if (response.ok) {
+        setUnits(prev => prev.filter(u => u.id !== unitId))
+        setSelectedUnit(null)
+        setSelectedPen(null)
+      } else {
+        alert('Failed to delete unit')
+      }
+    } catch (err) {
+      console.error('Error deleting unit:', err)
+      alert('Error deleting unit')
+    }
+  }
+
+  const handleDeletePen = async (penId: string) => {
+    if (!window.confirm('Are you sure you want to delete this pen? This action cannot be undone.')) {
+      return
+    }
+    try {
+      const response = await fetch(`/api/housing/pens/${penId}`, {
+        method: 'DELETE',
+      })
+      if (response.ok) {
+        setPens(prev => prev.filter(p => p.id !== penId))
+        setSelectedPen(null)
+      } else {
+        alert('Failed to delete pen')
+      }
+    } catch (err) {
+      console.error('Error deleting pen:', err)
+      alert('Error deleting pen')
+    }
+  }
 
   // Analytics: derived from real buildings
   const analytics = useMemo<HousingAnalytics>(() => {
@@ -384,28 +453,49 @@ export function HousingAndFacilities({ farmId, isMobile }: HousingAndFacilitiesP
 
                 {buildings.map(building => (
                   <div key={building.id} className="space-y-1">
-                    <button
-                      onClick={() => {
-                        setSelectedBuilding(building.id)
-                        setSelectedUnit(null)
-                        setSelectedPen(null)
-                        toggleBuilding(building.id)
-                      }}
-                      className={`w-full flex items-center space-x-2 p-2 rounded hover:bg-gray-100 ${
+                    <div
+                      className={`flex items-center space-x-2 p-2 rounded hover:bg-gray-100 group ${
                         selectedBuilding === building.id ? 'bg-blue-50' : ''
                       }`}
                     >
-                      {expandedBuildings.has(building.id) ? (
-                        <ChevronDown className="h-4 w-4" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4" />
-                      )}
-                      <Building2 className="h-4 w-4 text-blue-600" />
-                      <span className="text-sm font-medium flex-1 text-left">{building.name}</span>
-                      <Badge variant="outline" className="text-xs">
-                        {building.current_occupancy}/{building.total_capacity}
-                      </Badge>
-                    </button>
+                      <button
+                        onClick={() => {
+                          setSelectedBuilding(building.id)
+                          setSelectedUnit(null)
+                          setSelectedPen(null)
+                          toggleBuilding(building.id)
+                        }}
+                        className="flex items-center space-x-2 flex-1"
+                      >
+                        {expandedBuildings.has(building.id) ? (
+                          <ChevronDown className="h-4 w-4" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4" />
+                        )}
+                        <Building2 className="h-4 w-4 text-blue-600" />
+                        <span className="text-sm font-medium flex-1 text-left">{building.name}</span>
+                        <Badge variant="outline" className="text-xs">
+                          {building.current_occupancy}/{building.total_capacity}
+                        </Badge>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditingBuilding(building)
+                          setIsAddBuildingModalOpen(true)
+                        }}
+                        className="p-1 hover:bg-gray-200 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Edit building"
+                      >
+                        <Pencil className="h-3 w-3 text-gray-600" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteBuilding(building.id)}
+                        className="p-1 hover:bg-red-200 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Delete building"
+                      >
+                        <Trash2 className="h-3 w-3 text-red-600" />
+                      </button>
+                    </div>
 
                     {expandedBuildings.has(building.id) && (
                       <div className="ml-4 space-y-1 border-l border-gray-200 pl-2">
@@ -413,49 +503,94 @@ export function HousingAndFacilities({ farmId, isMobile }: HousingAndFacilitiesP
                           .filter(u => u.building_id === building.id)
                           .map(unit => (
                             <div key={unit.id} className="space-y-1">
-                              <button
-                                onClick={() => {
-                                  setSelectedUnit(unit.id)
-                                  setSelectedPen(null)
-                                  toggleUnit(unit.id)
-                                }}
-                                className={`w-full flex items-center space-x-2 p-2 rounded text-sm hover:bg-gray-100 ${
+                              <div
+                                className={`flex items-center space-x-2 p-2 rounded text-sm hover:bg-gray-100 group ${
                                   selectedUnit === unit.id ? 'bg-blue-50' : ''
                                 }`}
                               >
-                                {expandedUnits.has(unit.id) ? (
-                                  <ChevronDown className="h-3 w-3" />
-                                ) : (
-                                  <ChevronRight className="h-3 w-3" />
-                                )}
-                                <Layers className="h-3 w-3 text-green-600" />
-                                <span className="flex-1 text-left">{unit.name}</span>
-                                <Badge variant="outline" className="text-xs">
-                                  {unit.current_occupancy}/{unit.total_capacity}
-                                </Badge>
-                              </button>
+                                <button
+                                  onClick={() => {
+                                    setSelectedUnit(unit.id)
+                                    setSelectedPen(null)
+                                    toggleUnit(unit.id)
+                                  }}
+                                  className="flex items-center space-x-2 flex-1"
+                                >
+                                  {expandedUnits.has(unit.id) ? (
+                                    <ChevronDown className="h-3 w-3" />
+                                  ) : (
+                                    <ChevronRight className="h-3 w-3" />
+                                  )}
+                                  <Layers className="h-3 w-3 text-green-600" />
+                                  <span className="flex-1 text-left">{unit.name}</span>
+                                  <Badge variant="outline" className="text-xs">
+                                    {unit.current_occupancy}/{unit.total_capacity}
+                                  </Badge>
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setEditingUnit(unit)
+                                    setSelectedBuilding(unit.building_id)
+                                    setIsAddUnitModalOpen(true)
+                                  }}
+                                  className="p-1 hover:bg-gray-200 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                                  title="Edit unit"
+                                >
+                                  <Pencil className="h-3 w-3 text-gray-600" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteUnit(unit.id)}
+                                  className="p-1 hover:bg-red-200 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                                  title="Delete unit"
+                                >
+                                  <Trash2 className="h-3 w-3 text-red-600" />
+                                </button>
+                              </div>
 
                               {expandedUnits.has(unit.id) && (
                                 <div className="ml-4 space-y-1 border-l border-gray-200 pl-2">
                                   {pens
                                     .filter(p => p.unit_id === unit.id)
                                     .map(pen => (
-                                      <button
+                                      <div
                                         key={pen.id}
-                                        onClick={() => setSelectedPen(pen.id)}
-                                        className={`w-full flex items-center space-x-2 p-2 rounded text-xs hover:bg-gray-100 ${
+                                        className={`flex items-center space-x-2 p-2 rounded text-xs hover:bg-gray-100 group ${
                                           selectedPen === pen.id ? 'bg-blue-50' : ''
                                         }`}
                                       >
-                                        <Box className="h-3 w-3 text-orange-600" />
-                                        <span className="flex-1 text-left">{pen.pen_number}</span>
-                                        <Badge
-                                          variant="outline"
-                                          className={`text-xs ${getStatusColor(pen.status)}`}
+                                        <button
+                                          onClick={() => setSelectedPen(pen.id)}
+                                          className="flex items-center space-x-2 flex-1"
                                         >
-                                          {pen.current_occupancy}/{pen.capacity}
-                                        </Badge>
-                                      </button>
+                                          <Box className="h-3 w-3 text-orange-600" />
+                                          <span className="flex-1 text-left">{pen.pen_number}</span>
+                                          <Badge
+                                            variant="outline"
+                                            className={`text-xs ${getStatusColor(pen.status)}`}
+                                          >
+                                            {pen.current_occupancy}/{pen.capacity}
+                                          </Badge>
+                                        </button>
+                                        <button
+                                          onClick={() => {
+                                            setEditingPen(pen)
+                                            setSelectedBuilding(pen.building_id)
+                                            setSelectedUnit(pen.unit_id)
+                                            setIsCreatePenModalOpen(true)
+                                          }}
+                                          className="p-1 hover:bg-gray-200 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                                          title="Edit pen"
+                                        >
+                                          <Pencil className="h-2.5 w-2.5 text-gray-600" />
+                                        </button>
+                                        <button
+                                          onClick={() => handleDeletePen(pen.id)}
+                                          className="p-1 hover:bg-red-200 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                                          title="Delete pen"
+                                        >
+                                          <Trash2 className="h-2.5 w-2.5 text-red-600" />
+                                        </button>
+                                      </div>
                                     ))}
                                 </div>
                               )}
@@ -1439,22 +1574,52 @@ export function HousingAndFacilities({ farmId, isMobile }: HousingAndFacilitiesP
       {/* Building Modal */}
       <AddBuildingModal
         isOpen={isAddBuildingModalOpen}
-        onClose={() => setIsAddBuildingModalOpen(false)}
+        onClose={() => {
+          setIsAddBuildingModalOpen(false)
+          setEditingBuilding(null)
+        }}
         onAdd={(building) => {
           setBuildings(prev => [...prev, building])
           setIsAddBuildingModalOpen(false)
+          setEditingBuilding(null)
         }}
+        onUpdate={(building) => {
+          setBuildings(prev => prev.map(b => b.id === building.id ? building : b))
+          setIsAddBuildingModalOpen(false)
+          setEditingBuilding(null)
+        }}
+        onDelete={(buildingId) => {
+          setBuildings(prev => prev.filter(b => b.id !== buildingId))
+          setIsAddBuildingModalOpen(false)
+          setEditingBuilding(null)
+        }}
+        editingBuilding={editingBuilding}
       />
 
       {/* Unit Modal — key on selectedBuilding forces remount so useState initializes with the correct building */}
       <AddUnitModal
         key={selectedBuilding ?? 'no-building'}
         isOpen={isAddUnitModalOpen}
-        onClose={() => setIsAddUnitModalOpen(false)}
+        onClose={() => {
+          setIsAddUnitModalOpen(false)
+          setEditingUnit(null)
+        }}
         onAdd={(unit) => {
           setUnits(prev => [...prev, unit])
           setIsAddUnitModalOpen(false)
+          setEditingUnit(null)
         }}
+        onUpdate={(unit) => {
+          setUnits(prev => prev.map(u => u.id === unit.id ? unit : u))
+          setIsAddUnitModalOpen(false)
+          setEditingUnit(null)
+        }}
+        onDelete={(unitId) => {
+          setUnits(prev => prev.filter(u => u.id !== unitId))
+          setIsAddUnitModalOpen(false)
+          setEditingUnit(null)
+        }}
+        editingUnit={editingUnit}
         selectedBuildingId={selectedBuilding}
         buildings={buildings}
         farmId={farmId}
@@ -1464,11 +1629,26 @@ export function HousingAndFacilities({ farmId, isMobile }: HousingAndFacilitiesP
       <CreatePenModal
         key={`pen-modal-${selectedBuilding}-${selectedUnit}`}
         isOpen={isCreatePenModalOpen}
-        onClose={() => setIsCreatePenModalOpen(false)}
+        onClose={() => {
+          setIsCreatePenModalOpen(false)
+          setEditingPen(null)
+        }}
         onAdd={(pen) => {
           setPens(prev => [...prev, pen])
           setIsCreatePenModalOpen(false)
+          setEditingPen(null)
         }}
+        onUpdate={(pen) => {
+          setPens(prev => prev.map(p => p.id === pen.id ? pen : p))
+          setIsCreatePenModalOpen(false)
+          setEditingPen(null)
+        }}
+        onDelete={(penId) => {
+          setPens(prev => prev.filter(p => p.id !== penId))
+          setIsCreatePenModalOpen(false)
+          setEditingPen(null)
+        }}
+        editingPen={editingPen}
         selectedBuildingId={selectedBuilding}
         selectedUnitId={selectedUnit}
         buildings={buildings}

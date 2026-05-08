@@ -18,23 +18,30 @@ interface CreatePenModalProps {
   isOpen: boolean
   onClose: () => void
   onAdd: (pen: HousingPen) => void
+  onUpdate?: (pen: HousingPen) => void
+  onDelete?: (penId: string) => void
   selectedBuildingId: string | null
   selectedUnitId: string | null
   buildings: HousingBuilding[]
   units: HousingUnit[]
   farmId: string
+  editingPen?: HousingPen | null
 }
 
 export function CreatePenModal({
   isOpen,
   onClose,
   onAdd,
+  onUpdate,
+  onDelete,
   selectedBuildingId,
   selectedUnitId,
   buildings,
   units,
   farmId,
+  editingPen,
 }: CreatePenModalProps) {
+  const isEditing = !!editingPen
   const [buildingSelect, setBuildingSelect] = useState(selectedBuildingId || '')
   const [unitSelect, setUnitSelect] = useState(selectedUnitId || '')
   const [penNumber, setPenNumber] = useState('')
@@ -49,11 +56,30 @@ export function CreatePenModal({
   const [bedding, setBedding] = useState('rubber mats')
   const [drainage, setDrainage] = useState('good')
   const [loading, setLoading] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Sync building and unit selection with props when modal opens
+  // Update useEffect to handle editing pre-population
   useEffect(() => {
-    if (isOpen) {
+    if (editingPen) {
+      setBuildingSelect(editingPen.building_id)
+      setUnitSelect(editingPen.unit_id)
+      setPenNumber(editingPen.pen_number)
+      setPenType(editingPen.special_type)
+      setCapacity(editingPen.capacity?.toString() || '')
+      if (editingPen.dimensions) {
+        setLength(editingPen.dimensions.length_meters?.toString() || '')
+        setWidth(editingPen.dimensions.width_meters?.toString() || '')
+        setHeight(editingPen.dimensions.height_meters?.toString() || '')
+      }
+      if (editingPen.conditions) {
+        setVentilation(editingPen.conditions.ventilation_quality || 'good')
+        setLighting(editingPen.conditions.lighting_type || 'automated')
+        setWaterAccess(editingPen.conditions.water_access ? 'yes' : 'no')
+        setBedding(editingPen.conditions.bedding_type || 'rubber mats')
+        setDrainage(editingPen.conditions.drainage || 'good')
+      }
+    } else {
       if (selectedBuildingId) {
         setBuildingSelect(selectedBuildingId)
         if (selectedUnitId) {
@@ -65,7 +91,7 @@ export function CreatePenModal({
         setBuildingSelect('')
         setUnitSelect('')
       }
-      // Reset form when modal opens
+      // Reset form when modal opens for new pen
       setPenNumber('')
       setCapacity('')
       setLength('')
@@ -73,7 +99,7 @@ export function CreatePenModal({
       setHeight('')
       setError(null)
     }
-  }, [isOpen, selectedBuildingId, selectedUnitId])
+  }, [isOpen, selectedBuildingId, selectedUnitId, editingPen])
 
   const selectedBuilding = buildings.find(b => b.id === buildingSelect)
   const selectedUnit = units.find(u => u.id === unitSelect && u.building_id === buildingSelect)
@@ -110,22 +136,19 @@ export function CreatePenModal({
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault()
-  
-  const validationError = validateForm()
-  if (validationError) {
-    setError(validationError)
-    return
-  }
+    e.preventDefault()
+    
+    const validationError = validateForm()
+    if (validationError) {
+      setError(validationError)
+      return
+    }
 
-  setLoading(true)
-  setError(null)
+    setLoading(true)
+    setError(null)
 
-  try {
-    const response = await fetch('/api/housing/pens', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    try {
+      const payload = {
         building_id: buildingSelect,
         unit_id: unitSelect,
         pen_number: penNumber,
@@ -144,29 +167,72 @@ export function CreatePenModal({
           bedding_type: bedding,
           drainage: drainage,
         }
+      }
+
+      const url = isEditing
+        ? `/api/housing/pens/${editingPen.id}`
+        : '/api/housing/pens'
+      const method = isEditing ? 'PUT' : 'POST'
+
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
       })
-    })
 
-    const result = await response.json()
+      const result = await response.json()
 
-    if (!response.ok) throw new Error(result.error || 'Failed to create pen')
+      if (!response.ok) throw new Error(result.error || `Failed to ${isEditing ? 'update' : 'create'} pen`)
 
-    // Successfully added to DB, now update parent state
-    onAdd(result.data)
-    onClose()
-  } catch (err) {
-    setError(err instanceof Error ? err.message : 'Failed to create pen. Please try again.')
-  } finally {
-    setLoading(false)
+      if (isEditing) {
+        onUpdate?.(result.data)
+      } else {
+        onAdd(result.data)
+      }
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Failed to ${isEditing ? 'update' : 'create'} pen. Please try again.`)
+    } finally {
+      setLoading(false)
+    }
   }
-}
+
+  const handleDelete = async () => {
+    if (!editingPen || !window.confirm('Are you sure you want to delete this pen? This action cannot be undone.')) {
+      return
+    }
+
+    setDeleting(true)
+    setError(null)
+
+    try {
+      const response = await fetch(`/api/housing/pens/${editingPen.id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' }
+      })
+
+      if (!response.ok) {
+        const result = await response.json()
+        throw new Error(result.error || 'Failed to delete pen')
+      }
+
+      onDelete?.(editingPen.id)
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete pen')
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-end lg:items-center justify-center lg:p-4 z-50">
       <div className="w-full lg:max-w-2xl bg-white rounded-t-2xl lg:rounded-lg shadow-lg max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">Create New Pen/Stall</h2>
+          <h2 className="text-lg font-semibold text-gray-900">
+            {isEditing ? 'Edit Pen/Stall' : 'Create New Pen/Stall'}
+          </h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 p-1"
@@ -458,21 +524,32 @@ export function CreatePenModal({
 
           {/* Actions */}
           <div className="flex gap-2 border-t pt-4">
+            {isEditing && (
+              <Button
+                type="button"
+                variant="destructive"
+                className="flex-1"
+                onClick={handleDelete}
+                disabled={deleting || loading}
+              >
+                {deleting ? 'Deleting...' : 'Delete'}
+              </Button>
+            )}
             <Button
               type="button"
               variant="outline"
               className="flex-1"
               onClick={onClose}
-              disabled={loading}
+              disabled={loading || deleting}
             >
               Cancel
             </Button>
             <Button
               type="submit"
               className="flex-1"
-              disabled={loading || !buildingSelect || !unitSelect}
+              disabled={loading || deleting || !buildingSelect || !unitSelect}
             >
-              {loading ? 'Creating...' : 'Create Pen'}
+              {loading ? (isEditing ? 'Updating...' : 'Creating...') : (isEditing ? 'Update Pen' : 'Create Pen')}
             </Button>
           </div>
         </form>

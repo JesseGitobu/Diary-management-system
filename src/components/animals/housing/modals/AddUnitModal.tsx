@@ -18,19 +18,26 @@ interface AddUnitModalProps {
   isOpen: boolean
   onClose: () => void
   onAdd: (unit: HousingUnit) => void
+  onUpdate?: (unit: HousingUnit) => void
+  onDelete?: (unitId: string) => void
   selectedBuildingId: string | null
   buildings: HousingBuilding[]
   farmId: string
+  editingUnit?: HousingUnit | null
 }
 
 export function AddUnitModal({
   isOpen,
   onClose,
   onAdd,
+  onUpdate,
+  onDelete,
   selectedBuildingId,
   buildings,
   farmId,
+  editingUnit,
 }: AddUnitModalProps) {
+  const isEditing = !!editingUnit
   const [unitName, setUnitName] = useState('')
   const [unitType, setUnitType] = useState<string>('section')
   const [capacity, setCapacity] = useState('')
@@ -40,8 +47,26 @@ export function AddUnitModal({
   const [bedding, setBedding] = useState('rubber mats')
   const [drainage, setDrainage] = useState('good')
   const [loading, setLoading] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [buildingSelect, setBuildingSelect] = useState<string>(selectedBuildingId || '')
+
+  // Pre-populate form when editing
+  useEffect(() => {
+    if (editingUnit) {
+      setUnitName(editingUnit.name)
+      setUnitType(editingUnit.unit_type)
+      setCapacity(editingUnit.total_capacity?.toString() || '')
+      setBuildingSelect(editingUnit.building_id)
+      setVentilation(editingUnit.environmental_conditions?.ventilation_quality || 'good')
+      setLighting(editingUnit.environmental_conditions?.lighting_type || 'automated')
+      setWaterAccess(editingUnit.environmental_conditions?.water_access ? 'yes' : 'no')
+      setBedding(editingUnit.environmental_conditions?.bedding_type || 'rubber mats')
+      setDrainage(editingUnit.environmental_conditions?.drainage || 'good')
+    } else if (selectedBuildingId) {
+      setBuildingSelect(selectedBuildingId)
+    }
+  }, [editingUnit, selectedBuildingId, isOpen])
 
   const selectedBuilding = buildings.find(b => b.id === buildingSelect)
 
@@ -67,26 +92,32 @@ export function AddUnitModal({
     setError(null)
 
     try {
-      const res = await fetch('/api/housing/units', {
-        method: 'POST',
+      const payload = {
+        building_id: buildingSelect,
+        name: unitName,
+        unit_type: unitType,
+        total_capacity: parseInt(capacity),
+        environmental_conditions: {
+          ventilation_quality: ventilation,
+          lighting_type: lighting,
+          water_access: waterAccess === 'yes',
+          bedding_type: bedding,
+          drainage,
+        },
+      }
+
+      const url = isEditing 
+        ? `/api/housing/units/${editingUnit.id}`
+        : '/api/housing/units'
+      const method = isEditing ? 'PUT' : 'POST'
+
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          building_id: buildingSelect,
-          name: unitName,
-          unit_type: unitType,
-          total_capacity: parseInt(capacity),
-          environmental_conditions: {
-            ventilation_quality: ventilation,
-            lighting_type: lighting,
-            water_access: waterAccess === 'yes',
-            bedding_type: bedding,
-            drainage,
-          },
-        }),
+        body: JSON.stringify(payload),
       })
 
       const result = await res.json()
-      console.log('Unit creation response:', result, 'Status:', res.status)
       
       if (!res.ok) {
         throw new Error(result.error || `API Error: ${res.status}`)
@@ -96,14 +127,47 @@ export function AddUnitModal({
         throw new Error('No unit data returned from server')
       }
 
-      console.log('Unit created successfully:', result.data)
-      onAdd(result.data as HousingUnit)
+      if (isEditing) {
+        onUpdate?.(result.data as HousingUnit)
+      } else {
+        onAdd(result.data as HousingUnit)
+      }
+      onClose()
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to create unit. Please try again.'
-      console.error('Error creating unit:', errorMsg, err)
+      const errorMsg = err instanceof Error ? err.message : `Failed to ${isEditing ? 'update' : 'create'} unit. Please try again.`
+      console.error(`Error ${isEditing ? 'updating' : 'creating'} unit:`, errorMsg, err)
       setError(errorMsg)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!editingUnit || !window.confirm('Are you sure you want to delete this unit? This action cannot be undone.')) {
+      return
+    }
+
+    setDeleting(true)
+    setError(null)
+
+    try {
+      const res = await fetch(`/api/housing/units/${editingUnit.id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' }
+      })
+
+      if (!res.ok) {
+        const result = await res.json()
+        throw new Error(result.error || 'Failed to delete unit')
+      }
+
+      onDelete?.(editingUnit.id)
+      onClose()
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Failed to delete unit'
+      setError(errorMsg)
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -112,7 +176,9 @@ export function AddUnitModal({
       <div className="w-full lg:max-w-2xl bg-white rounded-t-2xl lg:rounded-lg shadow-lg max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">Add New Unit</h2>
+          <h2 className="text-lg font-semibold text-gray-900">
+            {isEditing ? 'Edit Unit' : 'Add New Unit'}
+          </h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 p-1"
@@ -310,16 +376,27 @@ export function AddUnitModal({
               variant="outline"
               className="flex-1"
               onClick={onClose}
-              disabled={loading}
+              disabled={loading || deleting}
             >
               Cancel
             </Button>
+            {isEditing && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleDelete}
+                disabled={loading || deleting}
+                className="flex-1 text-red-600 border-red-200 hover:bg-red-50"
+              >
+                {deleting ? 'Deleting...' : 'Delete'}
+              </Button>
+            )}
             <Button
               type="submit"
               className="flex-1"
-              disabled={loading || !buildingSelect}
+              disabled={loading || deleting || !buildingSelect}
             >
-              {loading ? 'Creating...' : 'Create Unit'}
+              {loading ? (isEditing ? 'Updating...' : 'Creating...') : (isEditing ? 'Update Unit' : 'Create Unit')}
             </Button>
           </div>
         </form>

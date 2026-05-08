@@ -197,7 +197,7 @@ export default async function DashboardPage() {
               <DollarSign className="h-4 w-4 md:h-5 md:w-5 text-emerald-600" />
             </CardHeader>
             <CardContent>
-              <div className="text-xl md:text-2xl font-bold text-gray-900">${dashboardStats?.financial?.monthlyRevenue || '0'}</div>
+              <div className="text-xl md:text-2xl font-bold text-gray-900">Kes {dashboardStats?.financial?.monthlyRevenue || '0'}</div>
               <div className="flex items-center mt-1">
                 <TrendingUp className="w-3 h-3 text-emerald-500 mr-1" />
                 <p className="text-xs text-emerald-600">{dashboardStats?.financial?.profitMargin || '0'}% profit</p>
@@ -425,7 +425,7 @@ export default async function DashboardPage() {
                   <CardContent className="p-4 text-center">
                     <Wheat className="w-8 h-8 mx-auto mb-2 text-yellow-600" />
                     <h3 className="font-medium text-sm mb-1">Feed</h3>
-                    <p className="text-xs text-gray-600">${dashboardStats?.feed?.monthlyCost || '0'}/month</p>
+                    <p className="text-xs text-gray-600">Kes {dashboardStats?.feed?.monthlyCost || '0'}/month</p>
                     <Badge variant="outline" className="mt-2 text-xs">{dashboardStats?.feed?.daysRemaining || '0'} days left</Badge>
                   </CardContent>
                 </Link>
@@ -437,7 +437,7 @@ export default async function DashboardPage() {
                   <CardContent className="p-4 text-center">
                     <DollarSign className="w-8 h-8 mx-auto mb-2 text-green-600" />
                     <h3 className="font-medium text-sm mb-1">Finance</h3>
-                    <p className="text-xs text-gray-600">${dashboardStats?.financial?.monthlyProfit || '0'} profit</p>
+                    <p className="text-xs text-gray-600">Kes {dashboardStats?.financial?.monthlyProfit || '0'} profit</p>
                     <Badge variant="outline" className="mt-2 text-xs">{dashboardStats?.financial?.profitMargin || '0'}% margin</Badge>
                   </CardContent>
                 </Link>

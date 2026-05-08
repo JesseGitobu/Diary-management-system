@@ -31,12 +31,10 @@ async function resolveOrCreateMilkingSession(
     .limit(1)
 
   if (lookupError) {
-    console.error('[ProductionAPI] milking_sessions lookup error:', lookupError)
     throw new Error('Failed to look up milking session')
   }
 
   if (existing && existing.length > 0) {
-    console.log('[ProductionAPI] Found existing milking_session:', { id: existing[0].id, sessionName })
     return existing[0].id
   }
 
@@ -54,11 +52,9 @@ async function resolveOrCreateMilkingSession(
     .single()
 
   if (createError || !created) {
-    console.error('[ProductionAPI] milking_sessions create error:', createError)
     throw new Error('Failed to create milking session')
   }
 
-  console.log('[ProductionAPI] Created new milking_session:', { id: created.id, sessionName, recordDate })
   return created.id
 }
 
@@ -121,11 +117,6 @@ export async function POST(request: NextRequest) {
 
     // Resolve or create a proper milking_sessions row (UUID FK requirement)
     const resolvedSessionName = session_name || 'Session'
-    console.log('[ProductionAPI] Resolving milking session:', {
-      sessionName: resolvedSessionName,
-      recordDate: productionData.record_date,
-      rawClientSessionId: productionData.milking_session_id,
-    })
 
     let milkingSessionId: string
     try {
@@ -178,14 +169,6 @@ export async function POST(request: NextRequest) {
       recorded_by: user.id,
     }
 
-    console.log('[ProductionAPI] Saving production record:', {
-      animal_id: recordData.animal_id,
-      record_date: recordData.record_date,
-      milking_session_id: recordData.milking_session_id,
-      session_name: resolvedSessionName,
-      milk_volume: recordData.milk_volume,
-    })
-
     const result = await createProductionRecord(userRole.farm_id, recordData)
 
     if (!result.success) {
@@ -199,7 +182,6 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('Production API error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
@@ -224,14 +206,6 @@ export async function GET(request: NextRequest) {
     const endDate     = searchParams.get('end_date')
     const sessionName = searchParams.get('session_name')   // ✅ use name, not UUID
 
-    console.log('[ProductionAPI:GET] Request params:', {
-      farmId: userRole.farm_id,
-      animalId: animalId ?? null,
-      startDate: startDate ?? null,
-      endDate: endDate ?? null,
-      sessionName: sessionName ?? null,
-    })
-
     // If a session name is given, find the matching milking_sessions UUIDs for the date range
     let sessionUUIDs: string[] | undefined
     if (sessionName && startDate) {
@@ -248,10 +222,9 @@ export async function GET(request: NextRequest) {
         .lte('session_start', dayEnd)
 
       if (sessErr) {
-        console.error('[ProductionAPI:GET] milking_sessions lookup error:', sessErr)
+        // Session lookup failed - continue with no filter
       } else {
         sessionUUIDs = (sessions ?? []).map((s: any) => s.id)
-        console.log('[ProductionAPI:GET] Resolved session UUIDs for', sessionName, ':', sessionUUIDs)
       }
     }
 
@@ -263,12 +236,9 @@ export async function GET(request: NextRequest) {
       sessionUUIDs
     )
 
-    console.log('[ProductionAPI:GET] Responding with', records.length, 'records')
-
     return NextResponse.json({ success: true, data: records })
 
   } catch (error) {
-    console.error('Production GET API error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

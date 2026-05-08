@@ -52,6 +52,25 @@ interface IndividualRecordFormProps {
   recordingType?: 'individual' | 'group'
   milkingGroupId?: string
   preSelectedAnimalId?: string
+  editingRecord?: {
+    id: string
+    animal_id: string
+    record_date: string
+    milking_session_id: string
+    milk_volume: number
+    milk_safety_status: 'safe' | 'unsafe_health' | 'unsafe_colostrum'
+    temperature?: number | null
+    mastitis_test_performed?: boolean
+    mastitis_result?: 'negative' | 'mild' | 'severe' | null
+    affected_quarters?: string[] | null
+    fat_content?: number | null
+    protein_content?: number | null
+    somatic_cell_count?: number | null
+    lactose_content?: number | null
+    ph_level?: number | null
+    notes?: string | null
+    milking_time?: string | null
+  } | null
 }
 
 export function IndividualRecordForm({
@@ -68,9 +87,12 @@ export function IndividualRecordForm({
   milkingGroupId,
   sessionName,
   preSelectedAnimalId,
+  editingRecord = null,
 }: IndividualRecordFormProps) {
-  const [step, setStep] = useState<'select' | 'form'>('select')
-  const [selectedAnimal, setSelectedAnimal] = useState<typeof animals[0] | null>(null)
+  const [step, setStep] = useState<'select' | 'form'>(editingRecord ? 'form' : 'select')
+  const [selectedAnimal, setSelectedAnimal] = useState<typeof animals[0] | null>(
+    editingRecord ? animals.find(a => a.id === editingRecord.animal_id) || null : null
+  )
   const [searchQuery, setSearchQuery] = useState('')
   const [pickerQuery, setPickerQuery] = useState('')
   const [showAnimalPicker, setShowAnimalPicker] = useState(false)
@@ -78,6 +100,8 @@ export function IndividualRecordForm({
   const [error, setError] = useState<string | null>(null)
   const [preRecordedAnimalIds, setPreRecordedAnimalIds] = useState<Set<string>>(new Set())
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+
+
 
   // Reset form when date or session changes
   useEffect(() => {
@@ -101,9 +125,6 @@ export function IndividualRecordForm({
   // Fetch already-recorded animals for this date and session
   useEffect(() => {
     const fetchPreRecordedAnimals = async () => {
-      if (!sessionName) {
-      }
-
       try {
         // Filter server-side by session_name (resolves to milking_sessions UUIDs)
         const url = sessionName
@@ -139,7 +160,6 @@ export function IndividualRecordForm({
     const animal = animals.find(a => a.id === preSelectedAnimalId)
     if (animal) {
       setSelectedAnimal(animal)
-      form.setValue('animal_id', animal.id)
       setStep('form')
       setSearchQuery('')
       setError(null)
@@ -177,7 +197,7 @@ export function IndividualRecordForm({
         ? z.string().min(1, 'Exact milking time is required for this session')
         : z.string().optional().nullable(),
       milk_volume: z.number()
-        .min(0.1, 'Volume must be positive')
+        .min(0, 'Volume must not be negative')
         .max(100, 'Volume seems too high'),
       milk_safety_status: z.enum(['safe', 'unsafe_health', 'unsafe_colostrum']),
       temperature: createNumberSchema(false, 'Temperature', 35, 41),
@@ -193,7 +213,8 @@ export function IndividualRecordForm({
     }).refine(
       (data) => {
         // If mastitis test is performed, result must be provided
-        if (data.mastitis_test_performed && !data.mastitis_result) {
+        // Only validate if mastitis_test_performed is explicitly true
+        if (data.mastitis_test_performed === true && !data.mastitis_result) {
           return false
         }
         return true
@@ -227,32 +248,77 @@ export function IndividualRecordForm({
 
   const form = useForm<ProductionFormData>({
     resolver: zodResolver(productionSchema),
-    mode: 'onTouched',
+    mode: 'onBlur',
     defaultValues: {
-      animal_id: selectedAnimal?.id || '',
-      record_date: recordDate,
-      milking_session: session,
-      milking_time: getCurrentTime(),
-      milk_volume: undefined,
-      milk_safety_status: 'safe',
-      temperature: null,
-      mastitis_test_performed: settings?.requireMastitisTest ? false : false,
-      mastitis_result: null,
-      affected_quarters: null,
-      fat_content: null,
-      protein_content: null,
-      somatic_cell_count: null,
-      lactose_content: null,
-      ph_level: null,
-      notes: '',
+      animal_id: editingRecord?.animal_id || selectedAnimal?.id || '',
+      record_date: editingRecord?.record_date || recordDate,
+      milking_session: editingRecord?.milking_session_id || session,
+      milking_time: editingRecord?.milking_time || getCurrentTime(),
+      milk_volume: editingRecord?.milk_volume ?? undefined,
+      milk_safety_status: editingRecord?.milk_safety_status || 'safe',
+      temperature: editingRecord?.temperature ?? null,
+      mastitis_test_performed: editingRecord?.mastitis_test_performed ?? (settings?.requireMastitisTest ? false : false),
+      mastitis_result: editingRecord?.mastitis_result ?? null,
+      affected_quarters: editingRecord?.affected_quarters ?? null,
+      fat_content: editingRecord?.fat_content ?? null,
+      protein_content: editingRecord?.protein_content ?? null,
+      somatic_cell_count: editingRecord?.somatic_cell_count ?? null,
+      lactose_content: editingRecord?.lactose_content ?? null,
+      ph_level: editingRecord?.ph_level ?? null,
+      notes: editingRecord?.notes || '',
     },
   })
+
+  // Reset form when a new animal is pre-selected in group mode (but not when editing)
+  useEffect(() => {
+    if (!preSelectedAnimalId || editingRecord) {
+      return
+    }
+    
+    // Calculate current time in HH:MM format
+    const now = new Date()
+    const hours = String(now.getHours()).padStart(2, '0')
+    const minutes = String(now.getMinutes()).padStart(2, '0')
+    const currentTime = `${hours}:${minutes}`
+    
+    const animal = animals.find(a => a.id === preSelectedAnimalId)
+    if (animal) {
+      
+      form.reset({
+        animal_id: animal.id,
+        record_date: recordDate,
+        milking_session: session,
+        milking_time: currentTime,
+        milk_volume: undefined,
+        milk_safety_status: 'safe',
+        temperature: null,
+        mastitis_test_performed: false,
+        mastitis_result: null,
+        affected_quarters: null,
+        fat_content: null,
+        protein_content: null,
+        somatic_cell_count: null,
+        lactose_content: null,
+        ph_level: null,
+        notes: '',
+      }, {
+        keepErrors: false,
+        keepDirty: false,
+        keepTouched: false,
+        keepIsSubmitted: false,
+        keepIsValidating: false,
+        keepIsValid: false,
+      })
+    }
+  }, [preSelectedAnimalId, animals, recordDate, session, editingRecord, form])
 
   // Watch mastitis result to conditionally show withdrawal period banner
   const mastitisTestPerformed = form.watch('mastitis_test_performed')
   const mastitisResult = form.watch('mastitis_result')
   const milkSafetyStatus = form.watch('milk_safety_status')
   const showWithdrawalWarning = mastitisTestPerformed && (mastitisResult === 'mild' || mastitisResult === 'severe')
+
+
 
   // Auto-update milk safety status when severe mastitis is detected
   useEffect(() => {
@@ -272,6 +338,17 @@ export function IndividualRecordForm({
     }
   }, [selectedAnimal])
 
+  // Check if quality parameters should be visible
+  // Hide quality parameters if tracking mode is 'basic' (volume only)
+  const isQualityVisible = settings && settings.productionTrackingMode !== 'basic' && (
+    settings.trackFatContent ||
+    settings.trackProteinContent ||
+    settings.trackSomaticCellCount ||
+    settings.trackLactoseContent ||
+    settings.trackPhLevel ||
+    settings.productionTrackingMode === 'quality_focused'
+  )
+
   // Filter eligible animals based on production settings
   const eligibleAnimals = useMemo(() => {
     const baseAnimals = animals.filter(a => a.gender === 'female')
@@ -279,8 +356,12 @@ export function IndividualRecordForm({
     if (!settings) {
       // If no settings, default to lactating only
       let filtered = baseAnimals.filter(a => a.production_status === 'lactating')
-      // Exclude pre-recorded animals
-      filtered = filtered.filter(a => !preRecordedAnimalIds.has(a.id))
+      filtered = filtered.filter(a => {
+        const isEditing = a.id === editingRecord?.animal_id
+        const isPreRecorded = preRecordedAnimalIds.has(a.id)
+        const keep = isEditing || !isPreRecorded
+        return keep
+      })
       return filtered
     }
 
@@ -289,15 +370,26 @@ export function IndividualRecordForm({
     
     // Apply eligible statuses from settings
     const eligibleStatuses = settings.eligibleProductionStatuses || ['lactating']
-    filtered = filtered.filter(a => eligibleStatuses.includes(a.production_status))
+    const beforeStatusFilter = filtered.length
+    filtered = filtered.filter(a => {
+      const included = eligibleStatuses.includes(a.production_status)
+      return included
+    })
     
     // Filter by eligible genders if specified
     if (settings.eligibleGenders && settings.eligibleGenders.length > 0) {
+      const beforeGenderFilter = filtered.length
       filtered = filtered.filter(a => settings.eligibleGenders?.includes(a.gender) ?? true)
     }
     
-    // Exclude pre-recorded animals
-    filtered = filtered.filter(a => !preRecordedAnimalIds.has(a.id))
+    // Exclude pre-recorded animals EXCEPT the one being edited
+    const beforeExcludePreRecorded = filtered.length
+    filtered = filtered.filter(a => {
+      const isEditing = a.id === editingRecord?.animal_id
+      const isPreRecorded = preRecordedAnimalIds.has(a.id)
+      const keep = isEditing || !isPreRecorded
+      return keep
+    })
     
     // TODO: Add these filters when animal object includes required properties
     // - minAnimalAgeMonths: requires animal birth_date
@@ -306,16 +398,19 @@ export function IndividualRecordForm({
     // - excludeTreatmentWithdrawal: requires animal active_treatments
     
     return filtered
-  }, [animals, settings, preRecordedAnimalIds])
+  }, [animals, settings, preRecordedAnimalIds, editingRecord?.animal_id])
 
   // Filter based on search query (select step)
   const filteredAnimals = useMemo(() => {
-    if (!searchQuery.trim()) return eligibleAnimals
+    if (!searchQuery.trim()) {
+      return eligibleAnimals
+    }
     const query = searchQuery.toLowerCase()
-    return eligibleAnimals.filter(a =>
+    const result = eligibleAnimals.filter(a =>
       a.tag_number.toLowerCase().includes(query) ||
       (a.name?.toLowerCase().includes(query) ?? false)
     )
+    return result
   }, [eligibleAnimals, searchQuery])
 
   // Animals available in the inline picker (exclude currently selected animal)
@@ -438,8 +533,11 @@ export function IndividualRecordForm({
     setError(null)
 
     try {
-      const response = await fetch('/api/production', {
-        method: 'POST',
+      const endpoint = editingRecord ? `/api/production/${editingRecord.id}` : '/api/production'
+      const method = editingRecord ? 'PUT' : 'POST'
+      
+      const response = await fetch(endpoint, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...data,
@@ -464,16 +562,23 @@ export function IndividualRecordForm({
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to save record')
+        throw new Error(errorData.error || `Failed to ${editingRecord ? 'update' : 'save'} record`)
       }
 
       const animalId = data.animal_id
 
-      // Mark as recorded so the change-animal picker excludes it immediately
-      setPreRecordedAnimalIds(prev => new Set([...prev, animalId]))
+      // Mark as recorded so the change-animal picker excludes it immediately (only for new records)
+      if (!editingRecord) {
+        setPreRecordedAnimalIds(prev => new Set([...prev, animalId]))
+      }
 
-      // Create health issue if mastitis is detected (mild or severe)
-      if (data.mastitis_result === 'mild' || data.mastitis_result === 'severe') {
+      // Set success message
+      if (editingRecord) {
+        setSuccessMessage('✓ Production record updated successfully')
+      }
+
+      // Create health issue if mastitis is detected (mild or severe) - only for new records
+      if (!editingRecord && (data.mastitis_result === 'mild' || data.mastitis_result === 'severe')) {
         await createMastitisHealthIssue(animalId, data.mastitis_result, data)
       }
 
@@ -487,25 +592,34 @@ export function IndividualRecordForm({
         onSuccess()
       }
 
-      // In group mode the parent manages navigation; only reset in individual mode
-      if (recordingType !== 'group') {
+      // When editing, go back to animal selection after showing success message
+      if (editingRecord) {
+        setTimeout(() => {
+          setSelectedAnimal(null)
+          setStep('select')
+        }, 1500)
+      } else if (recordingType !== 'group') {
+        // For new records in individual mode, reset form
         setSelectedAnimal(null)
         setStep('select')
       }
-      setSuccessMessage(null)
-      form.reset({
-        animal_id: '',
-        record_date: recordDate,
-        milking_session: session,
-        milking_time: getCurrentTime(),
-        milk_volume: undefined,
-        milk_safety_status: 'safe',
-        temperature: null,
-        mastitis_test_performed: false,
-        mastitis_result: null,
-        affected_quarters: null,
-        notes: '',
-      })
+
+      // Reset form for new records, but keep data for editing (will auto-dismiss with success message)
+      if (!editingRecord) {
+        form.reset({
+          animal_id: '',
+          record_date: recordDate,
+          milking_session: session,
+          milking_time: getCurrentTime(),
+          milk_volume: undefined,
+          milk_safety_status: 'safe',
+          temperature: null,
+          mastitis_test_performed: false,
+          mastitis_result: null,
+          affected_quarters: null,
+          notes: '',
+        })
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
@@ -579,10 +693,9 @@ export function IndividualRecordForm({
   }
 
   // Step 2: Record Form
-  if (!selectedAnimal) return null
-
-  const isBasicMode = settings?.productionTrackingMode === 'basic'
-  const isQualityVisible = !isBasicMode && settings?.enableQualityTracking !== false
+  if (!selectedAnimal) {
+    return null
+  }
 
   return (
     <div className="space-y-6">

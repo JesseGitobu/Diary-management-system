@@ -7,6 +7,16 @@ import dynamic from 'next/dynamic'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { Button } from '@/components/ui/Button'
 import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction
+} from '@/components/ui/AlertDialog'
+import {
   Droplets,
   Truck,
   ArrowLeft,
@@ -43,14 +53,18 @@ export default function ProductionDistributionSettings({
   const { isMobile } = useDeviceInfo()
   const [activeTab, setActiveTab] = useState('production')
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
 
   const handleBack = () => {
     if (hasUnsavedChanges) {
-      const confirmed = window.confirm(
-        `⚠️ Unsaved Changes\n\nYou have unsaved changes. Are you sure you want to leave?`
-      )
-      if (!confirmed) return
+      setShowUnsavedDialog(true)
+      return
     }
+    window.history.back()
+  }
+
+  const handleConfirmLeave = () => {
+    setShowUnsavedDialog(false)
     window.history.back()
   }
 
@@ -177,6 +191,32 @@ export default function ProductionDistributionSettings({
           />
         </Suspense>
       )}
+
+      {/* Unsaved Changes Confirmation Dialog */}
+      <AlertDialog open={showUnsavedDialog} onOpenChange={setShowUnsavedDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-yellow-600" />
+              Unsaved Changes
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              You have unsaved changes. Are you sure you want to leave without saving?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              Keep Editing
+            </AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleConfirmLeave}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Leave Without Saving
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

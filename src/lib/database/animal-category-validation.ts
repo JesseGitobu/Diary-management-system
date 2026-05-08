@@ -423,10 +423,14 @@ export function processCharacteristicsForStorage(
     }
   })
 
-  // Process milking schedules
+  // Process milking schedules - handle separately from selected schedule ID
   if (Array.isArray(characteristics.milking_schedules) && characteristics.milking_schedules.length > 0) {
     processed.milking_schedules = replaceTemporaryScheduleIds(characteristics.milking_schedules)
-    processed.selected_milking_schedule_id = characteristics.selected_milking_schedule_id || ''
+  }
+  
+  // Always save selected_milking_schedule_id if it's present (including farm_default)
+  if (characteristics.selected_milking_schedule_id) {
+    processed.selected_milking_schedule_id = characteristics.selected_milking_schedule_id
   }
 
   return {
