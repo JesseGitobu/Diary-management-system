@@ -30,6 +30,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/DropdownMenu'
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from '@/components/ui/AlertDialog'
 import { RecordProductionModal } from './RecordProductionModal'
 
 type ViewTab = 'individual' | 'groups'
@@ -67,7 +77,7 @@ interface GroupData {
   totalMilkVolume: number
   recordCount: number
   mostRecentSession: ProductionRecord | null
-  animalRecords: ProductionRecord[]
+  records: ProductionRecord[]
 }
 
 interface MilkingGroup {
@@ -127,6 +137,8 @@ export function ProductionRecordsList({
   onFetchDateRange
 }: ProductionRecordsListProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [recordToDelete, setRecordToDelete] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [filterSession, setFilterSession] = useState<string>('all')
   const [filterSafetyStatus, setFilterSafetyStatus] = useState<string>('all')
@@ -149,7 +161,6 @@ export function ProductionRecordsList({
   const [activeSessionBadge, setActiveSessionBadge] = useState<Record<string, string>>({}) // summaryKey → sessionId
   const [loadedDateRange, setLoadedDateRange] = useState<{ from: string; to: string } | null>(null)
   const [expandedGroupAnimals, setExpandedGroupAnimals] = useState<Set<string>>(new Set())
-  const [expandedAnimalDetails, setExpandedAnimalDetails] = useState<Set<string>>(new Set()) // Track expanded animal details
   const RECORDS_PER_PAGE = 10
 
 
@@ -320,14 +331,16 @@ export function ProductionRecordsList({
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       )
       const resolvedName = groupId !== 'default' ? milkingGroups.get(groupId as string) : undefined
+      // Count unique animals, not records (an animal may have multiple records)
+      const uniqueAnimals = new Set(records.map(r => r.animal_id)).size
 
       return {
         milking_group_id: groupId === 'default' ? null : groupId,
         groupName: resolvedName || (groupId === 'default' ? 'Default Group' : 'Milking Group'),
         totalMilkVolume: records.reduce((sum, r) => sum + (r.milk_volume || 0), 0),
-        recordCount: records.length,
+        recordCount: uniqueAnimals,
         mostRecentSession: sortedByDate[0] || null,
-        animalRecords: records
+        records: records
       }
     })
 
@@ -389,15 +402,19 @@ export function ProductionRecordsList({
     setCurrentPage(1)
   }
 
-  const handleDelete = async (recordId: string) => {
-    if (!confirm('Are you sure you want to delete this production record?')) {
-      return
-    }
+  const handleDelete = (recordId: string) => {
+    setRecordToDelete(recordId)
+    setDeleteDialogOpen(true)
+  }
 
-    setDeletingId(recordId)
+  const executeDelete = async () => {
+    if (!recordToDelete) return
+
+    setDeletingId(recordToDelete)
+    setDeleteDialogOpen(false)
 
     try {
-      const response = await fetch(`/api/production/${recordId}`, {
+      const response = await fetch(`/api/production/${recordToDelete}`, {
         method: 'DELETE',
       })
 
@@ -406,7 +423,7 @@ export function ProductionRecordsList({
       }
 
       if (onDelete) {
-        onDelete(recordId)
+        onDelete(recordToDelete)
       } else {
         window.location.reload()
       }
@@ -414,6 +431,7 @@ export function ProductionRecordsList({
       alert('Failed to delete record. Please try again.')
     } finally {
       setDeletingId(null)
+      setRecordToDelete(null)
     }
   }
 
@@ -659,12 +677,7 @@ export function ProductionRecordsList({
   const paginatedData = displayData.slice(startIndex, endIndex)
 
   // Helper function to calculate animal aggregates for a group
-  const calculateAnimalAggregates = (records: ProductionRecord[] | undefined | null) => {
-    if (!records || records.length === 0) {
-      console.log('[ProductionRecordsList] calculateAnimalAggregates: No records provided', { records })
-      return []
-    }
-
+  const calculateAnimalAggregates = (records: ProductionRecord[] | undefined) => {
     const aggregates = new Map<string, {
       animal_id: string
       animal_name: string
@@ -674,8 +687,17 @@ export function ProductionRecordsList({
       records: ProductionRecord[]
     }>()
 
+    if (!records) {
+      console.log('🔍 calculateAnimalAggregates: records is undefined/null')
+      return []
+    }
+
+    console.log('🔍 calculateAnimalAggregates: received', records.length, 'records')
+    console.log('🔍 records:', records)
+
     records.forEach((record: ProductionRecord) => {
       const key = record.animal_id
+      console.log('🔍 Processing record with animal_id:', key, 'animals:', record.animals)
       if (!aggregates.has(key)) {
         aggregates.set(key, {
           animal_id: record.animal_id,
@@ -692,9 +714,11 @@ export function ProductionRecordsList({
       agg.records.push(record)
     })
 
-    return Array.from(aggregates.values()).sort((a, b) => 
+    const result = Array.from(aggregates.values()).sort((a, b) => 
       b.total_volume - a.total_volume
     )
+    console.log('🔍 calculateAnimalAggregates: returning', result.length, 'aggregates')
+    return result
   }
 
   const getSafetyStatusBadge = (status?: string) => {
@@ -1366,150 +1390,6 @@ export function ProductionRecordsList({
                             <p className="text-gray-900">{getSafetyStatusBadge(summary.records[0]?.milk_safety_status).label}</p>
                           </div>
                         </div>
-
-                        {/* Expandable Animal Details */}
-                        {(() => {
-                          const groupKey = `all-${summary.cycleDate}-${summary.milking_group_id || 'default'}`
-                          const isExpanded = expandedGroupAnimals.has(groupKey)
-                          const animalAggregates = calculateAnimalAggregates(summary.records)
-
-                          return (
-                            <div className="mt-4 pt-4 border-t border-gray-200">
-                              <button
-                                onClick={() => {
-                                  const newSet = new Set(expandedGroupAnimals)
-                                  if (newSet.has(groupKey)) {
-                                    newSet.delete(groupKey)
-                                  } else {
-                                    newSet.add(groupKey)
-                                  }
-                                  setExpandedGroupAnimals(newSet)
-                                }}
-                                className="w-full text-left flex items-center justify-between p-2 hover:bg-gray-50 rounded transition-colors"
-                              >
-                                <span className="font-semibold text-gray-900 text-sm">Animals in this group ({animalAggregates.length})</span>
-                                <ChevronDown
-                                  className={`w-5 h-5 text-gray-600 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`}
-                                />
-                              </button>
-
-                              {isExpanded && (
-                                <div className="mt-3 space-y-2">
-                                  {animalAggregates.length === 0 ? (
-                                    <p className="text-sm text-gray-500 p-3">No animals in this group</p>
-                                  ) : (
-                                    animalAggregates.map((animalData) => {
-                                      const fatRecords = animalData.records.filter(r => r.fat_content)
-                                      const proteinRecords = animalData.records.filter(r => r.protein_content)
-                                      const avgFat = fatRecords.length > 0
-                                        ? fatRecords.reduce((sum, r) => sum + (r.fat_content || 0), 0) / fatRecords.length
-                                        : null
-                                      const avgProtein = proteinRecords.length > 0
-                                        ? proteinRecords.reduce((sum, r) => sum + (r.protein_content || 0), 0) / proteinRecords.length
-                                        : null
-                                      const qualityIndicator = getQualityIndicator(avgFat || undefined, avgProtein || undefined)
-                                      const animalDetailsKey = `all-${summary.cycleDate}-${summary.milking_group_id || 'default'}-${animalData.animal_id}`
-                                      const isAnimalDetailsExpanded = expandedAnimalDetails.has(animalDetailsKey)
-
-                                      return (
-                                        <div key={animalData.animal_id} className="p-3 bg-stone-50 rounded-lg border border-stone-200 space-y-2">
-                                          {/* Animal Header */}
-                                          <div className="flex items-center justify-between">
-                                            <div>
-                                              <p className="font-semibold text-gray-900">{animalData.animal_name}</p>
-                                              <p className="text-xs text-gray-600">Tag: {animalData.animal_tag}</p>
-                                            </div>
-                                            <div className="text-right">
-                                              <p className="text-lg font-bold text-farm-green">{animalData.total_volume.toFixed(1)}L</p>
-                                              <p className="text-xs text-gray-600">{animalData.record_count} record{animalData.record_count !== 1 ? 's' : ''}</p>
-                                            </div>
-                                          </div>
-
-                                          {/* Quality Indicator - Only show in advanced modes */}
-                                          {settings?.productionTrackingMode !== 'basic' && qualityIndicator && (
-                                            <div className="flex gap-1">
-                                              <Badge className={qualityIndicator.color}>{qualityIndicator.label}</Badge>
-                                            </div>
-                                          )}
-
-                                          {/* More Details Button */}
-                                          <button
-                                            onClick={() => {
-                                              const newSet = new Set(expandedAnimalDetails)
-                                              if (newSet.has(animalDetailsKey)) {
-                                                newSet.delete(animalDetailsKey)
-                                              } else {
-                                                newSet.add(animalDetailsKey)
-                                              }
-                                              setExpandedAnimalDetails(newSet)
-                                              console.log('[ProductionRecordsList] Animal details toggled:', {
-                                                animalId: animalData.animal_id,
-                                                animalName: animalData.animal_name,
-                                                isExpanded: newSet.has(animalDetailsKey),
-                                                timestamp: new Date().toISOString()
-                                              })
-                                            }}
-                                            className="w-full flex items-center justify-between p-2 text-xs text-blue-600 hover:bg-white rounded transition-colors"
-                                          >
-                                            <span className="font-medium">More Details</span>
-                                            <ChevronDown
-                                              className={`w-4 h-4 transition-transform ${isAnimalDetailsExpanded ? 'rotate-180' : ''}`}
-                                            />
-                                          </button>
-
-                                          {/* Individual Records */}
-                                          {isAnimalDetailsExpanded && (
-                                            <div className="mt-2 pt-2 border-t border-stone-200 space-y-2">
-                                              {animalData.records.map((record: ProductionRecord) => {
-                                                const safetyStatus = getSafetyStatusBadge(record.milk_safety_status)
-                                                const SafetyIcon = safetyStatus.icon
-
-                                                return (
-                                                  <div key={record.id} className="p-2 bg-white rounded border border-stone-100 text-xs space-y-1">
-                                                    <div className="flex items-center justify-between">
-                                                      <div className="flex items-center gap-1">
-                                                        <Clock className="w-3 h-3 text-gray-500" />
-                                                        <span className="text-gray-700">{formatDateTime(record.created_at)}</span>
-                                                      </div>
-                                                      <div className="flex items-center gap-1">
-                                                        <SafetyIcon className="w-3 h-3" />
-                                                        <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${safetyStatus.color}`}>
-                                                          {safetyStatus.label}
-                                                        </span>
-                                                      </div>
-                                                    </div>
-                                                    <div className={`grid gap-1 ${settings?.productionTrackingMode === 'basic' ? 'grid-cols-1' : 'grid-cols-3'}`}>
-                                                      <div className="text-center p-1 bg-blue-50 rounded">
-                                                        <p className="font-bold text-blue-600">{record.milk_volume.toFixed(1)}L</p>
-                                                        <p className="text-gray-600">Volume</p>
-                                                      </div>
-                                                      {settings?.productionTrackingMode !== 'basic' && record.fat_content && (
-                                                        <div className="text-center p-1 bg-orange-50 rounded">
-                                                          <p className="font-bold text-orange-600">{record.fat_content.toFixed(2)}%</p>
-                                                          <p className="text-gray-600">Fat</p>
-                                                        </div>
-                                                      )}
-                                                      {settings?.productionTrackingMode !== 'basic' && record.protein_content && (
-                                                        <div className="text-center p-1 bg-green-50 rounded">
-                                                          <p className="font-bold text-green-600">{record.protein_content.toFixed(2)}%</p>
-                                                          <p className="text-gray-600">Protein</p>
-                                                        </div>
-                                                      )}
-                                                    </div>
-                                                  </div>
-                                                )
-                                              })}
-                                            </div>
-                                          )}
-                                        </div>
-                                      )
-                                    })
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })()}
                       </div>
                     </div>
                   </div>
@@ -1688,9 +1568,7 @@ export function ProductionRecordsList({
           {(paginatedData as any[]).map((summary: any, index) => {
             const isExpanded = expandedGroups.has(summary.milking_group_id || 'default')
             const recentQuality = getQualityIndicator(summary.avgFatContent || undefined, summary.avgProteinContent || undefined)
-            // Use records from dailySummaryGroups or animalRecords from groupedRecords
-            const recordsArray = summary.records || summary.animalRecords
-            const mostRecent = recordsArray && recordsArray.length > 0 ? recordsArray[0] : null
+            const mostRecent = summary.records && summary.records.length > 0 ? summary.records[0] : null
             const recentSafety = mostRecent ? getSafetyStatusBadge(mostRecent.milk_safety_status) : null
             const RecentSafetyIcon = recentSafety?.icon
             const displayGroupName = (summary as any).groupName || 'Milking Group'
@@ -1703,23 +1581,10 @@ export function ProductionRecordsList({
                     onClick={() => {
                       const newSet = new Set(expandedGroups)
                       const groupKey = summary.milking_group_id || 'default'
-                      const isCurrentlyExpanded = newSet.has(groupKey)
-                      
-                      console.log('[ProductionRecordsList] Group expand/collapse clicked:', {
-                        groupName: displayGroupName,
-                        groupKey: groupKey,
-                        isCurrentlyExpanded: isCurrentlyExpanded,
-                        willBeExpanded: !isCurrentlyExpanded,
-                        totalRecords: summary.records?.length || 0,
-                        timestamp: new Date().toISOString()
-                      })
-                      
                       if (newSet.has(groupKey)) {
                         newSet.delete(groupKey)
-                        console.log('[ProductionRecordsList] Group collapsed:', displayGroupName)
                       } else {
                         newSet.add(groupKey)
-                        console.log('[ProductionRecordsList] Group expanded:', displayGroupName)
                       }
                       setExpandedGroups(newSet)
                     }}
@@ -1786,23 +1651,7 @@ export function ProductionRecordsList({
 
                   {/* Expanded Animals List - Aggregated by animal with total volumes */}
                   {isExpanded && (() => {
-                    // Use records from dailySummaryGroups or animalRecords from groupedRecords
-                    const recordsArray = summary.records || summary.animalRecords
-                    const animalAggregates = calculateAnimalAggregates(recordsArray)
-                    
-                    console.log('[ProductionRecordsList] Rendering expanded animals list:', {
-                      groupName: displayGroupName,
-                      groupKey: summary.milking_group_id || 'default',
-                      animalCount: animalAggregates.length,
-                      totalRecords: recordsArray?.length || 0,
-                      totalMilkVolume: summary.totalMilkVolume,
-                      animals: animalAggregates.map(a => ({
-                        name: a.animal_name,
-                        tag: a.animal_tag,
-                        totalVolume: a.total_volume,
-                        recordCount: a.record_count
-                      }))
-                    })
+                    const animalAggregates = calculateAnimalAggregates(summary.records)
                     
                     return (
                       <div className="mt-6 pt-6 border-t border-gray-200 space-y-3">
@@ -1823,15 +1672,12 @@ export function ProductionRecordsList({
                               : null
                             
                             const qualityIndicator = getQualityIndicator(avgFat || undefined, avgProtein || undefined)
-                            const animalDetailsKey = `${summary.milking_group_id || 'default'}-${animalData.animal_id}`
-                            const isAnimalDetailsExpanded = expandedAnimalDetails.has(animalDetailsKey)
 
                             return (
                               <div
                                 key={animalData.animal_id}
                                 className="p-4 bg-gray-50 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors"
                               >
-                                {/* Header with name and total */}
                                 <div className="flex items-start justify-between mb-3">
                                   <div className="flex-1">
                                     <p className="font-semibold text-gray-900">
@@ -1849,8 +1695,7 @@ export function ProductionRecordsList({
                                   </div>
                                 </div>
                                 
-                                {/* Stats Grid */}
-                                <div className="grid grid-cols-2 gap-2 md:grid-cols-4 text-xs mb-3">
+                                <div className="grid grid-cols-2 gap-2 md:grid-cols-4 text-xs">
                                   <div className="p-2 bg-white rounded border border-gray-300">
                                     <p className="text-gray-600 font-semibold">Records</p>
                                     <p className="text-gray-900 font-medium">{animalData.record_count}</p>
@@ -1869,129 +1714,11 @@ export function ProductionRecordsList({
                                   </div>
                                 </div>
 
-                                {/* Quality Indicator */}
                                 {qualityIndicator && (
-                                  <div className="mb-3 flex items-center gap-2">
+                                  <div className="mt-3 flex items-center gap-2">
                                     <Badge className={qualityIndicator.color}>
                                       {qualityIndicator.label}
                                     </Badge>
-                                  </div>
-                                )}
-
-                                {/* More Details Button */}
-                                <button
-                                  onClick={() => {
-                                    const newSet = new Set(expandedAnimalDetails)
-                                    if (newSet.has(animalDetailsKey)) {
-                                      newSet.delete(animalDetailsKey)
-                                      console.log('[ProductionRecordsList] Animal details collapsed:', {
-                                        animalName: animalData.animal_name,
-                                        animalTag: animalData.animal_tag
-                                      })
-                                    } else {
-                                      newSet.add(animalDetailsKey)
-                                      console.log('[ProductionRecordsList] Animal details expanded:', {
-                                        animalName: animalData.animal_name,
-                                        animalTag: animalData.animal_tag,
-                                        recordCount: animalData.record_count
-                                      })
-                                    }
-                                    setExpandedAnimalDetails(newSet)
-                                  }}
-                                  className="w-full flex items-center justify-between gap-2 p-3 bg-white rounded border border-gray-300 hover:bg-gray-50 transition-colors text-sm font-medium text-gray-900"
-                                >
-                                  <span>More Details</span>
-                                  <ChevronDown 
-                                    className={`w-4 h-4 transition-transform ${isAnimalDetailsExpanded ? 'rotate-180' : ''}`}
-                                  />
-                                </button>
-
-                                {/* Expanded Individual Records */}
-                                {isAnimalDetailsExpanded && (
-                                  <div className="mt-3 pt-3 border-t border-gray-200 space-y-2">
-                                    <h6 className="text-xs font-semibold text-gray-700 uppercase">Individual Records ({animalData.record_count})</h6>
-                                    {animalData.records.map((record: ProductionRecord) => {
-                                      const recordSafetyStatus = getSafetyStatusBadge(record.milk_safety_status)
-                                      const RecordSafetyIcon = recordSafetyStatus.icon
-
-                                      return (
-                                        <div
-                                          key={record.id}
-                                          className="p-3 bg-white rounded border border-gray-200 space-y-2"
-                                        >
-                                          {/* Record Time and Safety Status */}
-                                          <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-2">
-                                              <Clock className="w-3 h-3 text-gray-400" />
-                                              <span className="text-xs font-medium text-gray-700">
-                                                {formatDateTime(record.created_at)}
-                                              </span>
-                                            </div>
-                                            <Badge className={recordSafetyStatus.color}>
-                                              <RecordSafetyIcon className="w-2.5 h-2.5 mr-0.5" />
-                                              {recordSafetyStatus.label}
-                                            </Badge>
-                                          </div>
-
-                                          {/* Record Metrics */}
-                                          <div className="grid grid-cols-2 gap-1 text-xs">
-                                            <div className="p-2 bg-blue-50 rounded">
-                                              <p className="text-gray-600 font-semibold">Volume</p>
-                                              <p className="text-gray-900 font-medium">{record.milk_volume}L</p>
-                                            </div>
-                                            {record.fat_content !== undefined && (
-                                              <div className="p-2 bg-green-50 rounded">
-                                                <p className="text-gray-600 font-semibold">Fat</p>
-                                                <p className="text-gray-900 font-medium">{record.fat_content.toFixed(2)}%</p>
-                                              </div>
-                                            )}
-                                            {record.protein_content !== undefined && (
-                                              <div className="p-2 bg-yellow-50 rounded">
-                                                <p className="text-gray-600 font-semibold">Protein</p>
-                                                <p className="text-gray-900 font-medium">{record.protein_content.toFixed(2)}%</p>
-                                              </div>
-                                            )}
-                                            {record.temperature !== undefined && (
-                                              <div className="p-2 bg-red-50 rounded">
-                                                <p className="text-gray-600 font-semibold">Temp</p>
-                                                <p className="text-gray-900 font-medium">{record.temperature}°C</p>
-                                              </div>
-                                            )}
-                                          </div>
-
-                                          {/* Mastitis Info */}
-                                          {record.mastitis_test_performed && (
-                                            <div className="p-2 bg-purple-50 rounded text-xs">
-                                              <p className="text-gray-600 font-semibold">Mastitis Test</p>
-                                              <p className="text-gray-900 font-medium capitalize">
-                                                {record.mastitis_result || 'Performed'}
-                                                {record.affected_quarters && record.affected_quarters.length > 0 && 
-                                                  ` - Quarters: ${record.affected_quarters.join(', ')}`
-                                                }
-                                              </p>
-                                            </div>
-                                          )}
-
-                                          {/* Notes */}
-                                          {record.notes && (
-                                            <div className="p-2 bg-gray-100 rounded text-xs">
-                                              <p className="text-gray-600 font-semibold">Notes</p>
-                                              <p className="text-gray-700">{record.notes}</p>
-                                            </div>
-                                          )}
-
-                                          {/* Session Badge */}
-                                          {record.milking_session_id && (
-                                            <div className="flex justify-end">
-                                              <Badge className={getSessionBadgeColor(record.milking_session_id)}>
-                                                <Clock className="w-2.5 h-2.5 mr-0.5" />
-                                                {getSessionName(record.milking_session_id)}
-                                              </Badge>
-                                            </div>
-                                          )}
-                                        </div>
-                                      )
-                                    })}
                                   </div>
                                 )}
                               </div>
@@ -2204,6 +1931,30 @@ export function ProductionRecordsList({
           />
         </>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent className="bg-slate-900 border border-slate-700">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-white">Delete Production Record?</AlertDialogTitle>
+            <AlertDialogDescription className="text-slate-300">
+              Are you sure you want to delete this production record? This action cannot be undone and will affect daily production summaries.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="bg-slate-700 text-white hover:bg-slate-600 border border-slate-600">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={executeDelete}
+              disabled={deletingId !== null}
+              className="bg-red-600 text-white hover:bg-red-700 border border-red-700"
+            >
+              {deletingId ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

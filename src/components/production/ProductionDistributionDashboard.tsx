@@ -572,7 +572,7 @@ export function ProductionDistributionDashboard({
   }
 
   return (
-    <div className="space-y-6 pb-20 lg:pb-0">
+    <div className="space-y-6 pb-20 lg:pb-24">
       {/* Header code ... */}
       <div className={`${isMobile ? 'px-1' : ''}`}>
         <div className="flex items-center justify-between">
@@ -672,7 +672,7 @@ export function ProductionDistributionDashboard({
               </CardContent>
             </Card>
 
-            <Card className={`${isMobile ? 'mx-2 mb-20' : ''}`}>
+            <Card className={`${isMobile ? 'mx-2 mb-6' : 'mb-20'}`}>
               <CardHeader className={`${isMobile ? 'pb-2' : ''}`}>
                 <CardTitle>Recent Records</CardTitle>
               </CardHeader>
@@ -722,7 +722,7 @@ export function ProductionDistributionDashboard({
                    <DistributionChart data={distributionStats.dailySummaries} isMobile={isMobile} chartType={selectedChartType} />
                 </CardContent>
              </Card>
-             <Card className={`${isMobile ? 'mx-2 mb-20' : ''}`}>
+             <Card className={`${isMobile ? 'mx-2 mb-12' : 'mb-20'}`}>
                 <CardHeader>
                   <CardTitle>Recent Distributions</CardTitle>
                 </CardHeader>

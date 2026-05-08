@@ -90,9 +90,26 @@ export async function updateProductionRecord(
 ) {
   const supabase = await createServerSupabaseClient()
   
+  // Get the original record before update to detect date changes and preserve critical fields
+  const { data: originalRecord, error: fetchError } = await (supabase
+    .from('production_records') as any)
+    .select('farm_id, record_date, milking_session_id')
+    .eq('id', recordId)
+    .single()
+  
+  if (fetchError) {
+    return { success: false, error: 'Failed to fetch original record' }
+  }
+  
+  // Prevent critical fields from being changed (data integrity)
+  // farm_id and milking_session_id are foundational to the record and must not be modified via updates
+  const safeData = { ...data }
+  delete safeData.farm_id
+  delete safeData.milking_session_id
+  
   const { data: record, error } = await (supabase
     .from('production_records') as any)
-    .update(data)
+    .update(safeData)
     .eq('id', recordId)
     .select()
     .single()
@@ -101,9 +118,15 @@ export async function updateProductionRecord(
     return { success: false, error: error.message }
   }
   
-  // Update daily summary after record update
-  if (record) {
+  // Update daily summaries: both old date (if changed) and new date
+  if (record && originalRecord) {
+    // Update summary for the new date
     await updateDailyProductionSummary(record.farm_id, record.record_date)
+    
+    // If record_date changed, also update summary for the old date
+    if (originalRecord.record_date !== record.record_date) {
+      await updateDailyProductionSummary(originalRecord.farm_id, originalRecord.record_date)
+    }
   }
   
   return { success: true, data: record }

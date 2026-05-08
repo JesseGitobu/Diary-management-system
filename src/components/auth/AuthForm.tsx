@@ -276,6 +276,7 @@ export function AuthForm({ mode = 'signin' }: AuthFormProps) {
                 <PasswordInput
                   id="password"
                   placeholder="Enter your password"
+                  autoComplete="current-password"
                   {...signInForm.register('password')}
                   error={signInForm.formState.errors.password?.message}
                 />
@@ -317,6 +318,7 @@ export function AuthForm({ mode = 'signin' }: AuthFormProps) {
                 <PasswordInput
                   id="password"
                   placeholder="Enter your password"
+                  autoComplete="new-password"
                   {...signUpForm.register('password')}
                   error={signUpForm.formState.errors.password?.message}
                 />
@@ -326,6 +328,7 @@ export function AuthForm({ mode = 'signin' }: AuthFormProps) {
                 <PasswordInput
                   id="confirmPassword"
                   placeholder="Confirm your password"
+                  autoComplete="new-password"
                   {...signUpForm.register('confirmPassword')}
                   error={signUpForm.formState.errors.confirmPassword?.message}
                 />
