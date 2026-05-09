@@ -13,8 +13,8 @@ import { HealthRecordCard } from '@/components/health/HealthRecordCard'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import { cn } from '@/lib/utils/cn'
 import { toast } from 'react-hot-toast'
-import { 
-  Plus, 
+import {
+  Plus,
   AlertTriangle,
   ChevronDown,
   ChevronUp,
@@ -74,56 +74,61 @@ export function AnimalHealthRecords({ animalId, farmId, animals, canAddRecords }
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
   const [offset, setOffset] = useState(0)
-  
+
   // Modal states
   const [showAddModal, setShowAddModal] = useState(false)
   const [showFollowUpModal, setShowFollowUpModal] = useState(false)
-  
+
   // Record states
   const [selectedRecord, setSelectedRecord] = useState<HealthRecord | null>(null)
   const [editingRecord, setEditingRecord] = useState<HealthRecord | null>(null)
   const [deletingRecordId, setDeletingRecordId] = useState<string | null>(null)
   const [creatingRecordFromIssueId, setCreatingRecordFromIssueId] = useState<string | null>(null)
-  
+
   // UI states
   const [expandedHealthIssuesSection, setExpandedHealthIssuesSection] = useState(true)
   const { isMobile } = useDeviceInfo()
-  
+
   const RECORDS_PER_PAGE = 15
 
   // Load data on component mount
   useEffect(() => {
     loadData(0)
   }, [animalId])
-  
+
   // Load health records and issues
   const loadData = async (newOffset: number = 0) => {
     try {
       if (newOffset === 0) setLoading(true)
       else setLoadingMore(true)
-      
+
       const [recordsRes, issuesRes] = await Promise.all([
         fetch(`/api/animals/${animalId}/health-records?includeFollowUps=true&limit=${RECORDS_PER_PAGE}&offset=${newOffset}`),
-        fetch(`/api/health/issues?animalId=${animalId}&status=open&status=in_progress&status=under_observation`)
+        fetch(`/api/health/issues?animal_id=${animalId}&status=open&status=in_progress&status=under_observation`)
       ])
-      
+
       if (recordsRes.ok) {
         const data = await recordsRes.json()
         const records = data.records || []
-        
+
         if (newOffset === 0) {
           setHealthRecords(records)
         } else {
           setHealthRecords(prev => [...prev, ...records])
         }
-        
+
         setHasMore(records.length === RECORDS_PER_PAGE)
         setOffset(newOffset)
       }
-      
+
       if (issuesRes.ok) {
         const data = await issuesRes.json()
-        setHealthIssues(data.issues || [])
+        // Filter to only this animal's issues — matches what the API should return,
+        // but guards against any edge case where other animals' issues slip through
+        const filteredIssues = (data.issues || []).filter(
+          (issue: any) => issue.animal_id === animalId
+        )
+        setHealthIssues(filteredIssues)
       }
     } catch (error) {
       console.error('Error loading data:', error)
@@ -137,12 +142,12 @@ export function AnimalHealthRecords({ animalId, farmId, animals, canAddRecords }
   const handleLoadMore = () => {
     loadData(offset + RECORDS_PER_PAGE)
   }
-  
+
   const handleCreateRecordFromIssue = (issueId: string) => {
     setCreatingRecordFromIssueId(issueId)
     setShowAddModal(true)
   }
-  
+
   const handleRecordAdded = (newRecord: HealthRecord) => {
     setHealthRecords(prev => [newRecord, ...prev])
     setShowAddModal(false)
@@ -165,15 +170,15 @@ export function AnimalHealthRecords({ animalId, farmId, animals, canAddRecords }
         })
       )
     }
-    
+
     setShowFollowUpModal(false)
     setSelectedRecord(null)
     await loadData()
   }
 
   const handleRecordUpdated = (updatedRecord: HealthRecord) => {
-    setHealthRecords(prev => 
-      prev.map(record => 
+    setHealthRecords(prev =>
+      prev.map(record =>
         record.id === updatedRecord.id ? updatedRecord : record
       )
     )
@@ -190,7 +195,7 @@ export function AnimalHealthRecords({ animalId, farmId, animals, canAddRecords }
     setSelectedRecord(record)
     setShowFollowUpModal(true)
   }
-  
+
   const handleDelete = async (recordId: string) => {
     if (!window.confirm('Are you sure you want to delete this health record?')) {
       return
@@ -201,7 +206,7 @@ export function AnimalHealthRecords({ animalId, farmId, animals, canAddRecords }
       const response = await fetch(`/api/health/records/${recordId}`, {
         method: 'DELETE',
       })
-      
+
       if (response.ok) {
         setHealthRecords(prev => prev.filter(record => record.id !== recordId))
         toast.success('Health record deleted')
@@ -238,7 +243,7 @@ export function AnimalHealthRecords({ animalId, farmId, animals, canAddRecords }
       return sum + recordCost + followUpsCost
     }, 0)
   }
-  
+
   return (
     <div className={cn("space-y-4", isMobile ? "space-y-4" : "space-y-6")}>
       {/* Header */}
@@ -260,9 +265,9 @@ export function AnimalHealthRecords({ animalId, farmId, animals, canAddRecords }
             {animal?.name || `Animal #${animal?.tag_number}`} - Complete health history from issues to follow-ups
           </p>
         </div>
-        
+
         {canAddRecords && (
-          <Button 
+          <Button
             onClick={() => setShowAddModal(true)}
             size={isMobile ? "default" : "default"}
             className={cn(isMobile && "w-full")}
@@ -272,7 +277,7 @@ export function AnimalHealthRecords({ animalId, farmId, animals, canAddRecords }
           </Button>
         )}
       </div>
-      
+
       {/* Summary Stats */}
       <div className={cn(
         "grid gap-3",
@@ -293,7 +298,7 @@ export function AnimalHealthRecords({ animalId, farmId, animals, canAddRecords }
             </div>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardContent className={cn(isMobile ? "p-3" : "p-4")}>
             <div className="flex items-center space-x-2">
@@ -309,7 +314,7 @@ export function AnimalHealthRecords({ animalId, farmId, animals, canAddRecords }
             </div>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardContent className={cn(isMobile ? "p-3" : "p-4")}>
             <div className="flex items-center space-x-2">
@@ -325,7 +330,7 @@ export function AnimalHealthRecords({ animalId, farmId, animals, canAddRecords }
             </div>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardContent className={cn(isMobile ? "p-3" : "p-4")}>
             <div className="flex items-center space-x-2">
@@ -355,7 +360,7 @@ export function AnimalHealthRecords({ animalId, farmId, animals, canAddRecords }
               Start tracking this animal's health journey by recording health events.
             </p>
             {canAddRecords && (
-              <Button 
+              <Button
                 onClick={() => setShowAddModal(true)}
                 className="mt-4"
                 size={isMobile ? "sm" : "default"}
@@ -385,7 +390,7 @@ export function AnimalHealthRecords({ animalId, farmId, animals, canAddRecords }
                   <ChevronDown className="w-5 h-5 text-gray-600 flex-shrink-0" />
                 )}
               </button>
-              
+
               {expandedHealthIssuesSection && (
                 <div className="space-y-2">
                   {healthIssues.map((issue) => (
@@ -455,7 +460,7 @@ export function AnimalHealthRecords({ animalId, farmId, animals, canAddRecords }
           )}
         </div>
       )}
-      
+
       {/* Modals */}
       {showAddModal && (
         <AddHealthRecordModal

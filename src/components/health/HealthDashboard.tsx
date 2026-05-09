@@ -2255,9 +2255,11 @@ export function HealthRecordsContent({
           animals={animals}
           isOpen={showReportIssueModal}
           onClose={() => setShowReportIssueModal(false)}
-          onIssueReported={(newIssue) => {
-            setHealthIssues(prev => [newIssue, ...prev])
-            toast.success('Health issue reported successfully!')
+          onIssueReported={(issues) => {
+            // Handle both single issue and array of issues
+            const issuesToAdd = Array.isArray(issues) ? issues : [issues]
+            setHealthIssues(prev => [...issuesToAdd, ...prev])
+            toast.success(`Health ${issuesToAdd.length === 1 ? 'issue' : 'issues'} reported successfully!`)
             setShowReportIssueModal(false)
           }}
         />

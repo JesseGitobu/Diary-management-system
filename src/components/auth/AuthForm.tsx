@@ -267,6 +267,7 @@ export function AuthForm({ mode = 'signin' }: AuthFormProps) {
                   id="email"
                   type="email"
                   placeholder="Enter your email"
+                  autoComplete="email"
                   {...signInForm.register('email')}
                   error={signInForm.formState.errors.email?.message}
                 />
@@ -308,6 +309,7 @@ export function AuthForm({ mode = 'signin' }: AuthFormProps) {
                   id="email"
                   type="email"
                   placeholder="Enter your email"
+                  autoComplete="email"
                   {...signUpForm.register('email')}
                   error={signUpForm.formState.errors.email?.message}
                   disabled={!!invitationData}
@@ -385,6 +387,7 @@ export function AuthForm({ mode = 'signin' }: AuthFormProps) {
                   id="recovery-email"
                   type="email"
                   placeholder="Enter your registered email"
+                  autoComplete="email"
                   {...passwordRecoveryForm.register('email')}
                   error={passwordRecoveryForm.formState.errors.email?.message}
                 />

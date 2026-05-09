@@ -52,8 +52,10 @@ export function HealthIssueCard({
   const statusBadge = statusColors[issue.status] || statusColors.open
   const StatusIcon = statusBadge.icon
 
-  const createdDate = new Date(issue.created_at)
-  const timeAgo = formatDistanceToNow(createdDate, { addSuffix: true })
+  const createdDate = issue.created_at ? new Date(issue.created_at) : new Date()
+  const timeAgo = createdDate instanceof Date && !isNaN(createdDate.getTime())
+    ? formatDistanceToNow(createdDate, { addSuffix: true })
+    : 'recently'
 
   // Determine if issue is resolved or not
   const isResolved = issue.status === 'resolved'

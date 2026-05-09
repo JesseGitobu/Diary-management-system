@@ -700,7 +700,7 @@ export const AnimalProfile = memo(function AnimalProfile({ animal, userRole, far
       </Tabs>
       
       {/* Floating Action Button for Mobile */}
-      {isMobile && canAddRecords && (
+      {/* {isMobile && canAddRecords && (
         <div className="fixed bottom-20 right-4 z-50">
           <Button
             size="lg"
@@ -721,7 +721,7 @@ export const AnimalProfile = memo(function AnimalProfile({ animal, userRole, far
             <FileText className="h-6 w-6" />
           </Button>
         </div>
-      )}
+      )} */}
       
       {/* Edit Animal Modal */}
       {showEditModal && (

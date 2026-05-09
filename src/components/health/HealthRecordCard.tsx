@@ -1589,32 +1589,34 @@ export function HealthRecordCard({
             <div className="flex items-center space-x-2 flex-1 min-w-0">
               <span className="text-base">{getRecordTypeIcon(record.record_type)}</span>
               <div className="flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
-                <Badge className={`${getRecordTypeColor(record.record_type)} text-[10px]`}>
-                  {record.record_type.charAt(0).toUpperCase() + record.record_type.slice(1, 4)}
+                <Badge className={`${getRecordTypeColor(record.record_type)} text-xs font-semibold px-2.5 py-1`}>
+                  {record.record_type.charAt(0).toUpperCase() + record.record_type.slice(1).replace('_', ' ')}
                 </Badge>
 
                 {record.severity && (
-                  <Badge variant="outline" className={`${getSeverityColor(record.severity)} text-[10px]`}>
-                    {record.severity.charAt(0).toUpperCase()}
+                  <Badge variant="outline" className={`${getSeverityColor(record.severity)} text-xs font-semibold px-2 py-1`}>
+                    {record.severity.charAt(0).toUpperCase() + record.severity.slice(1)}
                   </Badge>
                 )}
 
                 {isResolved && (
-                  <Badge className="bg-green-100 text-green-800 border-green-200 text-[10px]">
-                    <CheckCircle className="w-3 h-3" />
+                  <Badge className="bg-green-100 text-green-800 border-green-200 text-xs font-semibold px-2 py-1 flex items-center gap-1">
+                    <CheckCircle className="w-4 h-4" />
+                    Resolved
                   </Badge>
                 )}
 
                 {hasFollowUps && (
-                  <Badge variant="outline" className="text-[10px]">
-                    <Activity className="w-3 h-3 mr-0.5" />
-                    {followUps.length}
+                  <Badge variant="outline" className="text-xs font-semibold px-2 py-1 flex items-center gap-1">
+                    <Activity className="w-4 h-4" />
+                    {followUps.length} Follow-up{followUps.length !== 1 ? 's' : ''}
                   </Badge>
                 )}
 
                 {isOverdue && !isResolved && (
-                  <Badge variant="destructive" className="text-[10px]">
-                    <AlertTriangle className="w-3 h-3" />
+                  <Badge variant="destructive" className="text-xs font-semibold px-2 py-1 flex items-center gap-1">
+                    <AlertTriangle className="w-4 h-4" />
+                    Overdue
                   </Badge>
                 )}
               </div>

@@ -203,10 +203,27 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // Enrich created issues with animal data
+      const supabase = await createServerSupabaseClient()
+      const enrichedIssues = await Promise.all(
+        createdIssues.map(async (issue) => {
+          const { data: animal } = await supabase
+            .from('animals')
+            .select('id, tag_number, name, breed')
+            .eq('id', issue.animal_id)
+            .single()
+          
+          return {
+            ...issue,
+            animals: animal || { id: issue.animal_id, tag_number: '?', name: '', breed: '' }
+          }
+        })
+      )
+
       return NextResponse.json(
         {
           success: failedIssues.length === 0,
-          issues: createdIssues,
+          issues: enrichedIssues,
           failed: failedIssues.length > 0 ? failedIssues : undefined,
           message: `Created ${createdIssues.length} health ${createdIssues.length === 1 ? 'issue' : 'issues'}${failedIssues.length > 0 ? ` (${failedIssues.length} failed)` : ''}`
         },

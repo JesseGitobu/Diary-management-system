@@ -122,13 +122,17 @@ export function AnimalProductionRecords({
           const result = await response.json()
           if (result.success) {
             setProductionSettings(result.settings)
+            console.log('✅ Production settings loaded:', result.settings?.milkingSessions?.length, 'sessions')
           }
         }
       } catch (error) {
         console.error('Error loading production settings:', error)
       }
     }
-    fetchSettings()
+    
+    if (animal.farm_id) {
+      fetchSettings()
+    }
   }, [animal.farm_id])
 
   useEffect(() => {
@@ -409,6 +413,17 @@ export function AnimalProductionRecords({
     return 'text-gray-600 bg-gray-50'
   }
   
+  // ✅ ENHANCED: Memoized session name map for reliable lookup
+  const sessionNameMap = productionSettings?.milkingSessions?.reduce((map, session: any) => {
+    // Support multiple ID formats (UUID, string, etc.)
+    const idStr = String(session.id).trim().toLowerCase()
+    const nameStr = String(session.name || '').trim()
+    if (nameStr) {
+      map[idStr] = nameStr
+    }
+    return map
+  }, {} as Record<string, string>) || {}
+  
   // Helper function to calculate today's yield
   const getTodaysYield = (): number => {
     const today = new Date().toISOString().split('T')[0]
@@ -419,16 +434,34 @@ export function AnimalProductionRecords({
   
   // Helper function to get readable session name from session ID
   const getSessionName = (sessionId?: string): string => {
-    if (!sessionId) return 'Unknown Session'
+    if (!sessionId) return 'Not Set'
     
-    // Try to find the session in productionSettings
-    if (productionSettings?.milkingSessions && Array.isArray(productionSettings.milkingSessions)) {
-      const session = productionSettings.milkingSessions.find((s: any) => s.id === sessionId)
-      if (session?.name) return session.name
+    const normalizedId = String(sessionId).trim().toLowerCase()
+    
+    // Try exact match first (case-insensitive)
+    if (sessionNameMap[normalizedId]) {
+      return sessionNameMap[normalizedId]
     }
     
-    // Fallback: return the session ID as-is
-    return sessionId
+    // Try finding by partial match as fallback
+    for (const [key, value] of Object.entries(sessionNameMap)) {
+      if (key.includes(normalizedId) || normalizedId.includes(key)) {
+        return value
+      }
+    }
+    
+    // If still not found, check if productionSettings has sessions and do a fresh lookup
+    if (productionSettings?.milkingSessions && Array.isArray(productionSettings.milkingSessions)) {
+      const session = productionSettings.milkingSessions.find((s: any) => 
+        String(s.id).trim().toLowerCase() === normalizedId
+      )
+      if (session?.name) {
+        return String(session.name).trim()
+      }
+    }
+    
+    // Last resort fallback - show the ID truncated if we can't find the name
+    return normalizedId.length > 12 ? normalizedId.substring(0, 8) + '...' : normalizedId
   }
 
   return (
