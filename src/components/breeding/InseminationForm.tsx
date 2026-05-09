@@ -1,7 +1,7 @@
 // src/components/breeding/InseminationForm.tsx
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/Label'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Badge } from '@/components/ui/Badge'
 import { getEligibleAnimals } from '@/lib/database/breeding'
-import { Syringe, Calendar, User, FileText } from 'lucide-react'
+import { Syringe, Calendar, User, FileText, Search, X, ChevronDown } from 'lucide-react'
 
 const inseminationSchema = z.object({
   animal_id: z.string().min(1, 'Please select an animal'),
@@ -94,6 +94,11 @@ export function InseminationForm({ farmId, onEventCreated, onCancel, preSelected
   const [selectedAnimalDetails, setSelectedAnimalDetails] = useState<SelectedAnimalDetails | null>(null)
   const [detailsLoading, setDetailsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [animalSearch, setAnimalSearch] = useState('')
+  const [showAnimalDropdown, setShowAnimalDropdown] = useState(false)
+  const [showAllAnimals, setShowAllAnimals] = useState(false)
+  const animalSearchInputRef = useRef<HTMLInputElement>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
   
   const form = useForm<InseminationFormData>({
     resolver: zodResolver(inseminationSchema),
@@ -243,6 +248,29 @@ export function InseminationForm({ farmId, onEventCreated, onCancel, preSelected
     }
   }
 
+  const getProductionStatusColor = (status?: string | null) => {
+    if (!status) return 'bg-gray-100 text-gray-800'
+    const lower = status.toLowerCase()
+    if (lower.includes('high')) return 'bg-green-100 text-green-800'
+    if (lower.includes('medium')) return 'bg-yellow-100 text-yellow-800'
+    if (lower.includes('low')) return 'bg-orange-100 text-orange-800'
+    if (lower.includes('dry')) return 'bg-purple-100 text-purple-800'
+    return 'bg-gray-100 text-gray-800'
+  }
+
+  // Filter animals based on search input
+  const filteredAnimals = animals.filter((animal) => {
+    const searchLower = animalSearch.toLowerCase()
+    return (
+      animal.tag_number?.toLowerCase().includes(searchLower) ||
+      animal.name?.toLowerCase().includes(searchLower) ||
+      animal.breed?.toLowerCase().includes(searchLower)
+    )
+  })
+
+  // Limit displayed animals to 20 unless "show all" is clicked
+  const displayedAnimals = showAllAnimals ? filteredAnimals : filteredAnimals.slice(0, 20)
+
   const loadEligibleAnimals = async () => {
     try {
       const eligibleAnimals = await getEligibleAnimals(farmId, 'insemination')
@@ -332,6 +360,20 @@ export function InseminationForm({ farmId, onEventCreated, onCancel, preSelected
       setSelectedAnimal(null)
     }
   }, [animalId, animals])
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowAnimalDropdown(false)
+      }
+    }
+
+    if (showAnimalDropdown) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showAnimalDropdown])
   
   return (
     <div className="space-y-6">
@@ -352,89 +394,237 @@ export function InseminationForm({ farmId, onEventCreated, onCancel, preSelected
       
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
         {/* Animal Selection */}
-        <div>
-          <Label htmlFor="animal_id">Select Animal for Insemination *</Label>
-          <select
-            id="animal_id"
-            {...form.register('animal_id')}
-            disabled={!!preSelectedAnimalId || animals.length === 0}
-            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent ${
-              preSelectedAnimalId ? 'bg-gray-100 cursor-not-allowed' : ''
-            }`}
-          >
-            <option value="">Choose an animal...</option>
-            {animals.map((animal) => (
-              <option key={animal.id} value={animal.id}>
-                {animal.tag_number} - {animal.name || 'Unnamed'} • {animal.breed || 'Unknown breed'} • {formatProductionStatus(animal.production_status)} • {formatDateTime(animal.last_heat_detection)}
-              </option>
-            ))}
-            {/* Fallback option */}
-            {preSelectedAnimalId && !animals.find(a => a.id === preSelectedAnimalId) && (
-               <option value={preSelectedAnimalId}>Current Animal</option>
+        <div className="bg-gray-50 p-4 rounded-lg">
+          <Label className="text-base font-medium mb-3 block">Select Animal for Insemination</Label>
+
+          {/* Search Input */}
+          <div className="relative mb-4">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <input
+              ref={animalSearchInputRef}
+              type="text"
+              placeholder="Search by tag number, name, or breed..."
+              value={animalSearch}
+              onChange={(e) => {
+                setAnimalSearch(e.target.value)
+                // Auto-open dropdown when user starts typing
+                if (e.target.value && !showAnimalDropdown && !preSelectedAnimalId) {
+                  setShowAnimalDropdown(true)
+                }
+              }}
+              onFocus={() => {
+                // Open dropdown when user focuses on search field
+                if (!preSelectedAnimalId) {
+                  setShowAnimalDropdown(true)
+                }
+              }}
+              disabled={!!preSelectedAnimalId}
+              className={`w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent ${
+                preSelectedAnimalId ? 'bg-gray-100 cursor-not-allowed' : ''
+              }`}
+              aria-label="Search animals"
+            />
+            {animalSearch && !preSelectedAnimalId && (
+              <button
+                type="button"
+                onClick={() => {
+                  setAnimalSearch('')
+                  animalSearchInputRef.current?.focus()
+                }}
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                title="Clear search"
+              >
+                <X className="w-4 h-4" />
+              </button>
             )}
-          </select>
-          {form.formState.errors.animal_id && (
-            <p className="text-sm text-red-600 mt-1">
-              {form.formState.errors.animal_id.message}
-            </p>
+          </div>
+
+          {/* Search Results Counter */}
+          {animalSearch && (
+            <div className="mb-3 text-xs text-gray-600">
+              Found {filteredAnimals.length} animal{filteredAnimals.length !== 1 ? 's' : ''} matching "{animalSearch}"
+            </div>
           )}
-          
-          {/* Selected Animal Info */}
-          {/* {selectedAnimal && (
-            <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-md">
+
+          {/* Selected Animal Summary */}
+          {selectedAnimal && (
+            <div className="mb-4 p-4 bg-farm-green/10 border border-farm-green/20 rounded-lg sticky top-0 z-10 shadow-sm space-y-3">
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-green-900">
-                    {selectedAnimal.name || `Animal ${selectedAnimal.tag_number}`}
-                  </p>
-                  <p className="text-xs text-green-700">
-                    {selectedAnimal.breed} • {calculateAge(selectedAnimal.birth_date)}
+                <div className="flex-1">
+                  <h4 className="font-medium text-farm-green text-lg">
+                    ✓ {selectedAnimal.name || `Animal ${selectedAnimal.tag_number}`}
+                  </h4>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Tag: {selectedAnimal.tag_number} • {selectedAnimal.breed} • {selectedAnimal.gender}
+                    {selectedAnimal.birth_date && (
+                      <span> • Born: {new Date(selectedAnimal.birth_date).toLocaleDateString()}</span>
+                    )}
                   </p>
                 </div>
-                <Badge className="bg-green-100 text-green-800">
-                  Ready for breeding
-                </Badge>
+                <Badge variant="secondary">✓ Selected</Badge>
+              </div>
+
+              {/* Last Heat Detection Status */}
+              <div className="flex items-center gap-2 pt-2 border-t border-farm-green/20">
+                <span className="text-xs font-medium text-gray-700">Last Heat:</span>
+                <span className="text-xs font-semibold text-farm-green">
+                  {formatDateTime(selectedAnimal.last_heat_detection)}
+                </span>
               </div>
             </div>
-          )} */}
-
-          {selectedAnimalDetails && !detailsLoading && (
-            <Card className="mt-4 border-gray-200 bg-white">
-              <CardHeader>
-                <CardTitle>Animal breeding details</CardTitle>
-                <CardDescription>Age, production, calving, and service history for the selected animal.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-700">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Age</p>
-                    <p className="mt-1 font-medium">{calculateAge(selectedAnimalDetails.birth_date)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Average production</p>
-                    <p className="mt-1 font-medium">{selectedAnimalDetails.current_daily_production ? `${selectedAnimalDetails.current_daily_production} L/day` : 'Not recorded'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Last calving</p>
-                    <p className="mt-1 font-medium">{selectedAnimalDetails.latest_calving?.calving_date ? new Date(selectedAnimalDetails.latest_calving.calving_date).toLocaleDateString() : 'No record'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Last heat detection</p>
-                    <p className="mt-1 font-medium">{formatDateTime(getLastHeatDetection(selectedAnimalDetails))}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Services after last calving</p>
-                    <p className="mt-1 font-medium">{getServiceSummary(selectedAnimalDetails).serviceCountAfterLastCalving}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Estimated service success</p>
-                    <p className="mt-1 font-medium">{getServiceSummary(selectedAnimalDetails).successRate}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
           )}
+
+          {/* Custom Dropdown Trigger */}
+          <div className="relative" ref={dropdownRef}>
+            <button
+              type="button"
+              onClick={() => setShowAnimalDropdown(!showAnimalDropdown)}
+              disabled={!!preSelectedAnimalId}
+              className={`w-full px-4 py-3 text-left border border-gray-300 rounded-lg bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent transition-all flex items-center justify-between ${
+                preSelectedAnimalId ? 'bg-gray-100 cursor-not-allowed' : ''
+              }`}
+            >
+              {selectedAnimal ? (
+                <div className="flex-1">
+                  <p className="font-medium text-gray-900">
+                    {selectedAnimal.name || `Animal ${selectedAnimal.tag_number}`}
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    #{selectedAnimal.tag_number} • {selectedAnimal.breed}
+                  </p>
+                </div>
+              ) : (
+                <span className="text-gray-500">Choose an animal...</span>
+              )}
+              <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${showAnimalDropdown ? 'rotate-180' : ''}`} />
+            </button>
+
+            {/* Custom Dropdown Menu */}
+            {showAnimalDropdown && (
+              <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-h-96 overflow-y-auto">
+                {displayedAnimals.length === 0 ? (
+                  <div className="p-8 text-center text-gray-500">
+                    <p className="text-sm">
+                      {animalSearch ? '🔍 No animals match your search' : '📋 No animals available for insemination'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-gray-200">
+                    {displayedAnimals.map((animal) => (
+                      <button
+                        key={animal.id}
+                        type="button"
+                        onClick={() => {
+                          form.setValue('animal_id', animal.id)
+                          setShowAnimalDropdown(false)
+                        }}
+                        className={`w-full px-4 py-3 text-left hover:bg-farm-green/5 transition-colors ${
+                          selectedAnimal?.id === animal.id ? 'bg-farm-green/10 border-l-4 border-farm-green' : ''
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            {/* Animal Name and Basic Info */}
+                            <p className="font-medium text-gray-900 truncate">
+                              {animal.name || `Animal ${animal.tag_number}`}
+                            </p>
+                            <p className="text-xs text-gray-600 mt-1">
+                              #{animal.tag_number} • {animal.breed} • {animal.gender}
+                            </p>
+
+                            {/* Status and Heat Detection Row */}
+                            <div className="flex flex-wrap gap-2 mt-2">
+                              {/* Production Status Badge */}
+                              {animal.production_status && (
+                                <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${getProductionStatusColor(animal.production_status)}`}>
+                                  {formatProductionStatus(animal.production_status)}
+                                </span>
+                              )}
+                              
+                              {/* Last Heat Detection Badge */}
+                              {animal.last_heat_detection && (
+                                <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                                  Heat: {new Date(animal.last_heat_detection).toLocaleDateString()}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Selection Checkmark */}
+                          {selectedAnimal?.id === animal.id && (
+                            <div className="text-farm-green flex-shrink-0">
+                              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {filteredAnimals.length === 20 && !showAllAnimals && (
+                  <div className="p-3 border-t border-gray-200">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAllAnimals(true)
+                      }}
+                      className="w-full px-3 py-2 text-sm text-farm-green hover:bg-farm-green/10 rounded transition-colors font-medium"
+                    >
+                      📋 Show all {filteredAnimals.length} animals
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {form.formState.errors.animal_id && (
+              <p className="text-sm text-red-600 mt-1">
+                {form.formState.errors.animal_id.message}
+              </p>
+            )}
+          </div>
         </div>
+
+        {/* Breeding Details Card */}
+        {selectedAnimalDetails && !detailsLoading && (
+          <Card className="border-gray-200 bg-white">
+            <CardHeader>
+              <CardTitle>Animal breeding details</CardTitle>
+              <CardDescription>Age, production, calving, and service history for the selected animal.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-700">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Age</p>
+                  <p className="mt-1 font-medium">{calculateAge(selectedAnimalDetails.birth_date)}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Average production</p>
+                  <p className="mt-1 font-medium">{selectedAnimalDetails.current_daily_production ? `${selectedAnimalDetails.current_daily_production} L/day` : 'Not recorded'}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Last calving</p>
+                  <p className="mt-1 font-medium">{selectedAnimalDetails.latest_calving?.calving_date ? new Date(selectedAnimalDetails.latest_calving.calving_date).toLocaleDateString() : 'No record'}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Last heat detection</p>
+                  <p className="mt-1 font-medium">{formatDateTime(getLastHeatDetection(selectedAnimalDetails))}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Services after last calving</p>
+                  <p className="mt-1 font-medium">{getServiceSummary(selectedAnimalDetails).serviceCountAfterLastCalving}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Estimated service success</p>
+                  <p className="mt-1 font-medium">{getServiceSummary(selectedAnimalDetails).successRate}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
         
         {/* Insemination Date and Time */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

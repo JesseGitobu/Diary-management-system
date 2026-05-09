@@ -14,6 +14,16 @@ import {
   isDebugEnabled,
 } from '@/lib/debug/health-records-logger'
 
+export interface TreatmentMedication {
+  id?: string
+  medication_name: string
+  dosage: string
+  duration: string
+  route: string
+  route_other?: string | null
+  sequence?: number
+}
+
 export interface HealthRecordData {
   animal_id: string
   record_date: string
@@ -47,6 +57,9 @@ export interface HealthRecordData {
   follow_up_status?: string
   treatment_effectiveness?: string | null
   medication_changes?: string | null
+  
+  // Multiple medications for treatment records (new)
+  medications?: TreatmentMedication[] | null
   
   // General checkup fields
   body_condition_score?: number | null
@@ -310,6 +323,36 @@ export async function createHealthRecord(data: HealthRecordData, operationId?: s
       }
     }
     
+    // Save multiple medications if provided for treatment records
+    if (data.record_type === 'treatment' && data.medications && data.medications.length > 0) {
+      const medicationsToInsert = data.medications.map((med, index) => ({
+        health_record_id: record.id,
+        medication_name: med.medication_name,
+        dosage: med.dosage,
+        duration: med.duration,
+        route: med.route,
+        route_other: med.route_other || null,
+        sequence: index + 1,
+        created_by: data.created_by
+      }))
+      
+      const { data: medicationsData, error: medicationsError } = await (supabase
+        .from('treatment_medications') as any)
+        .insert(medicationsToInsert)
+        .select()
+      
+      if (medicationsError) {
+        console.error('Error saving medications:', medicationsError)
+        if (operationId && isDebugEnabled()) {
+          logDatabaseInsert(operationId, 'treatment_medications', 'N/A', medicationsToInsert, medicationsError.message)
+        }
+        // Don't fail the entire operation if medications fail to save
+        // The health record is already created
+      } else if (operationId && isDebugEnabled()) {
+        logDatabaseInsert(operationId, 'treatment_medications', `${medicationsData?.length || 0} records`, medicationsToInsert)
+      }
+    }
+    
     return { success: true, data: record }
   } catch (error) {
     console.error('Error in createHealthRecord:', error)
@@ -405,6 +448,15 @@ export async function getAnimalHealthRecords(
           record_type,
           description,
           record_date
+        ),
+        treatment_medications (
+          id,
+          medication_name,
+          dosage,
+          duration,
+          route,
+          route_other,
+          sequence
         )
       `)
       .in('animal_id', animalIds)
@@ -471,6 +523,15 @@ export async function getHealthRecordById(recordId: string, farmId: string) {
         record_type,
         description,
         record_date
+      ),
+      treatment_medications (
+        id,
+        medication_name,
+        dosage,
+        duration,
+        route,
+        route_other,
+        sequence
       )
     `)
     .eq('id', recordId)
@@ -1398,7 +1459,8 @@ export async function createFollowUpRecord(
       return { success: false, error: recordError.message }
     }
     
-    // Create the relationship in the junction table
+    // Create the relationship in the health_record_follow_ups junction table
+    // This table tracks treatment effectiveness and recovery status
     const { error: relationError } = await (supabase
       .from('health_record_follow_ups') as any)
       .insert({
@@ -1411,13 +1473,8 @@ export async function createFollowUpRecord(
     
     if (relationError) {
       console.error('Error creating follow-up relationship:', relationError)
-      // Clean up the follow-up record if relationship creation fails
-      await supabase
-        .from('animal_health_records')
-        .delete()
-        .eq('id', record.id)
-      
-      return { success: false, error: 'Failed to create follow-up relationship' }
+      console.warn('Proceeding without junction table entry - follow-up record created but relationship not tracked in health_record_follow_ups')
+      // Don't fail the entire operation - the follow-up record is created, just the tracking table failed
     }
     
     // If this follow-up marks the record as resolved, update the original record
@@ -1685,6 +1742,15 @@ export async function getFollowUpRecords(originalRecordId: string, farmId: strin
           outbreak_name,
           disease_type,
           severity_level
+        ),
+        treatment_medications (
+          id,
+          medication_name,
+          dosage,
+          duration,
+          route,
+          route_other,
+          sequence
         )
       `)
       .in('id', followUpIds)
@@ -1716,7 +1782,8 @@ export async function getFollowUpRecords(originalRecordId: string, farmId: strin
         treatment_effectiveness: relation?.treatment_effectiveness,
         is_resolved: relation?.is_resolved || false,
         created_at: record.created_at,
-        next_followup_date: record.next_due_date
+        next_followup_date: record.next_due_date,
+        treatment_medications: (record as any).treatment_medications || []
       }
     })
 
@@ -1766,6 +1833,15 @@ export async function getHealthRecordsWithFollowUps(
           name,
           breed,
           gender
+        ),
+        treatment_medications (
+          id,
+          medication_name,
+          dosage,
+          duration,
+          route,
+          route_other,
+          sequence
         )
       `)
       .in('animal_id', animalIds)
@@ -3110,5 +3186,150 @@ export async function completeHealthRecordWithStatusUpdate(
   } catch (error) {
     console.error('Error in completeHealthRecordWithStatusUpdate:', error)
     return { success: false, error: 'Failed to complete health record with status update' }
+  }
+}
+
+/**
+ * Get all medications for a specific health record
+ */
+export async function getTreatmentMedications(healthRecordId: string, farmId: string) {
+  const supabase = await createServerSupabaseClient()
+
+  try {
+    // Verify the health record exists and belongs to the farm
+    const { data: record, error: recordError } = await supabase
+      .from('animal_health_records')
+      .select('id')
+      .eq('id', healthRecordId)
+      .eq('farm_id', farmId)
+      .single()
+
+    if (recordError || !record) {
+      console.error('Health record not found:', recordError)
+      return { success: false, error: 'Health record not found', data: [] }
+    }
+
+    // Get all medications for this record, ordered by sequence
+    const { data: medications, error: medicationsError } = await (supabase
+      .from('treatment_medications') as any)
+      .select('*')
+      .eq('health_record_id', healthRecordId)
+      .order('sequence', { ascending: true })
+
+    if (medicationsError) {
+      console.error('Error fetching medications:', medicationsError)
+      return { success: false, error: medicationsError.message, data: [] }
+    }
+
+    return { success: true, data: medications || [] }
+  } catch (error) {
+    console.error('Error in getTreatmentMedications:', error)
+    return { success: false, error: 'Failed to fetch medications', data: [] }
+  }
+}
+
+/**
+ * Update a single medication in a treatment record
+ */
+export async function updateTreatmentMedication(
+  medicationId: string,
+  farmId: string,
+  updates: Partial<TreatmentMedication>
+) {
+  const supabase = await createServerSupabaseClient()
+
+  try {
+    // Get the medication to verify it belongs to a health record in this farm
+    const { data: medication, error: getError } = await (supabase
+      .from('treatment_medications') as any)
+      .select('health_record_id')
+      .eq('id', medicationId)
+      .single()
+
+    if (getError || !medication) {
+      console.error('Medication not found:', getError)
+      return { success: false, error: 'Medication not found' }
+    }
+
+    // Verify the health record belongs to this farm
+    const { data: record, error: recordError } = await supabase
+      .from('animal_health_records')
+      .select('id')
+      .eq('id', medication.health_record_id)
+      .eq('farm_id', farmId)
+      .single()
+
+    if (recordError || !record) {
+      console.error('Health record not found or access denied:', recordError)
+      return { success: false, error: 'Access denied' }
+    }
+
+    // Update the medication
+    const { data: updated, error: updateError } = await (supabase
+      .from('treatment_medications') as any)
+      .update(updates)
+      .eq('id', medicationId)
+      .select()
+      .single()
+
+    if (updateError) {
+      console.error('Error updating medication:', updateError)
+      return { success: false, error: updateError.message }
+    }
+
+    return { success: true, data: updated }
+  } catch (error) {
+    console.error('Error in updateTreatmentMedication:', error)
+    return { success: false, error: 'Failed to update medication' }
+  }
+}
+
+/**
+ * Delete a medication from a treatment record
+ */
+export async function deleteTreatmentMedication(medicationId: string, farmId: string) {
+  const supabase = await createServerSupabaseClient()
+
+  try {
+    // Get the medication to verify it belongs to a health record in this farm
+    const { data: medication, error: getError } = await (supabase
+      .from('treatment_medications') as any)
+      .select('health_record_id')
+      .eq('id', medicationId)
+      .single()
+
+    if (getError || !medication) {
+      console.error('Medication not found:', getError)
+      return { success: false, error: 'Medication not found' }
+    }
+
+    // Verify the health record belongs to this farm
+    const { data: record, error: recordError } = await supabase
+      .from('animal_health_records')
+      .select('id')
+      .eq('id', medication.health_record_id)
+      .eq('farm_id', farmId)
+      .single()
+
+    if (recordError || !record) {
+      console.error('Health record not found or access denied:', recordError)
+      return { success: false, error: 'Access denied' }
+    }
+
+    // Delete the medication
+    const { error: deleteError } = await (supabase
+      .from('treatment_medications') as any)
+      .delete()
+      .eq('id', medicationId)
+
+    if (deleteError) {
+      console.error('Error deleting medication:', deleteError)
+      return { success: false, error: deleteError.message }
+    }
+
+    return { success: true, message: 'Medication deleted successfully' }
+  } catch (error) {
+    console.error('Error in deleteTreatmentMedication:', error)
+    return { success: false, error: 'Failed to delete medication' }
   }
 }

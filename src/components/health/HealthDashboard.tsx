@@ -42,7 +42,7 @@ import { MobileTabBar } from '@/components/mobile/MobileTabBar'
 import { MobileSearchFilter } from '@/components/mobile/MobileSearchFilter'
 import { HealthNotification } from '@/components/health/HealthNotification'
 
-import { EditHealthRecordModal } from '@/components/health/EditHealthRecordModal'
+
 import { FollowUpHealthRecordModal } from '@/components/health/FollowUpHealthRecordModal'
 import { EditVeterinarianModal } from '@/components/health/EditVeterinarianModal'
 import { EditProtocolModal } from '@/components/health/EditProtocolModal'
@@ -2100,17 +2100,18 @@ export function HealthRecordsContent({
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Edit Health Record Modal */}
       {showEditModal && editingRecord && (
-        <EditHealthRecordModal
+        <AddHealthRecordModal
           farmId={userRole?.farm_id}
           animals={animals}
-          record={editingRecord}
+          recordToEdit={editingRecord}
           isOpen={showEditModal}
           onClose={() => {
             setShowEditModal(false)
             setEditingRecord(null)
           }}
-          onRecordUpdated={handleRecordUpdated}
+          onRecordAdded={handleRecordUpdated}
         />
       )}
 

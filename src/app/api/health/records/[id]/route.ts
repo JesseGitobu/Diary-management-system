@@ -129,7 +129,10 @@ export async function PUT(
       product_used,
       deworming_dose,
       next_deworming_date,
-      deworming_administered_by
+      deworming_administered_by,
+      
+      // Multiple medications for treatment records
+      medications
     } = body
     
     const { id } = await params
@@ -137,13 +140,13 @@ export async function PUT(
     
     // First verify the record belongs to the user's farm and get current state
     // Cast supabase to any to prevent 'never' type inference on the result
-    const { data: existingRecord, error: fetchError } = await (supabase as any)
+    const { data: existingRecord, error: initialFetchError } = await (supabase as any)
       .from('animal_health_records')
       .select('id, farm_id, is_auto_generated, completion_status, animal_id, resolved_date')
       .eq('id', id)
       .single()
     
-    if (fetchError || !existingRecord) {
+    if (initialFetchError || !existingRecord) {
       return NextResponse.json({ error: 'Health record not found' }, { status: 404 })
     }
     
@@ -291,9 +294,65 @@ export async function PUT(
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
     
+    // Handle medications update for treatment records
+    if (record_type === 'treatment' && medications && Array.isArray(medications)) {
+      // Delete existing medications for this record
+      await (supabase as any)
+        .from('treatment_medications')
+        .delete()
+        .eq('health_record_id', id)
+      
+      // Insert new medications
+      if (medications.length > 0) {
+        const medicationsToInsert = medications.map((med: any, index: number) => ({
+          health_record_id: id,
+          medication_name: (med.medication_name || med.name || '').trim() || 'Medication',
+          dosage: (med.dosage || '').trim() || 'As prescribed',
+          duration: (med.duration || '').trim() || 'As needed',
+          route: (med.route || '').trim() || 'Oral',
+          route_other: med.route_other || null,
+          sequence: index + 1,
+          created_by: user.id
+        }))
+        
+        const { error: medicationsError } = await (supabase as any)
+          .from('treatment_medications')
+          .insert(medicationsToInsert)
+        
+        if (medicationsError) {
+          console.error('Error updating medications:', medicationsError)
+          // Continue without throwing - the record was already updated
+        }
+      }
+    }
+    
+    // Fetch the updated record with medications relationship
+    const { data: updatedRecord, error: fetchError } = await (supabase as any)
+      .from('animal_health_records')
+      .select(`
+        *,
+        animals!animal_health_records_animal_id_fkey (
+          id,
+          tag_number,
+          name,
+          breed
+        ),
+        treatment_medications (
+          id,
+          medication_name,
+          dosage,
+          duration,
+          route,
+          route_other,
+          sequence
+        )
+      `)
+      .eq('id', id)
+      .single()
+    
     return NextResponse.json({ 
       success: true, 
-      record: data,
+      record: updatedRecord || data,
       wasAutoCompleted: isCompletingAutoRecord,
       message: isCompletingAutoRecord 
         ? 'Health record completed successfully' 

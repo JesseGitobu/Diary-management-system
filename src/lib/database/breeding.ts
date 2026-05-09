@@ -201,6 +201,22 @@ export type BreedingEvent = HeatDetectionEvent | InseminationEvent | PregnancyCh
 export async function getEligibleAnimals(farmId: string, eventType: BreedingEventType) {
   const supabase = createClient()
   
+  // Fetch farm breeding settings to get minimum breeding age
+  let minimumBreedingAgeMonths = 10 // Default fallback
+  try {
+    const { data: settings } = await supabase
+      .from('farm_breeding_settings')
+      .select('minimum_breeding_age_months')
+      .eq('farm_id', farmId)
+      .single()
+    
+    if (settings && (settings as any).minimum_breeding_age_months) {
+      minimumBreedingAgeMonths = (settings as any).minimum_breeding_age_months
+    }
+  } catch (error) {
+    console.warn('[getEligibleAnimals] Could not fetch breeding settings, using default minimum age:', minimumBreedingAgeMonths)
+  }
+  
   // Base query: Active females in the farm
   let query = supabase
     .from('animals')
@@ -225,6 +241,7 @@ export async function getEligibleAnimals(farmId: string, eventType: BreedingEven
   console.log('[getEligibleAnimals] query response', {
     farmId,
     eventType,
+    minimumBreedingAgeMonths,
     error,
     count: (data || []).length,
     sample: (data || [])?.slice(0, 10),
@@ -239,16 +256,33 @@ export async function getEligibleAnimals(farmId: string, eventType: BreedingEven
   const allFemales = (data || []) as any[]
 
   return allFemales.filter(animal => {
-    // 1. Basic Age Check (e.g., must be > 10 months to breed)
-    const ageInMonths = animal.birth_date ? differenceInMonths(new Date(), new Date(animal.birth_date)) : 12 // Default to eligible if unknown
-    if (eventType !== 'calving' && ageInMonths < 10) return false;
-
+    // 1. Calculate Age in Months
+    const ageInMonths = animal.birth_date ? differenceInMonths(new Date(), new Date(animal.birth_date)) : minimumBreedingAgeMonths // Default to eligible if unknown
+    
     // 2. Specific Logic per Event
     switch (eventType) {
       case 'heat_detection':
+        // Eligible criteria:
+        // - Lactating animals
+        // - Heifers that have reached minimum breeding age
+        // - Open culling animals
+        // - Served animals that have NOT been confirmed pregnant (exclude steaming_dry_cows)
+        const eligibleStatuses = ['lactating', 'open_culling_dry_cows', 'served']
+        
+        // Check if it's a heifer with sufficient age
+        const isEligibleHeifer = animal.production_status === 'heifer' && ageInMonths >= minimumBreedingAgeMonths
+        
+        // Check if it's a served animal that hasn't been confirmed pregnant
+        const isEligibleServed = animal.production_status === 'served'
+        
+        return isEligibleHeifer || (eligibleStatuses.includes(animal.production_status) && animal.production_status !== 'served') || isEligibleServed
+      
       case 'insemination':
-        // Eligible if open, heifer, or lactating — exclude animals already served/steaming
-        return !['served', 'steaming_dry_cows'].includes(animal.production_status)
+        // Same eligibility as heat detection
+        const insemEligibleStatuses = ['lactating', 'open_culling_dry_cows', 'served']
+        const insemEligibleHeifer = animal.production_status === 'heifer' && ageInMonths >= minimumBreedingAgeMonths
+        const insemEligibleServed = animal.production_status === 'served'
+        return insemEligibleHeifer || (insemEligibleStatuses.includes(animal.production_status) && animal.production_status !== 'served') || insemEligibleServed
 
       case 'pregnancy_check':
         // Any female that has been served is eligible for a pregnancy check

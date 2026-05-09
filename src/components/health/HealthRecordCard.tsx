@@ -143,8 +143,19 @@ interface HealthRecordCardProps {
     anesthesia_type?: string
     post_dehorning_care?: string
     dehorning_complications?: string
+    
+    // Treatment medications array
+    treatment_medications?: Array<{
+      id: string
+      medication_name: string
+      dosage: string
+      duration: string
+      route: string
+      route_other?: string
+      sequence: number
+    }>
   }
-  onEdit: (recordId: string) => void
+  onEdit: (record: any) => void
   onDelete: (recordId: string) => void
   onFollowUp?: (record: any) => void
   canEdit: boolean
@@ -206,7 +217,7 @@ export function HealthRecordCard({
   const loadFollowUps = async () => {
     setLoadingFollowUps(true)
     try {
-      const response = await fetch(`/api/health/records/${record.id}/follow-ups`)
+      const response = await fetch(`/api/health/records/${record.id}/follow-up`)
       if (response.ok) {
         const data = await response.json()
         setFollowUps(data.followUps || []) // This should now work correctly
@@ -388,9 +399,9 @@ export function HealthRecordCard({
   const formatDate = (dateString?: string) => {
     if (!dateString) return ''
     if (isMobile) {
-      return format(new Date(dateString), 'MM/dd/yy')
+      return format(new Date(dateString), 'dd/MM/yy')
     }
-    return format(new Date(dateString), 'MM/dd/yyyy')
+    return format(new Date(dateString), 'dd/MM/yyyy')
   }
 
   const formatDateTime = (dateString?: string, timeString?: string) => {
@@ -691,25 +702,44 @@ export function HealthRecordCard({
                     </div>
                   )}
 
-                  {record.medication && (
+                  {(record.treatment_medications && record.treatment_medications.length > 0) || record.medication ? (
                     <div>
-                      <p className="text-xs font-semibold text-gray-900 mb-1 flex items-center space-x-1">
+                      <p className="text-xs font-semibold text-gray-900 mb-2 flex items-center space-x-1">
                         <Pill className="w-3 h-3" />
-                        <span>Medication:</span>
+                        <span>Medication{(record.treatment_medications?.length || 0) > 1 ? 's' : ''}:</span>
                       </p>
-                      <p className="text-sm text-gray-800">
-                        {[
-                          record.medication,
-                          record.medication_dosage && `${record.medication_dosage}`,
-                          record.medication_duration && `for ${record.medication_duration}`
-                        ].filter(Boolean).join(' • ')}
-                      </p>
-                      {/* Show general medication field if it exists and is different */}
-                      {record.medication && (
-                        <p className="text-xs text-gray-600 mt-1">{record.medication}</p>
-                      )}
+                      {/* Display medications from treatment_medications table */}
+                      {record.treatment_medications && record.treatment_medications.length > 0 ? (
+                        <div className="space-y-2">
+                          {record.treatment_medications
+                            .sort((a, b) => a.sequence - b.sequence)
+                            .map((med, idx) => (
+                              <div key={med.id} className="bg-blue-50 rounded p-2 border border-blue-200">
+                                <p className="text-sm font-medium text-gray-900">
+                                  {med.medication_name}
+                                </p>
+                                <p className="text-xs text-gray-600 mt-1">
+                                  {[
+                                    med.dosage && `${med.dosage}`,
+                                    med.route && `${med.route}${med.route_other ? ` (${med.route_other})` : ''}`,
+                                    med.duration && `for ${med.duration}`
+                                  ].filter(Boolean).join(' • ')}
+                                </p>
+                              </div>
+                            ))}
+                        </div>
+                      ) : record.medication ? (
+                        /* Fallback to legacy medication field */
+                        <p className="text-sm text-gray-800">
+                          {[
+                            record.medication,
+                            record.medication_dosage && `${record.medication_dosage}`,
+                            record.medication_duration && `for ${record.medication_duration}`
+                          ].filter(Boolean).join(' • ')}
+                        </p>
+                      ) : null}
                     </div>
-                  )}
+                  ) : null}
 
                   {record.treatment_route && (
                     <div className="bg-white rounded p-2 border border-gray-200">
@@ -1443,7 +1473,7 @@ export function HealthRecordCard({
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => onEdit(record.id)}
+                      onClick={() => onEdit(record)}
                       className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                     >
                       <Edit className="h-4 w-4" />
@@ -1608,7 +1638,7 @@ export function HealthRecordCard({
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => onEdit(record.id)}
+                    onClick={() => onEdit(record)}
                     className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                   >
                     <Edit className="w-3 h-3" />
@@ -1902,7 +1932,7 @@ export function HealthRecordCard({
                   variant="outline"
                   onClick={() => {
                     handleCloseModal()
-                    onEdit(record.id)
+                    onEdit(record)
                   }}
                   className="flex items-center justify-center space-x-2"
                 >

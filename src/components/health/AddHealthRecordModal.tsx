@@ -3,7 +3,7 @@
 
 'use client'
 
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -248,7 +248,172 @@ interface AddHealthRecordModalProps {
   originalRecordId?: string
   rootCheckupId?: string | null
   preSelectedHealthIssue?: any | null
+  recordToEdit?: any // For editing existing health records
 }
+
+// Memoized Medications Section Component to prevent re-renders from parent form watchers
+interface MedicationsSectionProps {
+  medications: Array<{
+    id: string
+    name: string
+    dosage: string
+    duration: string
+    route: string
+    route_other?: string
+  }>
+  onAddMedication: () => void
+  onRemoveMedication: (id: string) => void
+  onUpdateMedication: (id: string, field: string, value: string) => void
+}
+
+const MedicationsSection = React.memo(function MedicationsSection({
+  medications,
+  onAddMedication,
+  onRemoveMedication,
+  onUpdateMedication,
+}: MedicationsSectionProps) {
+  return (
+    <div className="border-t pt-6 border-red-200 bg-red-50">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Label className="text-base font-medium">Medications <span className="text-red-600 font-bold">*</span></Label>
+          <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded font-semibold">Required</span>
+        </div>
+        <button
+          type="button"
+          onClick={onAddMedication}
+          className="inline-flex items-center gap-2 px-3 py-2 bg-green-50 text-green-700 border border-green-200 rounded-md hover:bg-green-100 transition-colors text-sm font-medium"
+        >
+          <span>+</span>
+          Add Medication
+        </button>
+      </div>
+
+      {medications.length === 0 ? (
+        <div className="p-4 bg-red-100 border-2 border-red-300 rounded-lg text-red-800 text-sm">
+          <p className="font-semibold mb-2">⚠️ At least one medication is required for treatment records</p>
+          <p>Click "Add Medication" above to add medication details including name, dosage, duration, and route of administration.</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {medications.map((medication, index) => (
+            <div key={medication.id} className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-sm transition-shadow">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-medium text-gray-900">Medication {index + 1}</h4>
+                <button
+                  type="button"
+                  onClick={() => onRemoveMedication(medication.id)}
+                  className="text-red-600 hover:text-red-800 hover:bg-red-50 p-1 rounded transition-colors"
+                  title="Remove medication"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label className="text-xs text-gray-700">Medication Name</Label>
+                  <input
+                    type="text"
+                    value={medication.name}
+                    onChange={(e) => onUpdateMedication(medication.id, 'name', e.target.value)}
+                    placeholder="Penicillin, Oxytetracycline"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs text-gray-700">Dosage</Label>
+                  <input
+                    type="text"
+                    value={medication.dosage}
+                    onChange={(e) => onUpdateMedication(medication.id, 'dosage', e.target.value)}
+                    placeholder="10mg/kg"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs text-gray-700">Duration</Label>
+                  <input
+                    type="text"
+                    value={medication.duration}
+                    onChange={(e) => onUpdateMedication(medication.id, 'duration', e.target.value)}
+                    placeholder="5 days"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent mt-1"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                <div>
+                  <Label className="text-xs text-gray-700">Route of Administration</Label>
+                  <select
+                    value={medication.route}
+                    onChange={(e) => onUpdateMedication(medication.id, 'route', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent mt-1"
+                  >
+                    <option value="">Select route...</option>
+                    <option value="intramuscular">Intramuscular</option>
+                    <option value="subcutaneous">Subcutaneous</option>
+                    <option value="intravenous">Intravenous</option>
+                    <option value="oral">Oral</option>
+                    <option value="topical">Topical</option>
+                    <option value="other">Other (specify)</option>
+                  </select>
+                </div>
+
+                {medication.route === 'other' && (
+                  <div>
+                    <Label className="text-xs text-gray-700">Specify Route</Label>
+                    <input
+                      type="text"
+                      value={medication.route_other || ''}
+                      onChange={(e) => onUpdateMedication(medication.id, 'route_other', e.target.value)}
+                      placeholder="Enter route"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent mt-1"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+})
+
+// Memoized CollapsibleSection Component
+interface CollapsibleSectionProps {
+  title: string
+  isOpen: boolean
+  onToggle: () => void
+  children: React.ReactNode
+}
+
+const CollapsibleSection = React.memo(function CollapsibleSection({
+  title,
+  isOpen,
+  onToggle,
+  children,
+}: CollapsibleSectionProps) {
+  return (
+    <div className="border border-gray-200 rounded-lg">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full px-4 py-3 flex items-center justify-between bg-gray-50 hover:bg-gray-100 rounded-t-lg"
+      >
+        <span className="font-medium text-gray-900">{title}</span>
+        {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+      </button>
+      {isOpen && (
+        <div className="p-4 space-y-4">
+          {children}
+        </div>
+      )}
+    </div>
+  )
+})
 
 export function AddHealthRecordModal({
   farmId,
@@ -260,10 +425,12 @@ export function AddHealthRecordModal({
   preSelectedRecordType,
   originalRecordId,
   rootCheckupId,
-  preSelectedHealthIssue
+  preSelectedHealthIssue,
+  recordToEdit
 }: AddHealthRecordModalProps) {
 
-  console.log('🔍 AddHealthRecordModal component rendered:', { isOpen, farmId, animalsCount: animals?.length })
+  const isEditingMode = !!recordToEdit
+  console.log('🔍 AddHealthRecordModal component rendered:', { isOpen, farmId, animalsCount: animals?.length, isEditingMode, recordId: recordToEdit?.id })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [animalSearch, setAnimalSearch] = useState('')
@@ -278,6 +445,16 @@ export function AddHealthRecordModal({
   // Image upload state
   const [imageFiles, setImageFiles] = useState<File[]>([])
   const [imagePreviews, setImagePreviews] = useState<string[]>([])
+  
+  // Medications state for treatment records
+  const [medications, setMedications] = useState<Array<{
+    id: string
+    name: string
+    dosage: string
+    duration: string
+    route: string
+    route_other?: string
+  }>>([])
   
   // Custom dropdown state
   const [showAnimalDropdown, setShowAnimalDropdown] = useState(false)
@@ -303,44 +480,160 @@ export function AddHealthRecordModal({
 
   useEffect(() => {
   if (isOpen) {
-    let descriptionText = ''
-    let issueId = ''
-    let recordType = (preSelectedRecordType as any) || 'checkup'
-    
-    // If a health issue is pre-selected, use its information
-    if (preSelectedHealthIssue) {
-      issueId = preSelectedHealthIssue.id
-      recordType = mapIssueTypeToRecordType(preSelectedHealthIssue.issue_type)
-      descriptionText = `Follow-up: ${preSelectedHealthIssue.description}${preSelectedHealthIssue.severity ? ` (${preSelectedHealthIssue.severity})` : ''}`
-      setSelectedHealthIssue(preSelectedHealthIssue)
-    }
-    
-    form.reset({
-      animal_id: preSelectedAnimalId || '',
-      record_date: new Date().toISOString().split('T')[0],
-      record_time: '',
-      record_type: recordType,
-      description: descriptionText,
-      linked_health_issue_id: issueId,
-      severity: null as any,
-      illness_severity: null as any,
-      follow_up_required: false,
-      pregnancy_result: 'pending',
-    })
-    
-    // Don't clear health issues if we selected one
-    if (!preSelectedHealthIssue) {
+    if (isEditingMode && recordToEdit) {
+      // Populate form from existing record data
+      console.log('🔍 Populating form with existing record:', recordToEdit.id)
+      
+      // Build medications array from treatment_medications if it's a treatment record
+      let medicationsArray: any[] = []
+      if (recordToEdit.record_type === 'treatment' && recordToEdit.treatment_medications?.length > 0) {
+        medicationsArray = recordToEdit.treatment_medications.map((med: any) => ({
+          id: med.id || `temp-${Date.now()}-${Math.random()}`,
+          name: med.medication_name || '',
+          dosage: med.dosage || '',
+          duration: med.duration || '',
+          route: med.route || '',
+          route_other: med.route_other || '',
+        }))
+      }
+      setMedications(medicationsArray)
+      
+      // Populate all form fields from the existing record
+      form.reset({
+        animal_id: recordToEdit.animal_id || '',
+        record_date: recordToEdit.record_date || new Date().toISOString().split('T')[0],
+        record_time: recordToEdit.record_time || '',
+        record_type: recordToEdit.record_type || 'checkup',
+        description: recordToEdit.description || '',
+        veterinarian: recordToEdit.veterinarian || '',
+        cost: recordToEdit.cost || undefined,
+        notes: recordToEdit.notes || '',
+        physical_exam_notes: recordToEdit.physical_exam_notes || '',
+        
+        // General checkup fields
+        body_condition_score: recordToEdit.body_condition_score || undefined,
+        weight: recordToEdit.weight || undefined,
+        temperature: recordToEdit.temperature || undefined,
+        pulse: recordToEdit.pulse || undefined,
+        respiration: recordToEdit.respiration || undefined,
+        
+        // Vaccination fields
+        vaccine_name: recordToEdit.vaccine_name || '',
+        vaccine_batch_number: recordToEdit.vaccine_batch_number || '',
+        vaccine_dose: recordToEdit.vaccine_dose || '',
+        route_of_administration: recordToEdit.route_of_administration || '',
+        next_due_date: recordToEdit.next_due_date || '',
+        administered_by: recordToEdit.administered_by || '',
+        
+        // Treatment fields
+        diagnosis: recordToEdit.diagnosis || '',
+        medication_name: recordToEdit.medication_name || '',
+        medication_dosage: recordToEdit.medication_dosage || '',
+        medication_duration: recordToEdit.medication_duration || '',
+        treatment_route: recordToEdit.treatment_route || '',
+        withdrawal_period: recordToEdit.withdrawal_period || '',
+        response_notes: recordToEdit.response_notes || '',
+        treating_personnel: recordToEdit.treating_personnel || '',
+        
+        // Injury fields
+        injury_cause: recordToEdit.injury_cause || '',
+        injury_type: recordToEdit.injury_type || '',
+        severity: recordToEdit.severity || (null as any),
+        treatment_given: recordToEdit.treatment_given || '',
+        follow_up_required: recordToEdit.follow_up_required || false,
+        
+        // Illness fields
+        symptoms: recordToEdit.symptoms || '',
+        illness_diagnosis: recordToEdit.illness_diagnosis || '',
+        illness_severity: recordToEdit.illness_severity || (null as any),
+        lab_test_results: recordToEdit.lab_test_results || '',
+        treatment_plan: recordToEdit.treatment_plan || '',
+        recovery_outcome: recordToEdit.recovery_outcome || '',
+        
+        // Reproductive health fields
+        reproductive_type: recordToEdit.reproductive_type || '',
+        sire_id: recordToEdit.sire_id || '',
+        pregnancy_result: recordToEdit.pregnancy_result || 'pending',
+        calving_outcome: recordToEdit.calving_outcome || '',
+        complications: recordToEdit.complications || '',
+        
+        // Deworming fields
+        product_used: recordToEdit.product_used || '',
+        deworming_dose: recordToEdit.deworming_dose || '',
+        next_deworming_date: recordToEdit.next_deworming_date || '',
+        deworming_administered_by: recordToEdit.deworming_administered_by || '',
+        
+        // Dehorning fields
+        dehorning_method: recordToEdit.dehorning_method || '',
+        dehorning_reason: recordToEdit.dehorning_reason || '',
+        dehorning_date: recordToEdit.dehorning_date || '',
+        dehorning_age: recordToEdit.dehorning_age || undefined,
+        dehorning_veterinarian: recordToEdit.dehorning_veterinarian || '',
+        anesthesia_used: recordToEdit.anesthesia_used || false,
+        anesthesia_type: recordToEdit.anesthesia_type || '',
+        post_dehorning_care: recordToEdit.post_dehorning_care || '',
+        dehorning_complications: recordToEdit.dehorning_complications || '',
+        
+        // Post-mortem fields
+        cause_of_death: recordToEdit.cause_of_death || '',
+        death_circumstances: recordToEdit.death_circumstances || '',
+        necropsy_performed: recordToEdit.necropsy_performed || false,
+        necropsy_findings: recordToEdit.necropsy_findings || '',
+        suspected_disease: recordToEdit.suspected_disease || '',
+        location_of_death: recordToEdit.location_of_death || '',
+        body_disposal_method: recordToEdit.body_disposal_method || '',
+        post_mortem_notes: recordToEdit.post_mortem_notes || '',
+        
+        // Linking fields
+        linked_health_issue_id: recordToEdit.linked_health_issue_id || '',
+      })
+      
       setHealthIssues([])
       setSelectedHealthIssue(null)
+    } else {
+      // Create mode - existing logic
+      let descriptionText = ''
+      let issueId = ''
+      let recordType = (preSelectedRecordType as any) || 'checkup'
+      
+      // If a health issue is pre-selected, use its information
+      if (preSelectedHealthIssue) {
+        issueId = preSelectedHealthIssue.id
+        recordType = mapIssueTypeToRecordType(preSelectedHealthIssue.issue_type)
+        descriptionText = `Follow-up: ${preSelectedHealthIssue.description}${preSelectedHealthIssue.severity ? ` (${preSelectedHealthIssue.severity})` : ''}`
+        setSelectedHealthIssue(preSelectedHealthIssue)
+      }
+      
+      form.reset({
+        animal_id: preSelectedAnimalId || '',
+        record_date: new Date().toISOString().split('T')[0],
+        record_time: '',
+        record_type: recordType,
+        description: descriptionText,
+        linked_health_issue_id: issueId,
+        severity: null as any,
+        illness_severity: null as any,
+        follow_up_required: false,
+        pregnancy_result: 'pending',
+      })
+      
+      // Clear medications when form resets
+      setMedications([])
+      
+      // Don't clear health issues if we selected one
+      if (!preSelectedHealthIssue) {
+        setHealthIssues([])
+        setSelectedHealthIssue(null)
+      }
+      
+      // Auto-focus search input with a small delay to ensure DOM is ready
+      setTimeout(() => {
+        animalSearchInputRef.current?.focus()
+        animalSearchInputRef.current?.select()
+      }, 100)
     }
-    
-    // Auto-focus search input with a small delay to ensure DOM is ready
-    setTimeout(() => {
-      animalSearchInputRef.current?.focus()
-      animalSearchInputRef.current?.select()
-    }, 100)
   }
-}, [isOpen, preSelectedAnimalId, preSelectedRecordType, preSelectedHealthIssue, form])
+}, [isOpen, preSelectedAnimalId, preSelectedRecordType, preSelectedHealthIssue, recordToEdit, form])
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -451,6 +744,29 @@ export function AddHealthRecordModal({
     }
   }, [selectedAnimalId, fetchHealthIssuesForAnimal])
 
+  // Medication management functions
+  const addMedication = useCallback(() => {
+    const newMedication = {
+      id: Date.now().toString(),
+      name: '',
+      dosage: '',
+      duration: '',
+      route: '',
+      route_other: '',
+    }
+    setMedications((prev) => [...prev, newMedication])
+  }, [])
+
+  const removeMedication = useCallback((id: string) => {
+    setMedications((prev) => prev.filter((med) => med.id !== id))
+  }, [])
+
+  const updateMedication = useCallback((id: string, field: string, value: string) => {
+    setMedications((prev) =>
+      prev.map((med) => (med.id === id ? { ...med, [field]: value } : med))
+    )
+  }, [])
+
   // Handle health issue selection
   const handleSelectHealthIssue = useCallback((issue: any) => {
     console.log('🔍 Health issue selected:', issue.id, issue.description)
@@ -501,6 +817,17 @@ export function AddHealthRecordModal({
   const watchedComplications = form.watch('complications')
   const watchedProductUsed = form.watch('product_used')
   const watchedNecropsy = form.watch('necropsy_performed')
+
+  // Auto-expand treatment section when treatment type is selected
+  useEffect(() => {
+    if (watchedRecordType === 'treatment') {
+      setCollapsedSections((prev) => {
+        const newSet = new Set(prev)
+        newSet.delete('treatment') // Remove 'treatment' from collapsed sections to expand it
+        return newSet
+      })
+    }
+  }, [watchedRecordType])
 
   // Filter and search animals
   const filteredAnimals = useMemo(() => {
@@ -576,6 +903,8 @@ export function AddHealthRecordModal({
 
   const handleSubmit = useCallback(async (data: HealthRecordFormData) => {
     console.log('\n🚀 ========== HANDLE SUBMIT CALLED ==========')
+    console.log('🚀 Mode:', isEditingMode ? 'EDIT' : 'CREATE')
+    console.log('🚀 Record ID:', recordToEdit?.id || 'N/A')
     console.log('🚀 Raw form data:', data);
     console.log(`🚀 Current imageFiles state: ${imageFiles.length} files`)
     imageFiles.forEach((f, i) => console.log(`  ${i+1}. ${f.name} (${f.type}, ${f.size} bytes)`))
@@ -625,6 +954,8 @@ export function AddHealthRecordModal({
         complications: data.complications === 'other' ? data.complications_other : data.complications,
         product_used: data.product_used === 'other' ? data.product_used_other : data.product_used,
         dehorning_method: data.dehorning_method === 'other' ? data.dehorning_method_other : data.dehorning_method,
+        // Add medications if record type is treatment
+        medications: data.record_type === 'treatment' ? medications : undefined,
       } as any
 
       // Remove the "_other" fields from the final payload
@@ -662,13 +993,16 @@ export function AddHealthRecordModal({
       console.log('📦 Record Type:', data.record_type)
       console.log('📦 Description:', data.description)
 
+      const apiUrl = isEditingMode ? `/api/health/records/${recordToEdit.id}` : '/api/health/records'
+      const apiMethod = isEditingMode ? 'PUT' : 'POST'
+      
       console.log('\n🌐 ========== API REQUEST ==========')
-      console.log('🌐 URL: /api/health/records')
-      console.log('🌐 Method: POST')
+      console.log('🌐 URL:', apiUrl)
+      console.log('🌐 Method:', apiMethod)
       console.log('🌐 Payload:', JSON.stringify(processedData, null, 2))
 
-      const response = await fetch('/api/health/records', {
-        method: 'POST',
+      const response = await fetch(apiUrl, {
+        method: apiMethod,
         headers: {
           'Content-Type': 'application/json',
         },
@@ -764,6 +1098,7 @@ export function AddHealthRecordModal({
       })
       setImageFiles([])
       setImagePreviews([])
+      setMedications([])
       setAnimalSearch('')
       onClose()
 
@@ -784,7 +1119,7 @@ export function AddHealthRecordModal({
       console.log('\n🏁 ========== SUBMISSION COMPLETE ==========')
       setLoading(false);
     }
-  }, [farmId, onRecordAdded, onClose, form, originalRecordId, rootCheckupId, imageFiles, imagePreviews])
+  }, [farmId, onRecordAdded, onClose, form, originalRecordId, rootCheckupId, imageFiles, imagePreviews, medications, recordToEdit, isEditingMode])
 
   const getRecordTypeIcon = (type: string) => {
     switch (type) {
@@ -811,29 +1146,6 @@ export function AddHealthRecordModal({
     setCollapsedSections(newCollapsed)
   }
 
-  const CollapsibleSection = ({ title, isOpen, onToggle, children }: {
-    title: string
-    isOpen: boolean
-    onToggle: () => void
-    children: React.ReactNode
-  }) => (
-    <div className="border border-gray-200 rounded-lg">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="w-full px-4 py-3 flex items-center justify-between bg-gray-50 hover:bg-gray-100 rounded-t-lg"
-      >
-        <span className="font-medium text-gray-900">{title}</span>
-        {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-      </button>
-      {isOpen && (
-        <div className="p-4 space-y-4">
-          {children}
-        </div>
-      )}
-    </div>
-  )
-
   const selectedAnimal = animals.find(a => a.id === form.watch('animal_id'))
 
   return (
@@ -843,7 +1155,7 @@ export function AddHealthRecordModal({
         <div className="mb-6">
           <h3 className="text-xl font-semibold text-gray-900 flex items-center space-x-2">
             <Stethoscope className="w-6 h-6 text-farm-green" />
-            <span>Add Health Record</span>
+            <span>{isEditingMode ? 'Edit Health Record' : 'Add Health Record'}</span>
           </h3>
         </div>
 
@@ -917,6 +1229,30 @@ export function AddHealthRecordModal({
                 console.log('✅ Description:', data.description)
                 console.log('✅ Severity:', data.severity)
                 console.log('✅ Illness Severity:', data.illness_severity)
+                
+                // Additional validation: Treatment records must have at least one medication
+                if (data.record_type === 'treatment') {
+                  console.log('💊 ========== TREATMENT MEDICATION VALIDATION ==========')
+                  console.log(`💊 Medications count: ${medications.length}`)
+                  console.log(`💊 Medications:`, medications)
+                  
+                  if (!medications || medications.length === 0) {
+                    console.error('❌ Treatment record requires at least one medication')
+                    setError('Treatment records require at least one medication. Please click "Add Medication" to add medication details.')
+                    return
+                  }
+                  
+                  // Validate that all medications have at least a name
+                  const validMeds = medications.filter((med: any) => med.name && med.name.trim().length > 0)
+                  if (validMeds.length === 0) {
+                    console.error('❌ All medications have empty names')
+                    setError('All added medications have empty names. Please fill in at least the medication name for each medication.')
+                    return
+                  }
+                  
+                  console.log(`✅ Medication validation passed: ${validMeds.length} valid medications`)
+                }
+                
                 handleSubmit(data);
               },
               (errors) => {
@@ -944,7 +1280,19 @@ export function AddHealthRecordModal({
                 type="text"
                 placeholder="Search by tag number, name, or breed..."
                 value={animalSearch}
-                onChange={(e) => setAnimalSearch(e.target.value)}
+                onChange={(e) => {
+                  setAnimalSearch(e.target.value)
+                  // Auto-open dropdown when user types
+                  if (e.target.value && !showAnimalDropdown) {
+                    setShowAnimalDropdown(true)
+                  }
+                }}
+                onFocus={() => {
+                  // Open dropdown when input is focused
+                  if (!showAnimalDropdown) {
+                    setShowAnimalDropdown(true)
+                  }
+                }}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
                 aria-label="Search animals"
               />
@@ -1016,15 +1364,31 @@ export function AddHealthRecordModal({
                       #{selectedAnimal.tag_number} • {selectedAnimal.breed}
                     </p>
                   </div>
+                ) : animalSearch ? (
+                  <div className="flex-1">
+                    <p className="text-gray-700 font-medium">Searching...</p>
+                    <p className="text-sm text-gray-500">
+                      {filteredAnimals.length === 0 ? 'No matches found' : `${filteredAnimals.length} ${filteredAnimals.length === 1 ? 'animal' : 'animals'} found`}
+                    </p>
+                  </div>
                 ) : (
                   <span className="text-gray-500">Choose an animal...</span>
                 )}
-                <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${showAnimalDropdown ? 'rotate-180' : ''}`} />
+                <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform flex-shrink-0 ${showAnimalDropdown ? 'rotate-180' : ''}`} />
               </button>
 
               {/* Custom Dropdown Menu */}
               {showAnimalDropdown && (
                 <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-h-96 overflow-y-auto">
+                  {/* Search Results Header */}
+                  {animalSearch && filteredAnimals.length > 0 && (
+                    <div className="sticky top-0 px-4 py-2 bg-farm-green/5 border-b border-gray-200">
+                      <p className="text-xs font-medium text-gray-600">
+                        Found <span className="font-bold text-farm-green">{filteredAnimals.length}</span> {filteredAnimals.length === 1 ? 'animal' : 'animals'} matching "{animalSearch}"
+                      </p>
+                    </div>
+                  )}
+
                   {filteredAnimals.length === 0 ? (
                     <div className="p-8 text-center text-gray-500">
                       <p className="text-sm">
@@ -1495,69 +1859,22 @@ export function AddHealthRecordModal({
                 />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <Label htmlFor="medication_name">Medication Name</Label>
-                  <Input
-                    id="medication_name"
-                    {...form.register('medication_name')}
-                    placeholder="Penicillin, Oxytetracycline"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="medication_dosage">Dosage</Label>
-                  <Input
-                    id="medication_dosage"
-                    {...form.register('medication_dosage')}
-                    placeholder="10mg/kg"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="medication_duration">Duration</Label>
-                  <Input
-                    id="medication_duration"
-                    {...form.register('medication_duration')}
-                    placeholder="5 days"
-                  />
-                </div>
+              {/* Medications Section - Memoized to prevent re-renders */}
+              <MedicationsSection
+                medications={medications}
+                onAddMedication={addMedication}
+                onRemoveMedication={removeMedication}
+                onUpdateMedication={updateMedication}
+              />
+
+              <div>
+                <Label htmlFor="withdrawal_period">Withdrawal Period</Label>
+                <Input
+                  id="withdrawal_period"
+                  {...form.register('withdrawal_period')}
+                  placeholder="Milk: 3 days, Meat: 14 days"
+                />
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="treatment_route">Route of Administration</Label>
-                  <select
-                    id="treatment_route"
-                    {...form.register('treatment_route')}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
-                  >
-                    <option value="">Select route...</option>
-                    <option value="intramuscular">Intramuscular</option>
-                    <option value="subcutaneous">Subcutaneous</option>
-                    <option value="intravenous">Intravenous</option>
-                    <option value="oral">Oral</option>
-                    <option value="topical">Topical</option>
-                    <option value="other">Other (specify)</option>
-                  </select>
-                  {watchedTreatmentRoute === 'other' && (
-                    <Input
-                      {...form.register('treatment_route_other')}
-                      placeholder="Enter route"
-                      className="mt-2"
-                    />
-                  )}
-                </div>
-
-                <div>
-                  <Label htmlFor="withdrawal_period">Withdrawal Period</Label>
-                  <Input
-                    id="withdrawal_period"
-                    {...form.register('withdrawal_period')}
-                    placeholder="Milk: 3 days, Meat: 14 days"
-                  />
-                </div>
-              </div>
-
-
 
               <div>
                 <Label htmlFor="response_notes">Response/Progress Notes</Label>
@@ -2256,20 +2573,7 @@ export function AddHealthRecordModal({
             )}
           </div>
 
-          {/* Debug Panel - Remove in production */}
-          <div className="mt-6 p-3 bg-gray-900 text-gray-100 rounded-lg font-mono text-xs space-y-1">
-            <div className="text-yellow-400 font-bold">🔍 DEBUG PANEL</div>
-            <div><span className="text-blue-400">Animal Selected:</span> {form.watch('animal_id') ? '✓ ' + selectedAnimal?.tag_number : '✗ None'}</div>
-            <div><span className="text-blue-400">Record Type:</span> {form.watch('record_type')}</div>
-            <div><span className="text-blue-400">Description:</span> {form.watch('description')?.substring(0, 30)}...</div>
-            <div><span className="text-blue-400">Severity:</span> {form.watch('severity') ? form.watch('severity') : 'null'}</div>
-            <div><span className="text-blue-400">Illness Severity:</span> {form.watch('illness_severity') ? form.watch('illness_severity') : 'null'}</div>
-            <div><span className="text-blue-400">Form Valid:</span> {form.formState.isValid ? '✓' : '✗'}</div>
-            <div><span className="text-blue-400">Button Disabled:</span> {loading || !form.watch('animal_id') ? '✓ Yes' : '✗ No'}</div>
-            <div><span className="text-blue-400">Loading:</span> {loading ? '✓ Yes' : '✗ No'}</div>
-            <div><span className="text-red-400">Form Errors:</span> {Object.keys(form.formState.errors).length > 0 ? '⚠️ ' + Object.keys(form.formState.errors).join(', ') : 'None'}</div>
-            <div className="text-gray-500 mt-2">→ Open DevTools (F12 → Console) to see detailed logs</div>
-          </div>
+          
 
           {/* Action Buttons */}
           <div className="flex justify-end space-x-3 pt-6 border-t">

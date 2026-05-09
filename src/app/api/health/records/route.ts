@@ -153,7 +153,10 @@ export async function POST(request: NextRequest) {
       necropsy_performed,
       necropsy_findings,
       body_disposal_method,
-      post_mortem_notes
+      post_mortem_notes,
+      
+      // Multiple medications (new)
+      medications = []
     } = body
     
     // Validate required fields
@@ -162,7 +165,7 @@ export async function POST(request: NextRequest) {
     
     if (!animal_id) validationErrors.push('animal_id is required')
     if (!record_date) validationErrors.push('record_date is required')
-    if (!record_time) validationErrors.push('record_time is required')
+    // record_time is optional, don't validate it as required
     if (!record_type) validationErrors.push('record_type is required')
     if (!description) validationErrors.push('description is required')
     
@@ -301,7 +304,10 @@ export async function POST(request: NextRequest) {
       
       // Treatment tracking fields
       treatment_effectiveness: treatment_effectiveness || null,
-      medication_changes: medication_changes || null
+      medication_changes: medication_changes || null,
+      
+      // Multiple medications
+      medications: Array.isArray(medications) && medications.length > 0 ? medications : null
     }
     
     // Log data preparation
@@ -320,6 +326,114 @@ export async function POST(request: NextRequest) {
     
     // Log successful insert
     logDatabaseInsert(operationId, 'animal_health_records', result.data.id, recordData)
+    
+    // Insert medications into treatment_medications table for treatment records
+    let medicationsInserted = 0
+    console.log(`\n💊 ========== MEDICATION INSERTION CHECK ==========`)
+    console.log(`💊 record_type: ${record_type} (type: ${typeof record_type})`)
+    console.log(`💊 record_type === 'treatment': ${record_type === 'treatment'}`)
+    console.log(`💊 Array.isArray(medications): ${Array.isArray(medications)}`)
+    console.log(`💊 medications.length: ${medications?.length || 0}`)
+    console.log(`💊 result.data exists: ${!!result.data}`)
+    console.log(`💊 result.data.id: ${result.data?.id}`)
+    console.log(`💊 Combined condition result: ${record_type === 'treatment' && Array.isArray(medications) && medications.length > 0 && result.data}`)
+    
+    if (record_type === 'treatment' && Array.isArray(medications) && medications.length > 0 && result.data) {
+      console.log(`💊 Inserting ${medications.length} medications for treatment record ${result.data.id}`)
+      
+      try {
+        // Filter out empty medications - validate required fields
+        const validMedications = medications.filter((med: any) => {
+          const hasName = med.name && med.name.trim().length > 0
+          console.log(`💊 Medication validation - name: "${med.name}", hasName: ${hasName}`)
+          return hasName
+        })
+        console.log(`💊 Valid medications after filtering: ${validMedications.length} out of ${medications.length}`)
+        
+        if (validMedications.length === 0) {
+          console.warn(`⚠️ No valid medications found after filtering - all medications have empty names`)
+          console.warn(`⚠️ Medications received:`, JSON.stringify(medications, null, 2))
+        } else {
+          const medicationRows = validMedications.map((med: any, index: number) => {
+            // Provide default values for required fields when empty
+            const row = {
+              health_record_id: result.data.id,
+              medication_name: (med.name || med.medication_name || '').trim() || 'Medication',  // Default value if empty
+              dosage: (med.dosage || '').trim() || 'As prescribed',  // Default value if empty
+              duration: (med.duration || '').trim() || 'As needed',   // Default value if empty
+              route: (med.route || '').trim() || 'Oral',             // Default value if empty
+              route_other: (med.route_other || '').trim() || null,
+              sequence: index + 1,
+              created_by: user.id,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            }
+            console.log(`💊 Medication ${index + 1} prepared:`, JSON.stringify(row, null, 2))
+            return row
+          })
+          
+          console.log(`💊 Attempting to insert ${medicationRows.length} medication rows into database...`)
+          console.log(`💊 Current user.id: ${user.id}`)
+          console.log(`💊 Health record ID: ${result.data.id}`)
+          
+          // Debug: Check if health record actually exists before trying to link
+          const { data: healthRecordCheck, error: checkError } = await (supabase as any)
+            .from('animal_health_records')
+            .select('id')
+            .eq('id', result.data.id)
+            .single()
+          
+          if (checkError) {
+            console.error(`❌ Health record check failed:`, checkError)
+            console.error(`❌ Cannot verify health record exists - may cause FK constraint error`)
+          } else {
+            console.log(`✅ Health record verified - ID exists and is accessible`)
+          }
+          
+          const { data: insertedMeds, error: medsError } = await (supabase as any)
+            .from('treatment_medications')
+            .insert(medicationRows)
+            .select()
+          
+          if (medsError) {
+            console.error(`❌ ========== MEDICATION INSERT ERROR ==========`)
+            console.error(`❌ Error code: ${medsError.code}`)
+            console.error(`❌ Error message: ${medsError.message}`)
+            console.error(`❌ Error hint: ${(medsError as any).hint}`)
+            console.error(`❌ Error details:`, JSON.stringify(medsError, null, 2))
+            console.error(`❌ Attempted to insert:`, JSON.stringify(medicationRows, null, 2))
+            logRelationshipCreation(operationId, 'treatment_medications', 
+              { health_record_id: result.data.id, count: validMedications.length }, 
+              'N/A', `${medsError.code}: ${medsError.message}`)
+          } else {
+            medicationsInserted = insertedMeds?.length || 0
+            console.log(`✅ ========== MEDICATION INSERT SUCCESS ==========`)
+            console.log(`✅ Successfully inserted ${medicationsInserted} medications`)
+            console.log(`✅ Inserted records:`, JSON.stringify(insertedMeds, null, 2))
+            logRelationshipCreation(operationId, 'treatment_medications', 
+              { health_record_id: result.data.id, count: validMedications.length }, 
+              `${medicationsInserted} medications inserted`)
+          }
+        }
+      } catch (medError) {
+        console.error(`❌ ========== MEDICATION EXCEPTION ==========`)
+        console.error(`❌ Exception type: ${medError instanceof Error ? medError.constructor.name : typeof medError}`)
+        if (medError instanceof Error) {
+          console.error(`❌ Error name: ${medError.name}`)
+          console.error(`❌ Error message: ${medError.message}`)
+          console.error(`❌ Stack: ${medError.stack}`)
+        } else {
+          console.error(`❌ Error details:`, medError)
+        }
+      }
+    } else {
+      console.log(`⚠️ ========== SKIPPING MEDICATION INSERTION ==========`)
+      console.log(`⚠️ Condition checks:`)
+      console.log(`   - record_type === 'treatment': ${record_type === 'treatment'} (actual: "${record_type}")`)
+      console.log(`   - Array.isArray(medications): ${Array.isArray(medications)} (actual: ${typeof medications})`)
+      console.log(`   - medications.length > 0: ${medications?.length > 0} (actual: ${medications?.length})`)
+      console.log(`   - result.data exists: ${!!result.data} (id: ${result.data?.id})`)
+    }
     
     // If this is a follow-up record, create the relationship in health_record_follow_ups table
     if (is_follow_up && original_record_id && result.data) {
@@ -375,12 +489,19 @@ export async function POST(request: NextRequest) {
       animalHealthStatusUpdated?: boolean;
       newHealthStatus?: string;
       updatedAnimal?: any;
+      medicationsInserted?: number;
     } = { 
       success: true, 
       record: result.data,
       message: is_follow_up 
         ? 'Follow-up health record created successfully'
         : 'Health record created successfully'
+    }
+    
+    // Include medication insertion info
+    if (record_type === 'treatment' && medicationsInserted > 0) {
+      response.medicationsInserted = medicationsInserted
+      response.message += ` with ${medicationsInserted} medication${medicationsInserted !== 1 ? 's' : ''}`
     }
     
     // Include animal health status update info if available
@@ -429,26 +550,60 @@ export async function GET(request: NextRequest) {
       limit
     })
 
+    // Create supabase client for medication fetching
+    const supabase = await createServerSupabaseClient()
+    
     let healthRecords
 
     if (includeFollowUps) {
-  const recordsWithFollowUps = await Promise.all(
-    baseRecords.map(async (record: any) => {
-      // CURRENT - LIMITED:
-      // if (['illness', 'injury', 'treatment', 'checkup'].includes(record.record_type)) {
-      
-      // UPDATED - ALL TYPES CAN HAVE FOLLOW-UPS:
-      const followUps = await getFollowUpRecords(record.id, userRole.farm_id!)
-      return {
-        ...record,
-        follow_ups: followUps
-      }
-    })
-  )
+      const recordsWithFollowUps = await Promise.all(
+        baseRecords.map(async (record: any) => {
+          // CURRENT - LIMITED:
+          // if (['illness', 'injury', 'treatment', 'checkup'].includes(record.record_type)) {
+          
+          // UPDATED - ALL TYPES CAN HAVE FOLLOW-UPS:
+          const followUps = await getFollowUpRecords(record.id, userRole.farm_id!)
+          
+          // Add medications for treatment records
+          let medications = []
+          if (record.record_type === 'treatment') {
+            const { data: meds } = await (supabase as any)
+              .from('treatment_medications')
+              .select('*')
+              .eq('health_record_id', record.id)
+              .order('sequence', { ascending: true })
+            medications = meds || []
+          }
+          
+          return {
+            ...record,
+            follow_ups: followUps,
+            treatment_medications: medications
+          }
+        })
+      )
 
       healthRecords = recordsWithFollowUps
     } else {
-      healthRecords = baseRecords
+      // Add medications for treatment records even without follow-ups
+      const recordsWithMeds = await Promise.all(
+        baseRecords.map(async (record: any) => {
+          let medications = []
+          if (record.record_type === 'treatment') {
+            const { data: meds } = await (supabase as any)
+              .from('treatment_medications')
+              .select('*')
+              .eq('health_record_id', record.id)
+              .order('sequence', { ascending: true })
+            medications = meds || []
+          }
+          return {
+            ...record,
+            treatment_medications: medications
+          }
+        })
+      )
+      healthRecords = recordsWithMeds
     }
 
     return NextResponse.json({ 

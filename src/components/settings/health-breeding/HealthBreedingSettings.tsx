@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select'
 import { Switch } from '@/components/ui/Switch'
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/AlertDialog'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import {
     Heart,
@@ -47,6 +48,12 @@ export default function HealthBreedingSettings({
     const [activeTab, setActiveTab] = useState('breeding')
     const [isLoading, setIsLoading] = useState(false)
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+    const [validationErrors, setValidationErrors] = useState<Record<string, string>>({})
+    
+    // Dialog state management
+    const [saveDialogOpen, setSaveDialogOpen] = useState(false)
+    const [resetDialogOpen, setResetDialogOpen] = useState(false)
+    const [leaveDialogOpen, setLeaveDialogOpen] = useState(false)
 
     // Breeding Cycle Configuration
     const [cycleSettings, setCycleSettings] = useState({
@@ -171,14 +178,11 @@ export default function HealthBreedingSettings({
     }, [cycleSettings, heatSettings, inseminationSettings, pregnancySettings, calvingSettings, smartAlerts])
 
     const handleSaveSettings = async () => {
-        const userConfirmed = window.confirm(
-            `Are you sure you want to save these breeding settings?\n\n` +
-            `This will update your farm's breeding cycle management configuration.\n\n` +
-            `Click OK to proceed or Cancel to review your settings.`
-        )
+        setSaveDialogOpen(true)
+    }
 
-        if (!userConfirmed) return
-
+    const confirmSaveSettings = async () => {
+        setSaveDialogOpen(false)
         setIsLoading(true)
         try {
             const response = await fetch('/api/settings/health-breeding', {
@@ -221,14 +225,11 @@ export default function HealthBreedingSettings({
     }
 
     const resetToDefaults = () => {
-        const confirmed = window.confirm(
-            `⚠️ Reset to Default Settings?\n\n` +
-            `This will reset all breeding settings to their default values.\n\n` +
-            `Are you sure you want to continue?`
-        )
+        setResetDialogOpen(true)
+    }
 
-        if (!confirmed) return
-
+    const confirmResetToDefaults = () => {
+        setResetDialogOpen(false)
 
         setCycleSettings({ minimumBreedingAgeMonths: 15, defaultCycleInterval: 21, autoCreateNextEvent: true, alertType: ['app', 'sms'] })
         setHeatSettings({ detectionMethod: 'manual', responsibleUser: 'worker', missedHeatAlert: 25, reminderFrequency: 'daily' })
@@ -242,11 +243,14 @@ export default function HealthBreedingSettings({
 
     const handleBack = () => {
         if (hasUnsavedChanges) {
-            const confirmed = window.confirm(
-                `⚠️ Unsaved Changes\n\nYou have unsaved changes. Are you sure you want to leave?`
-            )
-            if (!confirmed) return
+            setLeaveDialogOpen(true)
+        } else {
+            window.history.back()
         }
+    }
+
+    const confirmLeaveWithoutSaving = () => {
+        setLeaveDialogOpen(false)
         window.history.back()
     }
 
@@ -881,6 +885,79 @@ export default function HealthBreedingSettings({
                     veterinarians={veterinarians}
                 />
             )}
+
+            {/* Save Settings Confirmation Dialog */}
+            <AlertDialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="flex items-center gap-2">
+                            <Save className="w-5 h-5 text-blue-600" />
+                            Save Breeding Settings?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Are you sure you want to save these breeding settings? This will update your farm's breeding cycle management configuration.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction 
+                            onClick={confirmSaveSettings}
+                            disabled={isLoading}
+                            className="bg-blue-600 hover:bg-blue-700"
+                        >
+                            {isLoading ? 'Saving...' : 'Save Settings'}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            {/* Reset to Defaults Confirmation Dialog */}
+            <AlertDialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="flex items-center gap-2">
+                            <AlertTriangle className="w-5 h-5 text-orange-600" />
+                            Reset to Default Settings?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This will reset all breeding settings to their default values. This action cannot be undone. Are you sure you want to continue?
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction 
+                            onClick={confirmResetToDefaults}
+                            className="bg-orange-600 hover:bg-orange-700"
+                        >
+                            Reset to Defaults
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            {/* Unsaved Changes Confirmation Dialog */}
+            <AlertDialog open={leaveDialogOpen} onOpenChange={setLeaveDialogOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="flex items-center gap-2">
+                            <AlertTriangle className="w-5 h-5 text-amber-600" />
+                            Unsaved Changes
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                            You have unsaved changes. Are you sure you want to leave without saving?
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Keep Editing</AlertDialogCancel>
+                        <AlertDialogAction 
+                            onClick={confirmLeaveWithoutSaving}
+                            className="bg-red-600 hover:bg-red-700"
+                        >
+                            Leave Without Saving
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     )
 }

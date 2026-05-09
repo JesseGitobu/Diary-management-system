@@ -8,7 +8,6 @@ import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { AddHealthRecordModal } from '@/components/health/AddHealthRecordModal'
 import { FollowUpHealthRecordModal } from '@/components/health/FollowUpHealthRecordModal'
-import { EditHealthRecordModal } from '@/components/health/EditHealthRecordModal'
 import { HealthIssueCard } from '@/components/health/HealthIssueCard'
 import { HealthRecordCard } from '@/components/health/HealthRecordCard'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
@@ -79,10 +78,10 @@ export function AnimalHealthRecords({ animalId, farmId, animals, canAddRecords }
   // Modal states
   const [showAddModal, setShowAddModal] = useState(false)
   const [showFollowUpModal, setShowFollowUpModal] = useState(false)
-  const [showEditModal, setShowEditModal] = useState(false)
   
   // Record states
   const [selectedRecord, setSelectedRecord] = useState<HealthRecord | null>(null)
+  const [editingRecord, setEditingRecord] = useState<HealthRecord | null>(null)
   const [deletingRecordId, setDeletingRecordId] = useState<string | null>(null)
   const [creatingRecordFromIssueId, setCreatingRecordFromIssueId] = useState<string | null>(null)
   
@@ -178,13 +177,13 @@ export function AnimalHealthRecords({ animalId, farmId, animals, canAddRecords }
         record.id === updatedRecord.id ? updatedRecord : record
       )
     )
-    setShowEditModal(false)
-    setSelectedRecord(null)
+    setShowAddModal(false)
+    setEditingRecord(null)
   }
 
   const handleEdit = (record: HealthRecord) => {
-    setSelectedRecord(record)
-    setShowEditModal(true)
+    setEditingRecord(record)
+    setShowAddModal(true)
   }
 
   const handleFollowUp = (record: HealthRecord) => {
@@ -465,10 +464,18 @@ export function AnimalHealthRecords({ animalId, farmId, animals, canAddRecords }
           isOpen={showAddModal}
           onClose={() => {
             setShowAddModal(false)
+            setEditingRecord(null)
             setCreatingRecordFromIssueId(null)
           }}
-          onRecordAdded={handleRecordAdded}
+          onRecordAdded={(record) => {
+            if (editingRecord) {
+              handleRecordUpdated(record)
+            } else {
+              handleRecordAdded(record)
+            }
+          }}
           preSelectedAnimalId={animalId}
+          recordToEdit={editingRecord || undefined}
         />
       )}
 
@@ -482,20 +489,6 @@ export function AnimalHealthRecords({ animalId, farmId, animals, canAddRecords }
             setSelectedRecord(null)
           }}
           onFollowUpAdded={handleFollowUpAdded}
-        />
-      )}
-
-      {showEditModal && selectedRecord && (
-        <EditHealthRecordModal
-          record={selectedRecord}
-          farmId={farmId}
-          animals={animals}
-          isOpen={showEditModal}
-          onClose={() => {
-            setShowEditModal(false)
-            setSelectedRecord(null)
-          }}
-          onRecordUpdated={handleRecordUpdated}
         />
       )}
     </div>

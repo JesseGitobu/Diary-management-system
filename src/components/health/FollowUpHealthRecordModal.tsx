@@ -19,12 +19,12 @@ const followUpSchema = z.object({
   record_date: z.string().min(1, 'Follow-up date is required'),
   status: z.enum(['improving', 'stable', 'worsening', 'recovered', 'requires_attention']),
   description: z.string().min(10, 'Description must be at least 10 characters'),
-  veterinarian: z.string().optional(),
-  cost: z.number().min(0, 'Cost must be positive').optional(),
-  notes: z.string().optional(),
-  next_followup_date: z.string().optional(),
-  medication_changes: z.string().optional(),
-  treatment_effectiveness: z.enum(['very_effective', 'effective', 'somewhat_effective', 'not_effective']).optional(),
+  veterinarian: z.string().optional().nullable(),
+  cost: z.coerce.number().min(0, 'Cost must be positive').nullable().optional(),
+  notes: z.string().optional().nullable(),
+  next_followup_date: z.string().optional().nullable(),
+  medication_changes: z.string().optional().nullable(),
+  treatment_effectiveness: z.enum(['very_effective', 'effective', 'somewhat_effective', 'not_effective']).optional().nullable(),
   resolved: z.boolean().optional(),
 })
 
@@ -74,6 +74,11 @@ export function FollowUpHealthRecordModal({
       status: 'stable',
       treatment_effectiveness: 'effective',
       resolved: false,
+      cost: null,
+      veterinarian: '',
+      medication_changes: '',
+      notes: '',
+      next_followup_date: '',
     },
   })
 
@@ -347,8 +352,7 @@ export function FollowUpHealthRecordModal({
 
             <div>
               <Label htmlFor="cost" className="flex items-center space-x-2">
-                <DollarSign className="w-4 h-4" />
-                <span>Cost (Optional)</span>
+                <span>Cost - Kes (Optional)</span>
               </Label>
               <Input
                 id="cost"
