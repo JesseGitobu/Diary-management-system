@@ -15,6 +15,21 @@ export interface DistributionChannel {
   location: string | null
   paymentTerms: string | null
   notes: string | null
+  isPaidFor: boolean | null
+  isSystemChannel?: boolean
+  metadata?: {
+    storeType?: string
+    customerCount?: string
+    retailOutlets?: string
+    deliveryOptions?: string
+    salesMethod?: string
+    customerType?: string
+    salesFrequency?: string
+    buyerDetails?: string
+    useReason?: string
+    customReason?: string
+    authorizationPerson?: string
+  }
 }
 
 export async function getDistributionChannels(farmId: string): Promise<DistributionChannel[]> {
@@ -42,7 +57,10 @@ export async function getDistributionChannels(farmId: string): Promise<Distribut
       isActive: channel.is_active,
       location: channel.location,
       paymentTerms: channel.payment_terms,
-      notes: channel.notes
+      notes: channel.notes,
+      isPaidFor: channel.is_paid_for,
+      isSystemChannel: channel.is_system_channel,
+      metadata: channel.metadata
     })) || []
   } catch (error) {
     console.error('Error fetching distribution channels:', error)

@@ -88,6 +88,19 @@ export function ProductionDistributionDashboard({
 }: ProductionDistributionDashboardProps) {
   const { isMobile } = useDeviceInfo()
 
+  // Initialize activeTab from localStorage to preserve user's last tab selection
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('productionDistributionTab') || 'production'
+    }
+    return 'production'
+  })
+
+  // Persist active tab to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem('productionDistributionTab', activeTab)
+  }, [activeTab])
+
   // Helper function to calculate stats (moved before state initialization)
   const calculateProductionStats = (records: any[]) => {
     const today = new Date().toISOString().split('T')[0]
@@ -178,7 +191,6 @@ export function ProductionDistributionDashboard({
       }))
   }
 
-  const [activeTab, setActiveTab] = useState('production')
   const [showProductionEntryModal, setShowProductionEntryModal] = useState(false)
   const [showDistributionEntryModal, setShowDistributionEntryModal] = useState(false)
   const [showChannelModal, setShowChannelModal] = useState(false)

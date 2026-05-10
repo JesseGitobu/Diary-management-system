@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Switch } from '@/components/ui/Switch'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/Dialog'
 import { DistributionSettings } from '@/types/production-distribution-settings'
+import { CalfFeedingDisplay } from './CalfFeedingDisplay'
 
 import { 
   Plus, 
@@ -28,7 +29,9 @@ import {
   Store,
   UserCheck,
   AlertTriangle,
-  CheckCircle
+  CheckCircle,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react'
 
 interface Channel {
@@ -44,6 +47,7 @@ interface Channel {
   email?: string | null
   contactPerson?: string | null
   isPaidFor?: boolean
+  isSystemChannel?: boolean
   metadata?: {
     storeType?: string
     customerCount?: string
@@ -156,6 +160,7 @@ export function ChannelManager({
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [expandedCalfFeeding, setExpandedCalfFeeding] = useState<Record<string, boolean>>({})
 
   // Determine allowed channel types from settings
   const allowedChannelTypes = useMemo(() => {
@@ -320,6 +325,8 @@ export function ChannelManager({
 
   const handleEdit = (channel: Channel) => {
     setEditingChannel(channel)
+    const metadata = channel.metadata || {}
+    
     setFormData({
       name: channel.name,
       type: channel.type,
@@ -331,23 +338,34 @@ export function ChannelManager({
       paymentTerms: channel.paymentTerms || 'Monthly Payment',
       notes: channel.notes || '',
       isActive: channel.isActive,
-      storeType: '',
-      customerCount: '',
-      retailOutlets: '',
-      deliveryOptions: '',
-      salesMethod: '',
-      customerType: '',
-      salesFrequency: '',
-      buyerDetails: '',
-      useReason: 'home',
-      customReason: '',
-      authorizationPerson: '',
-      isPaidFor: true
+      // Retail specific - load from metadata
+      storeType: metadata.storeType || '',
+      customerCount: metadata.customerCount || '',
+      retailOutlets: metadata.retailOutlets || '',
+      deliveryOptions: metadata.deliveryOptions || '',
+      // Direct Sales specific - load from metadata
+      salesMethod: metadata.salesMethod || '',
+      customerType: metadata.customerType || '',
+      salesFrequency: metadata.salesFrequency || '',
+      buyerDetails: metadata.buyerDetails || '',
+      // Other specific - load from metadata
+      useReason: metadata.useReason || 'home',
+      customReason: metadata.customReason || '',
+      authorizationPerson: metadata.authorizationPerson || '',
+      isPaidFor: channel.isPaidFor !== false
     })
     setShowAddForm(true)
   }
 
   const handleDelete = async (channelId: string) => {
+    const channel = channels.find(c => c.id === channelId)
+    
+    // Prevent deletion of system channels
+    if (channel?.isSystemChannel) {
+      alert('System channels cannot be deleted. This is a default channel managed by the system.')
+      return
+    }
+    
     if (!confirm('Are you sure you want to delete this channel?')) return
 
     try {
@@ -873,7 +891,7 @@ export function ChannelManager({
       </Dialog>
 
       {/* Channels List */}
-      <div className={`${isMobile ? 'max-h-[500px]' : 'max-h-[600px]'} overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 space-y-4`}>
+      <div className={`${isMobile ? 'max-h-[700px]' : 'max-h-[800px]'} overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 space-y-4`}>
         {channels.length === 0 ? (
           <Card>
             <CardContent className="text-center py-12">
@@ -908,6 +926,11 @@ export function ChannelManager({
                             <Badge className={typeConfig.color}>
                               {typeConfig.label}
                             </Badge>
+                            {channel.isSystemChannel && (
+                              <Badge className="bg-blue-100 text-blue-800">
+                                System Channel
+                              </Badge>
+                            )}
                             {!channel.isActive && (
                               <Badge className="bg-red-100 text-red-800">
                                 Inactive
@@ -990,6 +1013,35 @@ export function ChannelManager({
                         </div>
                       )}
 
+                      {/* Calf Feeding Display for Calves Feeding Channel */}
+                      {channel.name === 'Calves Feeding' && channel.isSystemChannel && (
+                        <div className="mt-4 pt-4 border-t">
+                          <button
+                            onClick={() => setExpandedCalfFeeding(prev => ({
+                              ...prev,
+                              [channel.id]: !prev[channel.id]
+                            }))}
+                            className="w-full flex items-center justify-between p-3 bg-amber-50 hover:bg-amber-100 rounded-lg border border-amber-200 transition-colors"
+                          >
+                            <span className="font-semibold text-amber-900">Calf Feeding Schedule</span>
+                            {expandedCalfFeeding[channel.id] ? (
+                              <ChevronUp className="w-5 h-5 text-amber-600" />
+                            ) : (
+                              <ChevronDown className="w-5 h-5 text-amber-600" />
+                            )}
+                          </button>
+                          {expandedCalfFeeding[channel.id] && (
+                            <div className="mt-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                              <CalfFeedingDisplay
+                                farmId={farmId}
+                                compact={true}
+                                isMobile={true}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       {/* Actions */}
                       <div className="flex gap-2 pt-2 border-t">
                         <Button
@@ -997,6 +1049,7 @@ export function ChannelManager({
                           size="sm"
                           onClick={() => handleEdit(channel)}
                           className="flex-1"
+                          disabled={channel.isSystemChannel}
                         >
                           <Edit className="w-4 h-4 mr-1" />
                           Edit
@@ -1006,6 +1059,8 @@ export function ChannelManager({
                           size="sm"
                           onClick={() => handleDelete(channel.id)}
                           className="text-red-600 hover:text-red-700 flex-1"
+                          disabled={channel.isSystemChannel}
+                          title={channel.isSystemChannel ? 'Cannot delete system channels' : 'Delete'}
                         >
                           <Trash2 className="w-4 h-4 mr-1" />
                           Delete
@@ -1026,6 +1081,11 @@ export function ChannelManager({
                                 <Badge className={typeConfig.color}>
                                   {typeConfig.label}
                                 </Badge>
+                                {channel.isSystemChannel && (
+                                  <Badge className="bg-blue-100 text-blue-800">
+                                    System Channel
+                                  </Badge>
+                                )}
                                 {!channel.isActive && (
                                   <Badge className="bg-red-100 text-red-800">
                                     Inactive
@@ -1044,6 +1104,7 @@ export function ChannelManager({
                             variant="outline"
                             size="sm"
                             onClick={() => handleEdit(channel)}
+                            disabled={channel.isSystemChannel}
                           >
                             <Edit className="w-4 h-4 mr-1" />
                             Edit
@@ -1053,6 +1114,8 @@ export function ChannelManager({
                             size="sm"
                             onClick={() => handleDelete(channel.id)}
                             className="text-red-600 hover:text-red-700"
+                            disabled={channel.isSystemChannel}
+                            title={channel.isSystemChannel ? 'Cannot delete system channels' : 'Delete'}
                           >
                             <Trash2 className="w-4 h-4" />
                           </Button>
@@ -1150,6 +1213,35 @@ export function ChannelManager({
                           <div className="text-sm text-gray-700 mt-2">{channel.notes}</div>
                         </div>
                       )}
+
+                      {/* Calf Feeding Display for Calves Feeding Channel */}
+                      {channel.name === 'Calves Feeding' && channel.isSystemChannel && (
+                        <div className="mt-6">
+                          <button
+                            onClick={() => setExpandedCalfFeeding(prev => ({
+                              ...prev,
+                              [channel.id]: !prev[channel.id]
+                            }))}
+                            className="w-full flex items-center justify-between p-4 bg-amber-50 hover:bg-amber-100 rounded-lg border border-amber-200 transition-colors"
+                          >
+                            <span className="font-semibold text-amber-900 text-lg">Calf Feeding Schedule</span>
+                            {expandedCalfFeeding[channel.id] ? (
+                              <ChevronUp className="w-6 h-6 text-amber-600" />
+                            ) : (
+                              <ChevronDown className="w-6 h-6 text-amber-600" />
+                            )}
+                          </button>
+                          {expandedCalfFeeding[channel.id] && (
+                            <div className="mt-4 p-4 bg-amber-50 rounded-lg border border-amber-200">
+                              <CalfFeedingDisplay
+                                farmId={farmId}
+                                compact={false}
+                                isMobile={false}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </CardContent>
@@ -1181,7 +1273,7 @@ export function ChannelManager({
           <Card>
             <CardContent className="p-4 text-center">
               <div className="text-2xl font-bold text-orange-600">
-                KSh {(channels.filter(c => c.isActive).reduce((sum, c) => sum + (c.pricePerLiter || 0), 0) / Math.max(channels.filter(c => c.isActive).length, 1)) || 0}
+                KSh {Math.round((channels.filter(c => c.isActive).reduce((sum, c) => sum + (c.pricePerLiter || 0), 0) / Math.max(channels.filter(c => c.isActive).length, 1)) * 10) / 10 || 0}
               </div>
               <div className="text-sm text-gray-500">Avg Price</div>
             </CardContent>

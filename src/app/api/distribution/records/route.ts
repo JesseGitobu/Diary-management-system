@@ -81,6 +81,7 @@ export async function POST(request: NextRequest) {
       volume,
       pricePerLiter,
       totalAmount,
+      recordDate,
       deliveryDate,
       deliveryTime,
       driverName,
@@ -88,11 +89,13 @@ export async function POST(request: NextRequest) {
       paymentMethod,
       expectedPaymentDate,
       notes,
-      status
+      status,
+      calfFeedingData,
+      isCalvesFeedingChannel
     } = body
 
     // Validate required fields
-    if (!channelId || !volume || !pricePerLiter || !deliveryDate || !driverName) {
+    if (!channelId || volume === undefined || volume === null || !recordDate) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
@@ -101,12 +104,11 @@ export async function POST(request: NextRequest) {
     // Validate channel belongs to farm
     const { data: channelResult, error: channelError } = await supabase
       .from('distribution_channels')
-      .select('id, is_active')
+      .select('id, is_active, name, type')
       .eq('id', channelId)
       .eq('farm_id', userRole.farm_id)
       .single()
 
-    // Cast to any to fix "Property 'is_active' does not exist on type 'never'"
     const channel = channelResult as any
 
     if (channelError || !channel) {
@@ -117,19 +119,92 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Channel is not active' }, { status: 400 })
     }
 
-    // Cast supabase to any to prevent insert type errors
-    const { data: record, error } = await (supabase as any)
+    // Create distribution record
+    const { data: record, error: recordError } = await (supabase as any)
       .from('distribution_records')
       .insert({
         farm_id: userRole.farm_id,
         channel_id: channelId,
         quantity_distributed: parseFloat(volume),
-        unit_price: parseFloat(pricePerLiter),
-        total_amount: parseFloat(totalAmount),
-        distribution_date: deliveryDate,
+        unit_price: pricePerLiter ? parseFloat(pricePerLiter) : null,
+        total_amount: totalAmount ? parseFloat(totalAmount) : null,
+        distribution_date: recordDate,
+        delivery_date: deliveryDate || null,
+        delivery_time: deliveryTime || null,
+        driver_name: driverName?.trim() || null,
+        vehicle_number: vehicleNumber?.trim() || null,
         distribution_status: status || 'pending',
         notes: notes?.trim() || null
       })
+      .select()
+      .single()
+
+    if (recordError || !record) {
+      throw new Error(`Failed to create distribution record: ${recordError?.message}`)
+    }
+
+    // Create delivery log if applicable
+    if (deliveryDate && (driverName || vehicleNumber)) {
+      const { error: deliveryError } = await (supabase as any)
+        .from('distribution_delivery_logs')
+        .insert({
+          farm_id: userRole.farm_id,
+          distribution_record_id: record.id,
+          driver_name: driverName?.trim() || null,
+          vehicle_number: vehicleNumber?.trim() || null,
+          delivery_date: deliveryDate,
+          delivery_time: deliveryTime || null
+        })
+
+      if (deliveryError) {
+        console.error('Error creating delivery log:', deliveryError)
+        // Don't fail the entire request if delivery log fails
+      }
+    }
+
+    // Create payment record if applicable
+    if (paymentMethod) {
+      const { error: paymentError } = await (supabase as any)
+        .from('distribution_payment_records')
+        .insert({
+          farm_id: userRole.farm_id,
+          distribution_record_id: record.id,
+          payment_method: paymentMethod,
+          expected_payment_date: expectedPaymentDate || null,
+          payment_status: 'pending'
+        })
+
+      if (paymentError) {
+        console.error('Error creating payment record:', paymentError)
+        // Don't fail the entire request if payment record fails
+      }
+    }
+
+    // Create calf milk feeding records if this is a Calves Feeding channel
+    if (isCalvesFeedingChannel && calfFeedingData && calfFeedingData.calves && Array.isArray(calfFeedingData.calves)) {
+      const calfRecords = calfFeedingData.calves.map((calf: any) => ({
+        farm_id: userRole.farm_id,
+        distribution_record_id: record.id,
+        animal_id: calf.calfId,
+        feeding_date: recordDate,
+        volume_liters: parseFloat(calf.dailyMilkPerCalf),
+        is_adjusted: calf.isAdjusted || false,
+        original_volume_liters: calf.originalDailyMilkPerCalf ? parseFloat(calf.originalDailyMilkPerCalf) : null
+      }))
+
+      const { error: calfError } = await (supabase as any)
+        .from('calf_milk_feeding_records')
+        .insert(calfRecords)
+
+      if (calfError) {
+        console.error('Error creating calf feeding records:', calfError)
+        // Don't fail the entire request if calf records fail
+      }
+    }
+
+    // Fetch complete record with relationships
+    const { data: completeRecord, error: fetchError } = await (supabase as any)
+      .from('distribution_records')
       .select(`
         *,
         distribution_channels (
@@ -139,11 +214,15 @@ export async function POST(request: NextRequest) {
           contact_person
         )
       `)
+      .eq('id', record.id)
       .single()
 
-    if (error) throw error
+    if (fetchError) {
+      console.error('Error fetching complete record:', fetchError)
+      return NextResponse.json(record, { status: 201 })
+    }
 
-    return NextResponse.json(record, { status: 201 })
+    return NextResponse.json(completeRecord, { status: 201 })
   } catch (error) {
     console.error('Error creating distribution record:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

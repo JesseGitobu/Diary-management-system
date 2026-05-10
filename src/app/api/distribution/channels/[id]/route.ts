@@ -156,6 +156,18 @@ export async function DELETE(request: NextRequest, context: any) {
 
     const supabase = await createServerSupabaseClient()
 
+    // Check if channel is a system channel
+    const { data: channel, error: channelError } = await supabase
+      .from('distribution_channels')
+      .select('id')
+      .eq('id', channelId)
+      .eq('farm_id', userRole.farm_id)
+      .single()
+
+    if (channelError || !channel) {
+      return NextResponse.json({ error: 'Channel not found' }, { status: 404 })
+    }
+
     // Check if channel has distribution records
     const { data: records, error: recordsError } = await supabase
       .from('distribution_records')
@@ -168,7 +180,7 @@ export async function DELETE(request: NextRequest, context: any) {
     if (records && records.length > 0) {
       // Don't delete channels with records, just deactivate
       // Cast supabase to any
-      const { data: channel, error } = await (supabase as any)
+      const { data: updatedChannel, error } = await (supabase as any)
         .from('distribution_channels')
         .update({ is_active: false })
         .eq('id', channelId)
@@ -180,7 +192,7 @@ export async function DELETE(request: NextRequest, context: any) {
 
       return NextResponse.json({
         message: 'Channel deactivated (has distribution records)',
-        channel
+        channel: updatedChannel
       })
     }
 

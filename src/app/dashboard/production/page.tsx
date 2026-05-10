@@ -105,10 +105,18 @@ export default async function ProductionPage() {
         channels={channels.map(channel => ({
           id: channel.id,
           name: channel.name,
-          type: channel.type as "cooperative" | "processor" | "direct" | "retail",
+          type: channel.type as "cooperative" | "processor" | "direct" | "retail" | "other",
           contact: channel.contact || "", // FIXED: Handle null value
           pricePerLiter: channel.pricePerLiter || 0, // FIXED: Handle null value
-          isActive: channel.isActive ?? true
+          isActive: channel.isActive ?? true,
+          email: channel.email || null,
+          contactPerson: channel.contactPerson || null,
+          location: channel.location || null,
+          paymentTerms: channel.paymentTerms || null,
+          notes: channel.notes || null,
+          isPaidFor: channel.isPaidFor ?? true,
+          isSystemChannel: channel.isSystemChannel ?? false,
+          metadata: channel.metadata
         }))}
         availableVolume={availableVolume}
         distributionSettings={distributionSettings}

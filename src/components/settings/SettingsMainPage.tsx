@@ -69,7 +69,7 @@ export function SettingsMainPage({ farmId, userRole, farmData }: SettingsMainPag
     {
       id: 'animal-tagging',
       title: 'Animal Classification and Management',
-      description: 'Configure various animal management settings including tagging methods, calf management, and more to optimize your farm operations',
+      description: 'Configure various animal management settings',
       icon: <Tag className="h-5 w-5" />,
       href: `/dashboard/settings/animal-tagging?farmId=${farmId}`,
       permissions: ['farm_owner', 'farm_manager', 'worker']

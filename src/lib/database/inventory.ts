@@ -274,20 +274,11 @@ export async function getAvailableVolume(farmId: string): Promise<number> {
   try {
     const supabase = await createServerSupabaseClient()
     
-    // Get total production for today and yesterday (available for distribution)
-    const today = new Date()
-    const yesterday = new Date()
-    yesterday.setDate(today.getDate() - 1)
-    
-    const todayStr = today.toISOString().split('T')[0]
-    const yesterdayStr = yesterday.toISOString().split('T')[0]
-
-    // Get production records for available dates
+    // Get ALL production records (not limited by date) to show total milk produced
     const { data: productionData, error: productionError } = await supabase
       .from('production_records')
       .select('milk_volume')
       .eq('farm_id', farmId)
-      .in('record_date', [todayStr, yesterdayStr])
 
     if (productionError) throw productionError
 
@@ -296,13 +287,12 @@ export async function getAvailableVolume(farmId: string): Promise<number> {
 
     const totalProduced = production.reduce((sum, record) => sum + record.milk_volume, 0) || 0
 
-    // Get distributed volume for the same period - FIXED: Use proper date query
+    // Get ALL distributed volume (not limited by date)
     try {
       const { data: distributedData, error: distributionError } = await supabase
         .from('distribution_records')
         .select('quantity_distributed, volume')
         .eq('farm_id', farmId)
-        .or(`distribution_date.eq."${todayStr}",distribution_date.eq."${yesterdayStr}"`)
 
       if (distributionError) throw distributionError
 
