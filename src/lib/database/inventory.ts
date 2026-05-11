@@ -257,35 +257,18 @@ export async function getAvailableVolume(farmId: string): Promise<number> {
   try {
     const supabase = await createServerSupabaseClient()
     
-    // Note: RPC function 'get_available_volume' not available, using fallback calculation
-    // Uncomment below when RPC function is deployed:
-    // const { data, error } = await supabase
-    //   .rpc('get_available_volume', { 
-    //     target_farm_id: farmId,
-    //     check_date: new Date().toISOString().split('T')[0]
-    //   } as any)
-    //
-    // if (!error && data) return data || 0
-  } catch (error) {
-    console.log('RPC function not available, using fallback calculation')
-  }
-  
-  // Fallback calculation
-  try {
-    const supabase = await createServerSupabaseClient()
-    
-    // Get ALL production records (not limited by date) to show total milk produced
-    const { data: productionData, error: productionError } = await supabase
-      .from('production_records')
-      .select('milk_volume')
+    // Get total production from daily_production_summary table
+    const { data: summaryData, error: summaryError } = await supabase
+      .from('daily_production_summary')
+      .select('total_milk_volume')
       .eq('farm_id', farmId)
 
-    if (productionError) throw productionError
+    if (summaryError) throw summaryError
 
     // FIXED: Cast to any[]
-    const production = (productionData as any[]) || []
+    const summaries = (summaryData as any[]) || []
 
-    const totalProduced = production.reduce((sum, record) => sum + record.milk_volume, 0) || 0
+    const totalProduced = summaries.reduce((sum, record) => sum + (record.total_milk_volume || 0), 0) || 0
 
     // Get ALL distributed volume (not limited by date)
     try {
@@ -313,6 +296,69 @@ export async function getAvailableVolume(farmId: string): Promise<number> {
   } catch (fallbackError) {
     console.error('⚠️ Fallback calculation failed:', fallbackError)
     return 0
+  }
+}
+
+export async function getProductionSummary(farmId: string, recordDate: string): Promise<{
+  todayProduction: number
+  cumulativeAvailable: number
+  totalProduced: number
+  totalDistributed: number
+}> {
+  try {
+    const supabase = await createServerSupabaseClient()
+    
+    // Get today's production from daily_production_summary
+    const { data: todayData, error: todayError } = await supabase
+      .from('daily_production_summary')
+      .select('total_milk_volume')
+      .eq('farm_id', farmId)
+      .eq('record_date', recordDate)
+      .single()
+
+    const todayProduction = !todayError && todayData ? (todayData.total_milk_volume || 0) : 0
+
+    // Get total production across all dates
+    const { data: summaryData, error: summaryError } = await supabase
+      .from('daily_production_summary')
+      .select('total_milk_volume')
+      .eq('farm_id', farmId)
+
+    if (summaryError) throw summaryError
+
+    // FIXED: Cast to any[]
+    const summaries = (summaryData as any[]) || []
+    const totalProduced = summaries.reduce((sum, record) => sum + (record.total_milk_volume || 0), 0) || 0
+
+    // Get all distributed volume
+    const { data: distributedData, error: distributionError } = await supabase
+      .from('distribution_records')
+      .select('quantity_distributed, volume')
+      .eq('farm_id', farmId)
+
+    if (distributionError) throw distributionError
+
+    // FIXED: Cast to any[]
+    const distributed = (distributedData as any[]) || []
+    const totalDistributed = distributed.reduce((sum, record) => sum + (record.quantity_distributed || record.volume || 0), 0) || 0
+
+    // Calculate cumulative available volume
+    const cumulativeAvailable = Math.max(0, totalProduced - totalDistributed)
+
+    return {
+      todayProduction,
+      cumulativeAvailable,
+      totalProduced,
+      totalDistributed
+    }
+  } catch (error) {
+    console.error('⚠️ Production summary calculation failed:', error)
+    return {
+      todayProduction: 0,
+      cumulativeAvailable: 0,
+      totalProduced: 0,
+      totalDistributed: 0
+    }
   }
 }
 

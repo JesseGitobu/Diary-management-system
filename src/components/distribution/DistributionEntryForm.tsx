@@ -110,6 +110,8 @@ export function DistributionEntryForm({
   const [calfDataError, setCalfDataError] = useState<string | null>(null)
   const [adjustedTotalDailyMilk, setAdjustedTotalDailyMilk] = useState(0)
   const [isCalfSummaryExpanded, setIsCalfSummaryExpanded] = useState(true)
+  const [todayProduction, setTodayProduction] = useState(0)
+  const [cumulativeAvailable, setCumulativeAvailable] = useState(availableVolume)
 
   // Initialize defaults based on settings
   useEffect(() => {
@@ -120,6 +122,31 @@ export function DistributionEntryForm({
       }))
     }
   }, [settings])
+
+  // Fetch production summary when record date changes
+  useEffect(() => {
+    const fetchProductionSummary = async () => {
+      try {
+        const response = await fetch(
+          `/api/distribution/production-summary?farmId=${encodeURIComponent(farmId)}&recordDate=${encodeURIComponent(formData.recordDate)}`
+        )
+        
+        if (response.ok) {
+          const data = await response.json()
+          setTodayProduction(data.todayProduction || 0)
+          setCumulativeAvailable(data.cumulativeAvailable || 0)
+        }
+      } catch (error) {
+        console.error('Error fetching production summary:', error)
+        // Fallback to passed availableVolume
+        setCumulativeAvailable(availableVolume)
+      }
+    }
+
+    if (formData.recordDate) {
+      fetchProductionSummary()
+    }
+  }, [formData.recordDate, farmId, availableVolume])
 
   // Filter allowed payment methods
   const allowedPaymentMethods = useMemo(() => {
@@ -331,8 +358,8 @@ export function DistributionEntryForm({
     
     // Check available volume unless overdistribution is allowed
     const canOverdistribute = settings?.allowOverdistribution
-    if (!canOverdistribute && parseFloat(formData.volume) > availableVolume) {
-      newErrors.volume = `Volume cannot exceed available ${availableVolume.toFixed(1)}L`
+    if (!canOverdistribute && parseFloat(formData.volume) > cumulativeAvailable) {
+      newErrors.volume = `Volume cannot exceed available ${cumulativeAvailable.toFixed(1)}L`
     }
     
     // Price validation - only required for paid channels
@@ -433,8 +460,15 @@ export function DistributionEntryForm({
       {/* Available Volume Alert */}
       <Alert className="border-blue-200 bg-blue-50">
         <Clock className="h-4 w-4" />
-        <AlertDescription className="flex items-center justify-between">
-          <span>Available for distribution: <strong>{availableVolume.toFixed(1)}L</strong></span>
+        <AlertDescription className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span>Today's Production ({formData.recordDate}):</span>
+            <strong className="text-blue-600">{todayProduction.toFixed(1)}L</strong>
+          </div>
+          <div className="flex items-center justify-between border-t border-blue-200 pt-2">
+            <span>Available for distribution (Total):</span>
+            <strong>{cumulativeAvailable.toFixed(1)}L</strong>
+          </div>
         </AlertDescription>
       </Alert>
 
@@ -695,7 +729,7 @@ export function DistributionEntryForm({
                     type="number"
                     step="0.1"
                     min="0"
-                    max={settings?.allowOverdistribution ? undefined : availableVolume}
+                    max={settings?.allowOverdistribution ? undefined : cumulativeAvailable}
                     value={formData.volume}
                     onChange={(e) => handleInputChange('volume', e.target.value)}
                     placeholder="Enter volume in liters"
@@ -896,7 +930,7 @@ export function DistributionEntryForm({
         <div className={`flex ${isMobile ? 'flex-col space-y-3' : 'flex-row space-x-4'} pt-4`}>
           <Button
             type="submit"
-            disabled={isSubmitting || (!settings?.allowOverdistribution && availableVolume <= 0)}
+            disabled={isSubmitting || (!settings?.allowOverdistribution && cumulativeAvailable <= 0)}
             className={`${isMobile ? 'w-full' : 'flex-1'} h-12`}
           >
             {isSubmitting ? (
@@ -923,7 +957,7 @@ export function DistributionEntryForm({
         </div>
 
         {/* Quick Actions for Mobile */}
-        {isMobile && availableVolume > 0 && (
+        {isMobile && cumulativeAvailable > 0 && (
           <div className="bg-gray-50 p-4 rounded-lg space-y-2">
             <h4 className="font-medium text-gray-900">Quick Actions</h4>
             <div className="grid grid-cols-2 gap-2">
@@ -931,7 +965,7 @@ export function DistributionEntryForm({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => handleInputChange('volume', Math.min(50, availableVolume).toString())}
+                onClick={() => handleInputChange('volume', Math.min(50, cumulativeAvailable).toString())}
               >
                 Set 50L
               </Button>
@@ -939,7 +973,7 @@ export function DistributionEntryForm({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => handleInputChange('volume', Math.min(100, availableVolume).toString())}
+                onClick={() => handleInputChange('volume', Math.min(100, cumulativeAvailable).toString())}
               >
                 Set 100L
               </Button>
@@ -947,7 +981,7 @@ export function DistributionEntryForm({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => handleInputChange('volume', (availableVolume / 2).toString())}
+                onClick={() => handleInputChange('volume', (cumulativeAvailable / 2).toString())}
               >
                 Half Available
               </Button>
@@ -955,7 +989,7 @@ export function DistributionEntryForm({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => handleInputChange('volume', availableVolume.toString())}
+                onClick={() => handleInputChange('volume', cumulativeAvailable.toString())}
               >
                 All Available
               </Button>
