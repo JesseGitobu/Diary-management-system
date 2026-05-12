@@ -31,6 +31,14 @@ export async function GET(request: NextRequest) {
           name,
           type,
           contact_person
+        ),
+        deliveries (
+          id,
+          delivery_date,
+          delivery_time,
+          driver_name,
+          vehicle_number,
+          notes
         )
       `)
       .eq('farm_id', userRole.farm_id)
@@ -76,134 +84,98 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const {
-      channelId,
-      volume,
-      pricePerLiter,
-      totalAmount,
-      recordDate,
-      deliveryDate,
-      deliveryTime,
-      driverName,
-      vehicleNumber,
-      paymentMethod,
-      expectedPaymentDate,
-      notes,
-      status,
-      calfFeedingData,
-      isCalvesFeedingChannel
-    } = body
+    const { records } = body
 
-    // Validate required fields
-    if (!channelId || volume === undefined || volume === null || !recordDate) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    // Validate records array
+    if (!Array.isArray(records) || records.length === 0) {
+      return NextResponse.json({ error: 'No distribution records provided' }, { status: 400 })
     }
 
     const supabase = await createServerSupabaseClient()
-    
-    // Validate channel belongs to farm
-    const { data: channelResult, error: channelError } = await supabase
+
+    // Validate all records have required fields and channels exist
+    const channelIds = [...new Set(records.map((r: any) => r.channelId))]
+    const { data: channels, error: channelsError } = await supabase
       .from('distribution_channels')
       .select('id, is_active, name, type')
-      .eq('id', channelId)
       .eq('farm_id', userRole.farm_id)
-      .single()
+      .in('id', channelIds)
 
-    const channel = channelResult as any
-
-    if (channelError || !channel) {
-      return NextResponse.json({ error: 'Invalid channel' }, { status: 400 })
+    if (channelsError) {
+      return NextResponse.json({ error: 'Failed to validate channels' }, { status: 400 })
     }
 
-    if (!channel.is_active) {
-      return NextResponse.json({ error: 'Channel is not active' }, { status: 400 })
+    const validChannels = new Map((channels as any[]).map(c => [c.id, c]))
+
+    for (const record of records) {
+      if (!record.channelId || record.volume === undefined || record.volume === null || !record.recordDate) {
+        return NextResponse.json({ error: 'Missing required fields in distribution record' }, { status: 400 })
+      }
+
+      const channel = validChannels.get(record.channelId)
+      if (!channel) {
+        return NextResponse.json({ error: `Invalid channel: ${record.channelId}` }, { status: 400 })
+      }
+
+      if (!channel.is_active) {
+        return NextResponse.json({ error: `Channel is not active: ${channel.name}` }, { status: 400 })
+      }
     }
 
-    // Create distribution record
-    const { data: record, error: recordError } = await (supabase as any)
+    // Insert all distribution records
+    // Note: Views (milk_inventory_summary, daily_milk_distribution_summary) will automatically
+    // reflect the updated data through their queries
+    const distributionRecordsToInsert = records.map((record: any) => ({
+      farm_id: userRole.farm_id,
+      channel_id: record.channelId,
+      quantity_distributed: parseFloat(record.volume),
+      unit_price: record.pricePerLiter ? parseFloat(record.pricePerLiter) : null,
+      total_amount: record.totalAmount ? parseFloat(record.totalAmount) : null,
+      distribution_date: record.recordDate,
+      distribution_status: record.status || 'pending',
+      notes: record.notes || null
+    }))
+
+    const { data: createdRecords, error: recordError } = await (supabase as any)
       .from('distribution_records')
-      .insert({
-        farm_id: userRole.farm_id,
-        channel_id: channelId,
-        quantity_distributed: parseFloat(volume),
-        unit_price: pricePerLiter ? parseFloat(pricePerLiter) : null,
-        total_amount: totalAmount ? parseFloat(totalAmount) : null,
-        distribution_date: recordDate,
-        delivery_date: deliveryDate || null,
-        delivery_time: deliveryTime || null,
-        driver_name: driverName?.trim() || null,
-        vehicle_number: vehicleNumber?.trim() || null,
-        distribution_status: status || 'pending',
-        notes: notes?.trim() || null
-      })
+      .insert(distributionRecordsToInsert)
       .select()
-      .single()
 
-    if (recordError || !record) {
-      throw new Error(`Failed to create distribution record: ${recordError?.message}`)
+    if (recordError || !createdRecords || createdRecords.length === 0) {
+      throw new Error(`Failed to create distribution records: ${recordError?.message}`)
     }
 
-    // Create delivery log if applicable
-    if (deliveryDate && (driverName || vehicleNumber)) {
+    // Insert delivery records if delivery data is provided
+    const deliveriesToInsert = createdRecords
+      .map((createdRecord: any, index: number) => {
+        const originalRecord = records[index]
+        if (originalRecord?.deliveryDate || originalRecord?.deliveryTime || originalRecord?.driverName) {
+          return {
+            farm_id: userRole.farm_id,
+            distribution_record_id: createdRecord.id,
+            delivery_date: originalRecord.deliveryDate || createdRecord.distribution_date,
+            delivery_time: originalRecord.deliveryTime || null,
+            driver_name: originalRecord.driverName || null,
+            vehicle_number: originalRecord.vehicleNumber || null,
+            notes: originalRecord.deliveryNotes || null
+          }
+        }
+        return null
+      })
+      .filter((d: any) => d !== null)
+
+    if (deliveriesToInsert.length > 0) {
       const { error: deliveryError } = await (supabase as any)
-        .from('distribution_delivery_logs')
-        .insert({
-          farm_id: userRole.farm_id,
-          distribution_record_id: record.id,
-          driver_name: driverName?.trim() || null,
-          vehicle_number: vehicleNumber?.trim() || null,
-          delivery_date: deliveryDate,
-          delivery_time: deliveryTime || null
-        })
+        .from('deliveries')
+        .insert(deliveriesToInsert)
 
       if (deliveryError) {
-        console.error('Error creating delivery log:', deliveryError)
-        // Don't fail the entire request if delivery log fails
+        console.error('Error creating delivery records:', deliveryError)
       }
     }
 
-    // Create payment record if applicable
-    if (paymentMethod) {
-      const { error: paymentError } = await (supabase as any)
-        .from('distribution_payment_records')
-        .insert({
-          farm_id: userRole.farm_id,
-          distribution_record_id: record.id,
-          payment_method: paymentMethod,
-          expected_payment_date: expectedPaymentDate || null,
-          payment_status: 'pending'
-        })
-
-      if (paymentError) {
-        console.error('Error creating payment record:', paymentError)
-        // Don't fail the entire request if payment record fails
-      }
-    }
-
-    // Create calf milk feeding records if this is a Calves Feeding channel
-    if (isCalvesFeedingChannel && calfFeedingData && calfFeedingData.calves && Array.isArray(calfFeedingData.calves)) {
-      const calfRecords = calfFeedingData.calves.map((calf: any) => ({
-        farm_id: userRole.farm_id,
-        distribution_record_id: record.id,
-        animal_id: calf.calfId,
-        feeding_date: recordDate,
-        volume_liters: parseFloat(calf.dailyMilkPerCalf),
-        is_adjusted: calf.isAdjusted || false,
-        original_volume_liters: calf.originalDailyMilkPerCalf ? parseFloat(calf.originalDailyMilkPerCalf) : null
-      }))
-
-      const { error: calfError } = await (supabase as any)
-        .from('calf_milk_feeding_records')
-        .insert(calfRecords)
-
-      if (calfError) {
-        console.error('Error creating calf feeding records:', calfError)
-        // Don't fail the entire request if calf records fail
-      }
-    }
-
-    // Fetch complete record with relationships
-    const { data: completeRecord, error: fetchError } = await (supabase as any)
+    // Fetch complete records with relationships
+    const { data: completeRecords } = await (supabase as any)
       .from('distribution_records')
       .select(`
         *,
@@ -212,19 +184,36 @@ export async function POST(request: NextRequest) {
           name,
           type,
           contact_person
+        ),
+        deliveries (
+          id,
+          delivery_date,
+          delivery_time,
+          driver_name,
+          vehicle_number,
+          notes
         )
       `)
-      .eq('id', record.id)
-      .single()
+      .in('id', createdRecords.map((r: any) => r.id))
 
-    if (fetchError) {
-      console.error('Error fetching complete record:', fetchError)
-      return NextResponse.json(record, { status: 201 })
-    }
+    // Log success
+    const recordDate = records[0].recordDate
+    const totalVolume = records.reduce((sum: number, r: any) => sum + parseFloat(r.volume), 0)
+    console.log(`Successfully created ${createdRecords.length} distribution record(s) for farm ${userRole.farm_id} on ${recordDate}, total volume: ${totalVolume}L`)
 
-    return NextResponse.json(completeRecord, { status: 201 })
+    return NextResponse.json(
+      {
+        success: true,
+        message: `Successfully created ${createdRecords.length} distribution record(s)`,
+        records: completeRecords || createdRecords
+      },
+      { status: 201 }
+    )
   } catch (error) {
-    console.error('Error creating distribution record:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    console.error('Error creating distribution records:', error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Internal server error' },
+      { status: 500 }
+    )
   }
 }

@@ -42,9 +42,9 @@ export async function GET(request: NextRequest) {
     if (error) throw error
 
     // Calculate statistics
-    // Cast record to any to fix "Property 'volume' does not exist on type 'never'"
-    const totalDistributed = records?.reduce((sum, record: any) => sum + (record.quantity_distributed || record.volume || 0), 0) || 0
-    const totalRevenue = records?.reduce((sum, record: any) => sum + record.total_amount, 0) || 0
+    // Cast record to any to avoid TypeScript type issues
+    const totalDistributed = records?.reduce((sum, record: any) => sum + (record.quantity_distributed || 0), 0) || 0
+    const totalRevenue = records?.reduce((sum, record: any) => sum + (record.total_amount || 0), 0) || 0
     const avgPricePerLiter = totalDistributed > 0 ? totalRevenue / totalDistributed : 0
     const uniqueChannels = new Set(records?.map((r: any) => r.channel_id))
     const totalChannels = uniqueChannels.size
@@ -63,8 +63,8 @@ export async function GET(request: NextRequest) {
       const dateKey = record.distribution_date
       const existing = dailyMap.get(dateKey)
       if (existing) {
-        existing.volume += (record.quantity_distributed || record.volume || 0)
-        existing.revenue += record.total_amount
+        existing.volume += (record.quantity_distributed || 0)
+        existing.revenue += (record.total_amount || 0)
         existing.channels.add(record.channel_id)
       }
     })
@@ -84,15 +84,15 @@ export async function GET(request: NextRequest) {
       const existing = channelStats.get(channelId)
       
       if (existing) {
-        existing.volume += (record.quantity_distributed || record.volume || 0)
-        existing.revenue += record.total_amount
+        existing.volume += (record.quantity_distributed || 0)
+        existing.revenue += (record.total_amount || 0)
         if (record.distribution_date > existing.lastDelivery) {
           existing.lastDelivery = record.distribution_date
         }
       } else {
         channelStats.set(channelId, {
-          volume: (record.quantity_distributed || record.volume || 0),
-          revenue: record.total_amount,
+          volume: (record.quantity_distributed || 0),
+          revenue: (record.total_amount || 0),
           lastDelivery: record.distribution_date,
           channelData: record.distribution_channels
         })

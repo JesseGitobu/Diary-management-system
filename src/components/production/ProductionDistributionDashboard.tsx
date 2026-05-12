@@ -209,6 +209,10 @@ export function ProductionDistributionDashboard({
   const [showMilkingGroupsModal, setShowMilkingGroupsModal] = useState(false)
   const [showTargetsModal, setShowTargetsModal] = useState(false)
   const [selectedChartType, setSelectedChartType] = useState<'volume-revenue' | 'daily-volume' | 'daily-revenue' | 'performance'>('volume-revenue')
+  
+  // State for viewing/editing distribution records
+  const [selectedDistributionRecord, setSelectedDistributionRecord] = useState<any>(null)
+  const [showDistributionEditModal, setShowDistributionEditModal] = useState(false)
 
   useEffect(() => {
     const handleMobileNavAction = (event: Event) => {
@@ -256,6 +260,18 @@ export function ProductionDistributionDashboard({
   const handleDeleteProductionRecord = (recordId: string) => {
     // Remove the record from the list
     setProductionRecords(prev => prev.filter(r => r.id !== recordId))
+  }
+  
+  // Distribution Record Handlers
+  const handleEditDistributionRecord = (record: any) => {
+    setSelectedDistributionRecord(record)
+    setShowDistributionEditModal(true)
+  }
+
+  const handleDistributionRecordEdited = () => {
+    setShowDistributionEditModal(false)
+    setSelectedDistributionRecord(null)
+    window.location.reload()
   }
   
   const handleProductionRecordAdded = async () => {
@@ -739,7 +755,12 @@ export function ProductionDistributionDashboard({
                   <CardTitle>Recent Distributions</CardTitle>
                 </CardHeader>
                 <CardContent>
-                   <DistributionRecordsList records={distributionRecords} canEdit={canAddRecords} isMobile={isMobile} />
+                   <DistributionRecordsList 
+                     records={distributionRecords} 
+                     canEdit={canAddRecords} 
+                     isMobile={isMobile}
+                     onEdit={handleEditDistributionRecord}
+                   />
                 </CardContent>
              </Card>
           </TabsContent>
@@ -782,6 +803,29 @@ export function ProductionDistributionDashboard({
               onSuccess={handleDistributionRecordAdded}
               isMobile={isMobile}
               settings={distributionSettings}
+            />
+          </div>
+        </Modal>
+      )}
+
+      {showDistributionEditModal && selectedDistributionRecord && (
+        <Modal 
+          isOpen={showDistributionEditModal} 
+          onClose={() => {
+            setShowDistributionEditModal(false)
+            setSelectedDistributionRecord(null)
+          }}
+          className={`${isMobile ? 'max-w-full mx-4 my-4 h-[90vh] overflow-y-auto' : 'max-w-4xl'}`}
+        >
+          <div className={`${isMobile ? 'p-4' : 'p-6'}`}>
+            <DistributionEntryForm
+              farmId={farmId}
+              channels={channels}
+              availableVolume={availableVolume}
+              onSuccess={handleDistributionRecordEdited}
+              isMobile={isMobile}
+              settings={distributionSettings}
+              editRecord={selectedDistributionRecord}
             />
           </div>
         </Modal>

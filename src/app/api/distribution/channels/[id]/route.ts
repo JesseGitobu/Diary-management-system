@@ -2,8 +2,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser, getUserRole, createServerSupabaseClient } from '@/lib/supabase/server'
 
-export async function PUT(request: NextRequest, context: any) {
-  const { params } = context
+export async function PUT(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params
   const channelId = params.id
 
   try {
@@ -139,8 +139,8 @@ export async function PATCH(
   }
 }
 
-export async function DELETE(request: NextRequest, context: any) {
-  const { params } = context
+export async function DELETE(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params
   const channelId = params.id
 
   try {

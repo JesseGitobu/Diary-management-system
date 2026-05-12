@@ -274,7 +274,7 @@ export async function getAvailableVolume(farmId: string): Promise<number> {
     try {
       const { data: distributedData, error: distributionError } = await supabase
         .from('distribution_records')
-        .select('quantity_distributed, volume')
+        .select('quantity_distributed')
         .eq('farm_id', farmId)
 
       if (distributionError) throw distributionError
@@ -282,7 +282,7 @@ export async function getAvailableVolume(farmId: string): Promise<number> {
       // FIXED: Cast to any[]
       const distributed = (distributedData as any[]) || []
 
-      const totalDistributed = distributed.reduce((sum, record) => sum + (record.quantity_distributed || record.volume || 0), 0) || 0
+      const totalDistributed = distributed.reduce((sum, record) => sum + (record.quantity_distributed || 0), 0) || 0
 
       // Calculate available volume (produced but not yet distributed)
       const availableVolume = Math.max(0, totalProduced - totalDistributed)
@@ -333,14 +333,14 @@ export async function getProductionSummary(farmId: string, recordDate: string): 
     // Get all distributed volume
     const { data: distributedData, error: distributionError } = await supabase
       .from('distribution_records')
-      .select('quantity_distributed, volume')
+      .select('quantity_distributed')
       .eq('farm_id', farmId)
 
     if (distributionError) throw distributionError
 
     // FIXED: Cast to any[]
     const distributed = (distributedData as any[]) || []
-    const totalDistributed = distributed.reduce((sum, record) => sum + (record.quantity_distributed || record.volume || 0), 0) || 0
+    const totalDistributed = distributed.reduce((sum, record) => sum + (record.quantity_distributed || 0), 0) || 0
 
     // Calculate cumulative available volume
     const cumulativeAvailable = Math.max(0, totalProduced - totalDistributed)

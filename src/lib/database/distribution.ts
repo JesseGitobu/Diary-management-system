@@ -52,8 +52,8 @@ export async function getDistributionStats(farmId: string, days: number = 30): P
     const records = (recordsdata as any[]) || []
 
     // Calculate totals
-    const totalDistributed = records?.reduce((sum, record) => sum + (record.quantity_distributed || record.volume || 0), 0) || 0
-    const totalRevenue = records?.reduce((sum, record) => sum + record.total_amount, 0) || 0
+    const totalDistributed = records?.reduce((sum, record) => sum + (record.quantity_distributed || 0), 0) || 0
+    const totalRevenue = records?.reduce((sum, record) => sum + (record.total_amount || 0), 0) || 0
     const avgPricePerLiter = totalDistributed > 0 ? totalRevenue / totalDistributed : 0
 
     // Get unique channels count
@@ -74,8 +74,8 @@ export async function getDistributionStats(farmId: string, days: number = 30): P
       const dateKey = record.distribution_date
       const existing = dailyMap.get(dateKey)
       if (existing) {
-        existing.volume += (record.quantity_distributed || record.volume || 0)
-        existing.revenue += record.total_amount
+        existing.volume += (record.quantity_distributed || 0)
+        existing.revenue += (record.total_amount || 0)
         existing.channels.add(record.channel_id)
       }
     })
@@ -95,15 +95,15 @@ export async function getDistributionStats(farmId: string, days: number = 30): P
       const existing = channelStats.get(channelId)
       
       if (existing) {
-        existing.volume += (record.quantity_distributed || record.volume || 0)
-        existing.revenue += record.total_amount
+        existing.volume += (record.quantity_distributed || 0)
+        existing.revenue += (record.total_amount || 0)
         if (record.distribution_date > existing.lastDelivery) {
           existing.lastDelivery = record.distribution_date
         }
       } else {
         channelStats.set(channelId, {
-          volume: (record.quantity_distributed || record.volume || 0),
-          revenue: record.total_amount,
+          volume: (record.quantity_distributed || 0),
+          revenue: (record.total_amount || 0),
           lastDelivery: record.distribution_date,
           channelData: record.distribution_channels
         })
@@ -194,14 +194,17 @@ export async function getDistributionRecords(
     // Transform data to match component interface
     return  (records as any[]).map(record => ({
       id: record.id,
-      date: record.distribution_date,
+      distribution_date: record.distribution_date,
+      distribution_channels: record.distribution_channels,
       channelName: record.distribution_channels?.name || 'Unknown Channel',
       channelType: record.distribution_channels?.type || 'direct',
-      volume: record.quantity_distributed || record.volume,
-      pricePerLiter: record.unit_price,
-      totalAmount: record.total_amount,
+      quantity_distributed: record.quantity_distributed,
+      unit_price: record.unit_price,
+      total_amount: record.total_amount,
+      distribution_status: record.distribution_status,
       status: record.distribution_status,
-      notes: record.notes
+      notes: record.notes,
+      deliveries: record.deliveries
     })) || []
   } catch (error) {
     console.error('Error fetching distribution records:', error)
