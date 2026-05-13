@@ -1,8 +1,71 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
-import { createMaintenanceRecord } from '@/lib/database/equipment'
+import { createMaintenanceRecord, getMaintenanceRecordsByFarmId } from '@/lib/database/equipment'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
+
+export async function GET(request: NextRequest) {
+  try {
+    const user = await getCurrentUser()
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const userRole = await getUserRole(user.id)
+
+    if (!userRole?.farm_id) {
+      return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
+    }
+
+    // Get query parameters
+    const searchParams = request.nextUrl.searchParams
+    const status = searchParams.get('status') || undefined
+    const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 100)
+    const offset = parseInt(searchParams.get('offset') || '0')
+
+    console.log('📋 [API] Fetching maintenance records for farm:', userRole.farm_id)
+    console.log('Params - Status:', status, 'Limit:', limit, 'Offset:', offset)
+
+    const result = await getMaintenanceRecordsByFarmId(
+      userRole.farm_id,
+      status,
+      limit,
+      offset
+    )
+
+    if (!result.success) {
+      return NextResponse.json(
+        { error: result.error },
+        { status: 500 }
+      )
+    }
+
+    // Transform data to include equipment name at top level
+    const transformedData = (result.data || []).map((record: any) => ({
+      ...record,
+      equipmentName: record.equipment?.name || 'Unknown Equipment',
+      asset_id: record.equipment?.asset_id || record.asset_id,
+      equipment_id: record.equipment_id, // Keep original field
+    }))
+
+    console.log('✅ [API] Maintenance records fetched:', transformedData.length || 0)
+
+    return NextResponse.json({
+      success: true,
+      data: transformedData,
+      count: result.count,
+      limit,
+      offset,
+    })
+  } catch (error) {
+    console.error('❌ [API] Unexpected error fetching maintenance records:', error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 }
+    )
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {

@@ -339,6 +339,80 @@ export async function getEquipmentMaintenance(equipmentId: string) {
   return (data as any[]) || []
 }
 
+/**
+ * Get maintenance records for a farm with filtering and pagination
+ */
+export async function getMaintenanceRecordsByFarmId(
+  farmId: string,
+  status?: string,
+  limit: number = 50,
+  offset: number = 0
+) {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    console.log('📋 [DB] Fetching maintenance records for farm:', farmId)
+    
+    let query = supabase
+      .from('maintenance_records')
+      .select(`
+        id,
+        farm_id,
+        equipment_id,
+        maintenance_type,
+        priority,
+        description,
+        maintenance_date,
+        status,
+        cost,
+        labour_hours,
+        downtime_hours,
+        performed_by,
+        notes,
+        created_at,
+        updated_at,
+        completed_at,
+        equipment:equipment_id(id, name, asset_id),
+        parts:maintenance_parts(id, part_name, part_number, quantity, unit_cost, supplier)
+      `, { count: 'exact' })
+      .eq('farm_id', farmId)
+    
+    if (status && ['scheduled', 'in_progress', 'completed', 'cancelled'].includes(status)) {
+      query = query.eq('status', status as 'scheduled' | 'in_progress' | 'completed' | 'cancelled')
+    }
+    
+    const { data, error, count } = await query
+      .order('maintenance_date', { ascending: false })
+      .range(offset, offset + limit - 1)
+    
+    if (error) {
+      console.error('❌ [DB] Error fetching maintenance records:', error)
+      return {
+        success: false,
+        data: [],
+        count: 0,
+        error: error.message,
+      }
+    }
+    
+    console.log('✅ [DB] Maintenance records fetched:', data?.length || 0)
+    
+    return {
+      success: true,
+      data: (data as any[]) || [],
+      count: count ?? 0,
+    }
+  } catch (error) {
+    console.error('❌ [DB] Unexpected error fetching maintenance records:', error)
+    return {
+      success: false,
+      data: [],
+      count: 0,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }
+  }
+}
+
 export async function createMaintenanceRecord(
   farmId: string,
   userId: string,

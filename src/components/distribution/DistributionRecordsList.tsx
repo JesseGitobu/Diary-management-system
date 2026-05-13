@@ -1,13 +1,12 @@
 // Mobile-Optimized DistributionRecordsList.tsx
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card, CardContent } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select'
-import { PaymentConfirmationModal, type PaymentConfirmationData } from './PaymentConfirmationModal'
 
 import { 
   Search, 
@@ -21,9 +20,7 @@ import {
   MapPin,
   MoreVertical,
   Edit,
-  Eye,
-  Trash2,
-  CreditCard
+  Eye
 } from 'lucide-react'
 
 interface DistributionRecord {
@@ -58,8 +55,6 @@ interface DistributionRecordsListProps {
   records: DistributionRecord[]
   canEdit: boolean
   isMobile: boolean
-  onEdit?: (record: DistributionRecord) => void
-  onDelete?: (recordId: string) => Promise<void>
 }
 
 const statusConfig: Record<string, any> = {
@@ -147,9 +142,7 @@ const paymentMethodIcons = {
 export function DistributionRecordsList({
   records: initialRecords,
   canEdit,
-  isMobile,
-  onEdit,
-  onDelete
+  isMobile
 }: DistributionRecordsListProps) {
   const [records, setRecords] = useState(initialRecords)
   const [searchTerm, setSearchTerm] = useState('')
@@ -157,15 +150,6 @@ export function DistributionRecordsList({
   const [channelTypeFilter, setChannelTypeFilter] = useState<string>('all')
   const [paidStatusFilter, setPaidStatusFilter] = useState<string>('all')
   const [showFilters, setShowFilters] = useState(false)
-  const [paymentModalOpen, setPaymentModalOpen] = useState(false)
-  const [selectedRecord, setSelectedRecord] = useState<DistributionRecord | null>(null)
-  const [isDeletingId, setIsDeletingId] = useState<string | null>(null)
-  const [deleteError, setDeleteError] = useState<string | null>(null)
-
-  // Sync initial records when they change
-  useEffect(() => {
-    setRecords(initialRecords)
-  }, [initialRecords])
 
   // Filter records based on search and filters
   const filteredRecords = records.map(record => ({
@@ -228,75 +212,6 @@ export function DistributionRecordsList({
       minute: '2-digit',
       hour12: true
     })
-  }
-
-  const handleEdit = (record: DistributionRecord) => {
-    if (onEdit) {
-      onEdit(record)
-    }
-  }
-
-  const handleDelete = async (recordId: string) => {
-    if (!canEdit) return
-    if (!confirm('Are you sure you want to delete this distribution record?')) return
-
-    setIsDeletingId(recordId)
-    setDeleteError(null)
-    try {
-      const response = await fetch(`/api/distribution/records/${recordId}`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' }
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || `Failed to delete record (${response.status})`)
-      }
-
-      setRecords(prev => prev.filter(r => r.id !== recordId))
-      if (onDelete) {
-        await onDelete(recordId)
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Failed to delete record'
-      setDeleteError(errorMsg)
-      console.error('Error deleting record:', error)
-    } finally {
-      setIsDeletingId(null)
-    }
-  }
-
-  const handlePaymentConfirm = async (record: DistributionRecord, paymentData: PaymentConfirmationData) => {
-    try {
-      const response = await fetch(`/api/distribution/records/${record.id}/confirm-payment`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(paymentData)
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.message || 'Failed to confirm payment')
-      }
-
-      // Update the record status to paid
-      setRecords(prev => prev.map(r =>
-        r.id === record.id
-          ? { ...r, distribution_status: 'paid' }
-          : r
-      ))
-
-      setPaymentModalOpen(false)
-      setSelectedRecord(null)
-    } catch (error) {
-      console.error('Error confirming payment:', error)
-      throw error
-    }
-  }
-
-  const openPaymentModal = (record: DistributionRecord) => {
-    setSelectedRecord(record)
-    setPaymentModalOpen(true)
   }
 
   if (records.length === 0) {
@@ -505,62 +420,35 @@ export function DistributionRecordsList({
                       </div>
                     )}
 
-                    {/* Action Buttons - Mobile */}
-                    {canEdit && (
-                      <div className="flex gap-2 pt-2 flex-wrap">
-                        {/* Edit Button */}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="flex-1 min-w-24"
-                          onClick={() => handleEdit(record)}
-                        >
-                          <Edit className="w-4 h-4 mr-1" />
-                          Edit
-                        </Button>
-
-                        {/* Status Update Buttons - Only for processors/cooperatives with paid channels and deliveries enabled */}
-                        {record.isPaidFor && (record.channelType === 'processor' || record.channelType === 'cooperative') && record.deliveries && record.deliveries.length > 0 && (
-                          <>
-                            {record.status === 'pending' && (
-                              <Button
-                                size="sm"
-                                className="flex-1 min-w-24 bg-blue-600 hover:bg-blue-700 text-white"
-                                onClick={() => handleStatusUpdate(record.id, 'delivered')}
-                              >
-                                <Truck className="w-4 h-4 mr-1" />
-                                Delivered
-                              </Button>
-                            )}
-                            {record.status === 'delivered' && (
-                              <Button
-                                size="sm"
-                                className="flex-1 min-w-24 bg-emerald-600 hover:bg-emerald-700 text-white"
-                                onClick={() => openPaymentModal(record)}
-                              >
-                                <CreditCard className="w-4 h-4 mr-1" />
-                                Confirm Pay
-                              </Button>
-                            )}
-                          </>
+                    {/* Action Buttons - Only for processors/cooperatives with paid channels and deliveries enabled */}
+                    {canEdit && record.isPaidFor && (record.channelType === 'processor' || record.channelType === 'cooperative') && record.deliveries && record.deliveries.length > 0 && (
+                      <div className="flex gap-2 pt-2">
+                        {record.status === 'pending' && (
+                          <Button
+                            size="sm"
+                            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+                            onClick={() => handleStatusUpdate(record.id, 'delivered')}
+                          >
+                            <Truck className="w-4 h-4 mr-2" />
+                            Delivered
+                          </Button>
                         )}
-
-                        {/* Delete Button */}
+                        {record.status === 'delivered' && (
+                          <Button
+                            size="sm"
+                            className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                            onClick={() => handleStatusUpdate(record.id, 'paid')}
+                          >
+                            <CheckCircle className="w-4 h-4 mr-2" />
+                            Mark Paid
+                          </Button>
+                        )}
                         <Button
                           size="sm"
                           variant="outline"
-                          className="flex-1 min-w-24 text-red-600 hover:text-red-700 hover:bg-red-50"
-                          onClick={() => handleDelete(record.id)}
-                          disabled={isDeletingId === record.id}
+                          className="px-3"
                         >
-                          {isDeletingId === record.id ? (
-                            <div className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
-                          ) : (
-                            <>
-                              <Trash2 className="w-4 h-4 mr-1" />
-                              Delete
-                            </>
-                          )}
+                          <MoreVertical className="w-4 h-4" />
                         </Button>
                       </div>
                     )}
@@ -634,58 +522,31 @@ export function DistributionRecordsList({
                       </div>
                     </div>
 
-                    {/* Right: Actions - Desktop */}
-                    {canEdit && (
+                    {/* Right: Actions - Only for processors/cooperatives with paid channels and deliveries enabled */}
+                    {canEdit && record.isPaidFor && (record.channelType === 'processor' || record.channelType === 'cooperative') && record.deliveries && record.deliveries.length > 0 && (
                       <div className="flex items-center gap-2 shrink-0">
-                        {/* Edit Button */}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleEdit(record)}
-                        >
-                          <Edit className="w-4 h-4 mr-1" />
-                          Edit
-                        </Button>
-
-                        {/* Status Update Buttons - Only for processors/cooperatives with paid channels and deliveries enabled */}
-                        {record.isPaidFor && (record.channelType === 'processor' || record.channelType === 'cooperative') && record.deliveries && record.deliveries.length > 0 && (
-                          <>
-                            {record.status === 'pending' && (
-                              <Button
-                                size="sm"
-                                className="bg-blue-600 hover:bg-blue-700 text-white"
-                                onClick={() => handleStatusUpdate(record.id, 'delivered')}
-                              >
-                                <Truck className="w-4 h-4 mr-1" />
-                                Delivered
-                              </Button>
-                            )}
-                            {record.status === 'delivered' && (
-                              <Button
-                                size="sm"
-                                className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                                onClick={() => openPaymentModal(record)}
-                              >
-                                <CreditCard className="w-4 h-4 mr-1" />
-                                Confirm Pay
-                              </Button>
-                            )}
-                          </>
+                        {record.status === 'pending' && (
+                          <Button
+                            size="sm"
+                            className="bg-blue-600 hover:bg-blue-700 text-white"
+                            onClick={() => handleStatusUpdate(record.id, 'delivered')}
+                          >
+                            <Truck className="w-4 h-4 mr-1" />
+                            Delivered
+                          </Button>
                         )}
-
-                        {/* Delete Button */}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                          onClick={() => handleDelete(record.id)}
-                          disabled={isDeletingId === record.id}
-                        >
-                          {isDeletingId === record.id ? (
-                            <div className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
-                          ) : (
-                            <Trash2 className="w-4 h-4" />
-                          )}
+                        {record.status === 'delivered' && (
+                          <Button
+                            size="sm"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                            onClick={() => handleStatusUpdate(record.id, 'paid')}
+                          >
+                            <CheckCircle className="w-4 h-4 mr-1" />
+                            Paid
+                          </Button>
+                        )}
+                        <Button size="sm" variant="outline" className="text-gray-600">
+                          <MoreVertical className="w-4 h-4" />
                         </Button>
                       </div>
                     )}
@@ -719,42 +580,6 @@ export function DistributionRecordsList({
             Clear all filters
           </Button>
         </div>
-      )}
-
-      {/* Delete Error Alert */}
-      {deleteError && (
-        <div className="bg-red-50 border border-red-200 p-4 rounded-lg flex items-start space-x-3">
-          <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
-          <div>
-            <p className="text-sm text-red-700 font-medium">Error deleting record</p>
-            <p className="text-sm text-red-600 mt-1">{deleteError}</p>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setDeleteError(null)}
-              className="mt-2"
-            >
-              Dismiss
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Payment Confirmation Modal */}
-      {selectedRecord && (
-        <PaymentConfirmationModal
-          isOpen={paymentModalOpen}
-          onClose={() => {
-            setPaymentModalOpen(false)
-            setSelectedRecord(null)
-          }}
-          recordId={selectedRecord.id}
-          channelName={selectedRecord.channelName || 'Unknown Channel'}
-          totalAmount={selectedRecord.total_amount || 0}
-          paymentMethod={selectedRecord.distribution_channels?.type || 'mpesa'}
-          onConfirm={(paymentData) => handlePaymentConfirm(selectedRecord, paymentData)}
-          isMobile={isMobile}
-        />
       )}
     </div>
   )

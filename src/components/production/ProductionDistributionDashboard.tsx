@@ -759,7 +759,6 @@ export function ProductionDistributionDashboard({
                      records={distributionRecords} 
                      canEdit={canAddRecords} 
                      isMobile={isMobile}
-                     onEdit={handleEditDistributionRecord}
                    />
                 </CardContent>
              </Card>

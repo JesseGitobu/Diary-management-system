@@ -51,27 +51,28 @@ export function Modal({ open, onClose, title, icon: Icon, accentColor = 'emerald
 }
 
 // ─── Reusable Field Components ─────────────────────────────────────────────────
-export const Field = ({ label, children, required }: { label: string; children: ReactNode; required?: boolean }) => (
+export const Field = ({ label, children, required, error }: { label: string; children: ReactNode; required?: boolean; error?: string }) => (
   <div className="space-y-1.5">
     <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
       {label}{required && <span className="text-rose-500 ml-0.5">*</span>}
     </label>
     {children}
+    {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
   </div>
 )
 
 export const Input = ({ ...props }: React.InputHTMLAttributes<HTMLInputElement>) => (
-  <input className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-300 bg-slate-50" {...props} />
+  <input className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-300 bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed" {...props} />
 )
 
 export const Select = ({ children, ...props }: React.SelectHTMLAttributes<HTMLSelectElement> & { children: ReactNode }) => (
-  <select className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-300 bg-slate-50" {...props}>
+  <select className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-300 bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed" {...props}>
     {children}
   </select>
 )
 
 export const Textarea = ({ ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) => (
-  <textarea rows={3} className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-300 bg-slate-50 resize-none" {...props} />
+  <textarea rows={3} className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-300 bg-slate-50 resize-none disabled:opacity-50 disabled:cursor-not-allowed" {...props} />
 )
 
 export const SectionLabel = ({ children }: { children: ReactNode }) => (

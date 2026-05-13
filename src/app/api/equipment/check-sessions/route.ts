@@ -14,6 +14,7 @@ import {
  * Query params:
  *   - equipment_id: Filter by equipment
  *   - include_checked_in: Include completed check-ins (default: false)
+ *   - include_completed: Include completed check-ins (alternative param, default: false)
  */
 export async function GET(request: NextRequest) {
   try {
@@ -26,33 +27,97 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    console.log('✅ [API] User authenticated:', user.id)
+
     const userRole = await getUserRole(user.id)
+    console.log('🔍 [API] User role retrieved:', userRole)
 
     if (!userRole?.farm_id) {
       console.log('❌ [API] User has no farm associated')
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
     }
 
+    console.log('✅ [API] Farm ID:', userRole.farm_id)
+
     const { searchParams } = new URL(request.url)
     const equipmentId = searchParams.get('equipment_id') || undefined
-    const includeCheckedIn = searchParams.get('include_checked_in') === 'true'
+    const includeCheckedIn = searchParams.get('include_checked_in') === 'true' || searchParams.get('include_completed') === 'true'
 
-    const result = await getCheckSessions(userRole.farm_id, equipmentId, includeCheckedIn)
+    console.log('📋 [API] Query params:', { equipmentId, includeCheckedIn })
 
-    if (!result.success) {
-      console.error('❌ [API] Error fetching check sessions:', result.error)
-      return NextResponse.json({ error: result.error }, { status: 400 })
+    // Create Supabase client to fetch with joins
+    const supabase = await createServerSupabaseClient()
+
+    console.log('🔄 [API] Building query...')
+
+    let query = supabase
+      .from('equipment_check_sessions')
+      .select(`
+        id,
+        equipment_id,
+        assignment_id,
+        farm_id,
+        checked_out_by,
+        checkout_at,
+        checkin_at,
+        purpose,
+        location_used,
+        fuel_level_before_pct,
+        fuel_level_after_pct,
+        condition_on_return,
+        damage_notes,
+        created_at,
+        updated_at,
+        equipment:equipment_id (id, name),
+        worker:checked_out_by (id, name)
+      `)
+      .eq('farm_id', userRole.farm_id)
+
+    console.log('✅ [API] Farm filter applied')
+
+    if (equipmentId) {
+      query = query.eq('equipment_id', equipmentId)
+      console.log('✅ [API] Equipment filter applied:', equipmentId)
     }
 
-    console.log('✅ [API] Check sessions fetched:', result.data.length)
+    // Only include completed sessions if requested
+    if (includeCheckedIn) {
+      query = query.not('checkin_at', 'is', null)
+      console.log('✅ [API] Completed sessions filter applied (checkin_at IS NOT NULL)')
+    } else {
+      // Default: only show open sessions
+      query = query.is('checkin_at', null)
+      console.log('✅ [API] Open sessions filter applied (checkin_at IS NULL)')
+    }
+
+    query = query.order('checkout_at', { ascending: false })
+    console.log('✅ [API] Ordering by checkout_at DESC')
+
+    const { data, error } = await query
+
+    if (error) {
+      console.error('❌ [API] Supabase error:', error)
+      return NextResponse.json({ error: `Database error: ${error.message}` }, { status: 400 })
+    }
+
+    console.log('✅ [API] Query executed successfully')
+    console.log('📊 [API] Sessions found:', data?.length || 0)
+
+    if (data && data.length > 0) {
+      console.log('📋 [API] Sample session:', JSON.stringify(data[0], null, 2))
+    }
+
     return NextResponse.json({
       success: true,
-      data: result.data,
-      count: result.data.length,
+      data: data || [],
+      count: data?.length || 0,
     })
   } catch (error) {
     console.error('❌ [API] Check sessions fetch error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json(
+      { error: `Internal server error: ${error instanceof Error ? error.message : 'Unknown'}` },
+      { status: 500 }
+    )
   }
 }
 
@@ -92,27 +157,37 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    console.log('✅ [API] User authenticated:', user.id)
+
     const userRole = await getUserRole(user.id)
+    console.log('🔍 [API] User role retrieved:', userRole)
 
     if (!userRole?.farm_id) {
       console.log('❌ [API] User has no farm associated')
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
     }
 
+    console.log('✅ [API] Farm ID:', userRole.farm_id)
+
     const body = await request.json()
-    console.log('🔧 [API] Request body:', body)
+    console.log('📦 [API] Request body received:', JSON.stringify(body, null, 2))
 
     const { type } = body
 
     if (!type || !['out', 'in'].includes(type)) {
+      console.log('❌ [API] Invalid type:', type)
       return NextResponse.json(
         { error: 'Invalid type. Must be "out" or "in"' },
         { status: 400 }
       )
     }
 
+    console.log('✅ [API] Type validated:', type)
+
     // Handle checkout
     if (type === 'out') {
+      console.log('🔵 [API] Processing CHECKOUT request')
+
       const {
         equipment_id,
         assignment_id,
@@ -122,12 +197,23 @@ export async function POST(request: NextRequest) {
         fuel_level_before_pct,
       } = body
 
+      console.log('🔍 [API] Checkout params:', {
+        equipment_id,
+        assignment_id,
+        staff_id,
+        purpose,
+        location,
+        fuel_level_before_pct,
+      })
+
       // Validate required fields
       if (!equipment_id) {
+        console.log('❌ [API] Missing equipment_id')
         return NextResponse.json({ error: 'equipment_id is required' }, { status: 400 })
       }
 
       if (!staff_id) {
+        console.log('❌ [API] Missing staff_id')
         return NextResponse.json(
           { error: 'staff_id (worker ID) is required for checked_out_by' },
           { status: 400 }
@@ -135,15 +221,19 @@ export async function POST(request: NextRequest) {
       }
 
       if (!purpose) {
+        console.log('❌ [API] Missing purpose')
         return NextResponse.json({ error: 'purpose is required' }, { status: 400 })
       }
 
       if (fuel_level_before_pct === undefined || fuel_level_before_pct === null) {
+        console.log('❌ [API] Missing fuel_level_before_pct')
         return NextResponse.json(
           { error: 'fuel_level_before_pct is required' },
           { status: 400 }
         )
       }
+
+      console.log('✅ [API] All checkout validations passed')
 
       const result = await createCheckOutSession(userRole.farm_id, staff_id, {
         equipment_id,
@@ -168,6 +258,8 @@ export async function POST(request: NextRequest) {
 
     // Handle checkin
     if (type === 'in') {
+      console.log('🟢 [API] Processing CHECK-IN request')
+
       const {
         session_id,
         equipment_id,
@@ -176,7 +268,16 @@ export async function POST(request: NextRequest) {
         damage_notes,
       } = body
 
+      console.log('🔍 [API] Checkin params:', {
+        session_id,
+        equipment_id,
+        fuel_level_after_pct,
+        condition_on_return,
+        damage_notes,
+      })
+
       if (fuel_level_after_pct === undefined || fuel_level_after_pct === null) {
+        console.log('❌ [API] Missing fuel_level_after_pct')
         return NextResponse.json(
           { error: 'fuel_level_after_pct is required' },
           { status: 400 }
@@ -184,6 +285,7 @@ export async function POST(request: NextRequest) {
       }
 
       if (!condition_on_return) {
+        console.log('❌ [API] Missing condition_on_return')
         return NextResponse.json(
           {
             error:
@@ -196,6 +298,7 @@ export async function POST(request: NextRequest) {
       // Normalize condition value
       const normalizedCondition = condition_on_return.toLowerCase()
       if (!['excellent', 'good', 'fair', 'damaged'].includes(normalizedCondition)) {
+        console.log('❌ [API] Invalid condition:', normalizedCondition)
         return NextResponse.json(
           {
             error: `Invalid condition: ${normalizedCondition}. Must be: excellent, good, fair, or damaged`,
@@ -204,10 +307,14 @@ export async function POST(request: NextRequest) {
         )
       }
 
+      console.log('✅ [API] Condition validated:', normalizedCondition)
+
       let targetSessionId = session_id
 
       // If session_id is not provided, try to find the open session using equipment_id
       if (!targetSessionId && equipment_id) {
+        console.log('🔍 [API] Looking for open session for equipment:', equipment_id)
+
         const supabase = await createServerSupabaseClient()
         const { data: sessions, error: sessionError } = await supabase
           .from('equipment_check_sessions')
@@ -218,13 +325,20 @@ export async function POST(request: NextRequest) {
           .order('checkout_at', { ascending: false })
           .limit(1)
 
+        if (sessionError) {
+          console.error('❌ [API] Error finding open session:', sessionError)
+        }
+
         if (!sessionError && sessions && sessions.length > 0) {
           targetSessionId = sessions[0].id
-          console.log('🔍 [API] Found open session for equipment:', targetSessionId)
+          console.log('✅ [API] Found open session:', targetSessionId)
+        } else {
+          console.log('❌ [API] No open session found for equipment:', equipment_id)
         }
       }
 
       if (!targetSessionId) {
+        console.log('❌ [API] No target session ID found')
         return NextResponse.json(
           {
             error:
@@ -233,6 +347,8 @@ export async function POST(request: NextRequest) {
           { status: 404 }
         )
       }
+
+      console.log('✅ [API] Target session ID confirmed:', targetSessionId)
 
       const result = await completeCheckInSession(targetSessionId, {
         fuel_level_after_pct: Number(fuel_level_after_pct),
@@ -254,7 +370,10 @@ export async function POST(request: NextRequest) {
     }
   } catch (error) {
     console.error('❌ [API] Check sessions POST error:', error)
-    console.error('Error details:', error instanceof Error ? error.message : String(error))
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace')
+    return NextResponse.json(
+      { error: `Internal server error: ${error instanceof Error ? error.message : 'Unknown'}` },
+      { status: 500 }
+    )
   }
 }

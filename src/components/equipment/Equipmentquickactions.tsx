@@ -111,9 +111,9 @@ export function EquipmentQuickActions({
       <AssignEquipmentModal      open={modal === 'assign'}      onClose={close} equipment={eq} />
       <CheckInCheckOutModal      open={modal === 'checkin'}     onClose={close} equipment={eq} />
       <UsageLogModal             open={modal === 'usage'}       onClose={close} equipment={eq} />
-      <DamageReportModal         open={modal === 'damage'}      onClose={close} equipment={eq} />
+      <DamageReportModal         open={modal === 'damage'}      onClose={close} equipment={eq} farmId={farmId} />
       <DepreciationModal         open={modal === 'depreciation'}onClose={close} equipment={eq} />
-      <DisposalModal             open={modal === 'disposal'}    onClose={close} equipment={eq} />
+      <DisposalModal             open={modal === 'disposal'}    onClose={close} equipment={eq} farmId={farmId} />
       <BookingReservationModal   open={modal === 'booking'}     onClose={close} equipment={eq} />
       <DocumentsModal            open={modal === 'documents'}   onClose={close} equipment={eq} />
     </>
