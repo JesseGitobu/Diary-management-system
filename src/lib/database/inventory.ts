@@ -5,7 +5,7 @@ import { getSupabaseClient } from '../supabase/client'
 
 export async function getInventoryItems(
   farmId: string,
-  category?: 'equipment' | 'feed' | 'maintenance' | 'supplies' | 'medical' | 'chemicals' | 'other'
+  categoryId?: string
 ) {
   const supabase = await createServerSupabaseClient()
   
@@ -13,18 +13,24 @@ export async function getInventoryItems(
     .from('inventory_items')
     .select(`
       *,
-      supplier:supplier_id (
+      category:category_id (
         id,
+        code,
         name,
-        contact_person
+        display_name,
+        emoji
+      ),
+      subcategory:subcategory_id (
+        id,
+        name
       )
     `)
     .eq('farm_id', farmId)
-    .eq('status', 'active')
+    .eq('is_active', true)
     .order('name')
   
-  if (category) {
-    query = query.eq('category', category)
+  if (categoryId) {
+    query = query.eq('category_id', categoryId)
   }
   
   const { data, error } = await query
@@ -34,7 +40,6 @@ export async function getInventoryItems(
     return []
   }
   
-  // FIXED: Cast to any[]
   return (data as any[]) || []
 }
 
@@ -47,14 +52,13 @@ export async function getInventoryAlerts(farmId: string) {
       .from('inventory_items')
       .select('*')
       .eq('farm_id', farmId)
-      .eq('status', 'active')
+      .eq('is_active', true)
     
     if (error) {
       console.error('Error fetching inventory items for alerts:', error)
       return []
     }
     
-    // FIXED: Cast to any[] to fix 'never' type error
     const items = (itemsData as any[]) || []
     
     // Filter in JavaScript for low stock and expiring items
@@ -64,9 +68,8 @@ export async function getInventoryAlerts(farmId: string) {
       // Check for low stock
       const isLowStock = (item.current_stock || 0) < (item.minimum_stock || 0)
       
-      // Check for expiring soon
-      const isExpiringSoon = item.expiry_date && 
-        new Date(item.expiry_date) <= thirtyDaysFromNow
+      // Check for expiring soon (only for perishable items with batch tracking)
+      const isExpiringSoon = item.is_perishable && item.requires_batch_tracking
       
       return isLowStock || isExpiringSoon
     })
@@ -80,33 +83,60 @@ export async function getInventoryAlerts(farmId: string) {
 
 export async function createInventoryItem(
   farmId: string, 
-  itemData: Omit<Partial<InventoryItem>, 'id' | 'farm_id' | 'created_at' | 'updated_at'>
+  itemData: {
+    name: string
+    category_id: string
+    subcategory_id?: string
+    department_id?: string
+    equipment_id?: string
+    unit_of_measure: string
+    current_stock: number
+    minimum_stock?: number
+    reorder_level?: number
+    reorder_quantity?: number
+    cost_per_unit?: number
+    storage_location_id?: string
+    is_perishable?: boolean
+    requires_batch_tracking?: boolean
+    shelf_life_days?: number
+    supplier_preferred?: string
+    description?: string
+    notes?: string
+    sku?: string
+    created_by?: string
+  }
 ) {
   const supabase = await createServerSupabaseClient()
   
-  // Ensure required fields are present
+  // Build insert data with all normalized schema fields
   const insertData = {
     farm_id: farmId,
-    name: itemData.name!,
-    category: itemData.category!,
-    unit_of_measure: itemData.unit_of_measure!,
+    name: itemData.name,
+    category_id: itemData.category_id,
+    subcategory_id: itemData.subcategory_id || null,
+    department_id: itemData.department_id || null,
+    equipment_id: itemData.equipment_id || null,
+    unit_of_measure: itemData.unit_of_measure,
     current_stock: itemData.current_stock ?? 0,
     minimum_stock: itemData.minimum_stock ?? 0,
-    // Optional fields
+    reorder_level: itemData.reorder_level ?? 0,
+    reorder_quantity: itemData.reorder_quantity ?? 0,
+    cost_per_unit: itemData.cost_per_unit ?? 0,
+    total_value: (itemData.current_stock ?? 0) * (itemData.cost_per_unit ?? 0),
+    storage_location_id: itemData.storage_location_id || null,
+    is_perishable: itemData.is_perishable ?? false,
+    requires_batch_tracking: itemData.requires_batch_tracking ?? false,
+    shelf_life_days: itemData.shelf_life_days || null,
+    supplier_preferred: itemData.supplier_preferred || null,
     description: itemData.description || null,
-    sku: itemData.sku || null,
-    maximum_stock: itemData.maximum_stock || null,
-    unit_cost: itemData.unit_cost || null,
-    supplier_id: itemData.supplier_id || null,
-    storage_location: itemData.storage_location || null,
-    expiry_date: itemData.expiry_date || null,
     notes: itemData.notes || null,
-    status: itemData.status || 'active',
+    sku: itemData.sku || null,
+    created_by: itemData.created_by || null,
+    is_active: true,
   }
   
-  // FIXED: Cast to any
-  const { data, error } = await (supabase
-    .from('inventory_items') as any)
+  const { data, error } = await supabase
+    .from('inventory_items')
     .insert(insertData)
     .select()
     .single()
@@ -199,16 +229,15 @@ export async function getInventoryStats(farmId: string) {
       .from('inventory_items')
       .select('*', { count: 'exact', head: true })
       .eq('farm_id', farmId)
-      .eq('status', 'active')
+      .eq('is_active', true)
     
     // Get all active items for calculations
     const { data: itemsData } = await supabase
       .from('inventory_items')
-      .select('current_stock, minimum_stock, unit_cost, expiry_date')
+      .select('current_stock, minimum_stock, cost_per_unit')
       .eq('farm_id', farmId)
-      .eq('status', 'active')
+      .eq('is_active', true)
     
-    // FIXED: Cast to any[]
     const items = (itemsData as any[]) || []
     
     if (items.length === 0) {
@@ -225,21 +254,15 @@ export async function getInventoryStats(farmId: string) {
       (item.current_stock || 0) < (item.minimum_stock || 0)
     ).length
     
-    // Calculate expiring items (within 30 days)
-    const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-    const expiringItems = items.filter(item => 
-      item.expiry_date && new Date(item.expiry_date) <= thirtyDaysFromNow
-    ).length
-    
     // Calculate inventory value
     const totalValue = items.reduce((sum, item) => {
-      return sum + ((item.current_stock || 0) * (item.unit_cost || 0))
+      return sum + ((item.current_stock || 0) * (item.cost_per_unit || 0))
     }, 0)
     
     return {
       totalItems: totalItems || 0,
       lowStockItems,
-      expiringItems,
+      expiringItems: 0,
       totalValue,
     }
   } catch (error) {
@@ -452,7 +475,6 @@ export async function getSuppliers(farmId: string) {
     return []
   }
   
-  // FIXED: Cast to any[]
   return (data as any[]) || []
 }
 
@@ -468,7 +490,6 @@ export async function getSupplierStats(farmId: string) {
     
     if (error) throw error
     
-    // FIXED: Cast to any[]
     const suppliers = (suppliersData as any[]) || []
 
     const supplierTypes = suppliers.reduce((acc: any, supplier) => {
@@ -487,5 +508,221 @@ export async function getSupplierStats(farmId: string) {
       totalSuppliers: 0,
       supplierTypes: {}
     }
+  }
+}
+
+// ============================================================================
+// New normalized inventory functions for adjust-stock and purchase orders
+// ============================================================================
+
+export async function getInventoryItem(itemId: string) {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    const { data, error } = await supabase
+      .from('inventory_items')
+      .select('*')
+      .eq('id', itemId)
+      .single()
+    
+    if (error) throw error
+    return data
+  } catch (error) {
+    console.error('Error fetching inventory item:', error)
+    return null
+  }
+}
+
+export async function updateInventoryItemStock(itemId: string, newStock: number) {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    // Get current item to calculate total_value
+    const { data: item, error: getError } = await supabase
+      .from('inventory_items')
+      .select('cost_per_unit')
+      .eq('id', itemId)
+      .single()
+    
+    if (getError) throw getError
+    
+    const totalValue = newStock * (item.cost_per_unit || 0)
+    
+    const { data, error } = await supabase
+      .from('inventory_items')
+      .update({
+        current_stock: newStock,
+        total_value: totalValue,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', itemId)
+      .select()
+      .single()
+    
+    if (error) throw error
+    
+    return { success: true, data }
+  } catch (error) {
+    console.error('Error updating inventory stock:', error)
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to update stock' }
+  }
+}
+
+export async function recordInventoryTransaction(data: {
+  inventory_item_id: string
+  movement_type: 'purchase' | 'usage' | 'adjustment' | 'transfer' | 'loss' | 'return' | 'damage'
+  quantity_change: number
+  stock_before: number
+  stock_after: number
+  batch_id?: string
+  reference_id?: string
+  reference_type?: string
+  performed_by: string
+  usage_type?: string
+  loss_reason?: string
+  animal_group_id?: string
+  notes?: string
+}) {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    const { data: transaction, error } = await supabase
+      .from('inventory_transactions')
+      .insert({
+        inventory_item_id: data.inventory_item_id,
+        movement_type: data.movement_type,
+        quantity_change: data.quantity_change,
+        stock_before: data.stock_before,
+        stock_after: data.stock_after,
+        batch_id: data.batch_id || null,
+        reference_id: data.reference_id || null,
+        reference_type: data.reference_type || null,
+        performed_by: data.performed_by,
+        usage_type: data.usage_type || null,
+        loss_reason: data.loss_reason || null,
+        animal_group_id: data.animal_group_id || null,
+        notes: data.notes || null,
+        created_at: new Date().toISOString(),
+      })
+      .select()
+      .single()
+    
+    if (error) throw error
+    
+    return { success: true, data: transaction }
+  } catch (error) {
+    console.error('Error recording inventory transaction:', error)
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to record transaction' }
+  }
+}
+
+export async function createPurchaseOrder(farmId: string, data: {
+  po_number: string
+  supplier_id?: string
+  supplier_name: string
+  supplier_contact?: string
+  order_date: string
+  expected_delivery: string
+  payment_terms?: string
+  delivery_terms?: string
+  delivery_address?: string
+  notes?: string
+  total_amount: number
+  items: Array<{
+    name: string
+    quantity: number
+    unit: string
+    unit_price: number
+    total: number
+  }>
+  created_by: string
+}) {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    // First, create the purchase order header
+    const { data: po, error: poError } = await supabase
+      .from('purchase_orders')
+      .insert({
+        farm_id: farmId,
+        po_number: data.po_number,
+        supplier_id: data.supplier_id || null,
+        supplier_name: data.supplier_name,
+        supplier_contact: data.supplier_contact || null,
+        order_date: data.order_date,
+        expected_delivery: data.expected_delivery,
+        payment_terms: data.payment_terms || null,
+        delivery_terms: data.delivery_terms || null,
+        delivery_address: data.delivery_address || null,
+        notes: data.notes || null,
+        total_amount: data.total_amount,
+        status: 'pending',
+        created_by: data.created_by,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single()
+    
+    if (poError) throw poError
+    
+    // Then create line items
+    const lineItems = data.items.map(item => ({
+      purchase_order_id: po.id,
+      name: item.name,
+      quantity: item.quantity,
+      unit: item.unit,
+      unit_price: item.unit_price,
+      total: item.total,
+      received_quantity: 0,
+      line_status: 'pending',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }))
+    
+    const { error: itemsError } = await supabase
+      .from('purchase_order_items')
+      .insert(lineItems)
+    
+    if (itemsError) throw itemsError
+    
+    // Fetch the complete PO with items
+    const { data: completePO, error: fetchError } = await supabase
+      .from('purchase_orders')
+      .select(`
+        *,
+        items:purchase_order_items(*)
+      `)
+      .eq('id', po.id)
+      .single()
+    
+    if (fetchError) throw fetchError
+    
+    return { success: true, data: completePO }
+  } catch (error) {
+    console.error('Error creating purchase order:', error)
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to create purchase order' }
+  }
+}
+
+export async function getPurchaseOrders(farmId: string) {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    const { data, error } = await supabase
+      .from('purchase_orders')
+      .select(`
+        *,
+        items:purchase_order_items(*)
+      `)
+      .eq('farm_id', farmId)
+      .order('order_date', { ascending: false })
+    
+    if (error) throw error
+    
+    return data || []
+  } catch (error) {
+    console.error('Error fetching purchase orders:', error)
+    return []
   }
 }
