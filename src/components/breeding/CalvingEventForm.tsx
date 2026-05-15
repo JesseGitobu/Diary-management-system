@@ -2,7 +2,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, type SubmitHandler } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Button } from '@/components/ui/Button'
@@ -26,7 +26,8 @@ const calvingEventSchema = z.object({
   animal_id: z.string().min(1, 'Please select an animal'),
   event_date: z.string().min(1, 'Calving date is required'),
   event_time: z.string().min(1, 'Time of calving is required'),
-  calving_outcome: z.enum(['normal', 'assisted', 'difficult', 'caesarean']),
+  calving_outcome: z.enum(['easy', 'normal', 'difficult', 'assisted', 'caesarean']),
+  assistance_required: z.boolean(), // ✅ Required boolean - always has a value
   calf_name: z.string().optional(),
   calf_breed: z.string().min(1, 'Calf breed is required'),
   calf_gender: z.enum(['male', 'female']),
@@ -34,6 +35,9 @@ const calvingEventSchema = z.object({
   calf_tag_number: z.string().min(1, 'Calf tag number is required'),
   calf_health_status: z.string().optional(),
   calf_father_info: z.string().optional(),
+  colostrum_produced: z.number().min(0).optional(), // ✅ Colostrum produced in liters
+  colostrum_quality: z.enum(['excellent', 'good', 'fair', 'poor']).optional(), // ✅ Colostrum quality
+  veterinarian: z.string().optional(), // ✅ Veterinarian name
   notes: z.string().optional(),
 })
 
@@ -46,34 +50,43 @@ interface CalvingEventFormProps {
   preSelectedAnimalId?: string
   initialData?: any | null
   eventId?: string | null
+  animals?: EligibleAnimal[]
+  loadingAnimals?: boolean
 }
 
 const calvingOutcomes = [
   { 
-    value: 'normal', 
-    label: 'Normal Birth', 
-    description: 'Natural birth without complications',
+    value: 'easy', 
+    label: 'Easy Birth', 
+    description: 'No issues quick delivery',
     color: 'bg-green-100 text-green-800',
     icon: CheckCircle
   },
   { 
-    value: 'assisted', 
-    label: 'Assisted Birth', 
-    description: 'Required minimal human assistance',
-    color: 'bg-yellow-100 text-yellow-800',
-    icon: Heart
+    value: 'normal', 
+    label: 'Normal Birth', 
+    description: 'Standard delivery',
+    color: 'bg-green-100 text-green-800',
+    icon: CheckCircle
   },
   { 
     value: 'difficult', 
     label: 'Difficult Birth', 
-    description: 'Prolonged labor or complications',
+    description: 'Hard but unassisted',
     color: 'bg-orange-100 text-orange-800',
     icon: Clock
   },
   { 
+    value: 'assisted', 
+    label: 'Assisted Birth', 
+    description: 'Experienced technical assistance',
+    color: 'bg-yellow-100 text-yellow-800',
+    icon: Heart
+  },
+  { 
     value: 'caesarean', 
     label: 'Caesarean Section', 
-    description: 'Surgical delivery required',
+    description: 'Surgical delivery',
     color: 'bg-red-100 text-red-800',
     icon: AlertCircle
   },
@@ -128,30 +141,33 @@ type SelectedAnimalDetails = {
   }
 }
 
-export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelectedAnimalId, initialData, eventId }: CalvingEventFormProps) {
+export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelectedAnimalId, initialData, eventId, animals: propsAnimals = [], loadingAnimals: propsLoadingAnimals = false }: CalvingEventFormProps) {
   const [loading, setLoading] = useState(false)
-  const [animals, setAnimals] = useState<EligibleAnimal[]>([])
   const [selectedAnimalDetails, setSelectedAnimalDetails] = useState<SelectedAnimalDetails | null>(null)
   const [breedingHistory, setBreedingHistory] = useState<BreedingHistory | null>(null)
   const [detailsLoading, setDetailsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [userId, setUserId] = useState<string | null>(null) // Store current user ID
-  const [loadingAnimals, setLoadingAnimals] = useState(true)
+  const [userId, setUserId] = useState<string | null>(null)
   
   const form = useForm<CalvingEventFormData>({
     resolver: zodResolver(calvingEventSchema),
+    mode: 'onBlur',
     defaultValues: {
       animal_id: preSelectedAnimalId || '',
       event_date: new Date().toISOString().split('T')[0],
       event_time: new Date().toTimeString().slice(0, 5),
-      calving_outcome: 'normal',
+      calving_outcome: 'easy' as const,
+      assistance_required: false,
       calf_name: '',
       calf_breed: 'holstein',
-      calf_gender: 'female',
+      calf_gender: 'female' as const,
       calf_weight: undefined,
       calf_tag_number: '',
       calf_health_status: 'Healthy',
       calf_father_info: '',
+      colostrum_produced: undefined,
+      colostrum_quality: undefined,
+      veterinarian: '',
       notes: '',
     },
   })
@@ -168,13 +184,7 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
     fetchUser()
   }, [])
 
-  useEffect(() => {
-    // Only fetch if we don't already have animals — prevents redundant re-fetches
-    // triggered by Supabase SIGNED_IN token-refresh events re-mounting parent components.
-    if (animals.length === 0) {
-      loadEligibleAnimals()
-    }
-  }, [farmId])
+  // Animals are fetched at parent level, no need to fetch here
 
   const selectedAnimalId = form.watch('animal_id')
 
@@ -242,11 +252,13 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
     const raw = initialData.event_date || ''
     const datePart = raw.includes('T') ? raw.split('T')[0] : raw
     const timePart = raw.includes('T') ? (raw.split('T')[1] || '').slice(0, 5) : ''
+    const outcome = initialData.calving_outcome || 'easy'
     form.reset({
       animal_id: initialData.animal_id || '',
       event_date: datePart,
       event_time: timePart || new Date().toTimeString().slice(0, 5),
-      calving_outcome: initialData.calving_outcome || 'normal',
+      calving_outcome: outcome,
+      assistance_required: ['assisted', 'caesarean'].includes(outcome),
       calf_name: initialData.calf_name || '',
       calf_breed: initialData.calf_breed || 'holstein',
       calf_gender: initialData.calf_gender || 'female',
@@ -254,6 +266,9 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
       calf_tag_number: initialData.calf_tag_number || '',
       calf_health_status: initialData.calf_health_status || 'Healthy',
       calf_father_info: initialData.calf_father_info || '',
+      colostrum_produced: initialData.colostrum_produced ?? undefined,
+      colostrum_quality: initialData.colostrum_quality || undefined,
+      veterinarian: initialData.veterinarian || '',
       notes: initialData.notes || '',
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -274,41 +289,9 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
     return () => controller.abort()
   }, [selectedAnimalId])
 
-  const loadEligibleAnimals = async () => {
-    setLoadingAnimals(true)
-    setError(null)
-    try {
-      const eligibleAnimals = await getAnimalsForCalving(farmId)
 
-      if (preSelectedAnimalId) {
-        const found = eligibleAnimals.find((a: any) => a.id === preSelectedAnimalId)
-        if (!found) {
-          eligibleAnimals.unshift({
-            id: preSelectedAnimalId,
-            tag_number: 'Selected Animal',
-            name: '(Current)',
-            breed: 'Unknown',
-            production_status: null,
-            expected_calving_date: null,
-          })
-        }
-      }
-
-      setAnimals(eligibleAnimals)
-
-      if (preSelectedAnimalId) {
-        form.setValue('animal_id', preSelectedAnimalId)
-      }
-    } catch (error) {
-      console.error('❌ CalvingEventForm: Error loading animals:', error)
-      const errorMessage = error instanceof Error ? error.message : String(error)
-      setError(`Failed to load animals eligible for calving: ${errorMessage}`)
-    } finally {
-      setLoadingAnimals(false)
-    }
-  }
   
-  const handleSubmit = async (data: CalvingEventFormData) => {
+  const handleSubmit: SubmitHandler<CalvingEventFormData> = async (data: CalvingEventFormData) => {
     if (!userId) {
       setError('User not authenticated. Please reload.')
       return
@@ -322,8 +305,11 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
       const { event_time, ...restData } = data
 
       if (eventId) {
+        console.log('📝 CalvingEventForm: Updating existing calving event:', eventId)
+        // ✅ Remove assistance_required - it only belongs in calving_records, not breeding_events
+        const { assistance_required, ...payloadData } = restData
         const payload = {
-          ...restData,
+          ...payloadData,
           event_date: dateTime,
           farm_id: farmId,
           event_type: 'calving',
@@ -334,9 +320,12 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
           body: JSON.stringify({ eventData: payload }),
         })
         const result = await response.json()
+        console.log('📝 CalvingEventForm: Update response:', result)
         if (response.ok && result.success) {
+          console.log('✅ CalvingEventForm: Calving event updated successfully, closing modal')
           onEventCreated()
         } else {
+          console.error('❌ CalvingEventForm: Update failed:', result.error)
           setError(result.error || 'Failed to update calving event')
         }
         return
@@ -348,19 +337,37 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
         farm_id: farmId,
         event_type: 'calving',
         created_by: userId,
+        assistance_required: data.assistance_required,
+        colostrum_produced: data.colostrum_produced,
+        colostrum_quality: data.colostrum_quality,
+        veterinarian: data.veterinarian,
       }
 
+      console.log('📝 CalvingEventForm: Submitting calving event with assistance_required:', data.assistance_required, 'for outcome:', data.calving_outcome)
+      console.log('📝 CalvingEventForm: Colostrum - Produced:', data.colostrum_produced, 'Quality:', data.colostrum_quality, 'Veterinarian:', data.veterinarian)
+      console.log('📝 CalvingEventForm: Full event data:', eventData)
       const result = await processCalvingAction(eventData, farmId)
 
-      if (result.success) {
-        await incrementCalfTagNumber(farmId)
+      console.log('📝 CalvingEventForm: Server action result:', result)
+      console.log('📝 CalvingEventForm: Result type:', typeof result, 'Success value:', result?.success)
+
+      if (result && result.success) {
+        console.log('✅ CalvingEventForm: Calving event created successfully')
+        try {
+          await incrementCalfTagNumber(farmId)
+          console.log('✅ CalvingEventForm: Incremented calf tag counter')
+        } catch (tagError) {
+          console.warn('⚠️ CalvingEventForm: Failed to increment tag counter:', tagError)
+        }
+        console.log('✅ CalvingEventForm: Calling onEventCreated callback to close modal')
         onEventCreated()
       } else {
-        setError(result.error || 'Failed to process calving event')
+        console.error('❌ CalvingEventForm: Server action failed:', result)
+        setError(result?.error || 'Failed to process calving event')
       }
     } catch (error) {
       console.error('❌ CalvingEventForm: Error submitting calving event:', error)
-      setError('An unexpected error occurred')
+      setError('An unexpected error occurred: ' + (error instanceof Error ? error.message : String(error)))
     } finally {
       setLoading(false)
     }
@@ -434,10 +441,17 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
   const selectedOutcome = form.watch('calving_outcome')
   const selectedAnimal = form.watch('animal_id')
   const calvingDate = form.watch('event_date')
+
+  // Auto-update assistance_required based on calving outcome
+  useEffect(() => {
+    const isAssistanceRequired = ['assisted', 'caesarean'].includes(selectedOutcome)
+    console.log(`📝 CalvingEventForm: Setting assistance_required to ${isAssistanceRequired} for outcome "${selectedOutcome}"`)
+    form.setValue('assistance_required', isAssistanceRequired)
+  }, [selectedOutcome]) // ✅ Remove 'form' from dependencies
   
   useEffect(() => {
     if (selectedAnimal && calvingDate && !form.getValues('calf_tag_number')) {
-      const animal = animals.find(a => a.id === selectedAnimal)
+      const animal = propsAnimals.find(a => a.id === selectedAnimal)
       if (animal) {
         // Generate calf tag based on farm's tagging settings
         generateCalfTag(farmId, calvingDate, animal.tag_number)
@@ -455,7 +469,7 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
           })
       }
     }
-  }, [selectedAnimal, calvingDate, farmId]) // ✅ FIX: Remove 'animals' and 'form' from dependencies
+  }, [selectedAnimal, calvingDate, farmId, propsAnimals])
 
   // Auto-populate sire information from latest insemination
   useEffect(() => {
@@ -475,7 +489,7 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
     }
   }, [selectedAnimal]) // ✅ FIX: Remove 'form' from dependencies
   
-  if (loadingAnimals) {
+  if (propsLoadingAnimals) {
     return (
       <div className="flex items-center justify-center py-8">
         <LoadingSpinner size="lg" />
@@ -493,7 +507,7 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
         </div>
       )}
       
-      {animals.length === 0 && !loadingAnimals && !preSelectedAnimalId && (
+      {propsAnimals.length === 0 && !propsLoadingAnimals && !preSelectedAnimalId && (
         <div className="p-4 bg-blue-50 border border-blue-200 rounded-md text-blue-700 text-sm">
           <div className="flex items-start space-x-2">
             <Baby className="w-4 h-4 mt-0.5 flex-shrink-0" />
@@ -514,18 +528,18 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
           <select
             id="animal_id"
             {...form.register('animal_id')}
-            disabled={!!preSelectedAnimalId || animals.length === 0}
+            disabled={!!preSelectedAnimalId || propsAnimals.length === 0}
             className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent ${
               preSelectedAnimalId ? 'bg-gray-100 cursor-not-allowed' : ''
             }`}
           >
             <option value="">Choose an animal...</option>
-            {animals.map((animal) => (
+            {propsAnimals.map((animal) => (
               <option key={animal.id} value={animal.id}>
                 {animal.tag_number} - {animal.name || 'Unnamed'} • {animal.breed || 'Unknown breed'}
               </option>
             ))}
-            {preSelectedAnimalId && !animals.find(a => a.id === preSelectedAnimalId) && (
+            {preSelectedAnimalId && !propsAnimals.find(a => a.id === preSelectedAnimalId) && (
                <option key="preselected-fallback" value={preSelectedAnimalId}>Current Animal</option>
             )}
           </select>
@@ -617,44 +631,27 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
         
         {/* Calving Outcome */}
         <div>
-          <Label>Calving Outcome *</Label>
-          <p className="text-sm text-gray-600 mb-3">
-            Select the type of birth that occurred:
+          <Label htmlFor="calving_outcome">Calving Outcome *</Label>
+          <select
+            id="calving_outcome"
+            {...form.register('calving_outcome')}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+          >
+            <option value="">Select calving outcome...</option>
+            {calvingOutcomes.map((outcome) => (
+              <option key={outcome.value} value={outcome.value}>
+                {outcome.label} - {outcome.description}
+              </option>
+            ))}
+          </select>
+          {form.formState.errors.calving_outcome && (
+            <p className="text-sm text-red-600 mt-1">
+              {form.formState.errors.calving_outcome.message}
+            </p>
+          )}
+          <p className="text-sm text-gray-600 mt-1">
+            Select the type of birth that occurred
           </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {calvingOutcomes.map((outcome) => {
-              const Icon = outcome.icon
-              const isSelected = selectedOutcome === outcome.value
-              
-              return (
-                <button
-                  key={outcome.value}
-                  type="button"
-                  onClick={() => form.setValue('calving_outcome', outcome.value as any)}
-                  className={`p-4 border rounded-lg transition-all text-left ${
-                    isSelected
-                      ? 'border-farm-green bg-green-50 shadow-md'
-                      : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
-                  }`}
-                >
-                  <div className="flex items-start space-x-3">
-                    <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-                      isSelected ? 'bg-farm-green text-white' : outcome.color
-                    }`}>
-                      <Icon className="w-4 h-4" />
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="font-medium text-gray-900">{outcome.label}</h4>
-                      <p className="text-sm text-gray-600 mt-1">{outcome.description}</p>
-                      {isSelected && (
-                        <Badge className="mt-2 bg-green-100 text-green-800">Selected</Badge>
-                      )}
-                    </div>
-                  </div>
-                </button>
-              )
-            })}
-          </div>
         </div>
         
         {/* Calf Details Section */}
@@ -777,6 +774,7 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
                 {...form.register('calf_health_status')}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
               >
+                <option value="">Select health status...</option>
                 <option value="Healthy">Healthy</option>
                 <option value="Sick">Sick</option>
                 <option value="Requires attention">Requires Attention</option>
@@ -802,6 +800,70 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
           </div>
         </div>
         
+        {/* Colostrum & Veterinarian Section */}
+        <div className="border-t border-gray-200 pt-6">
+          <div className="mb-4">
+            <h4 className="text-lg font-medium text-gray-900 flex items-center">
+              <Heart className="w-5 h-5 mr-2 text-pink-500" />
+              Colostrum & Veterinary Information
+            </h4>
+            <p className="text-sm text-gray-600 mt-1">
+              Record details about colostrum production and any veterinary care provided.
+            </p>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Colostrum Produced */}
+            <div>
+              <Label htmlFor="colostrum_produced">Colostrum Produced (liters)</Label>
+              <Input
+                id="colostrum_produced"
+                type="number"
+                step="0.1"
+                min="0"
+                max="50"
+                {...form.register('colostrum_produced', { valueAsNumber: true })}
+                placeholder="e.g., 7.5"
+              />
+              <p className="text-sm text-gray-600 mt-1">
+                Amount of colostrum produced (typical: 5-20L)
+              </p>
+            </div>
+
+            {/* Colostrum Quality */}
+            <div>
+              <Label htmlFor="colostrum_quality">Colostrum Quality</Label>
+              <select
+                id="colostrum_quality"
+                {...form.register('colostrum_quality')}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+              >
+                <option value="">Select quality...</option>
+                <option value="excellent">Excellent</option>
+                <option value="good">Good</option>
+                <option value="fair">Fair</option>
+                <option value="poor">Poor</option>
+              </select>
+              <p className="text-sm text-gray-600 mt-1">
+                Quality assessment of the colostrum
+              </p>
+            </div>
+
+            {/* Veterinarian */}
+            <div>
+              <Label htmlFor="veterinarian">Veterinarian Name</Label>
+              <Input
+                id="veterinarian"
+                {...form.register('veterinarian')}
+                placeholder="e.g., Dr. Smith"
+              />
+              <p className="text-sm text-gray-600 mt-1">
+                Name of veterinarian attending the calving (if applicable)
+              </p>
+            </div>
+          </div>
+        </div>
+        
         {/* Additional Notes */}
         <div>
           <Label htmlFor="notes">Additional Notes</Label>
@@ -821,7 +883,7 @@ export function CalvingEventForm({ farmId, onEventCreated, onCancel, preSelected
           </Button>
           <Button 
             type="submit" 
-            disabled={loading || (animals.length === 0 && !preSelectedAnimalId)}
+            disabled={loading || (propsAnimals.length === 0 && !preSelectedAnimalId)}
             className="min-w-[160px]"
           >
             {loading ? (

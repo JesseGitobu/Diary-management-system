@@ -120,6 +120,7 @@ export function BreedingEventTimeline({
   // Filter state
   const [selectedEventTypes, setSelectedEventTypes] = useState<string[]>([])
   const [dateFilter, setDateFilter] = useState<'all' | '7days' | '30days' | '90days'>('all')
+  const [searchQuery, setSearchQuery] = useState<string>('')
   const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set())
   const [openDropdown, setOpenDropdown] = useState<string | null>(null)
   const filterDropdownRef = useRef<HTMLDivElement>(null)
@@ -191,9 +192,18 @@ export function BreedingEventTimeline({
       filtered = filtered.filter(e => new Date(e.event_date) >= cutoff)
     }
 
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim()
+      filtered = filtered.filter(e => {
+        const tagMatch = e.animals?.tag_number?.toLowerCase().includes(query)
+        const nameMatch = e.animals?.name?.toLowerCase().includes(query)
+        return tagMatch || nameMatch
+      })
+    }
+
     filtered.sort((a, b) => new Date(b.event_date).getTime() - new Date(a.event_date).getTime())
     return filtered
-  }, [events, selectedEventTypes, dateFilter])
+  }, [events, selectedEventTypes, dateFilter, searchQuery])
 
   const toggleEventType = (type: string) =>
     setSelectedEventTypes(prev =>
@@ -227,10 +237,11 @@ export function BreedingEventTimeline({
   const clearFilters = () => {
     setSelectedEventTypes([])
     setDateFilter('all')
+    setSearchQuery('')
   }
 
-  const hasActiveFilters = selectedEventTypes.length > 0 || dateFilter !== 'all'
-  const activeFilterCount = selectedEventTypes.length + (dateFilter !== 'all' ? 1 : 0)
+  const hasActiveFilters = selectedEventTypes.length > 0 || dateFilter !== 'all' || searchQuery.trim() !== ''
+  const activeFilterCount = selectedEventTypes.length + (dateFilter !== 'all' ? 1 : 0) + (searchQuery.trim() ? 1 : 0)
 
   // ── Early returns ──────────────────────────────────────────────────────────
   if (error) {
@@ -308,6 +319,20 @@ export function BreedingEventTimeline({
         </div>
 
         <div ref={filterDropdownRef} className={cn("px-4 py-3 space-y-3", isMobile && "px-3 py-2 space-y-2")}>
+          {/* Search Input */}
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search by animal name or tag..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className={cn(
+                "w-full px-3 py-2.5 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-farm-green/20 focus:border-farm-green transition-colors",
+                isMobile ? "text-sm" : "text-base"
+              )}
+            />
+          </div>
+
           {/* Filter Dropdowns - Single Row */}
           <div className={cn("flex gap-3", isMobile ? "flex-col" : "flex-row")}>
             
@@ -435,6 +460,15 @@ export function BreedingEventTimeline({
                   className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border bg-farm-green/10 text-farm-green border-farm-green/20"
                 >
                   {DATE_RANGE_OPTIONS.find(o => o.value === dateFilter)?.label}
+                  <X className="w-2.5 h-2.5 ml-0.5" />
+                </button>
+              )}
+              {searchQuery.trim() && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border bg-blue-50 text-blue-700 border-blue-200"
+                >
+                  {searchQuery}
                   <X className="w-2.5 h-2.5 ml-0.5" />
                 </button>
               )}

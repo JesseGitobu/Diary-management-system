@@ -5,9 +5,10 @@ import { useState, useEffect, useMemo } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { Baby, Calendar, Clock, AlertTriangle } from 'lucide-react'
+import { Baby, Calendar, Clock, AlertTriangle, Search, X } from 'lucide-react'
 import Link from 'next/link'
 import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
+import { AbortionForm } from './AbortionForm'
 
 interface PregnantAnimalsListProps {
   farmId: string
@@ -37,6 +38,10 @@ export function PregnantAnimalsList({
   const { isMobile } = useDeviceInfo()
   const [pregnantAnimals, setPregnantAnimals] = useState<PregnantAnimal[]>([])
   const [loading, setLoading] = useState(true)
+  const [selectedAbortionAnimal, setSelectedAbortionAnimal] = useState<PregnantAnimal | null>(null)
+  const [abortionModalOpen, setAbortionModalOpen] = useState(false)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'normal' | 'due_soon' | 'overdue'>('all')
 
   useEffect(() => {
     loadPregnantAnimals()
@@ -63,10 +68,37 @@ export function PregnantAnimalsList({
     }
   }
 
+  const handleMarkAborted = (animal: PregnantAnimal) => {
+    setSelectedAbortionAnimal(animal)
+    setAbortionModalOpen(true)
+  }
+
+  const handleAbortionRecorded = () => {
+    setAbortionModalOpen(false)
+    setSelectedAbortionAnimal(null)
+    loadPregnantAnimals() // ✅ Reload the list to reflect the abortion
+  }
+
   // Filter out animals that have just been marked as calved in the parent component
   const visibleAnimals = useMemo(() => {
-    return pregnantAnimals.filter(animal => !hiddenAnimalIds.includes(animal.animal_id))
-  }, [pregnantAnimals, hiddenAnimalIds])
+    let filtered = pregnantAnimals.filter(animal => !hiddenAnimalIds.includes(animal.animal_id))
+    
+    // Apply search filter
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase()
+      filtered = filtered.filter(animal => 
+        (animal.name?.toLowerCase().includes(term)) ||
+        (animal.tag_number?.toLowerCase().includes(term))
+      )
+    }
+    
+    // Apply status filter
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(animal => animal.status === statusFilter)
+    }
+    
+    return filtered
+  }, [pregnantAnimals, hiddenAnimalIds, searchTerm, statusFilter])
 
   const getDaysUntilDue = (dueDate: string) => {
     const today = new Date()
@@ -137,15 +169,98 @@ export function PregnantAnimalsList({
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {/* Filters Section */}
+          <div className="mb-6 space-y-4">
+            {/* Search Bar */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search by animal name or tag number..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-farm-green"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Status Filter Buttons */}
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setStatusFilter('all')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  statusFilter === 'all'
+                    ? 'bg-farm-green text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                All ({pregnantAnimals.filter(a => !hiddenAnimalIds.includes(a.animal_id)).length})
+              </button>
+              
+              <button
+                onClick={() => setStatusFilter('normal')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  statusFilter === 'normal'
+                    ? 'bg-green-600 text-white'
+                    : 'bg-green-100 text-green-700 hover:bg-green-200'
+                }`}
+              >
+                Normal ({pregnantAnimals.filter(a => !hiddenAnimalIds.includes(a.animal_id) && a.status === 'normal').length})
+              </button>
+              
+              <button
+                onClick={() => setStatusFilter('due_soon')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  statusFilter === 'due_soon'
+                    ? 'bg-yellow-600 text-white'
+                    : 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
+                }`}
+              >
+                Due Soon ({pregnantAnimals.filter(a => !hiddenAnimalIds.includes(a.animal_id) && a.status === 'due_soon').length})
+              </button>
+              
+              <button
+                onClick={() => setStatusFilter('overdue')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  statusFilter === 'overdue'
+                    ? 'bg-red-600 text-white'
+                    : 'bg-red-100 text-red-700 hover:bg-red-200'
+                }`}
+              >
+                Overdue ({pregnantAnimals.filter(a => !hiddenAnimalIds.includes(a.animal_id) && a.status === 'overdue').length})
+              </button>
+            </div>
+          </div>
           {visibleAnimals.length === 0 ? (
             <div className="text-center py-8">
               <Baby className="mx-auto h-12 w-12 text-gray-400" />
               <h3 className="mt-2 text-sm font-medium text-gray-900">
-                No in-calf animals
+                {searchTerm || statusFilter !== 'all' ? 'No animals match filters' : 'No in-calf animals'}
               </h3>
               <p className="mt-1 text-sm text-gray-500">
-                Animals will appear here after confirmed pregnancies
+                {searchTerm || statusFilter !== 'all' 
+                  ? 'Try adjusting your search or filters'
+                  : 'Animals will appear here after confirmed pregnancies'}
               </p>
+              {(searchTerm || statusFilter !== 'all') && (
+                <button
+                  onClick={() => {
+                    setSearchTerm('')
+                    setStatusFilter('all')
+                  }}
+                  className="mt-3 inline-flex items-center space-x-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-gray-700 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                  <span>Clear filters</span>
+                </button>
+              )}
             </div>
           ) : (
             <div className="space-y-4">
@@ -212,8 +327,8 @@ export function PregnantAnimalsList({
                         </div>
 
                         {/* Action buttons: full width */}
-                        <div className="flex gap-2">
-                          <Button asChild size="sm" variant="outline" className="flex-1">
+                        <div className="flex flex-col gap-2">
+                          <Button asChild size="sm" variant="outline" className="w-full">
                             <Link href={`/dashboard/animals/${animal.animal_id}`}>
                               View Animal
                             </Link>
@@ -221,10 +336,20 @@ export function PregnantAnimalsList({
                           {canManage && (isDueSoon || isOverdue) && (
                             <Button
                               size="sm"
-                              className="flex-1"
+                              className="w-full"
                               onClick={() => onRecordCalving && onRecordCalving(animal.animal_id)}
                             >
                               Record Calving
+                            </Button>
+                          )}
+                          {canManage && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="w-full text-red-600 border-red-200 hover:bg-red-50"
+                              onClick={() => handleMarkAborted(animal)}
+                            >
+                              Mark as Aborted
                             </Button>
                           )}
                         </div>
@@ -283,8 +408,16 @@ export function PregnantAnimalsList({
                                 >
                                   Record Calving
                                 </Button>
-                              )}
-                            </div>
+                              )}                            {canManage && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-red-600 border-red-200 hover:bg-red-50"
+                                onClick={() => handleMarkAborted(animal)}
+                              >
+                                Mark as Aborted
+                              </Button>
+                            )}                            </div>
                           </div>
                         </div>
 
@@ -312,6 +445,38 @@ export function PregnantAnimalsList({
           )}
         </CardContent>
       </Card>
+      
+      {/* ✅ Abortion Modal */}
+      {abortionModalOpen && selectedAbortionAnimal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <CardHeader className="border-b">
+              <CardTitle>Mark Pregnancy as Aborted</CardTitle>
+              <CardDescription>
+                Recording abortion for {selectedAbortionAnimal.name || `Animal ${selectedAbortionAnimal.tag_number}`}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-6">
+              <AbortionForm
+                farmId={farmId}
+                animalId={selectedAbortionAnimal.animal_id}
+                animalName={selectedAbortionAnimal.name}
+                animalTag={selectedAbortionAnimal.tag_number}
+                pregnancyRecord={{
+                  id: selectedAbortionAnimal.id,
+                  service_date: selectedAbortionAnimal.conception_date,
+                  expected_calving_date: selectedAbortionAnimal.estimated_due_date
+                }}
+                onAbortionRecorded={handleAbortionRecorded}
+                onCancel={() => {
+                  setAbortionModalOpen(false)
+                  setSelectedAbortionAnimal(null)
+                }}
+              />
+            </CardContent>
+          </Card>
+        </div>
+      )}
       
       {/* Summary Statistics - Updated to use dynamic visibleAnimals count */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

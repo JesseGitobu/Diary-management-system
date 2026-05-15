@@ -7,7 +7,7 @@ import { Database } from '@/lib/supabase/types'
 export type BreedingEventType = 'heat_detection' | 'insemination' | 'pregnancy_check' | 'calving'
 export type InseminationMethod = 'artificial_insemination' | 'natural_breeding'
 export type PregnancyResult = 'pregnant' | 'not_pregnant' | 'uncertain'
-export type CalvingOutcome = 'normal' | 'assisted' | 'difficult' | 'caesarean'
+export type CalvingOutcome = 'easy' | 'normal' | 'assisted' | 'difficult' | 'caesarean'
 
 export interface BreedingEventBase {
   id?: string
@@ -43,6 +43,7 @@ export interface PregnancyCheckEvent extends BreedingEventBase {
 export interface CalvingEvent extends BreedingEventBase {
   event_type: 'calving'
   calving_outcome: CalvingOutcome
+  assistance_required?: boolean
   calf_name?: string
   calf_breed?: string
   calf_gender?: string
@@ -50,6 +51,9 @@ export interface CalvingEvent extends BreedingEventBase {
   calf_tag_number?: string
   calf_health_status?: string
   calf_father_info?: string
+  colostrum_produced?: number // ✅ Colostrum produced in liters
+  colostrum_quality?: 'excellent' | 'good' | 'fair' | 'poor' // ✅ Quality assessment
+  veterinarian?: string // ✅ Veterinarian name
 }
 
 // ============================================

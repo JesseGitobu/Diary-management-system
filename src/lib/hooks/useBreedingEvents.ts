@@ -21,8 +21,22 @@ const LOAD_MORE_LIMIT = 50
 // Create the client once outside the hook to avoid new references on every render
 const supabase = createClient()
 
+// ✅ Filter pregnancy check records to only show confirmed, false, aborted, or complete statuses
+const ALLOWED_PREGNANCY_STATUSES = ['confirmed', 'false', 'aborted', 'complete']
+
 function normalizeEvents(data: any[]): any[] {
-  return data.map((event: any) => {
+  return data
+    .filter((event: any) => {
+      // ✅ For pregnancy_check events, only include if pregnancy_status is in allowed list
+      if (event.event_type === 'pregnancy_check' && event.pregnancy_records) {
+        const status = event.pregnancy_records.pregnancy_status
+        if (!ALLOWED_PREGNANCY_STATUSES.includes(status)) {
+          return false
+        }
+      }
+      return true
+    })
+    .map((event: any) => {
     let inseminationData = {}
     let pregnancyData = {}
     let calvingData = {}

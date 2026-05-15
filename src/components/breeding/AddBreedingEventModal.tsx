@@ -9,7 +9,7 @@ import { HeatDetectionForm } from './HeatDetectionForm'
 import { InseminationForm } from './InseminationForm'
 import { PregnancyCheckForm } from './PregnancyCheckForm'
 import { CalvingEventForm } from './CalvingEventForm'
-import type { BreedingEventType } from '@/lib/database/breeding'
+import { getAnimalsForCalving, type BreedingEventType } from '@/lib/database/breeding'
 
 interface AddBreedingEventModalProps {
   isOpen: boolean
@@ -59,6 +59,28 @@ export function AddBreedingEventModal({
 }: AddBreedingEventModalProps) {
   const [selectedEventType, setSelectedEventType] = useState<BreedingEventType | null>(null)
   const [step, setStep] = useState<'select' | 'form'>('select')
+  const [calvingAnimals, setCalvingAnimals] = useState<any[]>([])
+  const [loadingCalvingAnimals, setLoadingCalvingAnimals] = useState(false)
+
+  // Fetch eligible animals for calving when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      loadEligibleAnimals()
+    }
+  }, [isOpen, farmId])
+
+  const loadEligibleAnimals = async () => {
+    setLoadingCalvingAnimals(true)
+    try {
+      const animals = await getAnimalsForCalving(farmId)
+      setCalvingAnimals(animals)
+    } catch (error) {
+      console.error('Error loading eligible animals for calving:', error)
+      setCalvingAnimals([])
+    } finally {
+      setLoadingCalvingAnimals(false)
+    }
+  }
 
   useEffect(() => {
     if (editingEvent) {
@@ -110,7 +132,7 @@ export function AddBreedingEventModal({
       case 'pregnancy_check':
         return <PregnancyCheckForm {...commonProps} />
       case 'calving':
-        return <CalvingEventForm {...commonProps} />
+        return <CalvingEventForm {...commonProps} animals={calvingAnimals} loadingAnimals={loadingCalvingAnimals} />
       default:
         return null
     }

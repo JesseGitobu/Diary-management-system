@@ -33,7 +33,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
 
     const { data: existing, error: fetchError } = await (supabase as any)
       .from('breeding_events')
-      .select('id, event_type, service_record_id, pregnancy_record_id, farm_id')
+      .select('id, event_type, service_record_id, pregnancy_record_id, calving_record_id, farm_id')
       .eq('id', id)
       .eq('farm_id', userRole.farm_id)
       .single()
@@ -118,18 +118,37 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       }
 
     } else if (existing.event_type === 'calving') {
-      baseUpdate.calving_outcome = eventData.calving_outcome || null
-      baseUpdate.calf_gender = eventData.calf_gender || null
-      baseUpdate.calf_weight = eventData.calf_weight || null
-      baseUpdate.calf_tag_number = eventData.calf_tag_number || null
-      baseUpdate.calf_health_status = eventData.calf_health_status || null
-
+      // ✅ Only update breeding_events with valid columns (not calving-specific fields)
+      // Calving details stay in calving_records table
       const { error: updateError } = await (supabase as any)
         .from('breeding_events')
         .update(baseUpdate)
         .eq('id', id)
 
       if (updateError) return NextResponse.json({ error: updateError.message }, { status: 400 })
+
+      // ✅ Update calving_records with calving-specific details
+      if (existing.calving_record_id) {
+        const calvingUpdate: Record<string, any> = {
+          calving_difficulty: eventData.calving_outcome || null,
+          assistance_required: eventData.assistance_required ?? null,
+          veterinarian: eventData.veterinarian || null,
+          colostrum_produced: eventData.colostrum_produced || null,
+          colostrum_quality: eventData.colostrum_quality || null,
+          calf_alive: eventData.calf_health_status !== 'deceased',
+          notes: eventData.notes || null,
+        }
+
+        const { error: calvingError } = await (supabase as any)
+          .from('calving_records')
+          .update(calvingUpdate)
+          .eq('id', existing.calving_record_id)
+
+        if (calvingError) {
+          console.error('Error updating calving record:', calvingError)
+          return NextResponse.json({ error: calvingError.message }, { status: 400 })
+        }
+      }
     }
 
     const { data: updated } = await (supabase as any)

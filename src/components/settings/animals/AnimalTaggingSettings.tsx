@@ -2931,17 +2931,7 @@ export default function AnimalTaggingSettings({
             </p>
           </div>
 
-          {/* Loading State */}
-          {/* {isLoadingCalfData && (
-            <Card className="mb-6 border-blue-200 bg-blue-50">
-              <CardContent className="p-6">
-                <div className="flex items-center space-x-3">
-                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-blue-500 border-t-transparent"></div>
-                  <p className="text-sm text-blue-700">Loading calf management settings...</p>
-                </div>
-              </CardContent>
-            </Card>
-          )} */}
+          
 
           {/* Error State */}
           {calfSettingsError && (
@@ -3667,6 +3657,553 @@ export default function AnimalTaggingSettings({
                   }))}
                 />
               </div>
+
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div>
+                  <p className="font-medium text-gray-900">Health & Protocol Alerts</p>
+                  <p className="text-sm text-gray-600">Vaccination and health schedule alerts</p>
+                </div>
+                <Switch
+                  checked={calfSettings.enableHealthAlerts}
+                  onCheckedChange={(checked) => setCalfSettings(prev => ({
+                    ...prev,
+                    enableHealthAlerts: checked
+                  }))}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Protocol Selection */}
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>🎯 Rearing Protocol</CardTitle>
+              <CardDescription>Choose a predefined calf rearing protocol</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-3'}`}>
+                {calfSettings.savedProtocols.map(protocol => (
+                  <button
+                    key={protocol.id}
+                    onClick={() => {
+                      setCalfSettings(prev => ({ ...prev, selectedProtocol: protocol.id }));
+                      setHasUnsavedCalfChanges(true);
+                    }}
+                    className={`p-4 border-2 rounded-lg text-left transition-all ${
+                      calfSettings.selectedProtocol === protocol.id
+                        ? 'border-pink-500 bg-pink-50'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <h3 className="font-semibold text-gray-900">{protocol.name}</h3>
+                    <p className="text-sm text-gray-600 mt-1">{protocol.description}</p>
+                    {protocol.isDefault && <Badge className="mt-2 bg-blue-100 text-blue-800 text-xs">Default</Badge>}
+                  </button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Birth Weight Standards by Breed */}
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>📏 Birth Weight Standards by Breed</CardTitle>
+              <CardDescription>Customize expected birth weights for different breeds</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                {Object.entries(calfSettings.birthWeightStandards.byBreed).map(([breed, weight]) => (
+                  <div key={breed}>
+                    <Label className="capitalize">{breed} Birth Weight (kg)</Label>
+                    <Input
+                      type="number"
+                      step="0.5"
+                      value={safeNumericValue(weight, 40)}
+                      onChange={(e) => {
+                        setCalfSettings(prev => ({
+                          ...prev,
+                          birthWeightStandards: {
+                            ...prev.birthWeightStandards,
+                            byBreed: {
+                              ...prev.birthWeightStandards.byBreed,
+                              [breed]: safeParseNumber(e.target.value, 40)
+                            }
+                          }
+                        }));
+                        setHasUnsavedCalfChanges(true);
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Milk Quantity per Day */}
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>🍼 Daily Milk Quantity Reference</CardTitle>
+              <CardDescription>Reference milk quantity used for initialization</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="max-w-md">
+                <Label>Daily Milk Quantity (liters)</Label>
+                <Input
+                  type="number"
+                  step="0.5"
+                  value={safeNumericValue(calfSettings.milkQuantityPerDay, 8)}
+                  onChange={(e) => {
+                    setCalfSettings(prev => ({
+                      ...prev,
+                      milkQuantityPerDay: safeParseNumber(e.target.value, 8)
+                    }));
+                    setHasUnsavedCalfChanges(true);
+                  }}
+                />
+                <p className="text-xs text-gray-500 mt-2">Typical range: 6-10 liters/day. This value is used as a reference for milk feeding schedule initialization.</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Colostrum Quantity Percent */}
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>🥛 Colostrum Quantity as % of Body Weight</CardTitle>
+              <CardDescription>Alternative colostrum feeding calculation method</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="max-w-md">
+                <Label>Quantity as % of Body Weight</Label>
+                <Input
+                  type="number"
+                  step="1"
+                  min="5"
+                  max="20"
+                  value={safeIntValue(calfSettings.colostrumQuantityPercent, 10)}
+                  onChange={(e) => {
+                    setCalfSettings(prev => ({
+                      ...prev,
+                      colostrumQuantityPercent: safeParseInt(e.target.value, 10)
+                    }));
+                    setHasUnsavedCalfChanges(true);
+                  }}
+                />
+                <p className="text-xs text-gray-500 mt-2">Example: 10% of a 40kg calf = 4 liters. Recommended: 8-12% of birth weight.</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Tapering Before Weaning */}
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>⬇️ Milk Tapering Before Weaning</CardTitle>
+              <CardDescription>Gradually reduce milk before weaning</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div className="flex-1">
+                  <p className="font-medium text-gray-900">Enable Milk Tapering</p>
+                  <p className="text-sm text-gray-600">Gradually reduce milk intake before weaning</p>
+                </div>
+                <Switch
+                  checked={calfSettings.enableTaperingBeforeWeaning}
+                  onCheckedChange={(checked) => {
+                    setCalfSettings(prev => ({
+                      ...prev,
+                      enableTaperingBeforeWeaning: checked
+                    }));
+                    setHasUnsavedCalfChanges(true);
+                  }}
+                />
+              </div>
+
+              {calfSettings.enableTaperingBeforeWeaning && (
+                <div>
+                  <Label>Tapering Duration (days before weaning)</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="21"
+                    value={safeIntValue(calfSettings.taperingDaysBeforeWeaning, 7)}
+                    onChange={(e) => {
+                      setCalfSettings(prev => ({
+                        ...prev,
+                        taperingDaysBeforeWeaning: safeParseInt(e.target.value, 7)
+                      }));
+                      setHasUnsavedCalfChanges(true);
+                    }}
+                  />
+                  <p className="text-xs text-gray-500 mt-2">Recommended: 5-7 days. Example: If weaning at day 56, tapering starts at day {Math.max(1, safeParseInt(calfSettings.weaningAge, 56) - safeParseInt(calfSettings.taperingDaysBeforeWeaning, 7))}</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Health Protocols - Vaccinations */}
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>💉 Vaccinations Schedule</CardTitle>
+              <CardDescription>Define vaccination protocols and age schedules</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-3">
+                {calfSettings.vaccinations && calfSettings.vaccinations.length > 0 ? (
+                  calfSettings.vaccinations.map((vaccine, idx) => (
+                    <div key={idx} className="p-3 border border-gray-200 rounded-lg bg-gray-50">
+                      <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-4'} items-end`}>
+                        <div>
+                          <Label className="text-xs">Vaccine Name</Label>
+                          <Input
+                            type="text"
+                            value={vaccine.name || ''}
+                            onChange={(e) => {
+                              setCalfSettings(prev => ({
+                                ...prev,
+                                vaccinations: prev.vaccinations.map((v, i) =>
+                                  i === idx ? { ...v, name: e.target.value } : v
+                                )
+                              }));
+                              setHasUnsavedCalfChanges(true);
+                            }}
+                            placeholder="e.g., DF10"
+                            className="mt-1 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Age at Vaccination (days)</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            value={vaccine.ageInDays || 0}
+                            onChange={(e) => {
+                              setCalfSettings(prev => ({
+                                ...prev,
+                                vaccinations: prev.vaccinations.map((v, i) =>
+                                  i === idx ? { ...v, ageInDays: parseInt(e.target.value) || 0 } : v
+                                )
+                              }));
+                              setHasUnsavedCalfChanges(true);
+                            }}
+                            placeholder="0"
+                            className="mt-1 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Frequency</Label>
+                          <Select
+                            value={vaccine.frequency || 'once'}
+                            onValueChange={(value) => {
+                              setCalfSettings(prev => ({
+                                ...prev,
+                                vaccinations: prev.vaccinations.map((v, i) =>
+                                  i === idx ? { ...v, frequency: value } : v
+                                )
+                              }));
+                              setHasUnsavedCalfChanges(true);
+                            }}
+                          >
+                            <SelectTrigger className="mt-1">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="once">Once</SelectItem>
+                              <SelectItem value="annual">Annual</SelectItem>
+                              <SelectItem value="bi-annual">Bi-Annual</SelectItem>
+                              <SelectItem value="every-6-months">Every 6 Months</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <Button
+                          onClick={() => {
+                            setCalfSettings(prev => ({
+                              ...prev,
+                              vaccinations: prev.vaccinations.filter((_, i) => i !== idx)
+                            }));
+                            setHasUnsavedCalfChanges(true);
+                          }}
+                          variant="outline"
+                          size="sm"
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-gray-500 py-3">No vaccinations configured yet</p>
+                )}
+              </div>
+
+              <Button
+                onClick={() => {
+                  setCalfSettings(prev => ({
+                    ...prev,
+                    vaccinations: [...(prev.vaccinations || []), { name: '', ageInDays: 0, frequency: 'once' }]
+                  }));
+                  setHasUnsavedCalfChanges(true);
+                }}
+                variant="outline"
+                size="sm"
+                className="w-full"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add Vaccination
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Health Protocols - Deworming */}
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>🪱 Deworming Schedule</CardTitle>
+              <CardDescription>Define deworming protocols and intervals</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-3">
+                {calfSettings.deworming && calfSettings.deworming.length > 0 ? (
+                  calfSettings.deworming.map((deworm, idx) => (
+                    <div key={idx} className="p-3 border border-gray-200 rounded-lg bg-gray-50">
+                      <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-4'} items-end`}>
+                        <div>
+                          <Label className="text-xs">Treatment Name</Label>
+                          <Input
+                            type="text"
+                            value={deworm.name || ''}
+                            onChange={(e) => {
+                              setCalfSettings(prev => ({
+                                ...prev,
+                                deworming: prev.deworming.map((d, i) =>
+                                  i === idx ? { ...d, name: e.target.value } : d
+                                )
+                              }));
+                              setHasUnsavedCalfChanges(true);
+                            }}
+                            placeholder="e.g., Internal Deworming"
+                            className="mt-1 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">First Treatment (days)</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            value={deworm.ageInDays || 0}
+                            onChange={(e) => {
+                              setCalfSettings(prev => ({
+                                ...prev,
+                                deworming: prev.deworming.map((d, i) =>
+                                  i === idx ? { ...d, ageInDays: parseInt(e.target.value) || 0 } : d
+                                )
+                              }));
+                              setHasUnsavedCalfChanges(true);
+                            }}
+                            placeholder="0"
+                            className="mt-1 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Interval</Label>
+                          <Select
+                            value={deworm.frequency || 'every-4-weeks'}
+                            onValueChange={(value) => {
+                              setCalfSettings(prev => ({
+                                ...prev,
+                                deworming: prev.deworming.map((d, i) =>
+                                  i === idx ? { ...d, frequency: value } : d
+                                )
+                              }));
+                              setHasUnsavedCalfChanges(true);
+                            }}
+                          >
+                            <SelectTrigger className="mt-1">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="every-2-weeks">Every 2 Weeks</SelectItem>
+                              <SelectItem value="every-4-weeks">Every 4 Weeks</SelectItem>
+                              <SelectItem value="every-8-weeks">Every 8 Weeks</SelectItem>
+                              <SelectItem value="every-12-weeks">Every 12 Weeks</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <Button
+                          onClick={() => {
+                            setCalfSettings(prev => ({
+                              ...prev,
+                              deworming: prev.deworming.filter((_, i) => i !== idx)
+                            }));
+                            setHasUnsavedCalfChanges(true);
+                          }}
+                          variant="outline"
+                          size="sm"
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-gray-500 py-3">No deworming protocols configured yet</p>
+                )}
+              </div>
+
+              <Button
+                onClick={() => {
+                  setCalfSettings(prev => ({
+                    ...prev,
+                    deworming: [...(prev.deworming || []), { name: '', ageInDays: 0, frequency: 'every-4-weeks' }]
+                  }));
+                  setHasUnsavedCalfChanges(true);
+                }}
+                variant="outline"
+                size="sm"
+                className="w-full"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add Deworming Schedule
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Health Protocols - Vitamin Supplements */}
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>💊 Vitamin & Supplement Schedule</CardTitle>
+              <CardDescription>Define supplement protocols and duration</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-3">
+                {calfSettings.vitaminSupplements && calfSettings.vitaminSupplements.length > 0 ? (
+                  calfSettings.vitaminSupplements.map((supplement, idx) => (
+                    <div key={idx} className="p-3 border border-gray-200 rounded-lg bg-gray-50">
+                      <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-5'} items-end`}>
+                        <div>
+                          <Label className="text-xs">Supplement Name</Label>
+                          <Input
+                            type="text"
+                            value={supplement.name || ''}
+                            onChange={(e) => {
+                              setCalfSettings(prev => ({
+                                ...prev,
+                                vitaminSupplements: prev.vitaminSupplements.map((v, i) =>
+                                  i === idx ? { ...v, name: e.target.value } : v
+                                )
+                              }));
+                              setHasUnsavedCalfChanges(true);
+                            }}
+                            placeholder="e.g., Vitamin A-D-E"
+                            className="mt-1 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Start Age (days)</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            value={supplement.ageInDays || 0}
+                            onChange={(e) => {
+                              setCalfSettings(prev => ({
+                                ...prev,
+                                vitaminSupplements: prev.vitaminSupplements.map((v, i) =>
+                                  i === idx ? { ...v, ageInDays: parseInt(e.target.value) || 0 } : v
+                                )
+                              }));
+                              setHasUnsavedCalfChanges(true);
+                            }}
+                            placeholder="0"
+                            className="mt-1 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Frequency</Label>
+                          <Select
+                            value={supplement.frequency || 'daily'}
+                            onValueChange={(value) => {
+                              setCalfSettings(prev => ({
+                                ...prev,
+                                vitaminSupplements: prev.vitaminSupplements.map((v, i) =>
+                                  i === idx ? { ...v, frequency: value } : v
+                                )
+                              }));
+                              setHasUnsavedCalfChanges(true);
+                            }}
+                          >
+                            <SelectTrigger className="mt-1">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="daily">Daily</SelectItem>
+                              <SelectItem value="twice-daily">Twice Daily</SelectItem>
+                              <SelectItem value="every-3-days">Every 3 Days</SelectItem>
+                              <SelectItem value="weekly">Weekly</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label className="text-xs">Duration</Label>
+                          <Select
+                            value={supplement.until || 'weaning'}
+                            onValueChange={(value) => {
+                              setCalfSettings(prev => ({
+                                ...prev,
+                                vitaminSupplements: prev.vitaminSupplements.map((v, i) =>
+                                  i === idx ? { ...v, until: value } : v
+                                )
+                              }));
+                              setHasUnsavedCalfChanges(true);
+                            }}
+                          >
+                            <SelectTrigger className="mt-1">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="until-weaning">Until Weaning</SelectItem>
+                              <SelectItem value="30-days">30 Days</SelectItem>
+                              <SelectItem value="60-days">60 Days</SelectItem>
+                              <SelectItem value="90-days">90 Days</SelectItem>
+                              <SelectItem value="lifelong">Lifelong</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <Button
+                          onClick={() => {
+                            setCalfSettings(prev => ({
+                              ...prev,
+                              vitaminSupplements: prev.vitaminSupplements.filter((_, i) => i !== idx)
+                            }));
+                            setHasUnsavedCalfChanges(true);
+                          }}
+                          variant="outline"
+                          size="sm"
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-gray-500 py-3">No supplements configured yet</p>
+                )}
+              </div>
+
+              <Button
+                onClick={() => {
+                  setCalfSettings(prev => ({
+                    ...prev,
+                    vitaminSupplements: [...(prev.vitaminSupplements || []), { name: '', ageInDays: 0, frequency: 'daily', until: 'weaning' }]
+                  }));
+                  setHasUnsavedCalfChanges(true);
+                }}
+                variant="outline"
+                size="sm"
+                className="w-full"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add Supplement
+              </Button>
             </CardContent>
           </Card>
 

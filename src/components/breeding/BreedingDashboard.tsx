@@ -36,6 +36,7 @@ import { HeatDetectionForm } from '@/components/breeding/HeatDetectionForm'
 import { InseminationForm } from '@/components/breeding/InseminationForm'
 import { PregnancyCheckForm } from '@/components/breeding/PregnancyCheckForm'
 import { CalvingEventForm } from '@/components/breeding/CalvingEventForm'
+import { getAnimalsForCalving } from '@/lib/database/breeding'
 import { Modal } from '@/components/ui/Modal'
 import type { BreedingAlert } from '@/lib/database/breeding-stats'
 import { BreedingEventTimeline } from '@/components/breeding/BreedingEventTimeline'
@@ -94,6 +95,8 @@ export function BreedingDashboard({
 
   const [mounted, setMounted] = useState(false)
   const [pregnantAnimals, setPregnantAnimals] = useState<any[]>([])
+  const [calvingAnimals, setCalvingAnimals] = useState<any[]>([])
+  const [loadingCalvingAnimals, setLoadingCalvingAnimals] = useState(false)
 
   // Fetch pregnant animals on mount
   useEffect(() => {
@@ -111,6 +114,23 @@ export function BreedingDashboard({
       }
     }
     loadPregnantAnimals()
+  }, [farmId])
+
+  // Fetch eligible animals for calving
+  useEffect(() => {
+    const loadCalvingAnimals = async () => {
+      setLoadingCalvingAnimals(true)
+      try {
+        const animals = await getAnimalsForCalving(farmId)
+        setCalvingAnimals(animals)
+      } catch (error) {
+        console.error('Error loading eligible animals for calving:', error)
+        setCalvingAnimals([])
+      } finally {
+        setLoadingCalvingAnimals(false)
+      }
+    }
+    loadCalvingAnimals()
   }, [farmId])
 
   useEffect(() => {
@@ -278,7 +298,7 @@ export function BreedingDashboard({
           {activeModal === 'heat_detection' && <HeatDetectionForm {...commonProps} />}
           {activeModal === 'insemination' && <InseminationForm {...commonProps} />}
           {activeModal === 'pregnancy_check' && <PregnancyCheckForm {...commonProps} />}
-          {activeModal === 'calving' && <CalvingEventForm {...commonProps} />}
+          {activeModal === 'calving' && <CalvingEventForm {...commonProps} animals={calvingAnimals} loadingAnimals={loadingCalvingAnimals} />}
         </div>
       </Modal>
     )
