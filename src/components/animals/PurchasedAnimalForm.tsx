@@ -175,9 +175,10 @@ interface PurchasedAnimalFormProps {
   onCancel: () => void
   editingAnimal?: any  // ✅ NEW: Optional animal for edit mode
   isEditMode?: boolean  // ✅ NEW: Flag indicating edit mode
+  autoGenerateTagNumbers?: boolean  // ✅ NEW: Flag from tagging settings
 }
 
-export function PurchasedAnimalForm({ farmId, onSuccess, onCancel, editingAnimal, isEditMode = false }: PurchasedAnimalFormProps) {
+export function PurchasedAnimalForm({ farmId, onSuccess, onCancel, editingAnimal, isEditMode = false, autoGenerateTagNumbers = true }: PurchasedAnimalFormProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [productionStatus, setProductionStatus] = useState<string>('')
@@ -825,6 +826,7 @@ export function PurchasedAnimalForm({ farmId, onSuccess, onCancel, editingAnimal
           onTagChange={handleTagChange}
           customAttributes={getCustomAttributesForTagData()}
           animalSource="purchased_animal"  // ✅ NEW: Specify animal source
+          autoGenerateTagNumbers={autoGenerateTagNumbers}  // ✅ NEW: Pass auto-generate setting
         />
 
         {/* Basic Information */}

@@ -1,7 +1,7 @@
 // src/components/teams-roles/TeamRolesManagement.tsx
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -11,6 +11,12 @@ import {
   TabsList,
   TabsTrigger,
 } from '@/components/ui/Tabs'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/DropdownMenu'
 import { TeamRolesStatsCards } from './TeamRolesStatsCards'
 import { DepartmentModal } from './DepartmentModal'
 import { WorkerModal } from './WorkerModal'
@@ -49,10 +55,10 @@ const RESOURCE_LABELS: Record<string, string> = {
 }
 
 const CATEGORY_STYLES: Record<string, { bg: string; text: string; label: string }> = {
-  view:   { bg: 'bg-blue-100',   text: 'text-blue-700',   label: 'View' },
-  create: { bg: 'bg-green-100',  text: 'text-green-700',  label: 'Create' },
-  edit:   { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Edit' },
-  delete: { bg: 'bg-red-100',    text: 'text-red-700',    label: 'Delete' },
+  view: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'View' },
+  create: { bg: 'bg-green-100', text: 'text-green-700', label: 'Create' },
+  edit: { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Edit' },
+  delete: { bg: 'bg-red-100', text: 'text-red-700', label: 'Delete' },
   export: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Export' },
 }
 
@@ -62,6 +68,25 @@ interface AccessControlPoliciesViewProps {
   onOpenModal: () => void
   onEditPolicy?: (policy: any) => void
   onDeletePolicy?: (policyId: string, policyName: string) => void
+}
+
+interface DepartmentUser {
+  id: string
+  full_name: string | null
+  email: string | null
+  role_type: string | null
+}
+
+interface Department {
+  id: string
+  name: string
+  description: string | null
+  created_at: string | null
+  updated_at: string | null
+  created_by: string | null
+  updated_by: string | null
+  created_by_user?: DepartmentUser | null
+  updated_by_user?: DepartmentUser | null
 }
 
 function AccessControlPoliciesView({ farmId, onOpenModal, onEditPolicy, onDeletePolicy }: AccessControlPoliciesViewProps) {
@@ -168,7 +193,7 @@ function AccessControlPoliciesView({ farmId, onOpenModal, onEditPolicy, onDelete
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 w-full">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-3 w-full">
       {policies.map((policy) => {
         const assignedUsers = getAssignedUsers(policy.id)
         const isExpanded = expandedPolicies.has(policy.id)
@@ -182,9 +207,8 @@ function AccessControlPoliciesView({ farmId, onOpenModal, onEditPolicy, onDelete
                 className="flex items-start gap-3 flex-1 min-w-0"
               >
                 <ChevronDown
-                  className={`w-5 h-5 text-gray-600 mt-1 flex-shrink-0 transition-transform ${
-                    isExpanded ? 'rotate-0' : '-rotate-90'
-                  }`}
+                  className={`w-5 h-5 text-gray-600 mt-1 flex-shrink-0 transition-transform ${isExpanded ? 'rotate-0' : '-rotate-90'
+                    }`}
                 />
                 <div className="text-left flex-1 min-w-0">
                   <p className="font-semibold text-gray-900 text-sm truncate mb-1.5">
@@ -240,9 +264,8 @@ function AccessControlPoliciesView({ farmId, onOpenModal, onEditPolicy, onDelete
                   >
                     <p className="text-xs font-medium text-gray-700">Resources & Actions</p>
                     <ChevronDown
-                      className={`w-4 h-4 text-gray-600 transition-transform ${
-                        expandedResources.has(`policy-${policy.id}`) ? 'rotate-0' : '-rotate-90'
-                      }`}
+                      className={`w-4 h-4 text-gray-600 transition-transform ${expandedResources.has(`policy-${policy.id}`) ? 'rotate-0' : '-rotate-90'
+                        }`}
                     />
                   </button>
 
@@ -405,7 +428,7 @@ function DeleteConfirmationDialog({
           <div className="flex-1">
             <h3 className="font-semibold text-gray-900 text-lg">{title}</h3>
             <p className="text-sm text-gray-600 mt-2">{description}</p>
-            
+
             <div className="mt-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Type "{confirmText}" to confirm deletion:
@@ -529,7 +552,7 @@ const QUICK_ACTIONS = [
   },
 ]
 
-export function TeamRolesManagement({ 
+export function TeamRolesManagement({
   stats = {
     activeWorkers: 0,
     activeTasks: 0,
@@ -544,8 +567,10 @@ export function TeamRolesManagement({
   const [teamSubTab, setTeamSubTab] = useState<'workers' | 'departments'>('workers')
   const [tasksSubTab, setTasksSubTab] = useState<'tasks' | 'daily-activities'>('tasks')
   const [systemUsersSubTab, setSystemUsersSubTab] = useState<'access-control' | 'system-users'>('access-control')
-  const [isQuickActionsOpen, setIsQuickActionsOpen] = useState(false)
   const [isDepartmentModalOpen, setIsDepartmentModalOpen] = useState(false)
+  // ✅ NEW: Local state for departments with refresh capability
+  const [departments, setDepartments] = useState<Department[]>(departmentsList)
+  const [isLoadingDepartments, setIsLoadingDepartments] = useState(false)
   const [isWorkerModalOpen, setIsWorkerModalOpen] = useState(false)
   const [isInvitationModalOpen, setIsInvitationModalOpen] = useState(false)
   const [isAccessControlModalOpen, setIsAccessControlModalOpen] = useState(false)
@@ -561,7 +586,9 @@ export function TeamRolesManagement({
   const [assigningPolicy, setAssigningPolicy] = useState<string | null>(null)
   const [resendingInvitation, setResendingInvitation] = useState<string | null>(null)
   const [expandedRoles, setExpandedRoles] = useState<Set<string>>(new Set(['farm_owner', 'farm_manager', 'worker', 'veterinarian']))
-  
+  const [expandedDescriptions, setExpandedDescriptions] = useState<Set<string>>(new Set())
+
+
   // Delete confirmation state
   const [deleteConfirmation, setDeleteConfirmation] = useState<{
     isOpen: boolean
@@ -575,19 +602,37 @@ export function TeamRolesManagement({
     name: null,
   })
   const [isDeleting, setIsDeleting] = useState(false)
-  
+
   // Edit state
   const [editingWorker, setEditingWorker] = useState<Worker | null>(null)
   const [editingDepartment, setEditingDepartment] = useState<Department | null>(null)
   const [editingInvitation, setEditingInvitation] = useState<Invitation | null>(null)
   const [editingPolicy, setEditingPolicy] = useState<any | null>(null)
 
+  // ✅ NEW: Fetch departments from API
+  const fetchDepartments = useCallback(async () => {
+    if (!farmId) return
+    try {
+      setIsLoadingDepartments(true)
+      const response = await fetch('/api/teams/departments')
+      if (response.ok) {
+        const result = await response.json()
+        setDepartments(result.data || [])
+      }
+    } catch (error) {
+      console.error('Error fetching departments:', error)
+    } finally {
+      setIsLoadingDepartments(false)
+    }
+  }, [farmId])
+
   // Fetch invitations when component mounts
   useEffect(() => {
     fetchInvitations()
     fetchPolicies()
     fetchFarmOwner()
-  }, [farmId])
+    fetchDepartments()
+  }, [farmId, fetchDepartments])
 
   const fetchInvitations = async () => {
     if (!farmId) return
@@ -677,15 +722,19 @@ export function TeamRolesManagement({
     try {
       const endpoint =
         type === 'worker'
-          ? `/api/workers/${id}`
+          ? `/api/teams/workers/${id}`
           : type === 'department'
-            ? `/api/departments/${id}`
+            ? `/api/teams/departments/${id}`
             : type === 'policy'
               ? `/api/access-control/${id}`
               : `/api/teams/invitations/${id}`
 
       const response = await fetch(endpoint, { method: 'DELETE' })
-      if (!response.ok) throw new Error('Failed to delete')
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || `Failed to delete (Status: ${response.status})`)
+      }
 
       // Refresh data
       if (type === 'worker') {
@@ -701,7 +750,7 @@ export function TeamRolesManagement({
       setDeleteConfirmation({ isOpen: false, type: null, id: null, name: null })
     } catch (error) {
       console.error('Delete failed:', error)
-      alert('Failed to delete. Please try again.')
+      alert(`Failed to delete: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsDeleting(false)
     }
@@ -872,156 +921,156 @@ export function TeamRolesManagement({
                 </div>
 
                 <div className="overflow-y-auto max-h-[55vh] pr-1 pb-4">
-                {workersList && workersList.length > 0 ? (
-                  <div className="space-y-2">
-                    {(() => {
-                      const knownPositions = ['farm_manager', 'worker', 'veterinarian']
-                      const sections = [
-                        {
-                          key: 'farm_manager',
-                          label: 'Farm Managers',
-                          headerColor: 'bg-blue-50 hover:bg-blue-100',
-                          textColor: 'text-blue-700',
-                          badgeColor: 'bg-blue-100 text-blue-700',
-                          workers: workersList.filter((w) => w.position === 'farm_manager'),
-                        },
-                        {
-                          key: 'worker',
-                          label: 'Workers',
-                          headerColor: 'bg-green-50 hover:bg-green-100',
-                          textColor: 'text-green-700',
-                          badgeColor: 'bg-green-100 text-green-700',
-                          workers: workersList.filter((w) => w.position === 'worker'),
-                        },
-                        {
-                          key: 'veterinarian',
-                          label: 'Veterinarians',
-                          headerColor: 'bg-teal-50 hover:bg-teal-100',
-                          textColor: 'text-teal-700',
-                          badgeColor: 'bg-teal-100 text-teal-700',
-                          workers: workersList.filter((w) => w.position === 'veterinarian'),
-                        },
-                        {
-                          key: 'others',
-                          label: 'Others',
-                          headerColor: 'bg-gray-50 hover:bg-gray-100',
-                          textColor: 'text-gray-700',
-                          badgeColor: 'bg-gray-100 text-gray-700',
-                          workers: workersList.filter((w) => !knownPositions.includes(w.position)),
-                        },
-                      ]
+                  {workersList && workersList.length > 0 ? (
+                    <div className="space-y-2">
+                      {(() => {
+                        const knownPositions = ['farm_manager', 'worker', 'veterinarian']
+                        const sections = [
+                          {
+                            key: 'farm_manager',
+                            label: 'Farm Managers',
+                            headerColor: 'bg-blue-50 hover:bg-blue-100',
+                            textColor: 'text-blue-700',
+                            badgeColor: 'bg-blue-100 text-blue-700',
+                            workers: workersList.filter((w) => w.position === 'farm_manager'),
+                          },
+                          {
+                            key: 'worker',
+                            label: 'Workers',
+                            headerColor: 'bg-green-50 hover:bg-green-100',
+                            textColor: 'text-green-700',
+                            badgeColor: 'bg-green-100 text-green-700',
+                            workers: workersList.filter((w) => w.position === 'worker'),
+                          },
+                          {
+                            key: 'veterinarian',
+                            label: 'Veterinarians',
+                            headerColor: 'bg-teal-50 hover:bg-teal-100',
+                            textColor: 'text-teal-700',
+                            badgeColor: 'bg-teal-100 text-teal-700',
+                            workers: workersList.filter((w) => w.position === 'veterinarian'),
+                          },
+                          {
+                            key: 'others',
+                            label: 'Others',
+                            headerColor: 'bg-gray-50 hover:bg-gray-100',
+                            textColor: 'text-gray-700',
+                            badgeColor: 'bg-gray-100 text-gray-700',
+                            workers: workersList.filter((w) => !knownPositions.includes(w.position)),
+                          },
+                        ]
 
-                      const employmentStatusLabel: Record<string, string> = {
-                        full_time: 'Full Time',
-                        part_time: 'Part Time',
-                        casual: 'Casual',
-                        contract: 'Contract',
-                      }
+                        const employmentStatusLabel: Record<string, string> = {
+                          full_time: 'Full Time',
+                          part_time: 'Part Time',
+                          casual: 'Casual',
+                          contract: 'Contract',
+                        }
 
-                      return sections.map(({ key, label, headerColor, textColor, badgeColor, workers: sectionWorkers }) => {
-                        const isExpanded = expandedRoles.has(key)
-                        return (
-                          <div key={key} className="border border-gray-200 rounded-lg overflow-hidden">
-                            <button
-                              onClick={() => toggleRoleExpanded(key)}
-                              className={`w-full px-4 py-3 flex items-center justify-between transition-colors ${headerColor}`}
-                            >
-                              <div className="flex items-center gap-3 flex-1">
-                                <ChevronDown
-                                  className={`w-5 h-5 transition-transform ${isExpanded ? 'rotate-0' : '-rotate-90'}`}
-                                />
-                                <h4 className={`font-semibold ${textColor}`}>{label}</h4>
-                                <span className="text-sm font-medium text-gray-600 ml-auto">
-                                  {sectionWorkers.length} member{sectionWorkers.length !== 1 ? 's' : ''}
-                                </span>
-                              </div>
-                            </button>
+                        return sections.map(({ key, label, headerColor, textColor, badgeColor, workers: sectionWorkers }) => {
+                          const isExpanded = expandedRoles.has(key)
+                          return (
+                            <div key={key} className="border border-gray-200 rounded-lg overflow-hidden">
+                              <button
+                                onClick={() => toggleRoleExpanded(key)}
+                                className={`w-full px-4 py-3 flex items-center justify-between transition-colors ${headerColor}`}
+                              >
+                                <div className="flex items-center gap-3 flex-1">
+                                  <ChevronDown
+                                    className={`w-5 h-5 transition-transform ${isExpanded ? 'rotate-0' : '-rotate-90'}`}
+                                  />
+                                  <h4 className={`font-semibold ${textColor}`}>{label}</h4>
+                                  <span className="text-sm font-medium text-gray-600 ml-auto">
+                                    {sectionWorkers.length} member{sectionWorkers.length !== 1 ? 's' : ''}
+                                  </span>
+                                </div>
+                              </button>
 
-                            {isExpanded && (
-                              <div className="border-t border-gray-200 p-4">
-                                {sectionWorkers.length === 0 ? (
-                                  <p className="text-sm text-gray-500 text-center py-2">No {label.toLowerCase()} added yet</p>
-                                ) : (
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                                    {sectionWorkers.map((worker) => {
-                                      const dept = departmentsList?.find((d) => d.id === worker.department_id)
-                                      return (
-                                        <Card key={worker.id} className="p-4 hover:shadow-md transition-shadow">
-                                          <div className="flex items-start justify-between gap-4">
-                                            <div className="flex-1 min-w-0">
-                                              <h4 className="font-semibold text-gray-900 truncate">{worker.name}</h4>
-                                              <p className="text-xs text-gray-400 mt-0.5 font-mono">{worker.worker_number}</p>
-                                              <div className="flex items-center gap-2 mt-2 flex-wrap">
-                                                <span className={`px-2 py-0.5 rounded text-xs font-medium ${badgeColor}`}>
-                                                  {worker.position.replace(/_/g, ' ')}
-                                                </span>
-                                                <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
-                                                  {employmentStatusLabel[worker.employment_status] ?? worker.employment_status}
-                                                </span>
-                                              </div>
-                                              {(dept || worker.shift) && (
-                                                <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                                                  {dept && (
-                                                    <span className="text-xs text-gray-500 truncate">
-                                                      {dept.name}
-                                                    </span>
-                                                  )}
-                                                  {dept && worker.shift && <span className="text-gray-300 text-xs">·</span>}
-                                                  {worker.shift && (
-                                                    <span className="text-xs text-gray-500">{worker.shift}</span>
-                                                  )}
+                              {isExpanded && (
+                                <div className="border-t border-gray-200 p-4">
+                                  {sectionWorkers.length === 0 ? (
+                                    <p className="text-sm text-gray-500 text-center py-2">No {label.toLowerCase()} added yet</p>
+                                  ) : (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                      {sectionWorkers.map((worker) => {
+                                        const dept = departmentsList?.find((d) => d.id === worker.department_id)
+                                        return (
+                                          <Card key={worker.id} className="p-4 hover:shadow-md transition-shadow">
+                                            <div className="flex items-start justify-between gap-4">
+                                              <div className="flex-1 min-w-0">
+                                                <h4 className="font-semibold text-gray-900 truncate">{worker.name}</h4>
+                                                <p className="text-xs text-gray-400 mt-0.5 font-mono">{worker.worker_number}</p>
+                                                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                                                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${badgeColor}`}>
+                                                    {worker.position.replace(/_/g, ' ')}
+                                                  </span>
+                                                  <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                                                    {employmentStatusLabel[worker.employment_status] ?? worker.employment_status}
+                                                  </span>
                                                 </div>
-                                              )}
+                                                {(dept || worker.shift) && (
+                                                  <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                                                    {dept && (
+                                                      <span className="text-xs text-gray-500 truncate">
+                                                        {dept.name}
+                                                      </span>
+                                                    )}
+                                                    {dept && worker.shift && <span className="text-gray-300 text-xs">·</span>}
+                                                    {worker.shift && (
+                                                      <span className="text-xs text-gray-500">{worker.shift}</span>
+                                                    )}
+                                                  </div>
+                                                )}
+                                              </div>
+                                              <div className="flex items-center gap-1 flex-shrink-0">
+                                                <button
+                                                  onClick={() => setEditingWorker(worker)}
+                                                  className="p-2 hover:bg-blue-50 rounded-lg transition-colors text-blue-600 hover:text-blue-700"
+                                                  title="Edit worker"
+                                                >
+                                                  <Edit2 className="w-4 h-4" />
+                                                </button>
+                                                <button
+                                                  onClick={() => handleDeleteClick('worker', worker.id, worker.name)}
+                                                  className="p-2 hover:bg-red-50 rounded-lg transition-colors text-red-600 hover:text-red-700"
+                                                  title="Delete worker"
+                                                >
+                                                  <Trash2 className="w-4 h-4" />
+                                                </button>
+                                              </div>
                                             </div>
-                                            <div className="flex items-center gap-1 flex-shrink-0">
-                                              <button
-                                                onClick={() => setEditingWorker(worker)}
-                                                className="p-2 hover:bg-blue-50 rounded-lg transition-colors text-blue-600 hover:text-blue-700"
-                                                title="Edit worker"
-                                              >
-                                                <Edit2 className="w-4 h-4" />
-                                              </button>
-                                              <button
-                                                onClick={() => handleDeleteClick('worker', worker.id, worker.name)}
-                                                className="p-2 hover:bg-red-50 rounded-lg transition-colors text-red-600 hover:text-red-700"
-                                                title="Delete worker"
-                                              >
-                                                <Trash2 className="w-4 h-4" />
-                                              </button>
-                                            </div>
-                                          </div>
-                                        </Card>
-                                      )
-                                    })}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })
-                    })()}
-                  </div>
-                ) : (
-                  <div className="text-center py-12 text-gray-600">
-                    <Users className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                    <p className="font-medium">No team members added yet</p>
-                    <p className="text-sm text-gray-500 mt-1">Start by adding your first farm team member</p>
-                    <Button
-                      onClick={() => setIsWorkerModalOpen(true)}
-                      className="mt-4"
-                    >
-                      <Plus className="w-4 h-4 mr-2" />
-                      Add Team Member
-                    </Button>
-                  </div>
-                )}
+                                          </Card>
+                                        )
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })
+                      })()}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 text-gray-600">
+                      <Users className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                      <p className="font-medium">No team members added yet</p>
+                      <p className="text-sm text-gray-500 mt-1">Start by adding your first farm team member</p>
+                      <Button
+                        onClick={() => setIsWorkerModalOpen(true)}
+                        className="mt-4"
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add Team Member
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </TabsContent>
 
               {/* Departments Section */}
               <TabsContent value="departments" className="mt-6 px-4 lg:px-6">
-                {departmentsList && departmentsList.length > 0 ? (
+                {departments && departments.length > 0 ? (
                   <div className="space-y-3">
                     <div className="flex justify-between items-center mb-4">
                       <h3 className="font-semibold text-lg text-gray-900">Departments</h3>
@@ -1033,40 +1082,126 @@ export function TeamRolesManagement({
                         Add Department
                       </Button>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {departmentsList.map((dept) => (
-                        <Card key={dept.id} className="p-4 hover:shadow-md transition-shadow group">
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex-1">
-                              <h4 className="font-semibold text-gray-900 truncate">{dept.name}</h4>
-                              {dept.description && (
-                                <p className="text-sm text-gray-600 mt-1 line-clamp-2">{dept.description}</p>
-                              )}
-                              {dept.created_at && (
-                                <p className="text-xs text-gray-500 mt-2">
-                                  Created: {new Date(dept.created_at).toLocaleDateString()}
-                                </p>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2 flex-shrink-0">
-                              <button
-                                onClick={() => setEditingDepartment(dept)}
-                                className="p-2 hover:bg-blue-50 rounded-lg transition-colors text-blue-600 hover:text-blue-700"
-                                title="Edit department"
-                              >
-                                <Edit2 className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteClick('department', dept.id, dept.name)}
-                                className="p-2 hover:bg-red-50 rounded-lg transition-colors text-red-600 hover:text-red-700"
-                                title="Delete department"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </div>
-                        </Card>
-                      ))}
+                    <div className="overflow-y-auto max-h-[55vh] pr-1 pb-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-3">
+
+                      {departments.map(
+                        (dept) => (
+  <Card key={dept.id} className="group relative overflow-hidden transition-all duration-300 hover:shadow-lg border-l-4 border-l-purple-500 bg-white">
+    <div className="p-5">
+      {/* Header & Actions */}
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-purple-50 text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition-colors duration-300">
+            <Briefcase className="w-5 h-5" />
+          </div>
+          <div className="min-w-0">
+            <h4 className="font-bold text-gray-900 truncate text-lg tracking-tight">
+              {dept.name}
+            </h4>
+            <p className="text-[10px] uppercase font-bold tracking-widest text-gray-400">
+              Department
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={() => setEditingDepartment(dept)}
+            className="p-2 hover:bg-blue-50 rounded-lg text-blue-600 transition-colors"
+            title="Edit department"
+          >
+            <Edit2 className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => handleDeleteClick('department', dept.id, dept.name)}
+            className="p-2 hover:bg-red-50 rounded-lg text-red-600 transition-colors"
+            title="Delete department"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Description */}
+      {dept.description && (
+        <div 
+          className="mb-4 cursor-pointer group"
+          onClick={() => {
+            setExpandedDescriptions(prev => {
+              const updated = new Set(prev)
+              if (updated.has(dept.id)) {
+                updated.delete(dept.id)
+              } else {
+                updated.add(dept.id)
+              }
+              return updated
+            })
+          }}
+        >
+          <p className={`text-sm text-gray-600 leading-relaxed transition-all duration-200 ${
+            expandedDescriptions.has(dept.id) ? '' : 'line-clamp-2'
+          } hover:text-gray-700`}>
+            {dept.description}
+          </p>
+          {!expandedDescriptions.has(dept.id) && (
+            <p className="text-xs text-blue-600 font-medium mt-1 group-hover:text-blue-700">Click to expand</p>
+          )}
+          {expandedDescriptions.has(dept.id) && (
+            <p className="text-xs text-gray-500 font-medium mt-1">Click to collapse</p>
+          )}
+        </div>
+      )}
+      {!dept.description && (
+        <div className="mb-4 min-h-[40px]">
+          <p className="text-sm text-gray-400 italic">No description provided</p>
+        </div>
+      )}
+
+      {/* Modern Audit Trail Footer */}
+      <div className="pt-4 border-t border-gray-100 space-y-2">
+        {/* Created Info */}
+        {dept.created_by_user && (
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-1.5 text-gray-500">
+              <UserPlus className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+              <span className="text-xs font-medium">Created by</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 pl-5">
+              <span className="font-semibold text-gray-700 text-xs truncate max-w-[120px]" title={dept.created_by_user.full_name ?? dept.created_by_user.email ?? 'Unknown'}>
+                {dept.created_by_user.full_name ?? dept.created_by_user.email ?? 'Unknown'}
+              </span>
+              {dept.created_by_user.role_type && (
+                <span className="px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-[10px] font-bold uppercase tracking-tighter flex-shrink-0">
+                  {dept.created_by_user.role_type.split('_')[1] || 'User'}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Updated Info */}
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center gap-1.5 text-gray-500">
+            <RefreshCw className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+            <span className="text-xs font-medium">Activity</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5 pl-5">
+            <span className="text-gray-600 text-xs font-medium">
+              {dept.updated_at ? new Date(dept.updated_at).toLocaleDateString() : (dept.created_at ? new Date(dept.created_at).toLocaleDateString() : 'N/A')}
+            </span>
+            {dept.updated_by_user && (
+              <span className="text-gray-600 text-xs truncate max-w-[100px]" title={dept.updated_by_user.full_name ?? 'Admin'}>
+                • {dept.updated_by_user.full_name?.split(' ')[0] ?? 'Admin'}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  </Card>
+))}
+                      </div>
                     </div>
                   </div>
                 ) : (
@@ -1237,9 +1372,8 @@ export function TeamRolesManagement({
                             >
                               <div className="flex items-center gap-3 flex-1">
                                 <ChevronDown
-                                  className={`w-5 h-5 transition-transform ${
-                                    isExpanded ? 'rotate-0' : '-rotate-90'
-                                  }`}
+                                  className={`w-5 h-5 transition-transform ${isExpanded ? 'rotate-0' : '-rotate-90'
+                                    }`}
                                 />
                                 <h4 className={`font-semibold ${config.color}`}>{config.label}</h4>
                                 <span className="text-sm font-medium text-gray-600 ml-auto">
@@ -1251,7 +1385,7 @@ export function TeamRolesManagement({
                             {/* Role Content */}
                             {isExpanded && roleUsers.length > 0 && (
                               <div className="border-t border-gray-200 p-4 space-y-3">
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-3">
                                   {roleUsers.map((invitation) => {
                                     const getStatusBadge = () => {
                                       switch (invitation.status) {
@@ -1298,32 +1432,32 @@ export function TeamRolesManagement({
                                             <div className="mt-1.5">{getStatusBadge()}</div>
                                           </div>
                                           {invitation.role_type !== 'farm_owner' && (
-                                          <div className="flex items-center gap-1 flex-shrink-0">
-                                            {invitation.status !== 'accepted' && (
+                                            <div className="flex items-center gap-1 flex-shrink-0">
+                                              {invitation.status !== 'accepted' && (
+                                                <button
+                                                  onClick={() => handleResendInvitation(invitation.id)}
+                                                  disabled={resendingInvitation === invitation.id}
+                                                  className="p-1.5 hover:bg-green-50 rounded-lg transition-colors text-green-600 hover:text-green-700 disabled:opacity-50"
+                                                  title="Resend invitation email"
+                                                >
+                                                  <RefreshCw className={`w-3.5 h-3.5 ${resendingInvitation === invitation.id ? 'animate-spin' : ''}`} />
+                                                </button>
+                                              )}
                                               <button
-                                                onClick={() => handleResendInvitation(invitation.id)}
-                                                disabled={resendingInvitation === invitation.id}
-                                                className="p-1.5 hover:bg-green-50 rounded-lg transition-colors text-green-600 hover:text-green-700 disabled:opacity-50"
-                                                title="Resend invitation email"
+                                                onClick={() => setEditingInvitation(invitation)}
+                                                className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors text-blue-600 hover:text-blue-700"
+                                                title="Edit invitation"
                                               >
-                                                <RefreshCw className={`w-3.5 h-3.5 ${resendingInvitation === invitation.id ? 'animate-spin' : ''}`} />
+                                                <Edit2 className="w-3.5 h-3.5" />
                                               </button>
-                                            )}
-                                            <button
-                                              onClick={() => setEditingInvitation(invitation)}
-                                              className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors text-blue-600 hover:text-blue-700"
-                                              title="Edit invitation"
-                                            >
-                                              <Edit2 className="w-3.5 h-3.5" />
-                                            </button>
-                                            <button
-                                              onClick={() => handleDeleteClick('invitation', invitation.id, invitation.full_name)}
-                                              className="p-1.5 hover:bg-red-50 rounded-lg transition-colors text-red-600 hover:text-red-700"
-                                              title="Delete invitation"
-                                            >
-                                              <Trash2 className="w-3.5 h-3.5" />
-                                            </button>
-                                          </div>
+                                              <button
+                                                onClick={() => handleDeleteClick('invitation', invitation.id, invitation.full_name)}
+                                                className="p-1.5 hover:bg-red-50 rounded-lg transition-colors text-red-600 hover:text-red-700"
+                                                title="Delete invitation"
+                                              >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                              </button>
+                                            </div>
                                           )}
                                         </div>
 
@@ -1440,105 +1574,78 @@ export function TeamRolesManagement({
           </p>
         </div>
 
-        {/* Quick Actions Dropdown Button */}
-        <div className="relative">
-          <button
-            onClick={() => setIsQuickActionsOpen(!isQuickActionsOpen)}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-dairy-primary text-white rounded-lg hover:bg-dairy-primary/90 transition-colors font-medium"
-          >
-            <Zap className="w-5 h-5" />
-            <span>Quick Actions</span>
-            <ChevronDown
-              className={`w-4 h-4 transition-transform duration-200 ${
-                isQuickActionsOpen ? 'rotate-180' : ''
-              }`}
-            />
-          </button>
+        {/* Quick Actions Dropdown Menu */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm">
+              <Plus className="h-4 w-4" />
+              <span>Quick Actions</span>
+              <ChevronDown className="w-4 h-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            {QUICK_ACTIONS.map((action, index) => {
+              const ActionIcon = action.icon
 
-          {/* Dropdown Menu */}
-          {isQuickActionsOpen && (
-            <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
-              <div className="py-2">
-                {QUICK_ACTIONS.map((action, index) => {
-                  const ActionIcon = action.icon
-                  
-                  if (action.action === 'openDepartmentModal') {
-                    return (
-                      <button
-                        key={index}
-                        onClick={() => {
-                          setIsDepartmentModalOpen(true)
-                          setIsQuickActionsOpen(false)
-                        }}
-                        className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-                      >
-                        <ActionIcon className={`w-4 h-4 mr-2 inline ${action.color}`} />
-                        {action.label}
-                      </button>
-                    )
-                  }
+              if (action.action === 'openDepartmentModal') {
+                return (
+                  <DropdownMenuItem
+                    key={index}
+                    onClick={() => setIsDepartmentModalOpen(true)}
+                  >
+                    <ActionIcon className={`w-4 h-4 mr-2 ${action.color}`} />
+                    {action.label}
+                  </DropdownMenuItem>
+                )
+              }
 
-                  if (action.action === 'openWorkerModal') {
-                    return (
-                      <button
-                        key={index}
-                        onClick={() => {
-                          setIsWorkerModalOpen(true)
-                          setIsQuickActionsOpen(false)
-                        }}
-                        className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-                      >
-                        <ActionIcon className={`w-4 h-4 mr-2 inline ${action.color}`} />
-                        {action.label}
-                      </button>
-                    )
-                  }
+              if (action.action === 'openWorkerModal') {
+                return (
+                  <DropdownMenuItem
+                    key={index}
+                    onClick={() => setIsWorkerModalOpen(true)}
+                  >
+                    <ActionIcon className={`w-4 h-4 mr-2 ${action.color}`} />
+                    {action.label}
+                  </DropdownMenuItem>
+                )
+              }
 
-                  if (action.action === 'openInvitationModal') {
-                    return (
-                      <button
-                        key={index}
-                        onClick={() => {
-                          setIsInvitationModalOpen(true)
-                          setIsQuickActionsOpen(false)
-                        }}
-                        className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-                      >
-                        <ActionIcon className={`w-4 h-4 mr-2 inline ${action.color}`} />
-                        {action.label}
-                      </button>
-                    )
-                  }
+              if (action.action === 'openInvitationModal') {
+                return (
+                  <DropdownMenuItem
+                    key={index}
+                    onClick={() => setIsInvitationModalOpen(true)}
+                  >
+                    <ActionIcon className={`w-4 h-4 mr-2 ${action.color}`} />
+                    {action.label}
+                  </DropdownMenuItem>
+                )
+              }
 
-                  if (action.action === 'openAccessControlModal') {
-                    return (
-                      <button
-                        key={index}
-                        onClick={() => {
-                          setIsAccessControlModalOpen(true)
-                          setIsQuickActionsOpen(false)
-                        }}
-                        className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-                      >
-                        <ActionIcon className={`w-4 h-4 mr-2 inline ${action.color}`} />
-                        {action.label}
-                      </button>
-                    )
-                  }
-                  
-                  return (
-                    <Link key={index} href={action.href || '#'}>
-                      <button className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors">
-                        <ActionIcon className={`w-4 h-4 mr-2 inline ${action.color}`} />
-                        {action.label}
-                      </button>
-                    </Link>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-        </div>
+              if (action.action === 'openAccessControlModal') {
+                return (
+                  <DropdownMenuItem
+                    key={index}
+                    onClick={() => setIsAccessControlModalOpen(true)}
+                  >
+                    <ActionIcon className={`w-4 h-4 mr-2 ${action.color}`} />
+                    {action.label}
+                  </DropdownMenuItem>
+                )
+              }
+
+              return (
+                <DropdownMenuItem key={index} onClick={() => {
+                  window.location.href = action.href || '#'
+                }}>
+                  <ActionIcon className={`w-4 h-4 mr-2 ${action.color}`} />
+                  {action.label}
+                </DropdownMenuItem>
+              )
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* Stats Cards */}
@@ -1582,8 +1689,8 @@ export function TeamRolesManagement({
           onClose={() => setIsDepartmentModalOpen(false)}
           farmId={farmId}
           onSuccess={() => {
-            // Refresh stats or data as needed
-            window.location.reload()
+            // ✅ NEW: Refetch only departments without page reload
+            fetchDepartments()
           }}
         />
       )}
@@ -1666,7 +1773,8 @@ export function TeamRolesManagement({
           editingDepartment={editingDepartment}
           onSuccess={() => {
             setEditingDepartment(null)
-            window.location.reload()
+            // ✅ NEW: Refetch only departments without page reload
+            fetchDepartments()
           }}
         />
       )}

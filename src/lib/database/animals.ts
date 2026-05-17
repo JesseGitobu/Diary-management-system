@@ -632,6 +632,16 @@ export async function updateAnimal(animalId: string, farmId: string, animalData:
       return { success: false, error: 'Animal not found or access denied' }
     }
     
+    // ✅ VALID DATABASE COLUMNS for the animals table
+    const validColumns = new Set([
+      'id', 'farm_id', 'tag_number', 'name', 'breed', 'gender', 'birth_date', 
+      'weight', 'status', 'notes', 'animal_source', 'mother_id', 'father_id',
+      'purchase_date', 'health_status', 'production_status', 'service_date',
+      'service_method', 'expected_calving_date', 'current_daily_production',
+      'days_in_milk', 'purchase_price', 'seller_info', 'father_info',
+      'birth_weight', 'auto_generate_tag', 'updated_at'
+    ])
+    
     // ✅ DATE FIELDS that should accept null instead of empty strings
     const dateFields = [
       'birth_date',
@@ -640,11 +650,15 @@ export async function updateAnimal(animalId: string, farmId: string, animalData:
       'expected_calving_date'
     ]
     
-    // Prepare update data
-    const updateData = {
-      ...animalData,
-      updated_at: new Date().toISOString(),
-    }
+    // Prepare update data - filter out non-database fields
+    const updateData: any = { updated_at: new Date().toISOString() }
+    
+    Object.keys(animalData).forEach(key => {
+      // ✅ FIXED: Only include valid database columns
+      if (validColumns.has(key)) {
+        updateData[key] = animalData[key]
+      }
+    })
     
     // ✅ FIXED: Convert empty strings to null for date fields, remove undefined
     Object.keys(updateData).forEach(key => {

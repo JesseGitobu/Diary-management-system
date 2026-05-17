@@ -30,6 +30,7 @@ interface TagGenerationSectionProps {
   onTagChange: (tagNumber: string, autoGenerate: boolean) => void
   customAttributes?: CustomAttribute[]
   animalSource?: 'newborn_calf' | 'purchased_animal'  // ✅ NEW: Animal source for source-specific formats
+  autoGenerateTagNumbers?: boolean  // ✅ NEW: Auto-generate setting from tagging settings
 }
 
 interface TagPreviewData {
@@ -47,15 +48,27 @@ export function TagGenerationSection({
   formData,
   onTagChange,
   customAttributes = [],
-  animalSource  // ✅ NEW: Receive animal source
+  animalSource,  // ✅ NEW: Receive animal source
+  autoGenerateTagNumbers = true  // ✅ NEW: Receive auto-generate setting
 }: TagGenerationSectionProps) {
-  const [autoGenerate, setAutoGenerate] = useState(true)
+  const [autoGenerate, setAutoGenerate] = useState(autoGenerateTagNumbers)
   const [manualTag, setManualTag] = useState('')
   const [previewTag, setPreviewTag] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [tagSettings, setTagSettings] = useState<any>(null)
   const [lastFormData, setLastFormData] = useState<any>(null)
+
+  // ✅ NEW: Initialize auto-generate mode based on tagging settings
+  useEffect(() => {
+    if (!autoGenerateTagNumbers) {
+      // If auto-generate is disabled in settings, force manual mode
+      setAutoGenerate(false)
+    } else {
+      // If auto-generate is enabled, default to auto mode
+      setAutoGenerate(true)
+    }
+  }, [autoGenerateTagNumbers])
 
   // Generate initial preview on mount
   useEffect(() => {
@@ -195,36 +208,53 @@ export function TagGenerationSection({
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {/* Generation Method Toggle */}
-        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-          <div className="flex items-center space-x-3">
-            <Sparkles className="w-4 h-4 text-blue-600" />
-            <div>
-              <p className="text-sm font-medium text-gray-900">
-                Auto-generate tag number
-              </p>
-              <p className="text-xs text-gray-600">
-                Automatically generate based on farm settings
-              </p>
+        {/* Generation Method Toggle - Only show if auto-generate is enabled in settings */}
+        {autoGenerateTagNumbers ? (
+          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+            <div className="flex items-center space-x-3">
+              <Sparkles className="w-4 h-4 text-blue-600" />
+              <div>
+                <p className="text-sm font-medium text-gray-900">
+                  Auto-generate tag number
+                </p>
+                <p className="text-xs text-gray-600">
+                  Automatically generate based on farm settings
+                </p>
+              </div>
+            </div>
+            
+            <button
+              type="button"
+              onClick={() => handleAutoGenerateToggle(!autoGenerate)}
+              className={`
+                relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
+                ${autoGenerate ? 'bg-blue-600' : 'bg-gray-200'}
+              `}
+            >
+              <span
+                className={`
+                  inline-block h-4 w-4 transform rounded-full bg-white transition-transform
+                  ${autoGenerate ? 'translate-x-6' : 'translate-x-1'}
+                `}
+              />
+            </button>
+          </div>
+        ) : (
+          /* \u2705 NEW: Show manual entry message when auto-generate is disabled */
+          <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex items-center space-x-3">
+              <Hash className="w-4 h-4 text-blue-600" />
+              <div>
+                <p className="text-sm font-medium text-blue-900">
+                  Manual Tag Entry
+                </p>
+                <p className="text-xs text-blue-700">
+                  Your farm is configured for manual tag entry. Please enter a tag number below.
+                </p>
+              </div>
             </div>
           </div>
-          
-          <button
-            type="button"
-            onClick={() => handleAutoGenerateToggle(!autoGenerate)}
-            className={`
-              relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
-              ${autoGenerate ? 'bg-blue-600' : 'bg-gray-200'}
-            `}
-          >
-            <span
-              className={`
-                inline-block h-4 w-4 transform rounded-full bg-white transition-transform
-                ${autoGenerate ? 'translate-x-6' : 'translate-x-1'}
-              `}
-            />
-          </button>
-        </div>
+        )}
 
         {/* Auto-generated Tag Preview */}
         {autoGenerate && (

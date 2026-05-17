@@ -1,5 +1,5 @@
 // src/components/animals/AddAnimalModal.tsx
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Label } from '@/components/ui/Label'
@@ -49,6 +49,33 @@ export default function AddAnimalModal({
   const [pendingWeightUpdate, setPendingWeightUpdate] = useState<any>(null)
 
   const [createdAnimal, setCreatedAnimal] = useState<any>(null)
+  
+  // ✅ NEW: State to store auto-generate setting from tagging settings
+  const [autoGenerateTagNumbers, setAutoGenerateTagNumbers] = useState(true)
+  const [loadingSettings, setLoadingSettings] = useState(true)
+  
+  // ✅ NEW: Fetch tagging settings on mount to check auto-generate flag
+  useEffect(() => {
+    const fetchTaggingSettings = async () => {
+      try {
+        const response = await fetch(`/api/settings/animal-tagging?farmId=${farmId}`)
+        if (response.ok) {
+          const data = await response.json()
+          setAutoGenerateTagNumbers(data.settings?.autoGenerateTagNumbers ?? true)
+        }
+      } catch (error) {
+        console.error('Error fetching tagging settings:', error)
+        // Default to true if fetch fails
+        setAutoGenerateTagNumbers(true)
+      } finally {
+        setLoadingSettings(false)
+      }
+    }
+
+    if (farmId && isOpen) {
+      fetchTaggingSettings()
+    }
+  }, [farmId, isOpen])
 
   // ✅ NEW: Initialize modal state based on mode (add vs edit)
   React.useEffect(() => {
@@ -356,6 +383,7 @@ export default function AddAnimalModal({
                   onCancel={handleCancel}
                   editingAnimal={editingAnimal}
                   isEditMode={isEditMode}
+                  autoGenerateTagNumbers={autoGenerateTagNumbers}
                 />
               ) : (
                 <PurchasedAnimalForm
@@ -364,6 +392,7 @@ export default function AddAnimalModal({
                   onCancel={handleCancel}
                   editingAnimal={editingAnimal}
                   isEditMode={isEditMode}
+                  autoGenerateTagNumbers={autoGenerateTagNumbers}
                 />
               )}
             </div>

@@ -1,31 +1,30 @@
 // src/lib/database/health-protocols.ts
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 
-// Updated interfaces
+// ✅ Updated interfaces - aligned with normalized schema
 export interface HealthProtocol {
   id: string
   farm_id: string
   protocol_name: string
-  protocol_type: 'vaccination' | 'treatment' | 'checkup' | 'breeding' | 'nutrition'
+  protocol_type: 'vaccination' | 'treatment' | 'checkup' | 'breeding' | 'nutrition' | 'deworming_parasites' | 'dehorning' | 'post_mortem'
   description: string
   frequency_type: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'one_time'
   frequency_value: number
-  start_date: string
-  end_date: string | null // ✅ Allow null
+  start_date: string // ISO date: YYYY-MM-DD
+  end_date: string | null // ISO date or null
   target_animals: 'all' | 'group' | 'individual'
-  animal_groups: string[] | null // ✅ Allow null
-  individual_animals: string[] | null // ✅ Allow null
-  veterinarian: string | null // ✅ Allow null
-  estimated_cost: number | null // ✅ Allow null
-  notes: string | null // ✅ Allow null
+  veterinarian: string | null
+  estimated_cost: number | null // numeric(12,2)
+  notes: string | null
   auto_create_records: boolean
   is_active: boolean
   created_by: string
+  updated_by: string | null
   created_at: string
   updated_at: string
 }
 
-// Add a separate interface for database responses that might have different nullability
+// Database row interface - handles nullable fields from Supabase
 export interface HealthProtocolRow {
   id: string
   farm_id: string
@@ -37,29 +36,36 @@ export interface HealthProtocolRow {
   start_date: string | null
   end_date: string | null
   target_animals: string | null
-  animal_groups: string[] | null
-  individual_animals: string[] | null
   veterinarian: string | null
   estimated_cost: number | null
   notes: string | null
   auto_create_records: boolean | null
   is_active: boolean | null
   created_by: string | null
+  updated_by: string | null
   created_at: string | null
   updated_at: string | null
 }
 
+// Protocol animals association interface
+export interface ProtocolAnimal {
+  id: string
+  protocol_id: string
+  animal_id: string
+}
+
+// Input data interface for creating protocols
 export interface CreateProtocolData {
   protocol_name: string
-  protocol_type: 'vaccination' | 'treatment' | 'checkup' | 'breeding' | 'nutrition'
+  protocol_type: 'vaccination' | 'treatment' | 'checkup' | 'breeding' | 'nutrition' | 'deworming_parasites' | 'dehorning' | 'post_mortem'
   description: string
   frequency_type: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'one_time'
   frequency_value: number
-  start_date: string
+  start_date: string // ISO date: YYYY-MM-DD
   end_date?: string | null
   target_animals: 'all' | 'group' | 'individual'
   animal_groups?: string[] | null
-  individual_animals?: string[] | null
+  individual_animals?: string[] | null // IDs of individual animals to apply protocol to
   veterinarian?: string | null
   estimated_cost?: number | null
   notes?: string | null
@@ -77,22 +83,21 @@ function mapRowToProtocol(row: HealthProtocolRow): HealthProtocol {
     frequency_type: (row.frequency_type as HealthProtocol['frequency_type']) || 'monthly',
     frequency_value: row.frequency_value || 1,
     start_date: row.start_date || '',
-    end_date: row.end_date,
+    end_date: row.end_date || null,
     target_animals: (row.target_animals as HealthProtocol['target_animals']) || 'all',
-    animal_groups: row.animal_groups,
-    individual_animals: row.individual_animals,
-    veterinarian: row.veterinarian,
-    estimated_cost: row.estimated_cost,
-    notes: row.notes,
+    veterinarian: row.veterinarian || null,
+    estimated_cost: row.estimated_cost || null,
+    notes: row.notes || null,
     auto_create_records: row.auto_create_records ?? true,
     is_active: row.is_active ?? true,
     created_by: row.created_by || '',
+    updated_by: row.updated_by || null,
     created_at: row.created_at || '',
     updated_at: row.updated_at || '',
   }
 }
 
-// Updated createHealthProtocol function
+// ✅ Updated createHealthProtocol - handles animals through junction table
 export async function createHealthProtocol(
   farmId: string,
   userId: string,
@@ -101,7 +106,7 @@ export async function createHealthProtocol(
   const supabase = await createServerSupabaseClient()
   
   try {
-    // Enhanced validation
+    // ✅ VALIDATION LAYER
     if (!protocolData.protocol_name || protocolData.protocol_name.trim().length < 2) {
       return { success: false, error: 'Protocol name must be at least 2 characters' }
     }
@@ -114,13 +119,13 @@ export async function createHealthProtocol(
       return { success: false, error: 'Start date is required' }
     }
     
-    // Validate date formats
+    // Validate date formats (ISO format: YYYY-MM-DD)
     if (isNaN(Date.parse(protocolData.start_date))) {
-      return { success: false, error: 'Invalid start date format' }
+      return { success: false, error: 'Invalid start date format (use YYYY-MM-DD)' }
     }
     
     if (protocolData.end_date && isNaN(Date.parse(protocolData.end_date))) {
-      return { success: false, error: 'Invalid end date format' }
+      return { success: false, error: 'Invalid end date format (use YYYY-MM-DD)' }
     }
     
     // Validate end date is after start date
@@ -133,7 +138,8 @@ export async function createHealthProtocol(
       }
     }
     
-    // Validate individual animals if selected
+    // ✅ Validate individual animals if selected (through normalized table)
+    let validatedAnimalIds: string[] = []
     if (protocolData.target_animals === 'individual' && protocolData.individual_animals?.length) {
       const { data: animals, error: animalError } = await supabase
         .from('animals')
@@ -146,35 +152,34 @@ export async function createHealthProtocol(
         return { success: false, error: 'Error validating selected animals' }
       }
       
-      if (animals.length !== protocolData.individual_animals.length) {
+      if (!animals || animals.length !== protocolData.individual_animals.length) {
         return { success: false, error: 'Some selected animals do not belong to your farm' }
       }
+      
+      validatedAnimalIds = animals.map(a => a.id)
     }
     
-    // Prepare clean data for insertion
+    // ✅ Prepare clean data for insertion (no array columns)
     const insertData = {
       farm_id: farmId,
-      created_by: userId,
       protocol_name: protocolData.protocol_name.trim(),
       protocol_type: protocolData.protocol_type,
       description: protocolData.description.trim(),
       frequency_type: protocolData.frequency_type,
       frequency_value: protocolData.frequency_value,
       start_date: protocolData.start_date,
-      end_date: protocolData.end_date || null,
+      end_date: (protocolData.end_date && protocolData.end_date.trim() !== '') ? protocolData.end_date : null,
       target_animals: protocolData.target_animals,
-      animal_groups: protocolData.animal_groups || null,
-      individual_animals: protocolData.individual_animals || null,
-      veterinarian: protocolData.veterinarian?.trim() || null,
+      veterinarian: (protocolData.veterinarian && protocolData.veterinarian.trim() !== '') ? protocolData.veterinarian.trim() : null,
       estimated_cost: protocolData.estimated_cost || null,
-      notes: protocolData.notes?.trim() || null,
+      notes: (protocolData.notes && protocolData.notes.trim() !== '') ? protocolData.notes.trim() : null,
       auto_create_records: protocolData.auto_create_records ?? true,
       is_active: true
     }
     
     console.log('Inserting protocol data:', insertData)
     
-    // FIXED: Cast to any to bypass 'never' type error, and cast result data manually
+    // ✅ Insert protocol (cast to any to bypass type issues with Supabase)
     const { data: rawData, error } = await (supabase
       .from('health_protocols') as any)
       .insert(insertData)
@@ -191,16 +196,26 @@ export async function createHealthProtocol(
       return { success: false, error: 'No protocol was created' }
     }
     
-    // ✅ Convert the database row to proper HealthProtocol type
+    // ✅ Convert database row to proper HealthProtocol type
     const protocol = mapRowToProtocol(protocolRows[0])
     
-    // Create initial tasks if needed
+    // ✅ Associate individual animals through junction table
+    if (validatedAnimalIds.length > 0) {
+      try {
+        await associateAnimalsWithProtocol(protocol.id, validatedAnimalIds)
+      } catch (assocError) {
+        console.error('Error associating animals with protocol:', assocError)
+        // Don't fail - protocol was created, just animal association had issues
+      }
+    }
+    
+    // ✅ Create initial tasks if needed
     if (protocol.auto_create_records && protocol.frequency_type !== 'one_time') {
       try {
         await createInitialProtocolTasks(protocol)
       } catch (taskError) {
         console.error('Error creating initial tasks:', taskError)
-        // Don't fail the protocol creation if task creation fails
+        // Don't fail - protocol was created, just task creation failed
       }
     }
     
@@ -273,7 +288,91 @@ export async function updateHealthProtocol(
   }
 }
 
-// Keep the existing deleteHealthProtocol and helper functions as they are
+// ✅ NEW: Associate individual animals with a protocol through junction table
+export async function associateAnimalsWithProtocol(
+  protocolId: string,
+  animalIds: string[]
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    if (!animalIds || animalIds.length === 0) {
+      return { success: true }
+    }
+    
+    // Create protocol_animals associations
+    const associations = animalIds.map(animalId => ({
+      protocol_id: protocolId,
+      animal_id: animalId,
+    }))
+    
+    const { error } = await (supabase
+      .from('protocol_animals') as any)
+      .insert(associations)
+    
+    if (error) {
+      console.error('Error associating animals:', error)
+      return { success: false, error: error.message }
+    }
+    
+    return { success: true }
+    
+  } catch (error) {
+    console.error('Error in associateAnimalsWithProtocol:', error)
+    return { success: false, error: `Unexpected error: ${error instanceof Error ? error.message : 'Unknown error'}` }
+  }
+}
+
+// Get animals associated with a protocol
+export async function getProtocolAnimals(protocolId: string): Promise<ProtocolAnimal[]> {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    const { data, error } = await (supabase
+      .from('protocol_animals') as any)
+      .select('*')
+      .eq('protocol_id', protocolId)
+    
+    if (error) {
+      console.error('Error fetching protocol animals:', error)
+      return []
+    }
+    
+    return data as ProtocolAnimal[]
+    
+  } catch (error) {
+    console.error('Error in getProtocolAnimals:', error)
+    return []
+  }
+}
+
+// Remove animal association from protocol
+export async function removeAnimalFromProtocol(
+  protocolId: string,
+  animalId: string
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    const { error } = await (supabase
+      .from('protocol_animals') as any)
+      .delete()
+      .eq('protocol_id', protocolId)
+      .eq('animal_id', animalId)
+    
+    if (error) {
+      return { success: false, error: error.message }
+    }
+    
+    return { success: true }
+    
+  } catch (error) {
+    console.error('Error in removeAnimalFromProtocol:', error)
+    return { success: false, error: `Unexpected error: ${error instanceof Error ? error.message : 'Unknown error'}` }
+  }
+}
+
+// Delete a protocol (soft delete - just mark as inactive)
 export async function deleteHealthProtocol(protocolId: string): Promise<{ success: boolean; error?: string }> {
   const supabase = await createServerSupabaseClient()
   
@@ -296,7 +395,7 @@ export async function deleteHealthProtocol(protocolId: string): Promise<{ succes
   }
 }
 
-// Keep existing helper functions
+// Helper functions
 async function createInitialProtocolTasks(protocol: HealthProtocol) {
   console.log(`Creating initial tasks for protocol: ${protocol.protocol_name}`)
   

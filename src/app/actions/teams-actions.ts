@@ -241,7 +241,7 @@ export async function createDepartment(formData: FormData) {
   }
 
   // Use the database utility function
-  const department = await createDepartmentUtil(farmId, name.trim(), description?.trim() || undefined)
+  const department = await createDepartmentUtil(farmId, name.trim(), user.id, description?.trim() || undefined)
 
   if (!department) {
     throw new Error('Failed to create department')

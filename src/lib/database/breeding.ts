@@ -70,6 +70,7 @@ export interface AnimalTaggingSettings {
   padding_zeros: boolean
   custom_start_number: number
   next_number: number
+  auto_generate_tag_numbers?: boolean
 }
 
 /**

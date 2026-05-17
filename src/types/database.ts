@@ -1785,6 +1785,7 @@ export interface TaggingSettings {
   enableNFC: boolean
   enableGPS: boolean
   enableBiometric: boolean
+  autoGenerateTagNumbers: boolean
   qrCodeSize: 'small' | 'medium' | 'large'
   rfidFrequency: '134.2khz' | '125khz' | '13.56mhz'
   gpsUpdateInterval: number
@@ -2001,6 +2002,7 @@ export interface AnimalTaggingSettingsDB {
   qr_code_size: string
   rfid_frequency: string
   gps_update_interval: number
+  auto_generate_tag_numbers: boolean
   created_at: string
   updated_at: string
 }

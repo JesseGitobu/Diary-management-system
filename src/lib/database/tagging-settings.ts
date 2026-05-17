@@ -31,6 +31,7 @@ export interface TaggingSettings {
   paddingZeros: boolean
   useSourceSpecificFormats: boolean
   sourceSpecificFormats: SourceSpecificFormat[]
+  autoGenerateTagNumbers: boolean
 }
 
 export interface CustomAttribute {
@@ -178,6 +179,8 @@ export async function getTaggingSettings(farmId: string): Promise<TaggingSetting
       
       useSourceSpecificFormats: settings.use_source_specific_formats ?? true,
       
+      autoGenerateTagNumbers: settings.auto_generate_tag_numbers ?? true,
+      
       smartAlerts: {
         healthReminders: true,
         breedingReminders: true,
@@ -222,8 +225,8 @@ export async function updateTaggingSettings(
     const mainSettingsData = {
       farm_id: farmId,
       method: settings.method || 'basic',
-      tag_prefix: settings.tagPrefix || 'COW',
-      numbering_system: settings.numberingSystem || 'sequential',
+      tag_prefix: settings.autoGenerateTagNumbers ? (settings.tagPrefix || 'COW') : null,
+      numbering_system: settings.autoGenerateTagNumbers ? (settings.numberingSystem || 'sequential') : null,
       next_number: settings.nextNumber || 1,
       enable_photo_tags: settings.enablePhotoTags ?? true,
       enable_color_coding: settings.enableColorCoding ?? true,
@@ -246,6 +249,7 @@ export async function updateTaggingSettings(
       include_check_digit: settings.includeCheckDigit ?? false,
       padding_zeros: settings.paddingZeros ?? true,
       use_source_specific_formats: settings.useSourceSpecificFormats ?? true,
+      auto_generate_tag_numbers: settings.autoGenerateTagNumbers ?? true,
       updated_at: new Date().toISOString()
     }
 
@@ -538,7 +542,8 @@ function getDefaultTaggingSettings(): TaggingSettings {
     barcodeType: 'code128',
     barcodeLength: 8,
     includeCheckDigit: false,
-    paddingZeros: true
+    paddingZeros: true,
+    autoGenerateTagNumbers: true
   }
 }
 

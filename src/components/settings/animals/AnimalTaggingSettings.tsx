@@ -145,6 +145,7 @@ export default function AnimalTaggingSettings({
     // Basic Settings
     tagPrefix: 'COW',
     tagNumbering: 'sequential', // sequential, custom, barcode
+    autoGenerateTagNumbers: true,
     enablePhotoTags: true,
     enableColorCoding: true,
 
@@ -712,6 +713,7 @@ export default function AnimalTaggingSettings({
         if (data.settings) {
           const transformedFormats = transformSourceFormats(data.settings.sourceSpecificFormats)
           setSettings({
+            autoGenerateTagNumbers: data.settings.autoGenerateTagNumbers ?? true,
             tagPrefix: data.settings.tagPrefix || 'COW',
             tagNumbering: data.settings.numberingSystem || 'sequential',
             enablePhotoTags: data.settings.enablePhotoTags ?? true,
@@ -888,6 +890,7 @@ export default function AnimalTaggingSettings({
       const transformedFormats = transformSourceFormats(initialSettings.sourceSpecificFormats)
 
       setSettings({
+        autoGenerateTagNumbers: initialSettings.autoGenerateTagNumbers ?? true,
         tagPrefix: initialSettings.tagPrefix || 'COW',
         tagNumbering: initialSettings.numberingSystem || 'sequential',
         enablePhotoTags: initialSettings.enablePhotoTags ?? true,
@@ -1016,6 +1019,7 @@ export default function AnimalTaggingSettings({
     enableNFC: boolean
     enableGPS: boolean
     enableBiometric: boolean
+    autoGenerateTagNumbers: boolean
   }
 
   const handleMethodChange = (method: TaggingMethodKey): void => {
@@ -1071,6 +1075,7 @@ export default function AnimalTaggingSettings({
 
   const handleSaveSettings = async () => {
     const enabledFeatures = [
+      settings.autoGenerateTagNumbers && 'Auto-Generate Tag Numbers',
       settings.enablePhotoTags && 'Photo Tags',
       settings.enableColorCoding && 'Color Coding',
       settings.enableQRCodes && 'QR Codes',
@@ -1131,6 +1136,7 @@ export default function AnimalTaggingSettings({
           body: JSON.stringify({
             farmId: farmId,
             settings: {
+              autoGenerateTagNumbers: settings.autoGenerateTagNumbers,
               method: selectedMethod,
               tagPrefix: settings.tagPrefix,
               numberingSystem: settings.tagNumbering,
@@ -1359,6 +1365,7 @@ export default function AnimalTaggingSettings({
     try {
       // Reset settings
       const defaultSettings = {
+        autoGenerateTagNumbers: true,
         tagPrefix: 'COW',
         tagNumbering: 'sequential',
 
@@ -1633,39 +1640,64 @@ export default function AnimalTaggingSettings({
                 <CardDescription>Configure fundamental animal identification parameters</CardDescription>
               </CardHeader>
               <CardContent className={`space-y-4 ${isMobile ? 'space-y-3' : 'space-y-6'}`}>
-                <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2 gap-4'}`}>
-                  <div>
-                    <Label htmlFor="tagPrefix" className={isMobile ? 'text-sm' : ''}>Tag Prefix</Label>
-                    <Input
-                      id="tagPrefix"
-                      value={settings.tagPrefix}
-                      onChange={(e) => setSettings(prev => ({ ...prev, tagPrefix: e.target.value }))}
-                      placeholder="COW"
-                      className={isMobile ? 'text-sm' : ''}
-                    />
-                    <p className={`text-gray-500 mt-1 ${isMobile ? 'text-xs' : 'text-sm'}`}>Prefix for auto-generated tags</p>
+                {/* Auto-Generate Tag Numbers Toggle */}
+                <div className="flex items-center justify-between p-3 border rounded-lg bg-white">
+                  <div className="flex flex-col">
+                    <Label className="text-sm font-medium">Auto-Generate Tag Numbers</Label>
+                    <p className="text-xs text-gray-500">
+                      Automatically assign tags when new animals are added
+                    </p>
                   </div>
-
-                  <div>
-                    <Label htmlFor="tagNumbering" className={isMobile ? 'text-sm' : ''}>Numbering System</Label>
-                    <Select
-                      value={settings.tagNumbering}
-                      onValueChange={(value) => setSettings(prev => ({ ...prev, tagNumbering: value }))}
-                    >
-                      <SelectTrigger className={isMobile ? 'text-sm' : ''}>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="sequential">Sequential (COW-001...)</SelectItem>
-                        <SelectItem value="custom">Custom Format</SelectItem>
-                        <SelectItem value="barcode">Barcode Compatible</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <Switch
+                    checked={settings.autoGenerateTagNumbers}
+                    onCheckedChange={(checked) => setSettings(prev => ({ 
+                      ...prev, 
+                      autoGenerateTagNumbers: checked,
+                      // Clear tag prefix and numbering system when auto-generate is disabled
+                      tagPrefix: checked ? prev.tagPrefix : '',
+                      tagNumbering: checked ? prev.tagNumbering : 'sequential'
+                    }))}
+                  />
                 </div>
 
+                {/* Tag Prefix and Numbering System - Only show when auto-generate is enabled */}
+                {settings.autoGenerateTagNumbers && (
+                  <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2 gap-4'}`}>
+                    <div>
+                      <Label htmlFor="tagPrefix" className={isMobile ? 'text-sm' : ''}>Tag Prefix</Label>
+                      <Input
+                        id="tagPrefix"
+                        value={settings.tagPrefix}
+                        onChange={(e) => setSettings(prev => ({ ...prev, tagPrefix: e.target.value }))}
+                        placeholder="COW"
+                        className={isMobile ? 'text-sm' : ''}
+                      />
+                      <p className={`text-gray-500 mt-1 ${isMobile ? 'text-xs' : 'text-sm'}`}>Prefix for auto-generated tags</p>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="tagNumbering" className={isMobile ? 'text-sm' : ''}>Numbering System</Label>
+                      <Select
+                        value={settings.tagNumbering}
+                        onValueChange={(value) => setSettings(prev => ({ ...prev, tagNumbering: value }))}
+                      >
+                        <SelectTrigger className={isMobile ? 'text-sm' : ''}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="sequential">Sequential (COW-001...)</SelectItem>
+                          <SelectItem value="custom">Custom Format</SelectItem>
+                          <SelectItem value="barcode">Barcode Compatible</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                )}
+
+                
+
                 {/* Source-Specific Tag Formats - Full Width */}
-                {settings.tagNumbering === 'custom' && (
+                {settings.autoGenerateTagNumbers && settings.tagNumbering === 'custom' && (
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-2">
@@ -2092,7 +2124,7 @@ export default function AnimalTaggingSettings({
                 )}
 
                 {/* Custom Format Configuration - Full Width */}
-                {settings.tagNumbering === 'custom' && !settings.useSourceSpecificFormats && (
+                {settings.autoGenerateTagNumbers && settings.tagNumbering === 'custom' && !settings.useSourceSpecificFormats && (
                   <div className={`p-4 bg-gray-50 rounded-lg space-y-3 ${isMobile ? 'text-sm' : ''}`}>
                     <div>
                       <div className="flex items-center justify-between mb-2">
@@ -2339,7 +2371,7 @@ export default function AnimalTaggingSettings({
 
 
                 {/* Barcode Compatible Configuration */}
-                {settings.tagNumbering === 'barcode' && (
+                {settings.autoGenerateTagNumbers && settings.tagNumbering === 'barcode' && (
                   <div className="p-4 bg-gray-50 rounded-lg space-y-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div>

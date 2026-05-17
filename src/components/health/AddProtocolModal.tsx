@@ -15,23 +15,67 @@ import { Plus, X, Calendar, Repeat, AlertCircle, Info } from 'lucide-react'
 import { PROTOCOL_PRESETS, getProtocolPreset, getAllProtocolTypes } from '@/lib/health/protocol-presets'
 import type { ProtocolFieldConfig } from '@/lib/health/protocol-presets'
 
-// Base schema - will be extended with protocol-specific fields
+// ✅ UPDATED: Improved base schema with proper optional field validation
 const baseProtocolSchema = z.object({
-  protocol_name: z.string().min(2, 'Protocol name must be at least 2 characters'),
+  protocol_name: z.string()
+    .min(2, 'Protocol name must be at least 2 characters')
+    .max(255, 'Protocol name must be less than 255 characters')
+    .trim(),
   protocol_type: z.enum(['vaccination', 'treatment', 'checkup', 'breeding', 'nutrition', 'deworming_parasites', 'dehorning', 'post_mortem'] as const),
-  description: z.string().min(5, 'Description must be at least 5 characters'),
+  description: z.string()
+    .min(5, 'Description must be at least 5 characters')
+    .max(5000, 'Description must be less than 5000 characters')
+    .trim(),
   frequency_type: z.enum(['daily', 'weekly', 'monthly', 'quarterly', 'yearly', 'one_time']),
-  frequency_value: z.number().min(1).max(365),
-  start_date: z.string().min(1, 'Start date is required'),
-  end_date: z.string().optional().or(z.literal('')),
+  frequency_value: z.number()
+    .min(1, 'Frequency value must be at least 1')
+    .max(365, 'Frequency value must be at most 365')
+    .int('Frequency value must be a whole number'),
+  start_date: z.string()
+    .min(1, 'Start date is required')
+    .refine(date => !isNaN(Date.parse(date)), 'Invalid date format'),
+  end_date: z.string()
+    .optional()
+    .or(z.literal(''))
+    .refine(
+      (date) => !date || !isNaN(Date.parse(date)), 
+      'Invalid end date format'
+    ),
   target_animals: z.enum(['all', 'group', 'individual']),
   animal_groups: z.array(z.string()).optional(),
   individual_animals: z.array(z.string()).optional(),
-  veterinarian: z.string().optional().or(z.literal('')),
-  estimated_cost: z.number().min(0).optional(),
-  notes: z.string().optional().or(z.literal('')),
+  veterinarian: z.string()
+    .optional()
+    .or(z.literal(''))
+    .refine(
+      (vet) => !vet || vet.trim().length > 0,
+      'Veterinarian name cannot be empty if provided'
+    ),
+  estimated_cost: z.number()
+    .min(0, 'Estimated cost must be greater than 0')
+    .max(999999999999.99, 'Estimated cost exceeds maximum')
+    .optional()
+    .or(z.undefined()),
+  notes: z.string()
+    .optional()
+    .or(z.literal(''))
+    .refine(
+      (notes) => !notes || notes.trim().length > 0,
+      'Notes cannot be empty if provided'
+    ),
   auto_create_records: z.boolean(),
-}).catchall(z.any())
+}).refine(
+  (data) => {
+    // If end_date is provided, it must be after start_date
+    if (data.end_date && data.end_date.trim() !== '') {
+      const startDate = new Date(data.start_date)
+      const endDate = new Date(data.end_date)
+      return endDate > startDate
+    }
+    return true
+  },
+  { message: 'End date must be after start date', path: ['end_date'] }
+)
 
 type ProtocolFormData = z.infer<typeof baseProtocolSchema>
 
@@ -62,10 +106,13 @@ export function AddProtocolModal({
       frequency_value: 1,
       target_animals: 'all',
       auto_create_records: true,
-      start_date: '',
-      end_date: '',
-      veterinarian: '',
-      notes: '',
+      start_date: new Date().toISOString().split('T')[0], // Today's date in YYYY-MM-DD format
+      end_date: '', // Empty string for optional field
+      veterinarian: '', // Empty string for optional field
+      notes: '', // Empty string for optional field
+      estimated_cost: undefined, // Undefined for optional numeric field
+      protocol_name: '',
+      description: '',
     },
   })
   
@@ -78,33 +125,45 @@ export function AddProtocolModal({
     setError(null)
     
     try {
+      // ✅ Ensure optional fields are properly handled (empty strings become nulls)
+      const cleanedData = {
+        ...data,
+        end_date: (data.end_date && data.end_date.trim() !== '') ? data.end_date : null,
+        veterinarian: (data.veterinarian && data.veterinarian.trim() !== '') ? data.veterinarian : null,
+        notes: (data.notes && data.notes.trim() !== '') ? data.notes : null,
+        estimated_cost: data.estimated_cost && data.estimated_cost > 0 ? data.estimated_cost : null,
+        individual_animals: watchedTargetAnimals === 'individual' ? selectedAnimals : [],
+      }
+      
+      console.log('Submitting cleaned protocol data:', cleanedData)
+      
       const response = await fetch('/api/health/protocols', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          ...data,
-          farm_id: farmId,
-          individual_animals: watchedTargetAnimals === 'individual' ? selectedAnimals : [],
-        }),
+        body: JSON.stringify(cleanedData),
       })
       
       const result = await response.json()
       
       if (!response.ok) {
-        throw new Error(result.error || 'Failed to create protocol')
+        // Provide detailed error message from API or generic fallback
+        const errorMessage = result.error || (result.details && result.details) || 'Failed to create protocol'
+        throw new Error(errorMessage)
       }
       
       console.log('Protocol created successfully:', result.protocol)
       onProtocolCreated(result.protocol)
       
+      // Reset form state
       form.reset()
       setSelectedAnimals([])
       onClose()
       
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unexpected error occurred')
+      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred'
+      setError(errorMessage)
       console.error('Error creating protocol:', err)
     } finally {
       setLoading(false)
@@ -129,7 +188,7 @@ export function AddProtocolModal({
             <Label htmlFor={field.key}>{field.label}{field.required && <span className="text-red-500">*</span>}</Label>
             <textarea
               id={field.key}
-              {...form.register(field.key)}
+              {...form.register(field.key as any)}
               rows={3}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
               placeholder={field.placeholder}
@@ -145,7 +204,7 @@ export function AddProtocolModal({
             <Label htmlFor={field.key}>{field.label}{field.required && <span className="text-red-500">*</span>}</Label>
             <select
               id={field.key}
-              {...form.register(field.key)}
+              {...form.register(field.key as any)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
             >
               <option value="">Select {field.label.toLowerCase()}</option>
@@ -167,7 +226,14 @@ export function AddProtocolModal({
               min={field.min}
               max={field.max}
               step={field.step}
-              {...form.register(field.key, { valueAsNumber: true })}
+              {...form.register(field.key as any, { 
+                valueAsNumber: true,
+                validate: {
+                  isNumber: (value) => value === undefined || typeof value === 'number' || 'Must be a valid number',
+                  min: (value) => !value || (typeof value === 'number' && value >= (field.min || 0)) || `Must be at least ${field.min}`,
+                  max: (value) => !value || (typeof value === 'number' && value <= (field.max || 999999999999.99)) || `Must be at most ${field.max}`,
+                }
+              })}
               placeholder={field.placeholder}
               error={error?.message as string | undefined}
             />
@@ -182,7 +248,7 @@ export function AddProtocolModal({
             <Input
               id={field.key}
               type="date"
-              {...form.register(field.key)}
+              {...form.register(field.key as any)}
               error={error?.message as string | undefined}
             />
           </div>
@@ -195,7 +261,7 @@ export function AddProtocolModal({
             <Input
               id={field.key}
               type="time"
-              {...form.register(field.key)}
+              {...form.register(field.key as any)}
               error={error?.message as string | undefined}
             />
           </div>
@@ -207,7 +273,7 @@ export function AddProtocolModal({
             <input
               id={field.key}
               type="checkbox"
-              {...form.register(field.key)}
+              {...form.register(field.key as any)}
               className="w-4 h-4 text-farm-green border-gray-300 rounded focus:ring-farm-green"
             />
             <label htmlFor={field.key} className="ml-2 text-sm text-gray-700">
@@ -226,7 +292,7 @@ export function AddProtocolModal({
                   <input
                     type="checkbox"
                     value={option.value}
-                    {...form.register(field.key)}
+                    {...form.register(field.key as any)}
                     className="text-farm-green focus:ring-farm-green"
                   />
                   <span className="text-sm">{option.label}</span>
@@ -242,7 +308,7 @@ export function AddProtocolModal({
             <Label htmlFor={field.key}>{field.label}{field.required && <span className="text-red-500">*</span>}</Label>
             <Input
               id={field.key}
-              {...form.register(field.key)}
+              {...form.register(field.key as any)}
               placeholder={field.placeholder}
               error={error?.message as string | undefined}
             />

@@ -103,9 +103,10 @@ interface NewbornCalfFormProps {
   onCancel: () => void
   editingAnimal?: any  // ✅ NEW: Optional animal for edit mode
   isEditMode?: boolean  // ✅ NEW: Flag indicating edit mode
+  autoGenerateTagNumbers?: boolean  // ✅ NEW: Flag from tagging settings
 }
 
-export function NewbornCalfForm({ farmId, onSuccess, onCancel, editingAnimal, isEditMode = false }: NewbornCalfFormProps) {
+export function NewbornCalfForm({ farmId, onSuccess, onCancel, editingAnimal, isEditMode = false, autoGenerateTagNumbers = true }: NewbornCalfFormProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [availableMothers, setAvailableMothers] = useState<Animal[]>([])
@@ -455,6 +456,7 @@ export function NewbornCalfForm({ farmId, onSuccess, onCancel, editingAnimal, is
           onTagChange={handleTagChange}
           customAttributes={getCustomAttributesForTagData()}
           animalSource="newborn_calf"  // ✅ NEW: Specify animal source
+          autoGenerateTagNumbers={autoGenerateTagNumbers}  // ✅ NEW: Pass auto-generate setting
         />
 
         {/* Basic Information */}

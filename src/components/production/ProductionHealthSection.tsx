@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useEffect } from 'react'
 import { UseFormReturn } from 'react-hook-form'
 import { Label } from '@/components/ui/Label'
 import { Input } from '@/components/ui/Input'
@@ -29,6 +29,13 @@ export function ProductionHealthSection({
   const mastitis_test_performed = form.watch('mastitis_test_performed')
   const mastitis_result = form.watch('mastitis_result')
   const affected_quarters = form.watch('affected_quarters') || []
+
+  // ✅ AUTO-CHECK mastitis test if required
+  useEffect(() => {
+    if (settings?.requireMastitisTest && !mastitis_test_performed) {
+      form.setValue('mastitis_test_performed', true)
+    }
+  }, [settings?.requireMastitisTest, mastitis_test_performed, form])
 
   // Temperature warnings
   const tempWarning = useMemo(() => {
