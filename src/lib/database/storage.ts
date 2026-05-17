@@ -5,17 +5,17 @@ import { createServerSupabaseClient } from '@/lib/supabase/server'
 // mass-assignment of id, farm_id, created_at, updated_at, etc.
 const WRITABLE_COLUMNS = [
   'name',
-  'storage_type',
+  'location_type',              // matches actual column: location_type
   'status',
   'location',
   'building',
   'floor_level',
-  'capacity',
+  'capacity_kg',                // matches actual column: capacity_kg
   'capacity_unit',
   'temperature_controlled',
   'min_temperature',
   'max_temperature',
-  'humidity_controlled',
+  'humidity_control',
   'min_humidity',
   'max_humidity',
   'restricted_access',

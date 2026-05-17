@@ -7,7 +7,8 @@ import {
   getInventoryStats,
   getInventoryAlerts,
   getSuppliers,
-  getSupplierStats
+  getSupplierStats,
+  getInventoryCategories,
 } from '@/lib/database/inventory'
 import { getStorageLocations, getStorageStats } from '@/lib/database/storage'
 import { redirect } from 'next/navigation'
@@ -41,6 +42,7 @@ export default async function InventoryPage() {
     storageLocations,
     rawStorageStats,
     permissions,
+    categories,
   ] = await Promise.all([
     getInventoryItems(userRole.farm_id),
     getInventoryStats(userRole.farm_id),
@@ -50,6 +52,7 @@ export default async function InventoryPage() {
     getStorageLocations(userRole.farm_id),
     getStorageStats(userRole.farm_id),
     getUserPermissions(userRole.id, userRole.farm_id, userRole.role_type),
+    getInventoryCategories(),
   ])
 
   // Adapt stats shape to what the dashboard expects
@@ -69,6 +72,7 @@ export default async function InventoryPage() {
         supplierStats={supplierStats}
         storage={storageLocations}
         storageStats={storageStats}
+        categories={categories}
         canManage={permissions.canManageInventory}
       />
     </div>

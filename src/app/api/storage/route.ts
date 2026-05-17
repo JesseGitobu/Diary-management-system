@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
       {
         // Basic info
         name:                   body.name.trim(),
-        storage_type:           body.type            || 'dryStorage',
+        location_type:          body.type            || 'dryStorage',
         status:                 body.status          || 'active',
 
         // Physical location
@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
         floor_level:            body.floor_level     || null,
 
         // Capacity
-        capacity:               body.capacity        != null ? Number(body.capacity)               : null,
+        capacity_kg:            body.capacity        != null ? Number(body.capacity)               : null,
         capacity_unit:          body.capacity_unit   || null,
 
         // Environmental

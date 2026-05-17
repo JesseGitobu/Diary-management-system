@@ -1,5 +1,17 @@
 'use client'
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CHANGES vs previous version
+//   1. `categories` prop added — fetched from inventory_categories in the DB.
+//      Falls back to a minimal hardcoded list when not supplied so existing
+//      call-sites without the prop don't break.
+//   2. The "Inventory" tab's category sub-tabs now render from `categories`
+//      instead of a hardcoded array.  Each tab uses category.code as the
+//      filter key (matches the `category_code` field in v_inventory_items).
+//   3. InventoryItemCard receives all v_inventory_items fields via the `item`
+//      prop — no mapping needed here since the view already flattens them.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -57,10 +69,10 @@ function expiryBadge(days: number) {
 
 function statusBadge(status: string) {
   const map: Record<string, string> = {
-    delivered:   'bg-green-100 text-green-800',
-    pending:     'bg-yellow-100 text-yellow-800',
-    'in-transit':'bg-blue-100 text-blue-800',
-    cancelled:   'bg-red-100 text-red-800',
+    delivered:    'bg-green-100 text-green-800',
+    pending:      'bg-yellow-100 text-yellow-800',
+    'in-transit': 'bg-blue-100 text-blue-800',
+    cancelled:    'bg-red-100 text-red-800',
   }
   return map[status] || 'bg-gray-100 text-gray-700'
 }
@@ -77,22 +89,51 @@ function usageBadge(type: string) {
 
 // ===================== TYPES =====================
 
+export interface InventoryCategory {
+  id: string
+  code: string
+  name: string
+  display_name: string
+  emoji?: string
+  color_bg?: string
+  color_text?: string
+  sort_order: number
+}
+
 export interface InventoryItem {
   id: string
   name: string
-  category: string
-  subcategory?: string
+  // v_inventory_items flat fields
+  category_code: string
+  category_name: string
+  category_emoji?: string
+  subcategory_code?: string
+  subcategory_name?: string
   unit_of_measure: string
+  unit_label?: string
   current_stock: number
   minimum_stock: number
   reorder_level?: number
+  reorder_quantity?: number
   cost_per_unit?: number
   total_value?: number
-  supplier?: string
+  preferred_supplier?: string
+  storage_location?: string
+  storage_type?: string
+  department_name?: string
   is_perishable?: boolean
   requires_batch_tracking?: boolean
+  shelf_life_days?: number
   expiry_date?: string | null
-  last_restocked?: string
+  last_restocked_at?: string
+  is_low_stock?: boolean
+  is_out_of_stock?: boolean
+  needs_reorder?: boolean
+  sku?: string
+  description?: string
+  notes?: string
+  created_at?: string
+  
 }
 
 export interface Supplier {
@@ -197,10 +238,6 @@ export interface WasteRecord {
   notes?: string
 }
 
-export interface ChartDataPoint {
-  [key: string]: string | number
-}
-
 export interface AnalyticsData {
   categoryValue?: { category: string; value: number }[]
   monthlyProcurement?: { month: string; amount: number }[]
@@ -241,6 +278,20 @@ export interface AlertStats {
   totalWasteCost?: number
 }
 
+// ===================== FALLBACK CATEGORIES =====================
+// Used when the `categories` prop is not supplied by the parent.
+
+const FALLBACK_CATEGORIES: InventoryCategory[] = [
+  { id: 'all', code: 'all', name: 'All Items',    display_name: 'All Items',    sort_order: 0 },
+  { id: 'f1',  code: 'feed',         name: 'Feed',         display_name: 'Feed',         sort_order: 1 },
+  { id: 'f2',  code: 'medical',      name: 'Medical',      display_name: 'Medical',      sort_order: 2 },
+  { id: 'f3',  code: 'equipment',    name: 'Equipment',    display_name: 'Equipment',    sort_order: 3 },
+  { id: 'f4',  code: 'supplies',     name: 'Supplies',     display_name: 'Supplies',     sort_order: 4 },
+  { id: 'f5',  code: 'chemicals',    name: 'Chemicals',    display_name: 'Chemicals',    sort_order: 5 },
+  { id: 'f6',  code: 'maintenance',  name: 'Maintenance',  display_name: 'Maintenance',  sort_order: 6 },
+  { id: 'f7',  code: 'other',        name: 'Other',        display_name: 'Other',        sort_order: 99 },
+]
+
 // ===================== PROPS =====================
 
 interface UnifiedInventoryDashboardProps {
@@ -261,7 +312,11 @@ interface UnifiedInventoryDashboardProps {
   }
   storage?: StorageLocation[]
   storageStats?: { totalStorageLocations?: number; storageByType?: Record<string, number> }
-  // Extended data — parent must supply all of these
+  // ── NEW: DB-driven category list ──────────────────────────────────────────
+  // Parent should pass the result of getInventoryCategories() here.
+  // If omitted, the component falls back to FALLBACK_CATEGORIES.
+  categories?: InventoryCategory[]
+  // Extended data
   movements?: StockMovement[]
   movementStats?: MovementStats
   batches?: Batch[]
@@ -286,6 +341,7 @@ export function UnifiedInventoryDashboard({
   supplierStats,
   storage: initialStorage = [],
   storageStats = { totalStorageLocations: 0, storageByType: {} },
+  categories: categoriesProp,
   movements = [],
   movementStats = {},
   batches = [],
@@ -319,29 +375,34 @@ export function UnifiedInventoryDashboard({
   const { isMobile, isTablet, isSmallMobile, isDesktop } = useDeviceInfo()
 
   // Keep local state in sync when parent re-renders with fresh data
-  useEffect(() => { setInventoryItems(initialItems) },   [initialItems])
-  useEffect(() => { setSuppliers(initialSuppliers) },    [initialSuppliers])
+  useEffect(() => { setInventoryItems(initialItems) },    [initialItems])
+  useEffect(() => { setSuppliers(initialSuppliers) },     [initialSuppliers])
   useEffect(() => { setStorageLocations(initialStorage) }, [initialStorage])
 
-  const categories = [
-    { value: 'all',          label: 'All Items',               shortLabel: 'All' },
-    { value: 'feed',         label: 'Feed',                    shortLabel: 'Feed' },
-    { value: 'medical',      label: 'Medical',                 shortLabel: 'Med' },
-    { value: 'equipment',    label: 'Equipment & Machinery',   shortLabel: 'Equip' },
-    { value: 'supplies',     label: 'Supplies',                shortLabel: 'Supply' },
-    { value: 'chemicals',    label: 'Chemicals',               shortLabel: 'Chem' },
-    { value: 'semen',        label: 'Semen & Breeding',        shortLabel: 'Semen' },
-    { value: 'construction', label: 'Construction',            shortLabel: 'Build' },
-    { value: 'maintenance',  label: 'Maintenance',             shortLabel: 'Maint' },
-    { value: 'other',        label: 'Other',                   shortLabel: 'Other' },
+  // ── Build the category tab list from DB-supplied categories ──────────────
+  // Always prepend an "All Items" tab.
+  const rawCategories = categoriesProp ?? FALLBACK_CATEGORIES.filter(c => c.code !== 'all')
+  const categoryTabs: InventoryCategory[] = [
+    { id: 'all', code: 'all', name: 'All Items', display_name: 'All Items', sort_order: -1 },
+    ...rawCategories,
   ]
 
+  // Short labels for mobile (truncate at 6 chars)
+  const shortLabel = (cat: InventoryCategory) => {
+    const name = cat.display_name || cat.name
+    if (cat.code === 'all') return 'All'
+    return name.length > 6 ? name.slice(0, 6) + '…' : name
+  }
+
+  // ── Filter items by selected category code ────────────────────────────────
+  // v_inventory_items uses `category_code` from the view
   const filteredItems = selectedCategory === 'all'
     ? inventoryItems
-    : inventoryItems.filter(i => i.category === selectedCategory)
+    : inventoryItems.filter(i => i.category_code === selectedCategory)
 
-  const lowStockItems = inventoryItems.filter(i => i.current_stock < i.minimum_stock)
-  const expiringItems = inventoryItems.filter(i => {
+  // ── Derived counts ────────────────────────────────────────────────────────
+  const lowStockItems  = inventoryItems.filter(i => i.is_low_stock  ?? (i.current_stock < i.minimum_stock))
+  const expiringItems  = inventoryItems.filter(i => {
     if (!i.expiry_date) return false
     return new Date(i.expiry_date) <= new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
   })
@@ -383,7 +444,7 @@ export function UnifiedInventoryDashboard({
         const data = await response.json()
         setPurchaseOrders(data.data || data.purchaseOrders || [])
       } catch (error) {
-        console.error('❌ Error fetching purchase orders:', error)
+        console.error('Error fetching purchase orders:', error)
         setPurchaseOrders([])
       } finally {
         setLoadingPOs(false)
@@ -399,27 +460,26 @@ export function UnifiedInventoryDashboard({
 
   // ── Stats card arrays ──
   const overviewStats = [
-    { title: 'Total Items',    value: displayStats.totalItems,          description: 'Active inventory items',   icon: Package,     color: 'text-blue-600',   bgColor: 'bg-blue-50' },
-    { title: 'Low Stock',      value: displayStats.lowStockItems,       description: 'Items below minimum',      icon: TrendingDown, color: 'text-orange-600', bgColor: 'bg-orange-50' },
-    { title: 'Expiring Soon',  value: displayStats.expiringItems,       description: 'Within 30 days',           icon: Calendar,    color: 'text-red-600',    bgColor: 'bg-red-50' },
-    { title: 'Total Value',    value: kes(displayStats.totalValue),     description: 'Current inventory value',  icon: DollarSign,  color: 'text-green-600',  bgColor: 'bg-green-50' },
+    { title: 'Total Items',   value: displayStats.totalItems,      description: 'Active inventory items',  icon: Package,     color: 'text-blue-600',   bgColor: 'bg-blue-50' },
+    { title: 'Low Stock',     value: displayStats.lowStockItems,   description: 'Items below minimum',     icon: TrendingDown, color: 'text-orange-600', bgColor: 'bg-orange-50' },
+    { title: 'Expiring Soon', value: displayStats.expiringItems,   description: 'Within 30 days',          icon: Calendar,    color: 'text-red-600',    bgColor: 'bg-red-50' },
+    { title: 'Total Value',   value: kes(displayStats.totalValue), description: 'Current inventory value', icon: DollarSign,  color: 'text-green-600',  bgColor: 'bg-green-50' },
   ]
 
   const supplierStatsCards = [
-    { title: 'Total Suppliers',  value: displaySupplierStats.totalSuppliers,              description: 'Active vendor relationships', icon: Building2, color: 'text-purple-600', bgColor: 'bg-purple-50' },
-    { title: 'Feed Suppliers',   value: displaySupplierStats.supplierTypes?.feed    ?? 0, description: 'Feed vendors',               icon: Package,   color: 'text-green-600',  bgColor: 'bg-green-50' },
-    { title: 'Medical Suppliers',value: displaySupplierStats.supplierTypes?.medical ?? 0, description: 'Medical vendors',            icon: Syringe,   color: 'text-red-600',    bgColor: 'bg-red-50' },
-    { title: 'Semen / Genetics', value: displaySupplierStats.supplierTypes?.semen   ?? 0, description: 'Genetics vendors',           icon: Droplets,  color: 'text-violet-600', bgColor: 'bg-violet-50' },
+    { title: 'Total Suppliers',   value: displaySupplierStats.totalSuppliers,              description: 'Active vendor relationships', icon: Building2, color: 'text-purple-600', bgColor: 'bg-purple-50' },
+    { title: 'Feed Suppliers',    value: displaySupplierStats.supplierTypes?.feed    ?? 0, description: 'Feed vendors',               icon: Package,   color: 'text-green-600',  bgColor: 'bg-green-50' },
+    { title: 'Medical Suppliers', value: displaySupplierStats.supplierTypes?.medical ?? 0, description: 'Medical vendors',            icon: Syringe,   color: 'text-red-600',    bgColor: 'bg-red-50' },
+    { title: 'Semen / Genetics',  value: displaySupplierStats.supplierTypes?.semen   ?? 0, description: 'Genetics vendors',           icon: Droplets,  color: 'text-violet-600', bgColor: 'bg-violet-50' },
   ]
 
   const storageStatsCards = [
-    { title: 'Storage Locations', value: storageLocations.length,                                                                         description: 'Active storage areas',      icon: Archive,     color: 'text-indigo-600', bgColor: 'bg-indigo-50' },
-    { title: 'Feed Stores',       value: storageLocations.filter(s => s.type === 'feedstore').length,                                     description: 'Feed storage areas',        icon: Boxes,       color: 'text-amber-600',  bgColor: 'bg-amber-50' },
-    { title: 'Cold / Cryo Units', value: storageLocations.filter(s => ['cold-storage', 'cryogenic'].includes(s.type)).length,            description: 'Temp-controlled storage',   icon: Thermometer, color: 'text-blue-600',   bgColor: 'bg-blue-50' },
-    { title: 'Expiry Alerts',     value: batches.filter(b => b.days_to_expiry <= 30).length,                                             description: 'Batches expiring < 30 days',icon: AlertTriangle,color: 'text-red-600',   bgColor: 'bg-red-50' },
+    { title: 'Storage Locations', value: storageLocations.length,                                                                          description: 'Active storage areas',      icon: Archive,      color: 'text-indigo-600', bgColor: 'bg-indigo-50' },
+    { title: 'Feed Stores',       value: storageLocations.filter(s => s.type === 'feedstore').length,                                      description: 'Feed storage areas',        icon: Boxes,        color: 'text-amber-600',  bgColor: 'bg-amber-50' },
+    { title: 'Cold / Cryo Units', value: storageLocations.filter(s => ['cold-storage', 'cryogenic'].includes(s.type)).length,              description: 'Temp-controlled storage',   icon: Thermometer,  color: 'text-blue-600',   bgColor: 'bg-blue-50' },
+    { title: 'Expiry Alerts',     value: batches.filter(b => b.days_to_expiry <= 30).length,                                              description: 'Batches expiring < 30 days', icon: AlertTriangle, color: 'text-red-600',   bgColor: 'bg-red-50' },
   ]
 
-  // ── Derived alert counts ──
   const criticalAlerts = alerts.filter(a => a.severity === 'critical')
   const warningAlerts  = alerts.filter(a => a.severity === 'warning')
   const totalWasteCost = wasteRecords.reduce((s, w) => s + (w.estimated_loss ?? 0), 0)
@@ -445,9 +505,9 @@ export function UnifiedInventoryDashboard({
           </div>
           {canManage && (
             <div className="flex items-center space-x-2">
-              {activeTab === 'inventory'   && <Button onClick={() => setShowAddItemModal(true)}     size={isMobile ? 'sm' : 'default'}><Plus className="mr-1 lg:mr-2 h-4 w-4" />{isMobile ? 'Inventory Item'  : 'Add Inventory Item'}</Button>}
-              {activeTab === 'suppliers'   && <Button onClick={() => setShowAddSupplierModal(true)} size={isMobile ? 'sm' : 'default'}><Plus className="mr-1 lg:mr-2 h-4 w-4" />{isMobile ? 'Supplier'        : 'Add Supplier'}</Button>}
-              {activeTab === 'storage'     && <Button onClick={() => setShowAddStorageModal(true)}  size={isMobile ? 'sm' : 'default'}><Plus className="mr-1 lg:mr-2 h-4 w-4" />{isMobile ? 'Storage'         : 'Add Storage'}</Button>}
+              {activeTab === 'inventory'   && <Button onClick={() => setShowAddItemModal(true)}     size={isMobile ? 'sm' : 'default'}><Plus className="mr-1 lg:mr-2 h-4 w-4" />{isMobile ? 'Item'          : 'Add Inventory Item'}</Button>}
+              {activeTab === 'suppliers'   && <Button onClick={() => setShowAddSupplierModal(true)} size={isMobile ? 'sm' : 'default'}><Plus className="mr-1 lg:mr-2 h-4 w-4" />{isMobile ? 'Supplier'      : 'Add Supplier'}</Button>}
+              {activeTab === 'storage'     && <Button onClick={() => setShowAddStorageModal(true)}  size={isMobile ? 'sm' : 'default'}><Plus className="mr-1 lg:mr-2 h-4 w-4" />{isMobile ? 'Storage'       : 'Add Storage'}</Button>}
               {activeTab === 'procurement' && (
                 <Button onClick={() => setShowAddPOModal(true)} size={isMobile ? 'sm' : 'default'}>
                   <Plus className="mr-1 lg:mr-2 h-4 w-4" />
@@ -464,15 +524,15 @@ export function UnifiedInventoryDashboard({
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <div className="overflow-x-auto pb-1">
             <TabsList className="inline-flex w-max min-w-full gap-1 h-auto p-1">
-              <TabsTrigger value="inventory"   className="flex-shrink-0 text-xs px-3 py-2"><Package      className="h-3.5 w-3.5 mr-1.5" />Inventory</TabsTrigger>
-              <TabsTrigger value="movements"   className="flex-shrink-0 text-xs px-3 py-2"><History      className="h-3.5 w-3.5 mr-1.5" />Movements</TabsTrigger>
-              <TabsTrigger value="procurement" className="flex-shrink-0 text-xs px-3 py-2"><ShoppingCart className="h-3.5 w-3.5 mr-1.5" />Procurement</TabsTrigger>
-              <TabsTrigger value="suppliers"   className="flex-shrink-0 text-xs px-3 py-2"><Building2   className="h-3.5 w-3.5 mr-1.5" />Suppliers</TabsTrigger>
-              <TabsTrigger value="storage"     className="flex-shrink-0 text-xs px-3 py-2"><Archive      className="h-3.5 w-3.5 mr-1.5" />Storage</TabsTrigger>
-              <TabsTrigger value="batches"     className="flex-shrink-0 text-xs px-3 py-2"><Calendar    className="h-3.5 w-3.5 mr-1.5" />Batches &amp; Expiry</TabsTrigger>
-              <TabsTrigger value="usage"       className="flex-shrink-0 text-xs px-3 py-2"><Activity    className="h-3.5 w-3.5 mr-1.5" />Usage</TabsTrigger>
+              <TabsTrigger value="inventory"   className="flex-shrink-0 text-xs px-3 py-2"><Package       className="h-3.5 w-3.5 mr-1.5" />Inventory</TabsTrigger>
+              <TabsTrigger value="movements"   className="flex-shrink-0 text-xs px-3 py-2"><History       className="h-3.5 w-3.5 mr-1.5" />Movements</TabsTrigger>
+              <TabsTrigger value="procurement" className="flex-shrink-0 text-xs px-3 py-2"><ShoppingCart  className="h-3.5 w-3.5 mr-1.5" />Procurement</TabsTrigger>
+              <TabsTrigger value="suppliers"   className="flex-shrink-0 text-xs px-3 py-2"><Building2    className="h-3.5 w-3.5 mr-1.5" />Suppliers</TabsTrigger>
+              <TabsTrigger value="storage"     className="flex-shrink-0 text-xs px-3 py-2"><Archive       className="h-3.5 w-3.5 mr-1.5" />Storage</TabsTrigger>
+              <TabsTrigger value="batches"     className="flex-shrink-0 text-xs px-3 py-2"><Calendar     className="h-3.5 w-3.5 mr-1.5" />Batches &amp; Expiry</TabsTrigger>
+              <TabsTrigger value="usage"       className="flex-shrink-0 text-xs px-3 py-2"><Activity     className="h-3.5 w-3.5 mr-1.5" />Usage</TabsTrigger>
               <TabsTrigger value="alerts"      className="flex-shrink-0 text-xs px-3 py-2"><AlertTriangle className="h-3.5 w-3.5 mr-1.5" />Alerts &amp; Waste</TabsTrigger>
-              <TabsTrigger value="analytics"   className="flex-shrink-0 text-xs px-3 py-2"><BarChart2   className="h-3.5 w-3.5 mr-1.5" />Analytics</TabsTrigger>
+              <TabsTrigger value="analytics"   className="flex-shrink-0 text-xs px-3 py-2"><BarChart2    className="h-3.5 w-3.5 mr-1.5" />Analytics</TabsTrigger>
             </TabsList>
           </div>
 
@@ -492,7 +552,9 @@ export function UnifiedInventoryDashboard({
                       <AlertTriangle className="h-5 w-5 text-orange-600 mt-0.5 flex-shrink-0" />
                       <div>
                         <h3 className="font-medium text-orange-800 text-sm">Inventory Alerts</h3>
-                        <p className="text-orange-700 text-xs mt-1">{lowStockItems.length} low stock · {expiringItems.length} expiring soon</p>
+                        <p className="text-orange-700 text-xs mt-1">
+                          {lowStockItems.length} low stock · {expiringItems.length} expiring soon
+                        </p>
                       </div>
                     </div>
                     <Button variant="ghost" size="sm" onClick={() => setShowAlerts(!showAlerts)} className="text-orange-700 p-1">
@@ -504,7 +566,9 @@ export function UnifiedInventoryDashboard({
                       {lowStockItems.slice(0, 3).map(item => (
                         <div key={item.id} className="flex items-center justify-between p-2 bg-white rounded text-sm">
                           <span className="font-medium">{item.name}</span>
-                          <Badge className="bg-orange-100 text-orange-800 text-xs">Low: {item.current_stock} {item.unit_of_measure}</Badge>
+                          <Badge className="bg-orange-100 text-orange-800 text-xs">
+                            Low: {item.current_stock} {item.unit_label ?? item.unit_of_measure}
+                          </Badge>
                         </div>
                       ))}
                       {expiringItems.slice(0, 3).map(item => (
@@ -521,29 +585,44 @@ export function UnifiedInventoryDashboard({
               </Card>
             )}
 
-            {/* Category sub-tabs */}
+            {/* ── Category sub-tabs (DB-driven) ── */}
             <Tabs value={selectedCategory} onValueChange={setSelectedCategory}>
               <div className="overflow-x-auto pb-1">
-                <TabsList className={isDesktop ? 'h-10 flex gap-1 justify-start' : 'inline-flex w-max gap-0.5 h-auto p-0.5'}>
-                  {categories.map(cat => (
+                <TabsList className={
+                  isDesktop
+                    ? 'h-10 flex gap-1 justify-start flex-wrap'
+                    : 'inline-flex w-max gap-0.5 h-auto p-0.5'
+                }>
+                  {categoryTabs.map(cat => (
                     <TabsTrigger
-                      key={cat.value}
-                      value={cat.value}
-                      className={isSmallMobile ? 'text-[10px] px-1.5 py-1.5 h-8 flex-shrink-0' : 'text-xs px-2.5 py-2 h-9 flex-shrink-0'}
+                      key={cat.code}
+                      value={cat.code}
+                      className={
+                        isSmallMobile
+                          ? 'text-[10px] px-1.5 py-1.5 h-8 flex-shrink-0'
+                          : 'text-xs px-2.5 py-2 h-9 flex-shrink-0'
+                      }
                     >
-                      {isMobile ? cat.shortLabel : cat.label}
+                      {cat.emoji && <span className="mr-1">{cat.emoji}</span>}
+                      {isMobile ? shortLabel(cat) : (cat.display_name || cat.name)}
                     </TabsTrigger>
                   ))}
                 </TabsList>
               </div>
-              {categories.map(cat => (
-                <TabsContent key={cat.value} value={cat.value} className="mt-4">
+
+              {/* One TabsContent per category tab */}
+              {categoryTabs.map(cat => (
+                <TabsContent key={cat.code} value={cat.code} className="mt-4">
                   {filteredItems.length === 0 ? (
                     <Card>
                       <CardContent className="text-center py-12">
                         <Package className="mx-auto h-12 w-12 text-gray-400" />
-                        <h3 className="mt-4 text-lg font-medium text-gray-900">No {cat.label.toLowerCase()} items</h3>
-                        <p className="mt-2 text-sm text-gray-500">Add your first inventory item to get started.</p>
+                        <h3 className="mt-4 text-lg font-medium text-gray-900">
+                          No {cat.display_name.toLowerCase()} items
+                        </h3>
+                        <p className="mt-2 text-sm text-gray-500">
+                          Add your first inventory item to get started.
+                        </p>
                         {canManage && (
                           <Button className="mt-4" onClick={() => setShowAddItemModal(true)}>
                             <Plus className="mr-2 h-4 w-4" />Add Item
@@ -552,9 +631,10 @@ export function UnifiedInventoryDashboard({
                       </CardContent>
                     </Card>
                   ) : (
-                    <div className={viewMode === 'grid'
-                      ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6'
-                      : 'space-y-3'
+                    <div className={
+                      viewMode === 'grid'
+                        ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6'
+                        : 'space-y-3'
                     }>
                       {filteredItems.map(item => (
                         <InventoryItemCard
@@ -577,10 +657,10 @@ export function UnifiedInventoryDashboard({
           <TabsContent value="movements" className="mt-4 lg:mt-6 space-y-4">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {[
-                { label: 'Purchases (Month)', value: movementStats.purchasesThisMonth ?? movements.filter(m => m.movement_type === 'purchase').length,   sub: 'Receipts this month',    color: 'text-green-600',  bg: 'bg-green-50',  Icon: ArrowUpCircle },
-                { label: 'Usage Events',      value: movementStats.usageEvents         ?? movements.filter(m => m.movement_type === 'usage').length,      sub: 'Consumption records',    color: 'text-blue-600',   bg: 'bg-blue-50',   Icon: ArrowDownCircle },
-                { label: 'Adjustments',       value: movementStats.adjustments         ?? movements.filter(m => m.movement_type === 'adjustment').length,  sub: 'Stock corrections',      color: 'text-yellow-600', bg: 'bg-yellow-50', Icon: RefreshCw },
-                { label: 'Total Movements',   value: movementStats.totalMovements      ?? movements.length,                                                sub: 'All movement records',   color: 'text-gray-600',   bg: 'bg-gray-50',   Icon: History },
+                { label: 'Purchases (Month)', value: movementStats.purchasesThisMonth ?? movements.filter(m => m.movement_type === 'purchase').length,   sub: 'Receipts this month',   color: 'text-green-600',  bg: 'bg-green-50',  Icon: ArrowUpCircle },
+                { label: 'Usage Events',      value: movementStats.usageEvents         ?? movements.filter(m => m.movement_type === 'usage').length,      sub: 'Consumption records',   color: 'text-blue-600',   bg: 'bg-blue-50',   Icon: ArrowDownCircle },
+                { label: 'Adjustments',       value: movementStats.adjustments         ?? movements.filter(m => m.movement_type === 'adjustment').length,  sub: 'Stock corrections',     color: 'text-yellow-600', bg: 'bg-yellow-50', Icon: RefreshCw },
+                { label: 'Total Movements',   value: movementStats.totalMovements      ?? movements.length,                                                sub: 'All movement records',  color: 'text-gray-600',   bg: 'bg-gray-50',   Icon: History },
               ].map(({ label, value, sub, color, bg, Icon }) => (
                 <Card key={label}>
                   <CardContent className="p-4">
@@ -673,10 +753,10 @@ export function UnifiedInventoryDashboard({
           <TabsContent value="procurement" className="mt-4 lg:mt-6 space-y-4">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {[
-                { label: 'Pending Orders',  value: procurementStats.pendingOrders        ?? purchaseOrders.filter(p => p.status === 'pending').length,     sub: 'Awaiting delivery',      color: 'text-yellow-600', bg: 'bg-yellow-50', Icon: Clock },
-                { label: 'In Transit',      value: procurementStats.inTransit            ?? purchaseOrders.filter(p => p.status === 'in-transit').length,  sub: 'Shipments en route',     color: 'text-blue-600',   bg: 'bg-blue-50',   Icon: Truck },
-                { label: 'Delivered',       value: procurementStats.deliveredThisMonth   ?? purchaseOrders.filter(p => p.status === 'delivered').length,   sub: 'Received orders',        color: 'text-green-600',  bg: 'bg-green-50',  Icon: CheckCircle2 },
-                { label: 'Total Spend',     value: kes(procurementStats.monthSpend       ?? purchaseOrders.reduce((s, p) => s + p.total_amount, 0)),       sub: 'Total procurement cost', color: 'text-purple-600', bg: 'bg-purple-50', Icon: DollarSign },
+                { label: 'Pending Orders', value: procurementStats.pendingOrders      ?? purchaseOrders.filter(p => p.status === 'pending').length,     sub: 'Awaiting delivery',      color: 'text-yellow-600', bg: 'bg-yellow-50', Icon: Clock },
+                { label: 'In Transit',     value: procurementStats.inTransit          ?? purchaseOrders.filter(p => p.status === 'in-transit').length,  sub: 'Shipments en route',     color: 'text-blue-600',   bg: 'bg-blue-50',   Icon: Truck },
+                { label: 'Delivered',      value: procurementStats.deliveredThisMonth ?? purchaseOrders.filter(p => p.status === 'delivered').length,   sub: 'Received orders',        color: 'text-green-600',  bg: 'bg-green-50',  Icon: CheckCircle2 },
+                { label: 'Total Spend',    value: kes(procurementStats.monthSpend     ?? purchaseOrders.reduce((s, p) => s + p.total_amount, 0)),       sub: 'Total procurement cost', color: 'text-purple-600', bg: 'bg-purple-50', Icon: DollarSign },
               ].map(({ label, value, sub, color, bg, Icon }) => (
                 <Card key={label}>
                   <CardContent className="p-4">
@@ -731,7 +811,7 @@ export function UnifiedInventoryDashboard({
                           </p>
                         </div>
                         {expandedPO === po.id
-                          ? <ChevronUp className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                          ? <ChevronUp   className="h-4 w-4 text-gray-400 flex-shrink-0" />
                           : <ChevronDown className="h-4 w-4 text-gray-400 flex-shrink-0" />}
                       </button>
                       {expandedPO === po.id && (
@@ -916,16 +996,18 @@ export function UnifiedInventoryDashboard({
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {storageLocations.map(loc => {
-                    const cap = loc.capacity_kg ?? 0
+                    const cap  = loc.capacity_kg ?? 0
                     const used = loc.current_usage_kg ?? 0
-                    const pct = cap > 0 ? Math.round((used / cap) * 100) : 0
-                    const bar = pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-green-500'
+                    const pct  = cap > 0 ? Math.round((used / cap) * 100) : 0
+                    const bar  = pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-green-500'
                     return (
                       <div key={loc.id}>
                         <div className="flex justify-between items-center mb-1">
                           <div>
                             <span className="text-sm font-medium text-gray-900">{loc.name}</span>
-                            <span className="ml-2 text-xs text-gray-500 capitalize">{loc.type}{loc.temperature ? ` · ${loc.temperature}` : ''}</span>
+                            <span className="ml-2 text-xs text-gray-500 capitalize">
+                              {loc.type}{loc.temperature ? ` · ${loc.temperature}` : ''}
+                            </span>
                           </div>
                           <span className="text-sm font-medium text-gray-700">{pct}%</span>
                         </div>
@@ -948,10 +1030,10 @@ export function UnifiedInventoryDashboard({
           <TabsContent value="batches" className="mt-4 lg:mt-6 space-y-4">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {[
-                { label: 'Total Batches',     value: batches.length,                                    sub: 'Active tracked batches', color: 'text-blue-600',   bg: 'bg-blue-50',   Icon: Archive },
-                { label: 'Critical (<14d)',   value: batches.filter(b => b.days_to_expiry <= 14).length, sub: 'Expire imminently',      color: 'text-red-600',    bg: 'bg-red-50',    Icon: AlertCircle },
-                { label: 'Expiring ≤30 days', value: batches.filter(b => b.days_to_expiry <= 30).length, sub: 'Require attention',      color: 'text-orange-600', bg: 'bg-orange-50', Icon: AlertTriangle },
-                { label: 'Safe (>90 days)',   value: batches.filter(b => b.days_to_expiry > 90).length,  sub: 'No action needed',       color: 'text-green-600',  bg: 'bg-green-50',  Icon: CheckCircle2 },
+                { label: 'Total Batches',     value: batches.length,                                     sub: 'Active tracked batches', color: 'text-blue-600',   bg: 'bg-blue-50',   Icon: Archive },
+                { label: 'Critical (<14d)',   value: batches.filter(b => b.days_to_expiry <= 14).length,  sub: 'Expire imminently',      color: 'text-red-600',    bg: 'bg-red-50',    Icon: AlertCircle },
+                { label: 'Expiring ≤30 days', value: batches.filter(b => b.days_to_expiry <= 30).length,  sub: 'Require attention',      color: 'text-orange-600', bg: 'bg-orange-50', Icon: AlertTriangle },
+                { label: 'Safe (>90 days)',   value: batches.filter(b => b.days_to_expiry > 90).length,   sub: 'No action needed',       color: 'text-green-600',  bg: 'bg-green-50',  Icon: CheckCircle2 },
               ].map(({ label, value, sub, color, bg, Icon }) => (
                 <Card key={label}>
                   <CardContent className="p-4">
@@ -1020,10 +1102,10 @@ export function UnifiedInventoryDashboard({
           <TabsContent value="usage" className="mt-4 lg:mt-6 space-y-4">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {[
-                { label: 'Total Usage Cost',  value: kes(usageStats.totalCostThisMonth ?? usageRecords.reduce((s, u) => s + (u.cost ?? 0), 0)), sub: 'Consumption cost',    color: 'text-purple-600', bg: 'bg-purple-50', Icon: DollarSign },
-                { label: 'Feeding Events',    value: usageStats.feedingEvents    ?? usageRecords.filter(u => u.usage_type === 'feeding').length,    sub: 'Feed usage records',  color: 'text-green-600',  bg: 'bg-green-50',  Icon: Boxes },
-                { label: 'Treatment Events',  value: usageStats.treatmentEvents  ?? usageRecords.filter(u => u.usage_type === 'treatment').length,  sub: 'Medicine usage',      color: 'text-red-600',    bg: 'bg-red-50',    Icon: Syringe },
-                { label: 'Breeding Events',   value: usageStats.breedingEvents   ?? usageRecords.filter(u => u.usage_type === 'breeding').length,   sub: 'AI / semen usage',    color: 'text-violet-600', bg: 'bg-violet-50', Icon: Droplets },
+                { label: 'Total Usage Cost', value: kes(usageStats.totalCostThisMonth ?? usageRecords.reduce((s, u) => s + (u.cost ?? 0), 0)), sub: 'Consumption cost',   color: 'text-purple-600', bg: 'bg-purple-50', Icon: DollarSign },
+                { label: 'Feeding Events',   value: usageStats.feedingEvents   ?? usageRecords.filter(u => u.usage_type === 'feeding').length,   sub: 'Feed usage records', color: 'text-green-600',  bg: 'bg-green-50',  Icon: Boxes },
+                { label: 'Treatment Events', value: usageStats.treatmentEvents ?? usageRecords.filter(u => u.usage_type === 'treatment').length, sub: 'Medicine usage',     color: 'text-red-600',    bg: 'bg-red-50',    Icon: Syringe },
+                { label: 'Breeding Events',  value: usageStats.breedingEvents  ?? usageRecords.filter(u => u.usage_type === 'breeding').length,  sub: 'AI / semen usage',   color: 'text-violet-600', bg: 'bg-violet-50', Icon: Droplets },
               ].map(({ label, value, sub, color, bg, Icon }) => (
                 <Card key={label}>
                   <CardContent className="p-4">
@@ -1137,10 +1219,10 @@ export function UnifiedInventoryDashboard({
           <TabsContent value="alerts" className="mt-4 lg:mt-6 space-y-4">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {[
-                { label: 'Critical Alerts', value: alertStats.criticalCount  ?? criticalAlerts.length,                    sub: 'Require immediate action', color: 'text-red-600',    bg: 'bg-red-50',    Icon: AlertCircle },
-                { label: 'Warnings',        value: alertStats.warningCount   ?? warningAlerts.length,                     sub: 'Monitor closely',          color: 'text-orange-600', bg: 'bg-orange-50', Icon: AlertTriangle },
-                { label: 'Waste Events',    value: alertStats.wasteEvents    ?? wasteRecords.length,                      sub: 'Recorded losses',          color: 'text-gray-600',   bg: 'bg-gray-50',   Icon: Trash2 },
-                { label: 'Total Waste Cost',value: kes(alertStats.totalWasteCost ?? totalWasteCost),                      sub: 'Estimated loss value',     color: 'text-red-600',    bg: 'bg-red-50',    Icon: DollarSign },
+                { label: 'Critical Alerts',  value: alertStats.criticalCount  ?? criticalAlerts.length,   sub: 'Require immediate action', color: 'text-red-600',    bg: 'bg-red-50',    Icon: AlertCircle },
+                { label: 'Warnings',         value: alertStats.warningCount   ?? warningAlerts.length,    sub: 'Monitor closely',          color: 'text-orange-600', bg: 'bg-orange-50', Icon: AlertTriangle },
+                { label: 'Waste Events',     value: alertStats.wasteEvents    ?? wasteRecords.length,     sub: 'Recorded losses',          color: 'text-gray-600',   bg: 'bg-gray-50',   Icon: Trash2 },
+                { label: 'Total Waste Cost', value: kes(alertStats.totalWasteCost ?? totalWasteCost),     sub: 'Estimated loss value',     color: 'text-red-600',    bg: 'bg-red-50',    Icon: DollarSign },
               ].map(({ label, value, sub, color, bg, Icon }) => (
                 <Card key={label}>
                   <CardContent className="p-4">
@@ -1270,10 +1352,10 @@ export function UnifiedInventoryDashboard({
           <TabsContent value="analytics" className="mt-4 lg:mt-6 space-y-4">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {[
-                { label: 'Total Inventory Value', value: kes(analytics.totalInventoryValue    ?? displayStats.totalValue),     sub: 'All categories combined',     color: 'text-green-600',  bg: 'bg-green-50',  Icon: DollarSign },
-                { label: 'Procurement (Period)',  value: kes(analytics.monthProcurementTotal  ?? procurementStats.monthSpend ?? 0), sub: 'Period purchase spend',   color: 'text-blue-600',   bg: 'bg-blue-50',   Icon: ShoppingCart },
-                { label: 'Consumption (Period)', value: kes(analytics.monthConsumptionTotal   ?? usageStats.totalCostThisMonth ?? 0), sub: 'Items consumed',        color: 'text-purple-600', bg: 'bg-purple-50', Icon: Activity },
-                { label: 'Waste / Loss',         value: kes(analytics.monthWasteTotal         ?? totalWasteCost),               sub: 'Preventable losses',          color: 'text-red-600',    bg: 'bg-red-50',    Icon: Trash2 },
+                { label: 'Total Inventory Value', value: kes(analytics.totalInventoryValue   ?? displayStats.totalValue),               sub: 'All categories combined',   color: 'text-green-600',  bg: 'bg-green-50',  Icon: DollarSign },
+                { label: 'Procurement (Period)',  value: kes(analytics.monthProcurementTotal ?? procurementStats.monthSpend ?? 0),       sub: 'Period purchase spend',     color: 'text-blue-600',   bg: 'bg-blue-50',   Icon: ShoppingCart },
+                { label: 'Consumption (Period)',  value: kes(analytics.monthConsumptionTotal ?? usageStats.totalCostThisMonth ?? 0),     sub: 'Items consumed',            color: 'text-purple-600', bg: 'bg-purple-50', Icon: Activity },
+                { label: 'Waste / Loss',          value: kes(analytics.monthWasteTotal       ?? totalWasteCost),                        sub: 'Preventable losses',        color: 'text-red-600',    bg: 'bg-red-50',    Icon: Trash2 },
               ].map(({ label, value, sub, color, bg, Icon }) => (
                 <Card key={label}>
                   <CardContent className="p-4">
@@ -1358,7 +1440,7 @@ export function UnifiedInventoryDashboard({
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base">Inventory Turnover Rate</CardTitle>
-                  <CardDescription>Times stock is fully replenished per year — higher is better for perishables</CardDescription>
+                  <CardDescription>Times stock is fully replenished per year</CardDescription>
                 </CardHeader>
                 <CardContent className="p-0">
                   <div className="overflow-x-auto">
@@ -1402,7 +1484,6 @@ export function UnifiedInventoryDashboard({
               </Card>
             )}
 
-            {/* Analytics charts empty state */}
             {(!analytics.categoryValue || analytics.categoryValue.length === 0) &&
              (!analytics.usageByType   || analytics.usageByType.length === 0)   &&
              (!analytics.monthlyProcurement || analytics.monthlyProcurement.length === 0) &&
@@ -1411,7 +1492,10 @@ export function UnifiedInventoryDashboard({
                 <CardContent className="text-center py-16 text-gray-500">
                   <BarChart2 className="h-12 w-12 mx-auto mb-3 opacity-40" />
                   <p className="text-sm font-medium">No analytics data available yet</p>
-                  <p className="text-xs mt-1">Analytics will appear once the parent page supplies chart data via the <code className="bg-gray-100 px-1 rounded">analytics</code> prop.</p>
+                  <p className="text-xs mt-1">
+                    Analytics will appear once the parent page supplies chart data via the{' '}
+                    <code className="bg-gray-100 px-1 rounded">analytics</code> prop.
+                  </p>
                 </CardContent>
               </Card>
             )}

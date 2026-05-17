@@ -1,7 +1,7 @@
-//src/app/api/inventory/categories/route.ts
+//src/app/api/inventory/units/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser }            from '@/lib/supabase/server'
-import { getInventoryCategories }    from '@/lib/database/inventory'
+import { getUnitsOfMeasure }         from '@/lib/database/inventory'
  
 export async function GET(_request: NextRequest) {
   try {
@@ -10,10 +10,10 @@ export async function GET(_request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized', success: false }, { status: 401 })
     }
  
-    const categories = await getInventoryCategories()
-    return NextResponse.json({ success: true, data: categories })
+    const units = await getUnitsOfMeasure()
+    return NextResponse.json({ success: true, data: units })
   } catch (err) {
-    console.error('❌ GET /api/inventory/categories:', err)
+    console.error('❌ GET /api/inventory/units:', err)
     return NextResponse.json({ error: 'Internal server error', success: false }, { status: 500 })
   }
 }
