@@ -28,12 +28,12 @@ interface MilkingGroup {
 
 interface GroupRecordFormProps {
   farmId: string
-  animals: Array<{ 
+  animals: Array<{
     id: string
     tag_number: string
     name?: string
     gender: string
-    production_status: string 
+    production_status: string
   }>
   session: string
   sessionId?: string
@@ -74,7 +74,7 @@ export function GroupRecordForm({
   editingRecord = null,
 }: GroupRecordFormProps) {
   const { isMobile } = useDeviceInfo()
-  
+
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
   const [selectedAnimalId, setSelectedAnimalId] = useState<string | null>(null)
   const [recordedAnimalIds, setRecordedAnimalIds] = useState<Set<string>>(new Set())
@@ -92,7 +92,7 @@ export function GroupRecordForm({
     if (editingRecord) {
       return // Don't reset when editing
     }
-    
+
     // Clear current session state - but sessionRecordedByGroup persists for group list
     setSelectedGroupId(null)
     setSelectedAnimalId(null)
@@ -132,13 +132,13 @@ export function GroupRecordForm({
   useEffect(() => {
     const fetchMilkingGroups = async () => {
       try {
-      setLoading(true)
+        setLoading(true)
         setError(null)
 
         // Fetch configured milking groups
         const response = await fetch(`/api/farms/${farmId}/production/milking-groups`)
         if (!response.ok) throw new Error('Failed to fetch milking groups')
-        
+
         const result = await response.json()
         const groups: MilkingGroup[] = result.data || []
 
@@ -146,35 +146,36 @@ export function GroupRecordForm({
         const groupsWithAnimals = await Promise.all(
           groups.map(async (group) => {
             try {
+              // Inside GroupRecordForm — fetchMilkingGroups effect
               const animalsResponse = await fetch(
-                `/api/farms/${farmId}/feed-management/animal-categories/${group.category_id}/matching-animals?limit=1000`
+                `/api/farms/${farmId}/animal-categories/${group.category_id}/matching-animals/production?limit=1000&record_date=${recordDate}`
               )
-              
+
               if (animalsResponse.ok) {
                 const animalsData = await animalsResponse.json()
                 const groupAnimals = Array.isArray(animalsData.data) ? animalsData.data : []
-                
+
                 // Filter animals based on production settings
                 let filteredAnimals = groupAnimals
                 if (settings) {
                   const eligibleStatuses = settings.eligibleProductionStatuses || ['lactating']
-                  filteredAnimals = filteredAnimals.filter((a: AnimalRecord) => 
+                  filteredAnimals = filteredAnimals.filter((a: AnimalRecord) =>
                     eligibleStatuses.includes(a.production_status)
                   )
-                  
+
                   if (settings.eligibleGenders && settings.eligibleGenders.length > 0) {
-                    filteredAnimals = filteredAnimals.filter((a: AnimalRecord) => 
+                    filteredAnimals = filteredAnimals.filter((a: AnimalRecord) =>
                       settings.eligibleGenders?.includes(a.gender) ?? true
                     )
                   }
                 }
-                
+
                 return {
                   ...group,
                   animals: filteredAnimals
                 }
               }
-              
+
               return group
             } catch (err) {
               return group
@@ -191,7 +192,7 @@ export function GroupRecordForm({
     }
 
     fetchMilkingGroups()
-  }, [farmId, settings])
+  }, [farmId, settings, recordDate])
 
   // Auto-select group and animal when editing
   useEffect(() => {
@@ -226,23 +227,23 @@ export function GroupRecordForm({
     // Fallback to eligible animals if no groups configured
     const baseAnimals = animals.filter(a => a.gender === 'female')
     let eligibleAnimals = baseAnimals as AnimalRecord[]
-    
+
     if (settings) {
       const eligibleStatuses = settings.eligibleProductionStatuses || ['lactating']
       eligibleAnimals = eligibleAnimals.filter(a => eligibleStatuses.includes(a.production_status))
-      
+
       if (settings.eligibleGenders && settings.eligibleGenders.length > 0) {
         eligibleAnimals = eligibleAnimals.filter(a => settings.eligibleGenders?.includes(a.gender) ?? true)
       }
     } else {
       eligibleAnimals = eligibleAnimals.filter(a => a.production_status === 'lactating')
     }
-    
+
     return [
       {
         id: 'all_eligible',
         name: eligibleAnimals.length > 0 ? 'All Eligible Animals' : 'No Eligible Animals',
-        description: settings ? 
+        description: settings ?
           `Animals with status: ${settings.eligibleProductionStatuses?.join(', ') || 'lactating'}` :
           'All animals currently in lactation',
         animals: eligibleAnimals
@@ -250,7 +251,7 @@ export function GroupRecordForm({
     ]
   }, [milkingGroups, animals, settings])
 
-  const selectedGroup = useMemo(() => 
+  const selectedGroup = useMemo(() =>
     groups.find(g => g.id === selectedGroupId),
     [groups, selectedGroupId]
   )
@@ -258,7 +259,7 @@ export function GroupRecordForm({
   // Animals in the selected group that haven't been recorded yet (exclude both current and pre-recorded)
   const pendingAnimals = useMemo(() => {
     if (!selectedGroup) return []
-    const pending = selectedGroup.animals.filter(a => 
+    const pending = selectedGroup.animals.filter(a =>
       !recordedAnimalIds.has(a.id) && !preRecordedAnimalIds.has(a.id)
     )
     return pending
@@ -267,7 +268,7 @@ export function GroupRecordForm({
   // Animals recorded in this session (both current and pre-recorded)
   const recordedAnimals = useMemo(() => {
     if (!selectedGroup) return []
-    return selectedGroup.animals.filter(a => 
+    return selectedGroup.animals.filter(a =>
       recordedAnimalIds.has(a.id) || preRecordedAnimalIds.has(a.id)
     )
   }, [selectedGroup, recordedAnimalIds, preRecordedAnimalIds])
@@ -286,9 +287,9 @@ export function GroupRecordForm({
   // Filter animals based on search query
   const filteredPendingAnimals = useMemo(() => {
     if (!searchQuery.trim()) return pendingAnimals
-    
+
     const query = searchQuery.toLowerCase()
-    return pendingAnimals.filter(animal => 
+    return pendingAnimals.filter(animal =>
       animal.tag_number.toLowerCase().includes(query) ||
       (animal.name && animal.name.toLowerCase().includes(query))
     )
@@ -316,7 +317,7 @@ export function GroupRecordForm({
     return (
       <div className="space-y-4">
         <h3 className="text-lg font-semibold">Select Group to Record</h3>
-        
+
         {error && (
           <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start space-x-2 text-red-700 text-sm">
             <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
@@ -502,7 +503,7 @@ export function GroupRecordForm({
 
   // Find the selected animal
   const selectedAnimal = selectedGroup.animals.find(a => a.id === selectedAnimalId)
-  
+
   // All animals recorded - success state (but not when editing an existing record)
   if (!editingRecord && recordedAnimals.length === selectedGroup.animals.length) {
     return (
@@ -603,7 +604,7 @@ export function GroupRecordForm({
               // Mark animal as recorded in current session for this group
               const updated = new Set([...recordedAnimalIds, animalId])
               setRecordedAnimalIds(updated)
-              
+
               // Also track in sessionRecordedByGroup so it persists when going back to group list
               if (selectedGroupId) {
                 setSessionRecordedByGroup(prev => ({
@@ -611,12 +612,12 @@ export function GroupRecordForm({
                   [selectedGroupId]: new Set([...(prev[selectedGroupId] || new Set()), animalId])
                 }))
               }
-              
+
               // Check if there are more animals to record (excluding pre-recorded)
-              const stillPending = selectedGroup.animals.filter(a => 
+              const stillPending = selectedGroup.animals.filter(a =>
                 !updated.has(a.id) && !preRecordedAnimalIds.has(a.id)
               )
-              
+
               if (stillPending.length === 0) {
                 // All animals recorded - trigger success screen
                 setSelectedAnimalId(null)

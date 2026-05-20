@@ -1,12 +1,15 @@
 // API endpoint: /api/farms/[farmId]/animal-categories/[categoryId]/transfer
 // Purpose: Atomically move an animal from its current category into this one.
 //
-// POST body: { animal_id, notes? }
+// POST body: { animal_id, notes?, transfer_date }
 //   - Soft-deletes the animal's existing active assignment (any category).
-//   - Creates a new manual assignment in [categoryId].
+//   - Creates a NEW assignment record in [categoryId] with the transfer_date.
+//   - This ensures a complete audit trail of all transfers with dates.
 
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { getCurrentUser } from '@/lib/supabase/server'
+import { getUserRole } from '@/lib/database/auth'
 
 export async function POST(
   request: NextRequest,
@@ -17,24 +20,38 @@ export async function POST(
     const { farmId, categoryId } = params
     const supabase = await createServerSupabaseClient()
     const body = await request.json()
-    const { animal_id, notes } = body
+    const { animal_id, notes, transfer_date } = body
 
     if (!animal_id) {
       return NextResponse.json({ error: 'animal_id is required' }, { status: 400 })
     }
 
+    if (!transfer_date) {
+      return NextResponse.json({ error: 'transfer_date is required' }, { status: 400 })
+    }
+
     // Auth
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // const { data: { user } } = await supabase.auth.getUser()
+    // if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { data: userFarm } = await supabase
-      .from('user_roles')
-      .select('id')
-      .eq('farm_id', farmId)
-      .eq('user_id', user.id)
-      .maybeSingle()
+    // const { data: userFarm } = await supabase
+    //   .from('user_roles')
+    //   .select('id')
+    //   .eq('farm_id', farmId)
+    //   .eq('user_id', user.id)
+    //   .maybeSingle()
 
-    if (!userFarm) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    // if (!userFarm) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+    const user = await getCurrentUser()
+        if (!user) {
+          return NextResponse.json({ error: 'Unauthorized', success: false }, { status: 401 })
+        }
+    
+        const userRole = await getUserRole(user.id) as any
+        if (!userRole?.farm_id) {
+          return NextResponse.json({ error: 'No farm associated with user', success: false }, { status: 400 })
+        }
 
     // Verify target category belongs to this farm
     const { data: targetCategory } = await supabase
@@ -84,48 +101,40 @@ export async function POST(
       }
     }
 
-    // 2. Reactivate a prior soft-deleted assignment for the target category, or create new
-    const { data: priorAssignment } = await (supabase as any)
+    // 2. Always create a NEW assignment record (don't reuse old ones)
+    // This ensures complete audit trail with transfer_date for each transfer
+    // Check again if animal is already active in this category (prevent race conditions)
+    const { data: raceCheckAssignment } = await (supabase as any)
       .from('animal_category_assignments')
       .select('id')
       .eq('animal_id', animal_id)
       .eq('category_id', categoryId)
-      .not('removed_at', 'is', null)
+      .is('removed_at', null)
       .maybeSingle()
 
-    let result
-    if (priorAssignment) {
-      const { data, error } = await (supabase as any)
-        .from('animal_category_assignments')
-        .update({
-          removed_at: null,
-          assignment_method: 'manual',
-          assigned_at: now,
-          notes: notes || `Transferred from ${currentAssignment?.animal_categories?.name ?? 'previous category'}`
-        })
-        .eq('id', priorAssignment.id)
-        .select()
-        .single()
-
-      if (error) throw error
-      result = data
-    } else {
-      const { data, error } = await (supabase as any)
-        .from('animal_category_assignments')
-        .insert({
-          farm_id: farmId,
-          animal_id,
-          category_id: categoryId,
-          assignment_method: 'manual',
-          assigned_at: now,
-          notes: notes || `Transferred from ${currentAssignment?.animal_categories?.name ?? 'previous category'}`
-        })
-        .select()
-        .single()
-
-      if (error) throw error
-      result = data
+    if (raceCheckAssignment) {
+      return NextResponse.json(
+        { error: 'Animal is already in the target category' },
+        { status: 409 }
+      )
     }
+
+    const { data, error } = await (supabase as any)
+      .from('animal_category_assignments')
+      .insert({
+        farm_id: farmId,
+        animal_id,
+        category_id: categoryId,
+        assignment_method: 'manual',
+        assigned_at: now,
+        transfer_date: transfer_date, // Store the user-provided transfer date
+        notes: notes || `Transferred from ${currentAssignment?.animal_categories?.name ?? 'previous category'}`
+      })
+      .select()
+      .single()
+
+    if (error) throw error
+    const result = data
 
     return NextResponse.json({
       success: true,

@@ -150,7 +150,7 @@ export async function processCalvingAction(calvingEvent: CalvingEvent, farmId: s
       calf_alive: calvingEvent.calf_health_status !== 'deceased',
       colostrum_produced: calvingEvent.colostrum_produced, // ✅ Add colostrum produced
       colostrum_quality: calvingEvent.colostrum_quality, // ✅ Add colostrum quality
-      veterinarian_name: calvingEvent.veterinarian, // ✅ Add veterinarian name
+      veterinarian: calvingEvent.veterinarian, // ✅ Add veterinarian name
       notes: calvingEvent.notes
     }
 

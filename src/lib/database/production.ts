@@ -12,11 +12,24 @@ export async function createProductionRecord(
 ) {
   const supabase = await createServerSupabaseClient()
   
+  // If this is a group recording, capture the group name snapshot at creation time
+  let groupNameSnapshot: string | null = null
+  if (data.milking_group_id) {
+    const { data: groupData } = await supabase
+      .from('farm_milking_groups')
+      .select('category_name')
+      .eq('id', data.milking_group_id)
+      .single()
+    
+    groupNameSnapshot = groupData?.category_name || null
+  }
+  
   const { data: record, error } = await (supabase
     .from('production_records') as any)
     .insert({
       ...data,
       farm_id: farmId,
+      milking_group_name_snapshot: groupNameSnapshot,
     })
     .select()
     .single()

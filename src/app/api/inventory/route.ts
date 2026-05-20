@@ -1,7 +1,7 @@
 //src/app/api/inventory/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUser }            from '@/lib/supabase/server'
-import { getUserRole }               from '@/lib/database/auth'
+import { getCurrentUser } from '@/lib/supabase/server'
+import { getUserRole } from '@/lib/database/auth'
 import {
   getInventoryItems,
   createInventoryItem,
@@ -11,22 +11,22 @@ import {
   getMetadataFields,
 } from '@/lib/database/inventory'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
- 
+
 export async function GET(request: NextRequest) {
   try {
     const user = await getCurrentUser()
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized', success: false }, { status: 401 })
     }
- 
+
     const userRole = await getUserRole(user.id) as any
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user', success: false }, { status: 400 })
     }
- 
+
     const { searchParams } = new URL(request.url)
     const categoryId = searchParams.get('category_id') ?? undefined
- 
+
     const items = await getInventoryItems(userRole.farm_id, categoryId)
     return NextResponse.json({ success: true, data: items })
   } catch (err) {
@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Internal server error', success: false }, { status: 500 })
   }
 }
- 
+
 export async function POST(request: NextRequest) {
   try {
     console.log('🔄 [POST /api/inventory] Request received')
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
 
     const userRole = await getUserRole(user.id) as any
     console.log('🔐 [POST /api/inventory] User role:', { role_type: userRole?.role_type, farm_id: userRole?.farm_id })
-    
+
     if (!userRole?.farm_id) {
       console.error('❌ [POST /api/inventory] No farm associated with user')
       return NextResponse.json({ error: 'No farm associated with user', success: false }, { status: 400 })
@@ -98,10 +98,10 @@ export async function POST(request: NextRequest) {
     console.log(`  🏷️  Raw category_metadata from request body:`, body.category_metadata)
     console.log(`  🏷️  category_metadata type:`, typeof body.category_metadata)
     console.log(`  🏷️  Is object?`, body.category_metadata && typeof body.category_metadata === 'object')
-    
+
     if (body.category_metadata && typeof body.category_metadata === 'object') {
       console.log(`  📥 category_metadata entries:`, Object.entries(body.category_metadata))
-      
+
       const metadataFields = await getMetadataFields(body.category_id, body.subcategory_id)
       console.log(`  📋 Fetched ${metadataFields.length} metadata field definitions for category`)
       console.log(`  📋 Field definitions:`, JSON.stringify(metadataFields.map((f: any) => ({ id: f.id, field_key: f.field_key, field_type: f.field_type })), null, 2))
@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
       metadata = Object.entries(body.category_metadata)
         .map(([key, value]) => {
           console.log(`  🔍 Processing metadata entry: key="${key}", value="${value}"`)
-          
+
           // Find the field definition by key
           const fieldDef = metadataFields.find((f: any) => f.field_key === key)
           if (!fieldDef) {
@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
 
           // Determine which column to populate based on field type
           const entry: any = { field_id: fieldDef.id }
-          
+
           if (fieldDef.field_type === 'number') {
             entry.number_value = Number(value)
             console.log(`    → Setting number_value = ${entry.number_value}`)
@@ -152,9 +152,9 @@ export async function POST(request: NextRequest) {
     // ── Validate required fields ────────────────────────────────────────────
     const errors: Record<string, string> = {}
 
-    if (!body.name?.trim())             errors.name             = 'Item name is required'
-    if (!body.category_id)              errors.category_id      = 'Category is required'
-    if (!unit_of_measure_id)            errors.unit_of_measure_id = 'Unit of measure is required (provide unit_of_measure_id or unit_of_measure code)'
+    if (!body.name?.trim()) errors.name = 'Item name is required'
+    if (!body.category_id) errors.category_id = 'Category is required'
+    if (!unit_of_measure_id) errors.unit_of_measure_id = 'Unit of measure is required (provide unit_of_measure_id or unit_of_measure code)'
 
     const currentStock = Number(body.current_stock)
     if (body.current_stock === undefined || body.current_stock === null) {
@@ -188,9 +188,9 @@ export async function POST(request: NextRequest) {
     // the opening stock movement.
     const movementTypes = await getStockMovementTypes()
     console.log('📋 [POST /api/inventory] Available movement types:', movementTypes)
-    
-    const purchaseType  = movementTypes.find((t: any) => t.code === 'purchase')
-    const adjustType    = movementTypes.find((t: any) => t.code === 'adjustment')
+
+    const purchaseType = movementTypes.find((t: any) => t.code === 'purchase')
+    const adjustType = movementTypes.find((t: any) => t.code === 'adjustment')
     console.log('🏷️  [POST /api/inventory] Movement types found - purchase:', purchaseType?.id, 'adjust:', adjustType?.id)
 
     // Use 'purchase' if a supplier was supplied, otherwise 'adjustment'
@@ -214,30 +214,30 @@ export async function POST(request: NextRequest) {
     const result = await createInventoryItem(
       userRole.farm_id,
       {
-        name:                    body.name.trim(),
-        category_id:             body.category_id,
-        subcategory_id:          body.subcategory_id          || null,
-        department_id:           body.department_id           || null,
-        equipment_id:            body.equipment_id            || null,
-        unit_of_measure_id:      unit_of_measure_id,
-        preferred_supplier_id:   preferred_supplier_id        || null,
-        storage_location_id:     body.storage_location_id     || null,
-        current_stock:           currentStock,
-        minimum_stock:           Number(body.minimum_stock)   || 0,
-        reorder_level:           Number(body.reorder_level)   || 0,
-        reorder_quantity:        Number(body.reorder_quantity) || 0,
-        cost_per_unit:           Number(body.cost_per_unit)   || 0,
-        is_perishable:           Boolean(body.is_perishable),
+        name: body.name.trim(),
+        category_id: body.category_id,
+        subcategory_id: body.subcategory_id || null,
+        department_id: body.department_id || null,
+        equipment_id: body.equipment_id || null,
+        unit_of_measure_id: unit_of_measure_id,
+        preferred_supplier_id: preferred_supplier_id || null,
+        storage_location_id: body.storage_location_id || null,
+        current_stock: currentStock,
+        minimum_stock: Number(body.minimum_stock) || 0,
+        reorder_level: Number(body.reorder_level) || 0,
+        reorder_quantity: Number(body.reorder_quantity) || 0,
+        cost_per_unit: Number(body.cost_per_unit) || 0,
+        is_perishable: Boolean(body.is_perishable),
         requires_batch_tracking: Boolean(body.requires_batch_tracking),
-        shelf_life_days:         body.shelf_life_days ? Number(body.shelf_life_days) : null,
-        description:             body.description?.trim()     || null,
-        notes:                   body.notes?.trim()           || null,
-        sku:                     body.sku?.trim()             || null,
-        created_by:              user.id,
+        shelf_life_days: body.shelf_life_days ? Number(body.shelf_life_days) : null,
+        description: body.description?.trim() || null,
+        notes: body.notes?.trim() || null,
+        sku: body.sku?.trim() || null,
+        created_by: user.id,
         // Purchase receipt fields
-        purchase_quantity:       body.purchase_quantity ? Number(body.purchase_quantity) : null,
-        purchase_unit_id:        purchase_unit_id             || null,
-        purchase_amount:         body.purchase_amount ? Number(body.purchase_amount) : null,
+        purchase_quantity: body.purchase_quantity ? Number(body.purchase_quantity) : null,
+        purchase_unit_id: purchase_unit_id || null,
+        purchase_amount: body.purchase_amount ? Number(body.purchase_amount) : null,
         metadata,
       },
       openingMovementTypeId,

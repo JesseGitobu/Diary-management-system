@@ -84,7 +84,7 @@ export function FeedingGroupsManager({
     setError(null)
     try {
       // Fetch animal categories
-      const categoriesResponse = await fetch(`/api/farms/${farmId}/feed-management/animal-categories`)
+      const categoriesResponse = await fetch(`/api/farms/${farmId}/animal-categories`)
       if (!categoriesResponse.ok) throw new Error('Failed to fetch categories')
       const categoriesData = await categoriesResponse.json()
       
@@ -143,7 +143,7 @@ export function FeedingGroupsManager({
         try {
           console.log(`📡 Fetching animals for group ${groupId}...`)
           const response = await fetch(
-            `/api/farms/${farmId}/feed-management/animal-categories/${groupId}/matching-animals?limit=100`
+            `/api/farms/${farmId}/animal-categories/${groupId}/matching-animals?limit=100`
           )
           
           if (!response.ok) {

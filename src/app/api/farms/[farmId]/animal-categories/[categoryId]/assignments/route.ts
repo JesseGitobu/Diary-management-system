@@ -3,6 +3,8 @@
 
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { getCurrentUser } from '@/lib/supabase/server'
+import { getUserRole } from '@/lib/database/auth'
 import { getMatchingAnimals } from '@/lib/database/feedManagementSettings'
 
 // GET: Fetch assignment data for a category (current, suggested, and to-remove animals)
@@ -16,22 +18,32 @@ export async function GET(
     const supabase = await createServerSupabaseClient()
 
     // Get the current user's ID
-    const { data: { user } } = await supabase.auth.getUser()
+    // const { data: { user } } = await supabase.auth.getUser()
+    // if (!user) {
+    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // }
+
+    // // Verify current user has access to this farm (filter by user_id to avoid
+    // // .single() failing when there are multiple team members for the same farm)
+    // const { data: userFarm } = await supabase
+    //   .from('user_roles')
+    //   .select('id')
+    //   .eq('farm_id', farmId)
+    //   .eq('user_id', user.id)
+    //   .maybeSingle()
+
+    // if (!userFarm) {
+    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+    // }
+
+    const user = await getCurrentUser()
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: 'Unauthorized', success: false }, { status: 401 })
     }
 
-    // Verify current user has access to this farm (filter by user_id to avoid
-    // .single() failing when there are multiple team members for the same farm)
-    const { data: userFarm } = await supabase
-      .from('user_roles')
-      .select('id')
-      .eq('farm_id', farmId)
-      .eq('user_id', user.id)
-      .maybeSingle()
-
-    if (!userFarm) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+    const userRole = await getUserRole(user.id) as any
+    if (!userRole?.farm_id) {
+      return NextResponse.json({ error: 'No farm associated with user', success: false }, { status: 400 })
     }
 
     // Get the category with its characteristics
@@ -214,78 +226,15 @@ export async function POST(
     const body = await request.json()
     const { animal_id, assignment_method = 'manual', notes } = body
 
-    // Get the current user's ID from session (with fallback to cookies)
-    let userId: string | undefined
-    let authMethod = 'unknown'
-    
-    try {
-      const { data: { user }, error: authError } = await supabase.auth.getUser()
-      
-      if (authError) {
-        console.log('⚠️ getUser() returned error:', authError.message.slice(0, 50))
-        throw authError
-      }
-      
-      if (!user) {
-        console.log('⚠️ getUser() succeeded but user is null - trying session cookie fallback')
-        throw new Error('User is null')
-      }
-      
-      userId = user.id
-      authMethod = 'getUser'
-      console.log('✅ Current user (via getUser):', userId)
-    } catch (authErr) {
-      console.log('🔄 Fallback: Extracting from session cookies...')
-      
-      // Fallback: Try to get from cookies
-      const cookieStore = await (await import('next/headers')).cookies()
-      
-      // Try multiple cookie names
-      const cookieNames = ['sb-auth-token', 'sb:token', 'auth-token']
-      let sessionCookie = null
-      
-      for (const name of cookieNames) {
-        sessionCookie = cookieStore.get(name)
-        if (sessionCookie?.value) {
-          console.log(`📦 Found session cookie: ${name}`)
-          break
-        }
-      }
-      
-      if (sessionCookie?.value) {
-        try {
-          const decoded = JSON.parse(Buffer.from(sessionCookie.value, 'base64').toString())
-          userId = decoded?.user?.id
-          authMethod = 'session-cookie'
-          console.log('✅ Current user (via session cookie):', userId)
-        } catch (parseErr) {
-          console.log('❌ Could not parse session cookie:', (parseErr as Error).message.slice(0, 50))
-        }
-      } else {
-        console.log('❌ No session cookie found in:', cookieNames.join(', '))
-      }
+    // Authenticate user
+    const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized', success: false }, { status: 401 })
     }
-    
-    if (!userId) {
-      console.log('❌ No authenticated user found via any method')
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    
-    console.log(`✅ User authenticated via ${authMethod}: ${userId}`)
 
-    // Verify user has access to this farm (filter by user_id to avoid single() failing)
-    const { data: userFarm, error: userFarmError } = await supabase
-      .from('user_roles')
-      .select('id')
-      .eq('farm_id', farmId)
-      .eq('user_id', userId)
-      .maybeSingle()
-    
-    console.log('🔍 User farm access check:', { userFarm, error: userFarmError?.message })
-
-    if (!userFarm) {
-      console.log('❌ User does not have access to this farm')
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+    const userRole = await getUserRole(user.id) as any
+    if (!userRole?.farm_id) {
+      return NextResponse.json({ error: 'No farm associated with user', success: false }, { status: 400 })
     }
 
     // Check if animal is already actively assigned to ANY category
@@ -314,61 +263,47 @@ export async function POST(
       )
     }
 
-    // Check if there's a soft-deleted assignment that can be reactivated
-    const { data: softDeletedAssignment } = await (supabase
-      .from('animal_category_assignments') as any)
+    // Always create a NEW assignment record (don't reuse soft-deleted ones)
+    // This ensures complete audit trail with transfer_date for each assignment
+    // Double-check this specific category (prevent race conditions)
+    const { data: categoryCheckAssignment } = await (supabase as any)
+      .from('animal_category_assignments')
       .select('id')
       .eq('animal_id', animal_id)
       .eq('category_id', categoryId)
-      .not('removed_at', 'is', null)
+      .is('removed_at', null)
+      .maybeSingle()
+
+    if (categoryCheckAssignment) {
+      return NextResponse.json(
+        { error: 'Animal is already assigned to this category' },
+        { status: 409 }
+      )
+    }
+
+    console.log('✅ Creating new assignment:', { animal_id, categoryId, farmId })
+    const today = new Date().toISOString().split('T')[0]
+    const { data, error } = await (supabase
+      .from('animal_category_assignments') as any)
+      .insert({
+        farm_id: farmId,
+        animal_id,
+        category_id: categoryId,
+        assignment_method,
+        transfer_date: today,
+        notes
+      })
+      .select()
       .single()
 
-    let result
-    if (softDeletedAssignment) {
-      // Reactivate soft-deleted assignment
-      console.log('🔄 Reactivating soft-deleted assignment:', { animal_id, categoryId })
-      const { data, error } = await (supabase
-        .from('animal_category_assignments') as any)
-        .update({
-          removed_at: null,
-          assignment_method,
-          assigned_at: new Date().toISOString(),
-          notes
-        })
-        .eq('id', softDeletedAssignment.id)
-        .select()
-        .single()
-
-      if (error) {
-        console.error('❌ Error reactivating assignment:', error)
-        throw error
-      }
-      result = data
-    } else {
-      // Create new assignment
-      console.log('✅ Creating new assignment:', { animal_id, categoryId, farmId })
-      const { data, error } = await (supabase
-        .from('animal_category_assignments') as any)
-        .insert({
-          farm_id: farmId,
-          animal_id,
-          category_id: categoryId,
-          assignment_method,
-          notes
-        })
-        .select()
-        .single()
-
-      if (error) {
-        console.error('❌ Error creating assignment:', error)
-        throw error
-      }
-      result = data
+    if (error) {
+      console.error('❌ Error creating assignment:', error)
+      throw error
     }
 
     return NextResponse.json({
       success: true,
-      data: result
+      data
     })
   } catch (error) {
     console.error('Error adding assignment:', error)
@@ -393,78 +328,15 @@ export async function DELETE(
 
     console.log('🔍 DELETE assignments - Debug:', { farmId, categoryId, animal_id })
 
-    // Get the current user's ID from session (with fallback to cookies)
-    let userId: string | undefined
-    let authMethod = 'unknown'
-    
-    try {
-      const { data: { user }, error: authError } = await supabase.auth.getUser()
-      
-      if (authError) {
-        console.log('⚠️ getUser() returned error:', authError.message.slice(0, 50))
-        throw authError
-      }
-      
-      if (!user) {
-        console.log('⚠️ getUser() succeeded but user is null - trying session cookie fallback')
-        throw new Error('User is null')
-      }
-      
-      userId = user.id
-      authMethod = 'getUser'
-      console.log('✅ Current user (via getUser):', userId)
-    } catch (authErr) {
-      console.log('🔄 Fallback: Extracting from session cookies...')
-      
-      // Fallback: Try to get from cookies
-      const cookieStore = await (await import('next/headers')).cookies()
-      
-      // Try multiple cookie names
-      const cookieNames = ['sb-auth-token', 'sb:token', 'auth-token']
-      let sessionCookie = null
-      
-      for (const name of cookieNames) {
-        sessionCookie = cookieStore.get(name)
-        if (sessionCookie?.value) {
-          console.log(`📦 Found session cookie: ${name}`)
-          break
-        }
-      }
-      
-      if (sessionCookie?.value) {
-        try {
-          const decoded = JSON.parse(Buffer.from(sessionCookie.value, 'base64').toString())
-          userId = decoded?.user?.id
-          authMethod = 'session-cookie'
-          console.log('✅ Current user (via session cookie):', userId)
-        } catch (parseErr) {
-          console.log('❌ Could not parse session cookie:', (parseErr as Error).message.slice(0, 50))
-        }
-      } else {
-        console.log('❌ No session cookie found in:', cookieNames.join(', '))
-      }
+    // Authenticate user
+    const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized', success: false }, { status: 401 })
     }
-    
-    if (!userId) {
-      console.log('❌ No authenticated user found via any method')
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    
-    console.log(`✅ User authenticated via ${authMethod}: ${userId}`)
 
-    // Verify user has access to this farm (filter by user_id to avoid single() failing)
-    const { data: userFarm, error: userFarmError } = await supabase
-      .from('user_roles')
-      .select('id')
-      .eq('farm_id', farmId)
-      .eq('user_id', userId)
-      .maybeSingle()
-    
-    console.log('🔍 User farm access check:', { userFarm, error: userFarmError?.message })
-
-    if (!userFarm) {
-      console.log('❌ User does not have access to this farm')
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+    const userRole = await getUserRole(user.id) as any
+    if (!userRole?.farm_id) {
+      return NextResponse.json({ error: 'No farm associated with user', success: false }, { status: 400 })
     }
 
     // Soft delete the assignment

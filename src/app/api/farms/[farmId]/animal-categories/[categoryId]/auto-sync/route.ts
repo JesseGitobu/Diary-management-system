@@ -4,6 +4,8 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { getMatchingAnimals } from '@/lib/database/feedManagementSettings'
+import { getCurrentUser } from '@/lib/supabase/server'
+import { getUserRole } from '@/lib/database/auth'
 
 export async function POST(
   request: NextRequest,
@@ -14,16 +16,26 @@ export async function POST(
     const { farmId, categoryId } = params
     const supabase = await createServerSupabaseClient()
 
-    // Verify user has access to this farm
-    const { data: userFarm } = await supabase
-      .from('user_roles')
-      .select('id')
-      .eq('farm_id', farmId)
-      .single()
+    // // Verify user has access to this farm
+    // const { data: userFarm } = await supabase
+    //   .from('user_roles')
+    //   .select('id')
+    //   .eq('farm_id', farmId)
+    //   .single()
 
-    if (!userFarm) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
-    }
+    // if (!userFarm) {
+    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+    // }
+
+    const user = await getCurrentUser()
+        if (!user) {
+          return NextResponse.json({ error: 'Unauthorized', success: false }, { status: 401 })
+        }
+    
+        const userRole = await getUserRole(user.id) as any
+        if (!userRole?.farm_id) {
+          return NextResponse.json({ error: 'No farm associated with user', success: false }, { status: 400 })
+        }
 
     // Get the category with its characteristics
     const { data: category, error: categoryError } = await supabase
@@ -78,14 +90,20 @@ export async function POST(
     const animalIdsToRemove = currentAnimalIds.filter((id: string) => !matchingAnimalIds.includes(id))
 
     // Add new assignments
+    const today = new Date().toISOString().split('T')[0]
+    
+    // Remove duplicates from animalIdsToAdd (in case of duplicates in matching list)
+    const uniqueAnimalIdsToAdd = [...new Set(animalIdsToAdd)]
+    
     const { data: addedAssignments, error: addError } = await (supabase
       .from('animal_category_assignments') as any)
       .insert(
-        animalIdsToAdd.map((animalId: string) => ({
+        uniqueAnimalIdsToAdd.map((animalId: string) => ({
           farm_id: farmId,
           animal_id: animalId,
           category_id: categoryId,
           assignment_method: 'auto',
+          transfer_date: today,
           notes: 'Automatically synced based on category characteristics'
         }))
       )

@@ -320,6 +320,7 @@ export function AnimalCategoriesManager({
   const [transferRecommendations, setTransferRecommendations] = useState<TransferRecommendation[]>([])
   const [loadingTransferRecs, setLoadingTransferRecs] = useState(false)
   const [transferNotes, setTransferNotes] = useState('')
+  const [transferDate, setTransferDate] = useState('')
   const [selectedTransferTarget, setSelectedTransferTarget] = useState<string>('')
   const [transferring, setTransferring] = useState(false)
   // Milking schedule management state
@@ -737,8 +738,8 @@ export function AnimalCategoriesManager({
       }
 
       const url = editingCategory
-        ? `/api/farms/${farmId}/feed-management/animal-categories/${editingCategory.id}`
-        : `/api/farms/${farmId}/feed-management/animal-categories`
+        ? `/api/farms/${farmId}/animal-categories/${editingCategory.id}`
+        : `/api/farms/${farmId}/animal-categories`
 
       const method = editingCategory ? 'PUT' : 'POST'
 
@@ -797,7 +798,7 @@ export function AnimalCategoriesManager({
 
     setLoading(true)
     try {
-      const response = await fetch(`/api/farms/${farmId}/feed-management/animal-categories/${deletingCategory.id}`, {
+      const response = await fetch(`/api/farms/${farmId}/animal-categories/${deletingCategory.id}`, {
         method: 'DELETE'
       })
 
@@ -870,6 +871,7 @@ export function AnimalCategoriesManager({
     setTransferAnimal(animal)
     setSelectedTransferTarget('')
     setTransferNotes('')
+    setTransferDate(new Date().toISOString().split('T')[0]) // Set to today's date
     setTransferRecommendations([])
     setLoadingTransferRecs(true)
     try {
@@ -886,7 +888,10 @@ export function AnimalCategoriesManager({
   }
 
   const executeTransfer = async () => {
-    if (!transferAnimal || !selectedTransferTarget) return
+    if (!transferAnimal || !selectedTransferTarget || !transferDate) {
+      showFeedback('error', 'Validation Error', 'Please select a transfer date before proceeding.')
+      return
+    }
     setTransferring(true)
     try {
       const res = await fetch(
@@ -894,7 +899,7 @@ export function AnimalCategoriesManager({
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ animal_id: transferAnimal.id, notes: transferNotes || undefined })
+          body: JSON.stringify({ animal_id: transferAnimal.id, notes: transferNotes || undefined, transfer_date: transferDate })
         }
       )
       if (!res.ok) {
@@ -902,12 +907,17 @@ export function AnimalCategoriesManager({
         showFeedback('error', 'Transfer Failed', err.error || 'Unable to transfer the animal to the selected category.')
         return
       }
+      // Success feedback
+      const targetCategoryName = categories.find(c => c.id === selectedTransferTarget)?.name || 'the selected category'
+      showFeedback('success', 'Animal Transferred', `${transferAnimal.name || `#${transferAnimal.tag_number}`} has been successfully transferred to ${targetCategoryName}.`)
       setTransferAnimal(null)
+      setTransferNotes('')
+      setTransferDate('')
       // Refresh the current assignment panel
       if (viewingAnimals) await handleViewAnimals(viewingAnimals)
       // Refresh category counts
       try {
-        const catRes = await fetch(`/api/farms/${farmId}/feed-management/animal-categories`)
+        const catRes = await fetch(`/api/farms/${farmId}/animal-categories`)
         if (catRes.ok) {
           const catData = await catRes.json()
           if (catData.data) onCategoriesUpdate(catData.data)
@@ -2497,7 +2507,7 @@ export function AnimalCategoriesManager({
 
                       // Refresh overall categories list to show updated animal counts
                       try {
-                        const categoriesResponse = await fetch(`/api/farms/${farmId}/feed-management/animal-categories`)
+                        const categoriesResponse = await fetch(`/api/farms/${farmId}/animal-categories`)
                         if (categoriesResponse.ok) {
                           const result = await categoriesResponse.json()
                           if (result.data) {
@@ -2620,6 +2630,27 @@ export function AnimalCategoriesManager({
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
               />
             </div>
+
+            {/* Transfer date */}
+            <div>
+              <label className="text-xs font-medium text-gray-700 block mb-1">
+                Transfer Date <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="date"
+                value={transferDate}
+                onChange={(e) => setTransferDate(e.target.value)}
+                required
+                className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 ${
+                  transferDate
+                    ? 'border-gray-300 focus:ring-green-500'
+                    : 'border-red-300 focus:ring-red-500'
+                }`}
+              />
+              {!transferDate && (
+                <p className="text-xs text-red-600 mt-1">Transfer date is required</p>
+              )}
+            </div>
           </div>
 
           <AlertDialogFooter>
@@ -2628,8 +2659,8 @@ export function AnimalCategoriesManager({
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={executeTransfer}
-              disabled={transferring || !selectedTransferTarget}
-              className="bg-amber-600 hover:bg-amber-700"
+              disabled={transferring || !selectedTransferTarget || !transferDate}
+              className="bg-amber-600 hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {transferring ? <LoadingSpinner size="sm" /> : 'Transfer Animal'}
             </AlertDialogAction>

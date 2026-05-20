@@ -1,4 +1,4 @@
-// app/api/farms/[farmId]/feed-management/animal-categories/route.ts
+// app/api/farms/[farmId]/animal-categories/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
@@ -12,7 +12,10 @@ import {
   processCharacteristicsForStorage
 } from '@/lib/database/animal-category-validation'
 
-export async function GET(request: NextRequest) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ farmId: string }> }
+) {
   try {
     const user = await getCurrentUser()
     
@@ -24,6 +27,13 @@ export async function GET(request: NextRequest) {
     
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
+    }
+
+    const { farmId } = await params
+
+    // Verify user has access to this farm
+    if (userRole.farm_id !== farmId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
     
     const categories = await getAnimalCategories(userRole.farm_id)
@@ -39,7 +49,10 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ farmId: string }> }
+) {
   try {
     const user = await getCurrentUser()
     
@@ -51,6 +64,13 @@ export async function POST(request: NextRequest) {
     
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
+    }
+
+    const { farmId } = await params
+
+    // Verify user has access to this farm
+    if (userRole.farm_id !== farmId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
     
     // Check permissions

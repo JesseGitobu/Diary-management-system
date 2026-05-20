@@ -122,7 +122,7 @@ export function AnimalsClientPage({
     if (categories.length === 0) {
       setLoadingCategories(true)
       try {
-        const response = await fetch(`/api/farms/${farmId}/feed-management/animal-categories`)
+        const response = await fetch(`/api/farms/${farmId}/animal-categories`)
         if (response.ok) {
           const data = await response.json()
           setCategories(data.data || [])

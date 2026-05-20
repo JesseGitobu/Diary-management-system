@@ -60,6 +60,7 @@ interface ProductionRecord {
   created_at: string
   recording_type?: 'individual' | 'group'
   milking_group_id?: string
+  milking_group_name_snapshot?: string  // Captured at record creation time
   milking_session_id?: string
   mastitis_test_performed?: boolean
   mastitis_result?: 'negative' | 'mild' | 'severe' | null
@@ -245,6 +246,24 @@ export function ProductionRecordsList({
     return map
   }, [availableSessions])
 
+  // Helper to get group name: prefer snapshot (historical), fall back to current name
+  const getGroupName = (record: ProductionRecord): string | null => {
+    if (record.milking_group_name_snapshot) {
+      return record.milking_group_name_snapshot  // ✅ Use snapshot if available (immutable)
+    }
+    if (record.milking_group_id) {
+      return milkingGroups.get(record.milking_group_id) || null  // ✅ Fallback to current name
+    }
+    return null
+  }
+
+  // Helper to get group name from first record in collection (for aggregations)
+  const getGroupNameFromFirstRecord = (records: ProductionRecord[]): string | null => {
+    if (records.length === 0) return null
+    const firstRecord = records[0]
+    return getGroupName(firstRecord)
+  }
+
   // Deduplicated sessions for dropdown display (by name only)
   const dedupedSessions = useMemo(() => {
     const seenNames = new Set<string>()
@@ -330,7 +349,7 @@ export function ProductionRecordsList({
       const sortedByDate = [...records].sort((a, b) =>
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       )
-      const resolvedName = groupId !== 'default' ? milkingGroups.get(groupId as string) : undefined
+      const resolvedName = groupId !== 'default' ? getGroupNameFromFirstRecord(records) : undefined
       // Count unique animals, not records (an animal may have multiple records)
       const uniqueAnimals = new Set(records.map(r => r.animal_id)).size
 
@@ -439,10 +458,10 @@ export function ProductionRecordsList({
     setEditingRecord(record)
     setEditingRecordType(record.recording_type)
     
-    // Get group name if this is a group record
+    // Get group name if this is a group record (prefer snapshot for audit trail)
     if (record.recording_type === 'group' && record.milking_group_id) {
-      const groupName = milkingGroups.get(record.milking_group_id)
-      setEditingGroupName(groupName)
+      const groupName = getGroupName(record)
+      setEditingGroupName(groupName || undefined)
     } else {
       setEditingGroupName(undefined)
     }
@@ -573,9 +592,9 @@ export function ProductionRecordsList({
           : null
         const sessions = [...new Set(animalRecords.map(r => r.milking_session_id).filter(Boolean as any))]
         
-        // Get milking group information from first record
+        // Get milking group information from first record (prefer snapshot for consistency)
         const milkingGroupId = animalRecords[0].milking_group_id || null
-        const milkingGroupName = milkingGroupId ? milkingGroups.get(milkingGroupId) || null : null
+        const milkingGroupName = getGroupName(animalRecords[0]) || null
 
         summaries.push({
           cycleDate,
@@ -640,7 +659,7 @@ export function ProductionRecordsList({
           : null
         const uniqueAnimals = new Set(groupRecords.map(r => r.animal_id)).size
         const actualGroupId = groupId === 'default' ? null : (groupId as string)
-        const groupName = groupId !== 'default' ? milkingGroups.get(groupId as string) : null
+        const groupName = groupId !== 'default' ? getGroupNameFromFirstRecord(groupRecords) : null
 
         summaries.push({
           cycleDate,

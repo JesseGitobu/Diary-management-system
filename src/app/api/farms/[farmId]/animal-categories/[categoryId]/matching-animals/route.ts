@@ -1,4 +1,4 @@
-// app/api/farms/[farmId]/feed-management/animal-categories/[id]/matching-animals/route.ts
+// app/api/farms/[farmId]/animal-categories/[categoryId]/matching-animals/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
@@ -10,7 +10,7 @@ import {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ farmId: string; id: string }> }
+  { params }: { params: Promise<{ farmId: string; categoryId: string }> }
 ) {
   try {
     const user = await getCurrentUser()
@@ -25,7 +25,7 @@ export async function GET(
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
     }
     
-    const { farmId, id: categoryId } = await params
+    const { farmId, categoryId } = await params
     
     // Validate farm access - ensure farm_id from route matches user's farm_id
     if (farmId !== userRole.farm_id) {

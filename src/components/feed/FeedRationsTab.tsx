@@ -813,7 +813,7 @@ export function FeedRationsTab({
                                 onClick={async () => {
                                   try {
                                     const res = await fetch(
-                                      `/api/farms/${farmId}/feed-management/animal-categories/${cat.id}`,
+                                      `/api/farms/${farmId}/animal-categories/${cat.id}`,
                                       {
                                         method: 'PUT',
                                         headers: { 'Content-Type': 'application/json' },

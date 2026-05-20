@@ -1,5 +1,4 @@
-// NOTE: This file is deprecated. Use app/api/farms/[farmId]/animal-categories/[categoryId]/route.ts instead
-// app/api/farms/[farmId]/feed-management/animal-categories/[id]/route.ts
+// app/api/farms/[farmId]/animal-categories/[categoryId]/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
@@ -16,7 +15,7 @@ import {
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ categoryId: string }> }
 ) {
   try {
     const user = await getCurrentUser()
@@ -37,7 +36,7 @@ export async function PUT(
     }
     
     const body = await request.json()
-    const { id: categoryId } = await params
+    const { categoryId } = await params
     
     // Comprehensive data validation
     const validation = validateAnimalCategoryData(body)
@@ -99,7 +98,7 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ categoryId: string }> }
 ) {
   try {
     const user = await getCurrentUser()
@@ -119,7 +118,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
     
-    const { id: categoryId } = await params
+    const { categoryId } = await params
 
     // Check if this is a default category (cannot be deleted)
     const supabase = await createServerSupabaseClient()
