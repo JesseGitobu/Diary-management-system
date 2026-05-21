@@ -1,13 +1,34 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
-import { IndividualRecordForm } from './IndividualRecordForm'
 import { ProductionSettings } from '@/types/production-distribution-settings'
-import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
-import { CheckCircle2, AlertCircle } from 'lucide-react'
+import {
+  CheckCircle2,
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  Search,
+  Users,
+  ClipboardList,
+  Droplets,
+  ArrowRight,
+  ArrowLeft,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  FlaskConical,
+  ShieldCheck,
+  ShieldAlert,
+  ShieldX,
+  Check,
+  ChevronsUpDown,
+} from 'lucide-react'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface AnimalRecord {
   id: string
@@ -26,6 +47,43 @@ interface MilkingGroup {
   animals?: AnimalRecord[]
 }
 
+/** An animal selected for this batch, carrying group metadata */
+interface SelectedAnimal {
+  animal: AnimalRecord
+  groupId: string
+  groupName: string
+}
+
+/** Per-animal health data collected in Step 2 */
+interface AnimalHealthData {
+  mastitis_test_performed: boolean
+  mastitis_result: 'negative' | 'mild' | 'severe' | null
+  affected_quarters: string[]
+  milk_safety_status: 'safe' | 'unsafe_health' | 'unsafe_colostrum'
+  temperature: number | null
+}
+
+/** Per-animal volume + quality data collected in Step 3 */
+interface AnimalVolumeData {
+  milk_volume: number | null
+  milking_time: string
+  fat_content: number | null
+  protein_content: number | null
+  somatic_cell_count: number | null
+  lactose_content: number | null
+  ph_level: number | null
+  notes: string
+}
+
+/** Historical production data fetched per animal */
+interface HistoricalData {
+  yesterdayTotal: number | null
+  previousSessionVolume: number | null
+  previousSessionName: string | null
+  sameTimeYesterdayVolume: number | null
+  sameTimeYesterdaySessionName: string | null
+}
+
 interface GroupRecordFormProps {
   farmId: string
   animals: Array<{
@@ -41,26 +99,100 @@ interface GroupRecordFormProps {
   settings: ProductionSettings | null
   onSuccess?: () => void
   sessionName?: string
-  editingRecord?: {
-    id: string
-    animal_id: string
-    record_date: string
-    milking_session_id: string
-    milk_volume: number
-    milk_safety_status: 'safe' | 'unsafe_health' | 'unsafe_colostrum'
-    temperature?: number | null
-    mastitis_test_performed?: boolean
-    mastitis_result?: 'negative' | 'mild' | 'severe' | null
-    affected_quarters?: string[] | null
-    fat_content?: number | null
-    protein_content?: number | null
-    somatic_cell_count?: number | null
-    lactose_content?: number | null
-    ph_level?: number | null
-    notes?: string | null
-    milking_time?: string | null
-  } | null
+  editingRecord?: any | null
 }
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const QUARTERS = ['FL', 'FR', 'RL', 'RR']
+
+const STEP_LABELS = [
+  { step: 1, label: 'Select Animals', icon: Users },
+  { step: 2, label: 'Health & Safety', icon: ClipboardList },
+  { step: 3, label: 'Milk Volume', icon: Droplets },
+]
+
+// ─── Helper Components ────────────────────────────────────────────────────────
+
+function StepIndicator({ currentStep }: { currentStep: number }) {
+  return (
+    <div className="flex items-center justify-center gap-0 mb-6">
+      {STEP_LABELS.map(({ step, label, icon: Icon }, idx) => {
+        const isComplete = currentStep > step
+        const isActive = currentStep === step
+        return (
+          <div key={step} className="flex items-center">
+            <div className="flex flex-col items-center gap-1">
+              <div
+                className={`w-9 h-9 rounded-full flex items-center justify-center border-2 transition-all duration-200 ${
+                  isComplete
+                    ? 'bg-green-600 border-green-600 text-white'
+                    : isActive
+                    ? 'bg-white border-green-600 text-green-600'
+                    : 'bg-white border-stone-300 text-stone-400'
+                }`}
+              >
+                {isComplete ? (
+                  <Check className="w-4 h-4" />
+                ) : (
+                  <Icon className="w-4 h-4" />
+                )}
+              </div>
+              <span
+                className={`text-xs font-medium whitespace-nowrap ${
+                  isActive ? 'text-green-700' : isComplete ? 'text-green-600' : 'text-stone-400'
+                }`}
+              >
+                {label}
+              </span>
+            </div>
+            {idx < STEP_LABELS.length - 1 && (
+              <div
+                className={`w-16 sm:w-24 h-0.5 mb-5 mx-1 ${
+                  currentStep > step ? 'bg-green-600' : 'bg-stone-200'
+                }`}
+              />
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function HistoricalBadge({
+  label,
+  volume,
+  unit,
+}: {
+  label: string
+  volume: number | null
+  unit: string
+}) {
+  if (volume === null) return null
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-stone-100 text-stone-600 rounded text-xs">
+      <span className="font-medium text-stone-500">{label}:</span>
+      {volume.toFixed(1)}{unit}
+    </span>
+  )
+}
+
+function VolumeTrend({ current, reference }: { current: number | null; reference: number | null }) {
+  if (current === null || reference === null || reference === 0) return null
+  const pct = ((current - reference) / reference) * 100
+  if (Math.abs(pct) < 1) return <Minus className="w-3 h-3 text-stone-400" />
+  if (pct > 0) return <TrendingUp className="w-3 h-3 text-green-600" />
+  return <TrendingDown className="w-3 h-3 text-red-500" />
+}
+
+function SafetyIcon({ status }: { status: 'safe' | 'unsafe_health' | 'unsafe_colostrum' }) {
+  if (status === 'safe') return <ShieldCheck className="w-4 h-4 text-green-600" />
+  if (status === 'unsafe_health') return <ShieldAlert className="w-4 h-4 text-red-500" />
+  return <ShieldX className="w-4 h-4 text-yellow-600" />
+}
+
+// ─── Main Component ────────────────────────────────────────────────────────────
 
 export function GroupRecordForm({
   farmId,
@@ -73,563 +205,1241 @@ export function GroupRecordForm({
   sessionName,
   editingRecord = null,
 }: GroupRecordFormProps) {
-  const { isMobile } = useDeviceInfo()
+  const unit = settings?.productionUnit === 'kg' ? 'kg' : 'L'
 
-  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
-  const [selectedAnimalId, setSelectedAnimalId] = useState<string | null>(null)
-  const [recordedAnimalIds, setRecordedAnimalIds] = useState<Set<string>>(new Set())
-  const [sessionRecordedByGroup, setSessionRecordedByGroup] = useState<Record<string, Set<string>>>({})
-  const [preRecordedAnimalIds, setPreRecordedAnimalIds] = useState<Set<string>>(new Set())
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  // ── Step state ────────────────────────────────────────────────────────────
+  const [step, setStep] = useState<1 | 2 | 3>(1)
+
+  // ── Step 1: group + animal selection ─────────────────────────────────────
   const [milkingGroups, setMilkingGroups] = useState<MilkingGroup[]>([])
-  const [searchQuery, setSearchQuery] = useState('')
+  const [loadingGroups, setLoadingGroups] = useState(true)
+  const [groupError, setGroupError] = useState<string | null>(null)
+  const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set())
+  const [groupSearch, setGroupSearch] = useState<Record<string, string>>({})
+  const [selectedAnimals, setSelectedAnimals] = useState<SelectedAnimal[]>([])
+  const [preRecordedIds, setPreRecordedIds] = useState<Set<string>>(new Set())
 
+  // ── Step 2: health & safety ───────────────────────────────────────────────
+  const [healthData, setHealthData] = useState<Record<string, AnimalHealthData>>({})
+  const [historicalData, setHistoricalData] = useState<Record<string, HistoricalData>>({})
+  const [loadingHistory, setLoadingHistory] = useState(false)
 
+  // ── Step 3: volume entry ──────────────────────────────────────────────────
+  const [volumeData, setVolumeData] = useState<Record<string, AnimalVolumeData>>({})
 
-  // Reset form state when date or session changes (but not when editing)
+  // ── Submission ────────────────────────────────────────────────────────────
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [submitSuccess, setSubmitSuccess] = useState(false)
+  const [submitResults, setSubmitResults] = useState<{ ok: number; fail: number }>({ ok: 0, fail: 0 })
+
+  // ── Fetch pre-recorded animals ────────────────────────────────────────────
   useEffect(() => {
-    if (editingRecord) {
-      return // Don't reset when editing
-    }
-
-    // Clear current session state - but sessionRecordedByGroup persists for group list
-    setSelectedGroupId(null)
-    setSelectedAnimalId(null)
-    setRecordedAnimalIds(new Set())
-    setSearchQuery('')
-  }, [recordDate, session, editingRecord])
-
-  // Fetch already-recorded animals for this date and session
-  useEffect(() => {
-    const fetchPreRecordedAnimals = async () => {
+    const fetch_ = async () => {
       try {
-        // Use session_name so the server resolves the correct milking_sessions UUID.
-        // Client-side filtering by milking_session_id would never match because the DB
-        // stores the resolved UUID, not the config-level session identifier.
         const url = sessionName
           ? `/api/production?start_date=${recordDate}&end_date=${recordDate}&session_name=${encodeURIComponent(sessionName)}`
           : `/api/production?start_date=${recordDate}&end_date=${recordDate}`
-
-        const response = await fetch(url)
-
-        if (response.ok) {
-          const result = await response.json()
+        const res = await fetch(url)
+        if (res.ok) {
+          const result = await res.json()
           const records = Array.isArray(result.data) ? result.data : []
-          setPreRecordedAnimalIds(new Set<string>(records.map((r: any) => r.animal_id)))
-        } else {
-          setPreRecordedAnimalIds(new Set())
+          setPreRecordedIds(new Set(records.map((r: any) => r.animal_id)))
         }
-      } catch (err) {
-        setPreRecordedAnimalIds(new Set())
+      } catch {
+        setPreRecordedIds(new Set())
       }
     }
+    fetch_()
+  }, [recordDate, sessionName])
 
-    fetchPreRecordedAnimals()
-  }, [recordDate, session, sessionName])
-
-  // Fetch milking groups data
+  // ── Fetch milking groups ──────────────────────────────────────────────────
   useEffect(() => {
-    const fetchMilkingGroups = async () => {
+    const fetch_ = async () => {
       try {
-        setLoading(true)
-        setError(null)
-
-        // Fetch configured milking groups
-        const response = await fetch(`/api/farms/${farmId}/production/milking-groups`)
-        if (!response.ok) throw new Error('Failed to fetch milking groups')
-
-        const result = await response.json()
+        setLoadingGroups(true)
+        setGroupError(null)
+        const res = await fetch(`/api/farms/${farmId}/production/milking-groups`)
+        if (!res.ok) throw new Error('Failed to fetch milking groups')
+        const result = await res.json()
         const groups: MilkingGroup[] = result.data || []
 
-        // For each group, fetch its animals
-        const groupsWithAnimals = await Promise.all(
+        const withAnimals = await Promise.all(
           groups.map(async (group) => {
             try {
-              // Inside GroupRecordForm — fetchMilkingGroups effect
-              const animalsResponse = await fetch(
+              const aRes = await fetch(
                 `/api/farms/${farmId}/animal-categories/${group.category_id}/matching-animals/production?limit=1000&record_date=${recordDate}`
               )
-
-              if (animalsResponse.ok) {
-                const animalsData = await animalsResponse.json()
-                const groupAnimals = Array.isArray(animalsData.data) ? animalsData.data : []
-
-                // Filter animals based on production settings
-                let filteredAnimals = groupAnimals
-                if (settings) {
-                  const eligibleStatuses = settings.eligibleProductionStatuses || ['lactating']
-                  filteredAnimals = filteredAnimals.filter((a: AnimalRecord) =>
-                    eligibleStatuses.includes(a.production_status)
+              if (!aRes.ok) return group
+              const aData = await aRes.json()
+              let groupAnimals: AnimalRecord[] = Array.isArray(aData.data) ? aData.data : []
+              if (settings) {
+                const statuses = settings.eligibleProductionStatuses || ['lactating']
+                groupAnimals = groupAnimals.filter((a) => statuses.includes(a.production_status))
+                if (settings.eligibleGenders?.length) {
+                  groupAnimals = groupAnimals.filter((a) =>
+                    settings.eligibleGenders?.includes(a.gender) ?? true
                   )
-
-                  if (settings.eligibleGenders && settings.eligibleGenders.length > 0) {
-                    filteredAnimals = filteredAnimals.filter((a: AnimalRecord) =>
-                      settings.eligibleGenders?.includes(a.gender) ?? true
-                    )
-                  }
-                }
-
-                return {
-                  ...group,
-                  animals: filteredAnimals
                 }
               }
-
-              return group
-            } catch (err) {
+              return { ...group, animals: groupAnimals }
+            } catch {
               return group
             }
           })
         )
-
-        setMilkingGroups(groupsWithAnimals)
+        setMilkingGroups(withAnimals)
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load milking groups')
+        setGroupError(err instanceof Error ? err.message : 'Failed to load groups')
       } finally {
-        setLoading(false)
+        setLoadingGroups(false)
       }
     }
-
-    fetchMilkingGroups()
+    fetch_()
   }, [farmId, settings, recordDate])
 
-  // Auto-select group and animal when editing
-  useEffect(() => {
-    if (!editingRecord || milkingGroups.length === 0) {
-      return
-    }
-
-    // Find the group that contains the animal being edited
-    const groupContainingAnimal = milkingGroups.find(group => {
-      return group.animals?.some(animal => animal.id === editingRecord.animal_id)
-    })
-
-    if (groupContainingAnimal) {
-      setSelectedGroupId(groupContainingAnimal.id)
-      setSelectedAnimalId(editingRecord.animal_id)
-      // Clear any search query to show all animals
-      setSearchQuery('')
-    }
-  }, [editingRecord, milkingGroups])
-
-  // Fallback: if no milking groups, create one from available animals
+  // ── Computed groups list (with fallback) ──────────────────────────────────
   const groups = useMemo(() => {
     if (milkingGroups.length > 0) {
-      return milkingGroups.map(g => ({
+      return milkingGroups.map((g) => ({
         id: g.id,
         name: g.category_name,
-        description: `${g.animals?.length || 0} animals in this group`,
-        animals: g.animals || []
+        animals: (g.animals || []).filter((a) => !preRecordedIds.has(a.id)),
       }))
     }
-
-    // Fallback to eligible animals if no groups configured
-    const baseAnimals = animals.filter(a => a.gender === 'female')
-    let eligibleAnimals = baseAnimals as AnimalRecord[]
-
+    // Fallback: all eligible animals in one group
+    let eligible = animals.filter((a) => a.gender === 'female') as AnimalRecord[]
     if (settings) {
-      const eligibleStatuses = settings.eligibleProductionStatuses || ['lactating']
-      eligibleAnimals = eligibleAnimals.filter(a => eligibleStatuses.includes(a.production_status))
-
-      if (settings.eligibleGenders && settings.eligibleGenders.length > 0) {
-        eligibleAnimals = eligibleAnimals.filter(a => settings.eligibleGenders?.includes(a.gender) ?? true)
+      const statuses = settings.eligibleProductionStatuses || ['lactating']
+      eligible = eligible.filter((a) => statuses.includes(a.production_status))
+      if (settings.eligibleGenders?.length) {
+        eligible = eligible.filter((a) => settings.eligibleGenders?.includes(a.gender) ?? true)
       }
     } else {
-      eligibleAnimals = eligibleAnimals.filter(a => a.production_status === 'lactating')
+      eligible = eligible.filter((a) => a.production_status === 'lactating')
     }
+    eligible = eligible.filter((a) => !preRecordedIds.has(a.id))
+    return [{ id: 'all_eligible', name: 'All Eligible Animals', animals: eligible }]
+  }, [milkingGroups, animals, settings, preRecordedIds])
 
-    return [
-      {
-        id: 'all_eligible',
-        name: eligibleAnimals.length > 0 ? 'All Eligible Animals' : 'No Eligible Animals',
-        description: settings ?
-          `Animals with status: ${settings.eligibleProductionStatuses?.join(', ') || 'lactating'}` :
-          'All animals currently in lactation',
-        animals: eligibleAnimals
-      }
-    ]
-  }, [milkingGroups, animals, settings])
+  // ── Step 1 helpers ────────────────────────────────────────────────────────
 
-  const selectedGroup = useMemo(() =>
-    groups.find(g => g.id === selectedGroupId),
-    [groups, selectedGroupId]
-  )
+  const toggleGroupExpand = (groupId: string) => {
+    setExpandedGroupIds((prev) => {
+      const next = new Set(prev)
+      next.has(groupId) ? next.delete(groupId) : next.add(groupId)
+      return next
+    })
+  }
 
-  // Animals in the selected group that haven't been recorded yet (exclude both current and pre-recorded)
-  const pendingAnimals = useMemo(() => {
-    if (!selectedGroup) return []
-    const pending = selectedGroup.animals.filter(a =>
-      !recordedAnimalIds.has(a.id) && !preRecordedAnimalIds.has(a.id)
-    )
-    return pending
-  }, [selectedGroup, recordedAnimalIds, preRecordedAnimalIds])
+  const isAnimalSelected = (animalId: string) =>
+    selectedAnimals.some((s) => s.animal.id === animalId)
 
-  // Animals recorded in this session (both current and pre-recorded)
-  const recordedAnimals = useMemo(() => {
-    if (!selectedGroup) return []
-    return selectedGroup.animals.filter(a =>
-      recordedAnimalIds.has(a.id) || preRecordedAnimalIds.has(a.id)
-    )
-  }, [selectedGroup, recordedAnimalIds, preRecordedAnimalIds])
+  const toggleAnimal = (animal: AnimalRecord, groupId: string, groupName: string) => {
+    setSelectedAnimals((prev) => {
+      const exists = prev.find((s) => s.animal.id === animal.id)
+      if (exists) return prev.filter((s) => s.animal.id !== animal.id)
+      return [...prev, { animal, groupId, groupName }]
+    })
+  }
 
-  // Total animals recorded (pre-recorded + currently recorded in this session)
-  const totalRecordedCount = useMemo(() => {
-    if (!selectedGroup) return 0
-    return recordedAnimals.length
-  }, [recordedAnimals])
-
-  const progressPercentage = useMemo(() => {
-    if (!selectedGroup || selectedGroup.animals.length === 0) return 0
-    return Math.round((totalRecordedCount / selectedGroup.animals.length) * 100)
-  }, [selectedGroup, totalRecordedCount])
-
-  // Filter animals based on search query
-  const filteredPendingAnimals = useMemo(() => {
-    if (!searchQuery.trim()) return pendingAnimals
-
-    const query = searchQuery.toLowerCase()
-    return pendingAnimals.filter(animal =>
-      animal.tag_number.toLowerCase().includes(query) ||
-      (animal.name && animal.name.toLowerCase().includes(query))
-    )
-  }, [pendingAnimals, searchQuery])
-
-  const handleRecordSuccess = () => {
-    // This will be called when IndividualRecordForm successfully saves
-    // We need to mark the current animal as recorded
-    // This will be handled by the parent knowing which animal was just recorded
-    if (onSuccess) {
-      onSuccess()
+  const toggleSelectAll = (group: { id: string; name: string; animals: AnimalRecord[] }) => {
+    const allIds = new Set(group.animals.map((a) => a.id))
+    const allSelected = group.animals.every((a) => isAnimalSelected(a.id))
+    if (allSelected) {
+      setSelectedAnimals((prev) => prev.filter((s) => !allIds.has(s.animal.id)))
+    } else {
+      const toAdd = group.animals
+        .filter((a) => !isAnimalSelected(a.id))
+        .map((a) => ({ animal: a, groupId: group.id, groupName: group.name }))
+      setSelectedAnimals((prev) => [...prev, ...toAdd])
     }
   }
 
-  if (!selectedGroupId) {
-    // Step 1: Show group selector
-    if (loading) {
-      return (
-        <div className="flex items-center justify-center py-8">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+  const filteredGroupAnimals = (group: { id: string; animals: AnimalRecord[] }) => {
+    const q = (groupSearch[group.id] || '').toLowerCase()
+    if (!q) return group.animals
+    return group.animals.filter(
+      (a) =>
+        a.tag_number.toLowerCase().includes(q) ||
+        (a.name && a.name.toLowerCase().includes(q))
+    )
+  }
+
+  // ── Initialize health data for selected animals ───────────────────────────
+  const initHealthData = useCallback(() => {
+    setHealthData((prev) => {
+      const next: Record<string, AnimalHealthData> = {}
+      for (const { animal } of selectedAnimals) {
+        next[animal.id] = prev[animal.id] ?? {
+          mastitis_test_performed: false,
+          mastitis_result: null,
+          affected_quarters: [],
+          milk_safety_status: 'safe',
+          temperature: null,
+        }
+      }
+      return next
+    })
+  }, [selectedAnimals])
+
+  // ── Fetch historical data for all selected animals ────────────────────────
+  const fetchHistoricalData = useCallback(async () => {
+    setLoadingHistory(true)
+    const results: Record<string, HistoricalData> = {}
+    await Promise.all(
+      selectedAnimals.map(async ({ animal }) => {
+        try {
+          const params = new URLSearchParams({
+            farmId,
+            animalId: animal.id,
+            date: recordDate,
+            session,
+            ...(sessionName ? { session_name: sessionName } : {}),
+          })
+          const res = await fetch(`/api/production/history?${params}`)
+          if (res.ok) {
+            const data = await res.json()
+            results[animal.id] = {
+              yesterdayTotal: data.yesterdayTotal ?? null,
+              previousSessionVolume: data.previousSessionVolume ?? null,
+              previousSessionName: data.previousSessionName ?? null,
+              sameTimeYesterdayVolume: data.sameTimeYesterdayVolume ?? null,
+              sameTimeYesterdaySessionName: data.sameTimeYesterdaySessionName ?? null,
+            }
+          } else {
+            results[animal.id] = {
+              yesterdayTotal: null,
+              previousSessionVolume: null,
+              previousSessionName: null,
+              sameTimeYesterdayVolume: null,
+              sameTimeYesterdaySessionName: null,
+            }
+          }
+        } catch {
+          results[animal.id] = {
+            yesterdayTotal: null,
+            previousSessionVolume: null,
+            previousSessionName: null,
+            sameTimeYesterdayVolume: null,
+            sameTimeYesterdaySessionName: null,
+          }
+        }
+      })
+    )
+    setHistoricalData(results)
+    setLoadingHistory(false)
+  }, [selectedAnimals, farmId, recordDate, session, sessionName])
+
+  // ── Initialize volume data for selected animals ───────────────────────────
+  const initVolumeData = useCallback(() => {
+    const now = new Date()
+    const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+    setVolumeData((prev) => {
+      const next: Record<string, AnimalVolumeData> = {}
+      for (const { animal } of selectedAnimals) {
+        next[animal.id] = prev[animal.id] ?? {
+          milk_volume: null,
+          milking_time: currentTime,
+          fat_content: null,
+          protein_content: null,
+          somatic_cell_count: null,
+          lactose_content: null,
+          ph_level: null,
+          notes: '',
+        }
+      }
+      return next
+    })
+  }, [selectedAnimals])
+
+  // ── Step navigation ───────────────────────────────────────────────────────
+
+  const goToStep2 = async () => {
+    initHealthData()
+    await fetchHistoricalData()
+    setStep(2)
+  }
+
+  const goToStep3 = () => {
+    initVolumeData()
+    setStep(3)
+  }
+
+  // ── Health data helpers ───────────────────────────────────────────────────
+
+  const updateHealth = (animalId: string, patch: Partial<AnimalHealthData>) => {
+    setHealthData((prev) => {
+      const existing = prev[animalId]
+      const updated = { ...existing, ...patch }
+
+      // Auto-set safety status based on mastitis result
+      if (patch.mastitis_result !== undefined) {
+        if (patch.mastitis_result === 'severe') {
+          updated.milk_safety_status = 'unsafe_health'
+        } else if (patch.mastitis_result === 'negative' || patch.mastitis_result === null) {
+          if (existing.milk_safety_status === 'unsafe_health') {
+            updated.milk_safety_status = 'safe'
+          }
+        }
+      }
+      return { ...prev, [animalId]: updated }
+    })
+  }
+
+  const applyBulkHealth = (patch: Partial<AnimalHealthData>) => {
+    setHealthData((prev) => {
+      const next = { ...prev }
+      for (const id of Object.keys(next)) {
+        const updated = { ...next[id], ...patch }
+        if (patch.mastitis_result === 'severe') updated.milk_safety_status = 'unsafe_health'
+        else if (patch.mastitis_result === 'negative' || patch.mastitis_result === null) {
+          if (next[id].milk_safety_status === 'unsafe_health') updated.milk_safety_status = 'safe'
+        }
+        next[id] = updated
+      }
+      return next
+    })
+  }
+
+  const toggleQuarter = (animalId: string, quarter: string) => {
+    setHealthData((prev) => {
+      const existing = prev[animalId]
+      const quarters = existing.affected_quarters.includes(quarter)
+        ? existing.affected_quarters.filter((q) => q !== quarter)
+        : [...existing.affected_quarters, quarter]
+      return { ...prev, [animalId]: { ...existing, affected_quarters: quarters } }
+    })
+  }
+
+  // ── Volume data helpers ───────────────────────────────────────────────────
+
+  const updateVolume = (animalId: string, patch: Partial<AnimalVolumeData>) => {
+    setVolumeData((prev) => ({ ...prev, [animalId]: { ...prev[animalId], ...patch } }))
+  }
+
+  const allVolumesEntered = useMemo(
+    () =>
+      selectedAnimals.every(
+        ({ animal }) => volumeData[animal.id]?.milk_volume !== null && (volumeData[animal.id]?.milk_volume ?? -1) >= 0
+      ),
+    [selectedAnimals, volumeData]
+  )
+
+  // ── Submission ────────────────────────────────────────────────────────────
+
+  const handleSubmit = async () => {
+    setSubmitting(true)
+    setSubmitError(null)
+    let ok = 0
+    let fail = 0
+
+    const createMastitisIssue = async (
+      animalId: string,
+      result: 'mild' | 'severe',
+      health: AnimalHealthData,
+      vol: AnimalVolumeData
+    ) => {
+      try {
+        await fetch('/api/health/issues', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            animal_id: animalId,
+            issue_type: 'illness',
+            severity: result === 'severe' ? 'high' : 'medium',
+            description: `Mastitis detected (${result}) during group production recording`,
+            notes: `Milk volume: ${vol.milk_volume}${unit}\nAffected quarters: ${health.affected_quarters.join(', ') || 'Not specified'}`,
+            symptoms: ['mastitis', result],
+            alert_veterinarian: result === 'severe',
+            first_observed_at: new Date().toISOString(),
+            illness_temperature: health.temperature?.toString() || null,
+            illness_milk_change: true,
+            illness_onset_hours: '0',
+            illness_other_animals: false,
+            illness_appetite: null,
+          }),
+        })
+      } catch {
+        // Don't block production record submission
+      }
+    }
+
+    const errors: string[] = []
+
+    await Promise.all(
+      selectedAnimals.map(async ({ animal, groupId }) => {
+        const health = healthData[animal.id]
+        const vol = volumeData[animal.id]
+        if (!vol || vol.milk_volume === null) { fail++; return }
+
+        try {
+          const res = await fetch('/api/production', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              farm_id: farmId,
+              animal_id: animal.id,
+              record_date: recordDate,
+              milking_session: session,
+              session_name: sessionName || 'Session',
+              milking_session_id: sessionId || null,
+              milking_time: vol.milking_time || null,
+              milk_volume: vol.milk_volume,
+              milk_safety_status: health?.milk_safety_status ?? 'safe',
+              // Use ?? null so that a zero temperature (invalid range anyway) still passes correctly
+              temperature: health?.temperature != null ? health.temperature : null,
+              mastitis_test_performed: health?.mastitis_test_performed ?? false,
+              mastitis_result: health?.mastitis_result ?? null,
+              affected_quarters: health?.affected_quarters?.length ? health.affected_quarters : null,
+              // Quality fields — send null explicitly when empty so API coercion works correctly
+              fat_content: vol.fat_content ?? null,
+              protein_content: vol.protein_content ?? null,
+              somatic_cell_count: vol.somatic_cell_count ?? null,
+              lactose_content: vol.lactose_content ?? null,
+              ph_level: vol.ph_level ?? null,
+              notes: vol.notes?.trim() || null,
+              recording_type: 'group',
+              // Only send a real group UUID; 'all_eligible' is a client-side fallback id
+              milking_group_id: groupId !== 'all_eligible' ? groupId : null,
+            }),
+          })
+          if (res.ok) {
+            ok++
+            if (health?.mastitis_result === 'mild' || health?.mastitis_result === 'severe') {
+              await createMastitisIssue(animal.id, health.mastitis_result, health, vol)
+            }
+          } else {
+            fail++
+            // Surface the API error message so the user sees what went wrong
+            try {
+              const errData = await res.json()
+              errors.push(`#${animal.tag_number}: ${errData.error || res.statusText}`)
+            } catch {
+              errors.push(`#${animal.tag_number}: ${res.statusText}`)
+            }
+          }
+        } catch (err) {
+          fail++
+          errors.push(`#${animal.tag_number}: Network error`)
+        }
+      })
+    )
+
+    if (errors.length > 0) {
+      setSubmitError(errors.join(' · '))
+    }
+
+    setSubmitResults({ ok, fail })
+    setSubmitting(false)
+    setSubmitSuccess(true)
+    if (onSuccess) onSuccess()
+  }
+
+  // ── Render: Success ───────────────────────────────────────────────────────
+
+  if (submitSuccess) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 space-y-4 text-center">
+        <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
+          <CheckCircle2 className="w-10 h-10 text-green-600" />
         </div>
-      )
+        <h3 className="text-2xl font-bold text-stone-900">Batch Submitted!</h3>
+        <p className="text-stone-600 max-w-sm">
+          {submitResults.ok} record{submitResults.ok !== 1 ? 's' : ''} saved successfully.
+          {submitResults.fail > 0 && (
+            <span className="text-red-600"> {submitResults.fail} failed.</span>
+          )}
+        </p>
+        <Button
+          variant="outline"
+          onClick={() => {
+            setStep(1)
+            setSelectedAnimals([])
+            setHealthData({})
+            setVolumeData({})
+            setSubmitSuccess(false)
+            setSubmitResults({ ok: 0, fail: 0 })
+          }}
+        >
+          Record Another Batch
+        </Button>
+      </div>
+    )
+  }
+
+  // ── Render: Step 1 ────────────────────────────────────────────────────────
+
+  const renderStep1 = () => (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-base font-semibold text-stone-900">Select Animals to Record</h3>
+        <p className="text-sm text-stone-500 mt-0.5">
+          Expand groups, select individual animals or use "Select All", then click Next.
+        </p>
+      </div>
+
+      {groupError && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2 text-red-700 text-sm">
+          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <p>{groupError}</p>
+        </div>
+      )}
+
+      {preRecordedIds.size > 0 && (
+        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
+          ℹ️ <strong>{preRecordedIds.size}</strong> animal{preRecordedIds.size > 1 ? 's' : ''} already recorded this session are hidden.
+        </div>
+      )}
+
+      {loadingGroups ? (
+        <div className="flex items-center justify-center py-10">
+          <LoadingSpinner size="md" />
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {groups.map((group) => {
+            const isExpanded = expandedGroupIds.has(group.id)
+            const searchQuery = groupSearch[group.id] || ''
+            const filtered = filteredGroupAnimals(group)
+            const selectedInGroup = group.animals.filter((a) => isAnimalSelected(a.id)).length
+            const allInGroupSelected = group.animals.length > 0 && group.animals.every((a) => isAnimalSelected(a.id))
+
+            return (
+              <div
+                key={group.id}
+                className="border border-stone-200 rounded-lg overflow-hidden"
+              >
+                {/* Group header row */}
+                <button
+                  type="button"
+                  onClick={() => toggleGroupExpand(group.id)}
+                  className="w-full flex items-center justify-between px-4 py-3 bg-stone-50 hover:bg-stone-100 transition-colors text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                        selectedInGroup > 0
+                          ? 'bg-green-600 text-white'
+                          : 'bg-stone-200 text-stone-500'
+                      }`}
+                    >
+                      {selectedInGroup > 0 ? selectedInGroup : group.animals.length}
+                    </div>
+                    <div>
+                      <p className="font-semibold text-stone-900 text-sm">{group.name}</p>
+                      <p className="text-xs text-stone-500">
+                        {group.animals.length} eligible animal{group.animals.length !== 1 ? 's' : ''}
+                        {selectedInGroup > 0 && (
+                          <span className="ml-1 text-green-700 font-medium">
+                            · {selectedInGroup} selected
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {selectedInGroup > 0 && (
+                      <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium">
+                        {selectedInGroup}/{group.animals.length}
+                      </span>
+                    )}
+                    {isExpanded ? (
+                      <ChevronDown className="w-4 h-4 text-stone-400" />
+                    ) : (
+                      <ChevronRight className="w-4 h-4 text-stone-400" />
+                    )}
+                  </div>
+                </button>
+
+                {/* Expanded animal list */}
+                {isExpanded && (
+                  <div className="border-t border-stone-200 bg-white">
+                    {/* Search + select all */}
+                    <div className="px-4 py-3 border-b border-stone-100 flex items-center gap-3">
+                      <div className="relative flex-1">
+                        <Search className="absolute left-2.5 top-2 w-3.5 h-3.5 text-stone-400" />
+                        <input
+                          type="text"
+                          placeholder="Search animals..."
+                          value={searchQuery}
+                          onChange={(e) =>
+                            setGroupSearch((prev) => ({ ...prev, [group.id]: e.target.value }))
+                          }
+                          className="w-full pl-8 pr-3 py-1.5 text-sm border border-stone-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => toggleSelectAll(group)}
+                        className={`flex-shrink-0 px-3 py-1.5 text-xs font-medium rounded-md border transition-colors ${
+                          allInGroupSelected
+                            ? 'bg-green-600 border-green-600 text-white'
+                            : 'bg-white border-stone-300 text-stone-700 hover:border-green-400 hover:text-green-700'
+                        }`}
+                      >
+                        {allInGroupSelected ? 'Deselect All' : 'Select All'}
+                      </button>
+                    </div>
+
+                    {/* Animal rows */}
+                    <div className="max-h-52 overflow-y-auto divide-y divide-stone-100">
+                      {group.animals.length === 0 ? (
+                        <div className="py-6 text-center text-sm text-stone-400">
+                          No eligible animals in this group
+                        </div>
+                      ) : filtered.length === 0 ? (
+                        <div className="py-6 text-center text-sm text-stone-400">
+                          No animals match your search
+                        </div>
+                      ) : (
+                        filtered.map((animal) => {
+                          const selected = isAnimalSelected(animal.id)
+                          return (
+                            <button
+                              key={animal.id}
+                              type="button"
+                              onClick={() => toggleAnimal(animal, group.id, group.name)}
+                              className={`w-full flex items-center gap-3 px-4 py-2.5 hover:bg-stone-50 transition-colors text-left ${
+                                selected ? 'bg-green-50' : ''
+                              }`}
+                            >
+                              <div
+                                className={`w-5 h-5 rounded border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
+                                  selected
+                                    ? 'bg-green-600 border-green-600'
+                                    : 'border-stone-300 bg-white'
+                                }`}
+                              >
+                                {selected && <Check className="w-3 h-3 text-white" />}
+                              </div>
+                              <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                                <span className="text-xs font-bold text-green-700">
+                                  {animal.tag_number.charAt(0).toUpperCase()}
+                                </span>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-stone-900 truncate">
+                                  #{animal.tag_number}
+                                  {animal.name && (
+                                    <span className="text-stone-500 font-normal ml-1">
+                                      · {animal.name}
+                                    </span>
+                                  )}
+                                </p>
+                                {animal.breed && (
+                                  <p className="text-xs text-stone-400">{animal.breed}</p>
+                                )}
+                              </div>
+                              <span className="flex-shrink-0 px-1.5 py-0.5 bg-stone-100 text-stone-600 text-xs rounded">
+                                {animal.production_status.replace(/_/g, ' ')}
+                              </span>
+                            </button>
+                          )
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Selected summary + next button */}
+      {selectedAnimals.length > 0 && (
+        <div className="sticky bottom-0 bg-white border-t border-stone-200 pt-3 pb-1 flex items-center justify-between gap-3">
+          <p className="text-sm text-stone-600">
+            <span className="font-semibold text-stone-900">{selectedAnimals.length}</span> animal{selectedAnimals.length !== 1 ? 's' : ''} selected
+          </p>
+          <Button onClick={goToStep2} className="gap-2">
+            Next: Health & Safety
+            <ArrowRight className="w-4 h-4" />
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+
+  // ── Render: Step 2 ────────────────────────────────────────────────────────
+
+  const renderStep2 = () => {
+    // Group selected animals by their group name for display
+    const byGroup: Record<string, SelectedAnimal[]> = {}
+    for (const sa of selectedAnimals) {
+      if (!byGroup[sa.groupName]) byGroup[sa.groupName] = []
+      byGroup[sa.groupName].push(sa)
     }
 
     return (
-      <div className="space-y-4">
-        <h3 className="text-lg font-semibold">Select Group to Record</h3>
+      <div className="space-y-5">
+        <div>
+          <h3 className="text-base font-semibold text-stone-900">Health & Safety Review</h3>
+          <p className="text-sm text-stone-500 mt-0.5">
+            Record mastitis tests and milk safety for each animal. Use bulk actions to apply to all.
+          </p>
+        </div>
 
-        {error && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start space-x-2 text-red-700 text-sm">
-            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-            <p>{error}</p>
+        {loadingHistory && (
+          <div className="flex items-center gap-2 text-sm text-stone-500 py-2">
+            <LoadingSpinner size="sm" />
+            Loading historical data…
           </div>
         )}
 
-        <div className="space-y-2">
-          {groups.length === 0 ? (
-            <div className="text-center py-8 text-stone-500">
-              <p className="text-sm">No animal groups available</p>
-            </div>
-          ) : (
-            groups.map(group => {
-              // Count both pre-recorded and current session recorded animals (across all visits to this group)
-              const preRecordedInGroup = group.animals.filter(a => preRecordedAnimalIds.has(a.id)).length
-              const sessionRecordedInGroup = (sessionRecordedByGroup[group.id]?.size || 0)
-              const totalRecordedInGroup = preRecordedInGroup + sessionRecordedInGroup
-              const totalCount = group.animals.length
-              const isComplete = totalRecordedInGroup === totalCount && totalCount > 0
+        {/* Bulk actions */}
+        <div className="p-3 bg-stone-50 border border-stone-200 rounded-lg space-y-2">
+          <p className="text-xs font-semibold text-stone-600 uppercase tracking-wide">Bulk Actions — Apply to All</p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                applyBulkHealth({
+                  mastitis_test_performed: true,
+                  mastitis_result: 'negative',
+                  milk_safety_status: 'safe',
+                })
+              }
+              className="px-3 py-1.5 text-xs font-medium bg-green-100 text-green-700 rounded-md border border-green-200 hover:bg-green-200 transition-colors"
+            >
+              ✓ All Negative (Safe)
+            </button>
+            <button
+              type="button"
+              onClick={() => applyBulkHealth({ milk_safety_status: 'safe', mastitis_test_performed: false, mastitis_result: null })}
+              className="px-3 py-1.5 text-xs font-medium bg-blue-100 text-blue-700 rounded-md border border-blue-200 hover:bg-blue-200 transition-colors"
+            >
+              Skip Test — All Safe
+            </button>
+            <button
+              type="button"
+              onClick={() => applyBulkHealth({ milk_safety_status: 'unsafe_colostrum' })}
+              className="px-3 py-1.5 text-xs font-medium bg-yellow-100 text-yellow-700 rounded-md border border-yellow-200 hover:bg-yellow-200 transition-colors"
+            >
+              All Colostrum
+            </button>
+          </div>
+        </div>
 
-              return (
-                <button
-                  key={group.id}
-                  onClick={() => {
-                    setSelectedGroupId(group.id)
-                    setSelectedAnimalId(null)
-                    setSearchQuery('')
-                  }}
-                  className="w-full flex items-start space-x-4 p-4 border border-stone-200 rounded-lg hover:border-green-300 hover:bg-green-50 transition-colors text-left"
-                >
-                  {/* Status Icon */}
-                  <div className="flex-shrink-0 mt-1">
-                    {isComplete ? (
-                      <CheckCircle2 className="w-6 h-6 text-green-600" />
-                    ) : (
-                      <div className="w-6 h-6 rounded-full border-2 border-stone-300 flex items-center justify-center">
-                        <span className="text-xs font-semibold text-stone-600">{totalCount}</span>
+        {/* Per-animal health cards grouped by group */}
+        {Object.entries(byGroup).map(([groupName, groupAnimals]) => (
+          <div key={groupName}>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="h-px flex-1 bg-stone-200" />
+              <span className="text-xs font-semibold text-stone-500 uppercase tracking-wide px-2">
+                {groupName}
+              </span>
+              <div className="h-px flex-1 bg-stone-200" />
+            </div>
+
+            <div className="space-y-3">
+              {groupAnimals.map(({ animal }) => {
+                const health = healthData[animal.id] || {
+                  mastitis_test_performed: false,
+                  mastitis_result: null,
+                  affected_quarters: [],
+                  milk_safety_status: 'safe',
+                  temperature: null,
+                }
+                const hist = historicalData[animal.id]
+
+                return (
+                  <div
+                    key={animal.id}
+                    className={`border rounded-lg overflow-hidden ${
+                      health.milk_safety_status === 'unsafe_health'
+                        ? 'border-red-300'
+                        : health.milk_safety_status === 'unsafe_colostrum'
+                        ? 'border-yellow-300'
+                        : 'border-stone-200'
+                    }`}
+                  >
+                    {/* Animal header */}
+                    <div className="flex items-center gap-3 px-4 py-2.5 bg-stone-50 border-b border-stone-200">
+                      <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                        <span className="text-xs font-bold text-green-700">
+                          {animal.tag_number.charAt(0).toUpperCase()}
+                        </span>
                       </div>
-                    )}
-                  </div>
-
-                  {/* Info */}
-                  <div className="flex-1">
-                    <h4 className="font-semibold text-stone-900">{group.name}</h4>
-                    <p className="text-sm text-stone-600 mt-1">{group.description}</p>
-                    <p className="text-xs text-stone-500 mt-2">
-                      {totalRecordedInGroup} of {totalCount} animals recorded{preRecordedInGroup > 0 && ` (${preRecordedInGroup} from earlier)`}
-                    </p>
-                  </div>
-
-                  {/* Progress Bar */}
-                  <div className={`flex-shrink-0 ${isMobile ? 'w-20' : 'w-32'}`}>
-                    <div className="h-2 bg-stone-200 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full transition-all ${isComplete ? 'bg-green-600' : 'bg-blue-500'}`}
-                        style={{ width: totalCount > 0 ? `${(totalRecordedInGroup / totalCount) * 100}%` : '0%' }}
-                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-stone-900">
+                          #{animal.tag_number}
+                          {animal.name && <span className="font-normal text-stone-500 ml-1">· {animal.name}</span>}
+                        </p>
+                        {/* Historical badges */}
+                        {hist && (
+                          <div className="flex flex-wrap gap-1 mt-0.5">
+                            <HistoricalBadge label="Yesterday" volume={hist.yesterdayTotal} unit={unit} />
+                            <HistoricalBadge
+                              label={hist.previousSessionName ? `Last (${hist.previousSessionName})` : 'Prev session'}
+                              volume={hist.previousSessionVolume}
+                              unit={unit}
+                            />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <SafetyIcon status={health.milk_safety_status} />
+                        <span className="text-xs text-stone-500">
+                          {health.milk_safety_status === 'safe'
+                            ? 'Safe'
+                            : health.milk_safety_status === 'unsafe_health'
+                            ? 'Unsafe'
+                            : 'Colostrum'}
+                        </span>
+                      </div>
                     </div>
-                    <p className="text-xs text-stone-600 mt-1 text-right">
-                      {totalCount > 0 ? Math.round((totalRecordedInGroup / totalCount) * 100) : 0}%
-                    </p>
+
+                    {/* Health controls */}
+                    <div className="p-4 space-y-3">
+                      {/* Mastitis test toggle */}
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-stone-700">
+                          Mastitis Test Performed
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateHealth(animal.id, {
+                              mastitis_test_performed: !health.mastitis_test_performed,
+                              mastitis_result: !health.mastitis_test_performed ? health.mastitis_result : null,
+                            })
+                          }
+                          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                            health.mastitis_test_performed ? 'bg-green-600' : 'bg-stone-300'
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${
+                              health.mastitis_test_performed ? 'translate-x-4' : 'translate-x-1'
+                            }`}
+                          />
+                        </button>
+                      </div>
+
+                      {/* Mastitis result (only if test performed) */}
+                      {health.mastitis_test_performed && (
+                        <div>
+                          <label className="text-xs font-medium text-stone-600 mb-1 block">
+                            Test Result
+                          </label>
+                          <div className="flex gap-2">
+                            {(['negative', 'mild', 'severe'] as const).map((result) => (
+                              <button
+                                key={result}
+                                type="button"
+                                onClick={() => updateHealth(animal.id, { mastitis_result: result })}
+                                className={`flex-1 py-1.5 text-xs font-medium rounded-md border transition-colors capitalize ${
+                                  health.mastitis_result === result
+                                    ? result === 'negative'
+                                      ? 'bg-green-600 border-green-600 text-white'
+                                      : result === 'mild'
+                                      ? 'bg-yellow-500 border-yellow-500 text-white'
+                                      : 'bg-red-600 border-red-600 text-white'
+                                    : 'bg-white border-stone-300 text-stone-600 hover:border-stone-400'
+                                }`}
+                              >
+                                {result}
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* Affected quarters (if mild/severe) */}
+                          {(health.mastitis_result === 'mild' || health.mastitis_result === 'severe') && (
+                            <div className="mt-2">
+                              <label className="text-xs text-stone-500 mb-1 block">
+                                Affected Quarters
+                              </label>
+                              <div className="flex gap-1.5">
+                                {QUARTERS.map((q) => (
+                                  <button
+                                    key={q}
+                                    type="button"
+                                    onClick={() => toggleQuarter(animal.id, q)}
+                                    className={`flex-1 py-1 text-xs font-medium rounded border transition-colors ${
+                                      health.affected_quarters.includes(q)
+                                        ? 'bg-red-600 border-red-600 text-white'
+                                        : 'bg-white border-stone-300 text-stone-600 hover:border-red-400'
+                                    }`}
+                                  >
+                                    {q}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Safety status */}
+                      <div>
+                        <label className="text-xs font-medium text-stone-600 mb-1 block">
+                          Milk Safety Status
+                        </label>
+                        <select
+                          value={health.milk_safety_status}
+                          disabled={health.mastitis_result === 'severe'}
+                          onChange={(e) =>
+                            updateHealth(animal.id, {
+                              milk_safety_status: e.target.value as any,
+                            })
+                          }
+                          className={`w-full text-sm px-3 py-1.5 border border-stone-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 ${
+                            health.mastitis_result === 'severe'
+                              ? 'bg-red-50 cursor-not-allowed opacity-75'
+                              : ''
+                          }`}
+                        >
+                          <option value="safe">✓ Safe — Approved for Sale</option>
+                          <option value="unsafe_health">⚠️ Unsafe — Animal Health Issue</option>
+                          <option value="unsafe_colostrum">✖️ Colostrum — Cannot Sell</option>
+                        </select>
+                        {health.mastitis_result === 'severe' && (
+                          <p className="text-xs text-red-600 mt-1">
+                            Auto-set to unsafe due to severe mastitis.
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Temperature (optional) */}
+                      <div>
+                        <label className="text-xs font-medium text-stone-600 mb-1 block">
+                          Temperature (°C) <span className="font-normal text-stone-400">Optional</span>
+                        </label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          min={35}
+                          max={41}
+                          placeholder="e.g. 38.5"
+                          value={health.temperature ?? ''}
+                          onChange={(e) =>
+                            updateHealth(animal.id, {
+                              temperature: e.target.value ? parseFloat(e.target.value) : null,
+                            })
+                          }
+                          className="w-full text-sm px-3 py-1.5 border border-stone-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                        />
+                      </div>
+                    </div>
                   </div>
-                </button>
-              )
-            })
-          )}
-        </div>
-      </div>
-    )
-  }
-
-  // Step 2: Show animal selector if group is selected but not recording
-  if (selectedGroupId && !selectedAnimalId) {
-    if (!selectedGroup) return null
-
-    return (
-      <div className="space-y-4">
-        {/* Back Button */}
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            // Don't clear sessionRecordedByGroup - it persists for group list display
-            setSelectedGroupId(null)
-            setRecordedAnimalIds(new Set())
-          }}
-        >
-          ← Back to Groups
-        </Button>
-
-        <div>
-          <h3 className="text-lg font-semibold mb-2">
-            Select Animal from {selectedGroup.name}
-          </h3>
-          <p className="text-stone-600 text-sm mb-4">
-            {pendingAnimals.length} remaining • {totalRecordedCount} already recorded
-          </p>
-          {preRecordedAnimalIds.size > 0 && (
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700 mb-3">
-              <p>ℹ️ <strong>{preRecordedAnimalIds.size} animal{preRecordedAnimalIds.size > 1 ? 's' : ''}</strong> {preRecordedAnimalIds.size > 1 ? 'have' : 'has'} already been recorded in this session and {preRecordedAnimalIds.size > 1 ? 'are' : 'is'} hidden from the list below.</p>
+                )
+              })}
             </div>
-          )}
-        </div>
-
-        {/* Progress Bar */}
-        <div className="space-y-2 pb-4 border-b border-stone-200">
-          <div className="h-3 bg-stone-200 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-green-600 transition-all"
-              style={{ width: `${progressPercentage}%` }}
-            />
           </div>
-          <div className="flex justify-between text-xs text-stone-500">
-            <span>{progressPercentage}% complete ({totalRecordedCount}/{selectedGroup.animals.length})</span>
-            <span>{pendingAnimals.length} remaining</span>
-          </div>
-        </div>
+        ))}
 
-        {/* Search Box */}
-        <div className="pt-4">
-          <input
-            type="text"
-            placeholder="Search animals by tag or name..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full px-4 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-
-        {/* Animals List */}
-        <div className={`space-y-2 overflow-y-auto border border-stone-200 rounded-lg p-2 ${isMobile ? 'max-h-64' : 'max-h-96'}`}>
-          {filteredPendingAnimals.length === 0 ? (
-            <div className="text-center py-8 text-stone-500">
-              <p className="text-sm">
-                {searchQuery ? 'No animals match your search' : 'No pending animals'}
-              </p>
-            </div>
-          ) : (
-            filteredPendingAnimals.map((animal) => (
-              <button
-                key={animal.id}
-                onClick={() => setSelectedAnimalId(animal.id)}
-                className="w-full flex items-start justify-between p-4 bg-white border border-stone-200 rounded-lg hover:bg-blue-50 hover:border-blue-300 transition-colors text-left"
-              >
-                <div className="flex-1">
-                  <div className="flex items-center space-x-2">
-                    <span className="font-mono font-bold text-stone-900">
-                      #{animal.tag_number}
-                    </span>
-                    {animal.name && (
-                      <span className="text-stone-600">
-                        {animal.name}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center space-x-2 mt-2 text-xs">
-                    {animal.breed && (
-                      <span className="text-stone-500">{animal.breed}</span>
-                    )}
-                    {animal.production_status && (
-                      <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs">
-                        {animal.production_status.replace(/_/g, ' ')}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                {animal.gender && (
-                  <span className="ml-2 text-stone-500">
-                    {animal.gender === 'female' ? '♀' : '♂'}
-                  </span>
-                )}
-              </button>
-            ))
-          )}
-        </div>
-      </div>
-    )
-  }
-
-  // Step 3: Recording form for selected animal
-  if (!selectedGroup) return null
-
-  // Find the selected animal
-  const selectedAnimal = selectedGroup.animals.find(a => a.id === selectedAnimalId)
-
-  // All animals recorded - success state (but not when editing an existing record)
-  if (!editingRecord && recordedAnimals.length === selectedGroup.animals.length) {
-    return (
-      <div className="flex flex-col items-center justify-center py-12 space-y-4">
-        <CheckCircle2 className="w-16 h-16 text-green-600" />
-        <h3 className="text-2xl font-bold text-stone-900">All Animals Recorded!</h3>
-        <p className="text-stone-600 text-center max-w-sm">
-          You've successfully recorded production data for all {selectedGroup.animals.length} animals in {selectedGroup.name}
-        </p>
-        <div className="flex space-x-3 pt-4">
-          <Button
-            variant="outline"
-            onClick={() => {
-              // Don't clear sessionRecordedByGroup - it persists for group list display
-              setSelectedGroupId(null)
-              setSelectedAnimalId(null)
-              setRecordedAnimalIds(new Set())
-              setSearchQuery('')
-            }}
-          >
-            Record Another Group
+        {/* Footer */}
+        <div className="sticky bottom-0 bg-white border-t border-stone-200 pt-3 pb-1 flex items-center justify-between gap-3">
+          <Button variant="outline" onClick={() => setStep(1)} className="gap-2">
+            <ArrowLeft className="w-4 h-4" />
+            Back
+          </Button>
+          <Button onClick={goToStep3} className="gap-2">
+            Next: Milk Volume
+            <ArrowRight className="w-4 h-4" />
           </Button>
         </div>
       </div>
     )
   }
 
-  return (
-    <div className="space-y-6">
-      {/* Progress Bar */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-stone-900">Recording Progress</h3>
-          <span className="text-sm font-medium text-stone-600">
-            {recordedAnimals.length} of {selectedGroup.animals.length} animals
-          </span>
-        </div>
-        <div className="h-3 bg-stone-200 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-green-600 transition-all"
-            style={{ width: `${progressPercentage}%` }}
-          />
-        </div>
-        <div className="flex justify-between text-xs text-stone-500">
-          <span>{progressPercentage}% complete</span>
-          <span>{pendingAnimals.length} remaining</span>
-        </div>
-        {preRecordedAnimalIds.size > 0 && (
-          <p className="text-xs text-blue-600 mt-1">
-            ℹ️ {preRecordedAnimalIds.size} animal{preRecordedAnimalIds.size > 1 ? 's' : ''} already recorded in this session earlier
+  // ── Render: Step 3 ────────────────────────────────────────────────────────
+
+  const renderStep3 = () => {
+    const isQualityVisible =
+      settings &&
+      settings.productionTrackingMode !== 'basic' &&
+      (settings.trackFatContent ||
+        settings.trackProteinContent ||
+        settings.trackSomaticCellCount ||
+        settings.trackLactoseContent ||
+        settings.trackPhLevel)
+
+    const byGroup: Record<string, SelectedAnimal[]> = {}
+    for (const sa of selectedAnimals) {
+      if (!byGroup[sa.groupName]) byGroup[sa.groupName] = []
+      byGroup[sa.groupName].push(sa)
+    }
+
+    return (
+      <div className="space-y-5">
+        <div>
+          <h3 className="text-base font-semibold text-stone-900">Milk Volume Entry</h3>
+          <p className="text-sm text-stone-500 mt-0.5">
+            Enter milk volume for each animal. Historical context is shown for reference.
           </p>
-        )}
-      </div>
-
-      {/* Back Button */}
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => {
-          setSelectedAnimalId(null)
-          setSearchQuery('')
-        }}
-      >
-        ← Back to Animal Selection
-      </Button>
-
-      {/* Recording Form */}
-      {selectedAnimal && (
-        <div className="border border-stone-200 rounded-lg p-6 bg-white">
-          <div className="mb-6 pb-4 border-b border-stone-200">
-            <h4 className="text-lg font-semibold text-stone-900">
-              Recording: {selectedAnimal.name || `Animal #${selectedAnimal.tag_number}`}
-            </h4>
-            <p className="text-sm text-stone-600 mt-1">
-              Animal {pendingAnimals.indexOf(selectedAnimal) + 1} of {pendingAnimals.length + recordedAnimals.length}
-            </p>
-          </div>
-          <IndividualRecordForm
-            farmId={farmId}
-            animals={selectedGroup?.animals?.map(a => ({
-              id: a.id,
-              tag_number: a.tag_number,
-              name: a.name || undefined,
-              gender: a.gender,
-              production_status: a.production_status
-            })) || []}
-            session={session}
-            sessionId={sessionId}
-            recordDate={recordDate}
-            settings={settings}
-            sessionName={sessionName}
-            closeAfterSuccess={false}
-            recordingType="group"
-            milkingGroupId={selectedGroupId || undefined}
-            preSelectedAnimalId={selectedAnimalId || undefined}
-            editingRecord={editingRecord || null}
-            onRecordSaved={(animalId) => {
-              // Mark animal as recorded in current session for this group
-              const updated = new Set([...recordedAnimalIds, animalId])
-              setRecordedAnimalIds(updated)
-
-              // Also track in sessionRecordedByGroup so it persists when going back to group list
-              if (selectedGroupId) {
-                setSessionRecordedByGroup(prev => ({
-                  ...prev,
-                  [selectedGroupId]: new Set([...(prev[selectedGroupId] || new Set()), animalId])
-                }))
-              }
-
-              // Check if there are more animals to record (excluding pre-recorded)
-              const stillPending = selectedGroup.animals.filter(a =>
-                !updated.has(a.id) && !preRecordedAnimalIds.has(a.id)
-              )
-
-              if (stillPending.length === 0) {
-                // All animals recorded - trigger success screen
-                setSelectedAnimalId(null)
-                setSearchQuery('')
-              } else {
-                // Auto-advance to next pending animal
-                setSelectedAnimalId(stillPending[0].id)
-              }
-            }}
-          />
         </div>
-      )}
+
+        {submitError && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2 text-red-700 text-sm">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <p>{submitError}</p>
+          </div>
+        )}
+
+        {Object.entries(byGroup).map(([groupName, groupAnimals]) => (
+          <div key={groupName}>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="h-px flex-1 bg-stone-200" />
+              <span className="text-xs font-semibold text-stone-500 uppercase tracking-wide px-2">
+                {groupName}
+              </span>
+              <div className="h-px flex-1 bg-stone-200" />
+            </div>
+
+            <div className="space-y-3">
+              {groupAnimals.map(({ animal }) => {
+                const vol = volumeData[animal.id]
+                const health = healthData[animal.id]
+                const hist = historicalData[animal.id]
+                if (!vol) return null
+
+                return (
+                  <div key={animal.id} className="border border-stone-200 rounded-lg overflow-hidden">
+                    {/* Animal header */}
+                    <div className="flex items-center gap-3 px-4 py-2.5 bg-stone-50 border-b border-stone-200">
+                      <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                        <span className="text-xs font-bold text-green-700">
+                          {animal.tag_number.charAt(0).toUpperCase()}
+                        </span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-stone-900">
+                          #{animal.tag_number}
+                          {animal.name && <span className="font-normal text-stone-500 ml-1">· {animal.name}</span>}
+                        </p>
+                        {/* Historical + trend */}
+                        {hist && (
+                          <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                            <HistoricalBadge label="Yesterday" volume={hist.yesterdayTotal} unit={unit} />
+                            <HistoricalBadge
+                              label={hist.sameTimeYesterdaySessionName ? `Same session yesterday` : 'Prev session'}
+                              volume={hist.sameTimeYesterdayVolume ?? hist.previousSessionVolume}
+                              unit={unit}
+                            />
+                            <VolumeTrend
+                              current={vol.milk_volume}
+                              reference={hist.sameTimeYesterdayVolume ?? hist.previousSessionVolume}
+                            />
+                          </div>
+                        )}
+                      </div>
+                      {/* Safety pill */}
+                      <div className="flex-shrink-0 flex items-center gap-1">
+                        <SafetyIcon status={health?.milk_safety_status || 'safe'} />
+                        {health?.mastitis_result && health.mastitis_result !== null && (
+                          <span
+                            className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                              health.mastitis_result === 'severe'
+                                ? 'bg-red-100 text-red-700'
+                                : health.mastitis_result === 'mild'
+                                ? 'bg-yellow-100 text-yellow-700'
+                                : 'bg-green-100 text-green-700'
+                            }`}
+                          >
+                            {health.mastitis_result}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Volume input */}
+                    <div className="p-4 space-y-3">
+                      {/* Main volume */}
+                      <div>
+                        <label className="text-xs font-medium text-stone-600 mb-1 block">
+                          Milk Volume ({unit}) <span className="text-red-500">*</span>
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            step="0.1"
+                            min={0}
+                            max={100}
+                            placeholder="0.0"
+                            value={vol.milk_volume ?? ''}
+                            onChange={(e) =>
+                              updateVolume(animal.id, {
+                                milk_volume: e.target.value ? parseFloat(e.target.value) : null,
+                              })
+                            }
+                            className="w-full text-xl font-semibold pr-10 pl-3 py-2 border border-stone-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 font-medium text-sm">
+                            {unit}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Milking time (if session requires it) */}
+                      {settings?.milkingSessions?.find((s) => s.id === session)?.requiresTimeInput && (
+                        <div>
+                          <label className="text-xs font-medium text-stone-600 mb-1 block">
+                            Exact Milking Time <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="time"
+                            value={vol.milking_time}
+                            onChange={(e) => updateVolume(animal.id, { milking_time: e.target.value })}
+                            className="w-full text-sm px-3 py-1.5 border border-stone-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                        </div>
+                      )}
+
+                      {/* Quality parameters */}
+                      {isQualityVisible && (
+                        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-stone-100">
+                          {settings?.trackFatContent && (
+                            <div>
+                              <label className="text-xs text-stone-500 block mb-0.5">Fat (%)</label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                placeholder="3.75"
+                                value={vol.fat_content ?? ''}
+                                onChange={(e) =>
+                                  updateVolume(animal.id, {
+                                    fat_content: e.target.value ? parseFloat(e.target.value) : null,
+                                  })
+                                }
+                                className="w-full text-sm px-2 py-1 border border-stone-300 rounded focus:outline-none focus:ring-1 focus:ring-green-500"
+                              />
+                            </div>
+                          )}
+                          {settings?.trackProteinContent && (
+                            <div>
+                              <label className="text-xs text-stone-500 block mb-0.5">Protein (%)</label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                placeholder="3.25"
+                                value={vol.protein_content ?? ''}
+                                onChange={(e) =>
+                                  updateVolume(animal.id, {
+                                    protein_content: e.target.value ? parseFloat(e.target.value) : null,
+                                  })
+                                }
+                                className="w-full text-sm px-2 py-1 border border-stone-300 rounded focus:outline-none focus:ring-1 focus:ring-green-500"
+                              />
+                            </div>
+                          )}
+                          {settings?.trackSomaticCellCount && (
+                            <div>
+                              <label className="text-xs text-stone-500 block mb-0.5">SCC</label>
+                              <input
+                                type="number"
+                                placeholder="200000"
+                                value={vol.somatic_cell_count ?? ''}
+                                onChange={(e) =>
+                                  updateVolume(animal.id, {
+                                    somatic_cell_count: e.target.value ? parseInt(e.target.value) : null,
+                                  })
+                                }
+                                className="w-full text-sm px-2 py-1 border border-stone-300 rounded focus:outline-none focus:ring-1 focus:ring-green-500"
+                              />
+                            </div>
+                          )}
+                          {settings?.trackLactoseContent && (
+                            <div>
+                              <label className="text-xs text-stone-500 block mb-0.5">Lactose (%)</label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                placeholder="4.8"
+                                value={vol.lactose_content ?? ''}
+                                onChange={(e) =>
+                                  updateVolume(animal.id, {
+                                    lactose_content: e.target.value ? parseFloat(e.target.value) : null,
+                                  })
+                                }
+                                className="w-full text-sm px-2 py-1 border border-stone-300 rounded focus:outline-none focus:ring-1 focus:ring-green-500"
+                              />
+                            </div>
+                          )}
+                          {settings?.trackPhLevel && (
+                            <div>
+                              <label className="text-xs text-stone-500 block mb-0.5">pH</label>
+                              <input
+                                type="number"
+                                step="0.1"
+                                placeholder="6.7"
+                                value={vol.ph_level ?? ''}
+                                onChange={(e) =>
+                                  updateVolume(animal.id, {
+                                    ph_level: e.target.value ? parseFloat(e.target.value) : null,
+                                  })
+                                }
+                                className="w-full text-sm px-2 py-1 border border-stone-300 rounded focus:outline-none focus:ring-1 focus:ring-green-500"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Notes */}
+                      <div>
+                        <label className="text-xs text-stone-500 block mb-0.5">Notes (optional)</label>
+                        <textarea
+                          rows={1}
+                          placeholder="Any observations..."
+                          value={vol.notes}
+                          onChange={(e) => updateVolume(animal.id, { notes: e.target.value })}
+                          className="w-full text-sm px-3 py-1.5 border border-stone-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+
+        {/* Footer */}
+        <div className="sticky bottom-0 bg-white border-t border-stone-200 pt-3 pb-1 flex items-center justify-between gap-3">
+          <Button variant="outline" onClick={() => setStep(2)} className="gap-2" disabled={submitting}>
+            <ArrowLeft className="w-4 h-4" />
+            Back
+          </Button>
+          <div className="flex items-center gap-2">
+            {!allVolumesEntered && (
+              <span className="text-xs text-stone-500">
+                {selectedAnimals.filter(({ animal }) => volumeData[animal.id]?.milk_volume === null || volumeData[animal.id]?.milk_volume === undefined).length} volume{selectedAnimals.filter(({ animal }) => volumeData[animal.id]?.milk_volume === null || volumeData[animal.id]?.milk_volume === undefined).length !== 1 ? 's' : ''} remaining
+              </span>
+            )}
+            <Button
+              onClick={handleSubmit}
+              disabled={submitting || !allVolumesEntered}
+              className="gap-2"
+            >
+              {submitting ? (
+                <>
+                  <LoadingSpinner size="sm" />
+                  Submitting…
+                </>
+              ) : (
+                <>
+                  Submit {selectedAnimals.length} Record{selectedAnimals.length !== 1 ? 's' : ''}
+                  <Check className="w-4 h-4" />
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Main render ───────────────────────────────────────────────────────────
+
+  return (
+    <div className="space-y-4">
+      <StepIndicator currentStep={step} />
+      {step === 1 && renderStep1()}
+      {step === 2 && renderStep2()}
+      {step === 3 && renderStep3()}
     </div>
   )
 }
