@@ -6,7 +6,11 @@ import { createProductionRecord, getProductionRecords } from '@/lib/database/pro
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 
 /**
- * Finds an existing milking_sessions row for today's session name, or creates one.
+ * Resolves or creates a milking_sessions row for today's session name.
+ * Protected by unique index on (farm_id, session_name, session_start).
+ * If concurrent requests attempt to create the same session, the unique index
+ * will prevent duplicates at the database level.
+ * 
  * This is necessary because production_records.milking_session_id is a UUID FK
  * to the milking_sessions table — not the config-level session ID (e.g. '1','2','3').
  */
@@ -17,17 +21,15 @@ async function resolveOrCreateMilkingSession(
   sessionName: string,
   recordedBy: string
 ): Promise<string> {
-  const dayStart = `${recordDate}T00:00:00`
-  const dayEnd   = `${recordDate}T23:59:59`
+  const sessionStart = `${recordDate}T00:00:00`
 
-  // Look for an existing session row for this farm, name, and date
+  // First, try to find existing session for this farm/name/date
   const { data: existing, error: lookupError } = await (supabase as any)
     .from('milking_sessions')
     .select('id')
     .eq('farm_id', farmId)
     .eq('session_name', sessionName)
-    .gte('session_start', dayStart)
-    .lte('session_start', dayEnd)
+    .eq('session_start', sessionStart)
     .limit(1)
 
   if (lookupError) {
@@ -38,21 +40,44 @@ async function resolveOrCreateMilkingSession(
     return existing[0].id
   }
 
-  // None found — create one for this date + session name
+  // None found — attempt to create one
   const { data: created, error: createError } = await (supabase as any)
     .from('milking_sessions')
     .insert({
       farm_id: farmId,
       session_name: sessionName,
-      session_start: `${recordDate}T00:00:00`,
+      session_start: sessionStart,
       milking_type: 'routine',
       recorded_by: recordedBy,
     })
     .select('id')
     .single()
 
-  if (createError || !created) {
-    throw new Error('Failed to create milking session')
+  // If we hit unique constraint violation, query again for the existing session
+  // This handles the race condition where another request created it between our lookup and insert
+  if (createError) {
+    if (createError.code === '23505') {
+      // Unique constraint violation — another request won the race
+      const { data: retryExisting, error: retryError } = await (supabase as any)
+        .from('milking_sessions')
+        .select('id')
+        .eq('farm_id', farmId)
+        .eq('session_name', sessionName)
+        .eq('session_start', sessionStart)
+        .limit(1)
+
+      if (retryError || !retryExisting || retryExisting.length === 0) {
+        throw new Error('Unique constraint prevented session creation, but session not found on retry')
+      }
+
+      return retryExisting[0].id
+    }
+
+    throw new Error(`Failed to create milking session: ${createError.message}`)
+  }
+
+  if (!created) {
+    throw new Error('Failed to create milking session: unknown error')
   }
 
   return created.id
