@@ -222,6 +222,7 @@ export function GroupRecordForm({
   // ── Step 2: health & safety ───────────────────────────────────────────────
   const [healthData, setHealthData] = useState<Record<string, AnimalHealthData>>({})
   const [historicalData, setHistoricalData] = useState<Record<string, HistoricalData>>({})
+  const [historicalCacheKey, setHistoricalCacheKey] = useState<string | null>(null)
   const [loadingHistory, setLoadingHistory] = useState(false)
 
   // ── Step 3: volume entry ──────────────────────────────────────────────────
@@ -356,6 +357,16 @@ export function GroupRecordForm({
     }
   }
 
+  const removeAnimal = (animalId: string) =>
+    setSelectedAnimals((prev) => prev.filter((s) => s.animal.id !== animalId))
+
+  // Removes animal from the batch at any step and cleans up its health/volume state
+  const removeAnimalFromBatch = (animalId: string) => {
+    setSelectedAnimals((prev) => prev.filter((s) => s.animal.id !== animalId))
+    setHealthData((prev) => { const next = { ...prev }; delete next[animalId]; return next })
+    setVolumeData((prev) => { const next = { ...prev }; delete next[animalId]; return next })
+  }
+
   const filteredGroupAnimals = (group: { id: string; animals: AnimalRecord[] }) => {
     const q = (groupSearch[group.id] || '').toLowerCase()
     if (!q) return group.animals
@@ -384,52 +395,45 @@ export function GroupRecordForm({
   }, [selectedAnimals])
 
   // ── Fetch historical data for all selected animals ────────────────────────
+  // OPTIMIZATION: Batch requests (1 API call instead of N) + Cache by session params
   const fetchHistoricalData = useCallback(async () => {
+    // Create cache key from session parameters
+    const cacheKey = `${farmId}|${recordDate}|${session}|${sessionName}`
+
+    // Skip if already loaded for this session
+    if (historicalCacheKey === cacheKey && Object.keys(historicalData).length > 0) {
+      return // Already cached!
+    }
+
     setLoadingHistory(true)
-    const results: Record<string, HistoricalData> = {}
-    await Promise.all(
-      selectedAnimals.map(async ({ animal }) => {
-        try {
-          const params = new URLSearchParams({
-            farmId,
-            animalId: animal.id,
-            date: recordDate,
-            session,
-            ...(sessionName ? { session_name: sessionName } : {}),
-          })
-          const res = await fetch(`/api/production/history?${params}`)
-          if (res.ok) {
-            const data = await res.json()
-            results[animal.id] = {
-              yesterdayTotal: data.yesterdayTotal ?? null,
-              previousSessionVolume: data.previousSessionVolume ?? null,
-              previousSessionName: data.previousSessionName ?? null,
-              sameTimeYesterdayVolume: data.sameTimeYesterdayVolume ?? null,
-              sameTimeYesterdaySessionName: data.sameTimeYesterdaySessionName ?? null,
-            }
-          } else {
-            results[animal.id] = {
-              yesterdayTotal: null,
-              previousSessionVolume: null,
-              previousSessionName: null,
-              sameTimeYesterdayVolume: null,
-              sameTimeYesterdaySessionName: null,
-            }
-          }
-        } catch {
-          results[animal.id] = {
-            yesterdayTotal: null,
-            previousSessionVolume: null,
-            previousSessionName: null,
-            sameTimeYesterdayVolume: null,
-            sameTimeYesterdaySessionName: null,
-          }
-        }
+    try {
+      // OPTIMIZATION 1: Batch endpoint - single API call for all animals
+      const res = await fetch(`/api/production/history/batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          farmId,
+          animalIds: selectedAnimals.map((s) => s.animal.id), // All IDs at once
+          date: recordDate,
+          session,
+          ...(sessionName ? { session_name: sessionName } : {}),
+        }),
       })
-    )
-    setHistoricalData(results)
-    setLoadingHistory(false)
-  }, [selectedAnimals, farmId, recordDate, session, sessionName])
+
+      if (res.ok) {
+        const results = await res.json()
+        setHistoricalData(results)
+        setHistoricalCacheKey(cacheKey) // Mark as cached
+      } else {
+        setHistoricalData({})
+      }
+    } catch (error) {
+      console.error('[GroupRecordForm] Failed to fetch batch historical data:', error)
+      setHistoricalData({})
+    } finally {
+      setLoadingHistory(false)
+    }
+  }, [selectedAnimals, farmId, recordDate, session, sessionName, historicalCacheKey, historicalData])
 
   // ── Initialize volume data for selected animals ───────────────────────────
   const initVolumeData = useCallback(() => {
@@ -457,9 +461,15 @@ export function GroupRecordForm({
 
   const goToStep2 = async () => {
     initHealthData()
-    await fetchHistoricalData()
+    await fetchHistoricalData() // Uses cache if available
     setStep(2)
   }
+
+  // Reset cache when session parameters change
+  useEffect(() => {
+    setHistoricalCacheKey(null)
+    setHistoricalData({})
+  }, [recordDate, session, sessionName])
 
   const goToStep3 = () => {
     initVolumeData()
@@ -630,6 +640,14 @@ export function GroupRecordForm({
       setSubmitError(errors.join(' · '))
     }
 
+    // Mark every successfully-recorded animal as pre-recorded so they are
+    // excluded from the next batch without a full page reload
+    setPreRecordedIds((prev) => {
+      const next = new Set(prev)
+      for (const { animal } of selectedAnimals) next.add(animal.id)
+      return next
+    })
+
     setSubmitResults({ ok, fail })
     setSubmitting(false)
     setSubmitSuccess(true)
@@ -782,6 +800,26 @@ export function GroupRecordForm({
                       </button>
                     </div>
 
+                    {/* Already-recorded animals — greyed out, non-selectable */}
+                    {(() => {
+                      const alreadyRecorded = group.animals.filter((a) => preRecordedIds.has(a.id))
+                      if (alreadyRecorded.length === 0) return null
+                      return (
+                        <div className="px-4 py-2 border-b border-stone-100 bg-stone-50">
+                          <p className="text-xs font-medium text-stone-400 mb-1.5">Already recorded this session</p>
+                          <div className="space-y-1">
+                            {alreadyRecorded.map((animal) => (
+                              <div key={animal.id} className="flex items-center gap-2 py-1 opacity-50">
+                                <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
+                                <span className="text-xs text-stone-500 font-mono">#{animal.tag_number}</span>
+                                {animal.name && <span className="text-xs text-stone-400">· {animal.name}</span>}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })()}
+
                     {/* Animal rows */}
                     <div className="max-h-52 overflow-y-auto divide-y divide-stone-100">
                       {group.animals.length === 0 ? (
@@ -796,45 +834,60 @@ export function GroupRecordForm({
                         filtered.map((animal) => {
                           const selected = isAnimalSelected(animal.id)
                           return (
-                            <button
+                            <div
                               key={animal.id}
-                              type="button"
-                              onClick={() => toggleAnimal(animal, group.id, group.name)}
-                              className={`w-full flex items-center gap-3 px-4 py-2.5 hover:bg-stone-50 transition-colors text-left ${
-                                selected ? 'bg-green-50' : ''
+                              className={`flex items-center gap-3 px-4 py-2.5 transition-colors ${
+                                selected ? 'bg-green-50' : 'hover:bg-stone-50'
                               }`}
                             >
-                              <div
-                                className={`w-5 h-5 rounded border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
-                                  selected
-                                    ? 'bg-green-600 border-green-600'
-                                    : 'border-stone-300 bg-white'
-                                }`}
+                              {/* Checkbox — toggles selection */}
+                              <button
+                                type="button"
+                                onClick={() => toggleAnimal(animal, group.id, group.name)}
+                                className="flex items-center gap-3 flex-1 min-w-0 text-left"
                               >
-                                {selected && <Check className="w-3 h-3 text-white" />}
-                              </div>
-                              <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
-                                <span className="text-xs font-bold text-green-700">
-                                  {animal.tag_number.charAt(0).toUpperCase()}
-                                </span>
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-stone-900 truncate">
-                                  #{animal.tag_number}
-                                  {animal.name && (
-                                    <span className="text-stone-500 font-normal ml-1">
-                                      · {animal.name}
-                                    </span>
+                                <div
+                                  className={`w-5 h-5 rounded border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
+                                    selected
+                                      ? 'bg-green-600 border-green-600'
+                                      : 'border-stone-300 bg-white'
+                                  }`}
+                                >
+                                  {selected && <Check className="w-3 h-3 text-white" />}
+                                </div>
+                                <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                                  <span className="text-xs font-bold text-green-700">
+                                    {animal.tag_number.charAt(0).toUpperCase()}
+                                  </span>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium text-stone-900 truncate">
+                                    #{animal.tag_number}
+                                    {animal.name && (
+                                      <span className="text-stone-500 font-normal ml-1">· {animal.name}</span>
+                                    )}
+                                  </p>
+                                  {animal.breed && (
+                                    <p className="text-xs text-stone-400">{animal.breed}</p>
                                   )}
-                                </p>
-                                {animal.breed && (
-                                  <p className="text-xs text-stone-400">{animal.breed}</p>
-                                )}
-                              </div>
-                              <span className="flex-shrink-0 px-1.5 py-0.5 bg-stone-100 text-stone-600 text-xs rounded">
-                                {animal.production_status.replace(/_/g, ' ')}
-                              </span>
-                            </button>
+                                </div>
+                                <span className="flex-shrink-0 px-1.5 py-0.5 bg-stone-100 text-stone-600 text-xs rounded">
+                                  {animal.production_status.replace(/_/g, ' ')}
+                                </span>
+                              </button>
+
+                              {/* × Remove button — only visible when selected */}
+                              {selected && (
+                                <button
+                                  type="button"
+                                  onClick={() => removeAnimal(animal.id)}
+                                  title="Remove from selection"
+                                  className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-stone-400 hover:bg-red-100 hover:text-red-600 transition-colors ml-1"
+                                >
+                                  <span className="text-sm leading-none font-bold">×</span>
+                                </button>
+                              )}
+                            </div>
                           )
                         })
                       )}
@@ -847,16 +900,39 @@ export function GroupRecordForm({
         </div>
       )}
 
-      {/* Selected summary + next button */}
+      {/* Selected animals — chip strip + next button */}
       {selectedAnimals.length > 0 && (
-        <div className="sticky bottom-0 bg-white border-t border-stone-200 pt-3 pb-1 flex items-center justify-between gap-3">
-          <p className="text-sm text-stone-600">
-            <span className="font-semibold text-stone-900">{selectedAnimals.length}</span> animal{selectedAnimals.length !== 1 ? 's' : ''} selected
-          </p>
-          <Button onClick={goToStep2} className="gap-2">
-            Next: Health & Safety
-            <ArrowRight className="w-4 h-4" />
-          </Button>
+        <div className="sticky bottom-0 bg-white border-t border-stone-200 pt-3 pb-2 space-y-2">
+          {/* Chip strip */}
+          <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+            {selectedAnimals.map(({ animal }) => (
+              <span
+                key={animal.id}
+                className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 bg-green-100 text-green-800 text-xs font-medium rounded-full border border-green-200"
+              >
+                #{animal.tag_number}
+                {animal.name && <span className="text-green-600">· {animal.name}</span>}
+                <button
+                  type="button"
+                  onClick={() => removeAnimal(animal.id)}
+                  title={`Remove #${animal.tag_number}`}
+                  className="ml-0.5 w-4 h-4 rounded-full flex items-center justify-center text-green-600 hover:bg-red-100 hover:text-red-600 transition-colors"
+                >
+                  <span className="text-xs font-bold leading-none">×</span>
+                </button>
+              </span>
+            ))}
+          </div>
+          {/* Count + next */}
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-stone-600">
+              <span className="font-semibold text-stone-900">{selectedAnimals.length}</span> animal{selectedAnimals.length !== 1 ? 's' : ''} selected
+            </p>
+            <Button onClick={goToStep2} className="gap-2">
+              Next: Health & Safety
+              <ArrowRight className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
       )}
     </div>
@@ -956,39 +1032,89 @@ export function GroupRecordForm({
                     }`}
                   >
                     {/* Animal header */}
-                    <div className="flex items-center gap-3 px-4 py-2.5 bg-stone-50 border-b border-stone-200">
-                      <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
-                        <span className="text-xs font-bold text-green-700">
-                          {animal.tag_number.charAt(0).toUpperCase()}
-                        </span>
+                    <div className="bg-stone-50 border-b border-stone-200">
+                      {/* Top row: avatar + name + safety icon + remove */}
+                      <div className="flex items-center gap-3 px-4 pt-2.5 pb-2">
+                        <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                          <span className="text-xs font-bold text-green-700">
+                            {animal.tag_number.charAt(0).toUpperCase()}
+                          </span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-stone-900">
+                            #{animal.tag_number}
+                            {animal.name && <span className="font-normal text-stone-500 ml-1">· {animal.name}</span>}
+                          </p>
+                          {animal.breed && <p className="text-xs text-stone-400">{animal.breed}</p>}
+                        </div>
+                        {/* Safety badge */}
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <SafetyIcon status={health.milk_safety_status} />
+                          <span className="text-xs text-stone-500">
+                            {health.milk_safety_status === 'safe'
+                              ? 'Safe'
+                              : health.milk_safety_status === 'unsafe_health'
+                              ? 'Unsafe'
+                              : 'Colostrum'}
+                          </span>
+                        </div>
+                        {/* Remove animal from batch */}
+                        <button
+                          type="button"
+                          onClick={() => removeAnimalFromBatch(animal.id)}
+                          title="Remove from batch"
+                          className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-stone-400 hover:bg-red-100 hover:text-red-600 transition-colors"
+                        >
+                          <span className="text-sm font-bold leading-none">×</span>
+                        </button>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-stone-900">
-                          #{animal.tag_number}
-                          {animal.name && <span className="font-normal text-stone-500 ml-1">· {animal.name}</span>}
-                        </p>
-                        {/* Historical badges */}
-                        {hist && (
-                          <div className="flex flex-wrap gap-1 mt-0.5">
-                            <HistoricalBadge label="Yesterday" volume={hist.yesterdayTotal} unit={unit} />
-                            <HistoricalBadge
-                              label={hist.previousSessionName ? `Last (${hist.previousSessionName})` : 'Prev session'}
-                              volume={hist.previousSessionVolume}
-                              unit={unit}
-                            />
+
+                      {/* Production history row — 3 labelled stats */}
+                      {loadingHistory ? (
+                        <div className="px-4 pb-2.5">
+                          <div className="h-3 w-32 bg-stone-200 rounded animate-pulse" />
+                        </div>
+                      ) : hist ? (
+                        <div className="px-4 pb-2.5 grid grid-cols-3 gap-2">
+                          {/* 1 — Total yesterday */}
+                          <div className="bg-white rounded border border-stone-200 px-2 py-1.5">
+                            <p className="text-xs text-stone-400 leading-none mb-0.5">Total Yesterday</p>
+                            <p className={`text-sm font-semibold leading-none ${
+                              hist.yesterdayTotal !== null ? 'text-stone-800' : 'text-stone-300'
+                            }`}>
+                              {hist.yesterdayTotal !== null ? `${hist.yesterdayTotal.toFixed(1)}${unit}` : '—'}
+                            </p>
                           </div>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        <SafetyIcon status={health.milk_safety_status} />
-                        <span className="text-xs text-stone-500">
-                          {health.milk_safety_status === 'safe'
-                            ? 'Safe'
-                            : health.milk_safety_status === 'unsafe_health'
-                            ? 'Unsafe'
-                            : 'Colostrum'}
-                        </span>
-                      </div>
+                          {/* 2 — Same session yesterday */}
+                          <div className="bg-white rounded border border-stone-200 px-2 py-1.5">
+                            <p className="text-xs text-stone-400 leading-none mb-0.5">
+                              {hist.sameTimeYesterdaySessionName
+                                ? `${hist.sameTimeYesterdaySessionName} Yesterday`
+                                : 'Same Session Yest.'}
+                            </p>
+                            <p className={`text-sm font-semibold leading-none ${
+                              hist.sameTimeYesterdayVolume !== null ? 'text-stone-800' : 'text-stone-300'
+                            }`}>
+                              {hist.sameTimeYesterdayVolume !== null
+                                ? `${hist.sameTimeYesterdayVolume.toFixed(1)}${unit}`
+                                : '—'}
+                            </p>
+                          </div>
+                          {/* 3 — Previous session (most recent record before this one) */}
+                          <div className="bg-white rounded border border-stone-200 px-2 py-1.5">
+                            <p className="text-xs text-stone-400 leading-none mb-0.5">
+                              {hist.previousSessionName ? `Prev (${hist.previousSessionName})` : 'Prev Session'}
+                            </p>
+                            <p className={`text-sm font-semibold leading-none ${
+                              hist.previousSessionVolume !== null ? 'text-stone-800' : 'text-stone-300'
+                            }`}>
+                              {hist.previousSessionVolume !== null
+                                ? `${hist.previousSessionVolume.toFixed(1)}${unit}`
+                                : '—'}
+                            </p>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
 
                     {/* Health controls */}
