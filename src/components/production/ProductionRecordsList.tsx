@@ -1,5 +1,3 @@
-// src/components/production/ProductionRecordsList.tsx
-
 'use client'
 
 import React, { useState, useMemo } from 'react'
@@ -22,7 +20,12 @@ import {
   AlertTriangle,
   CheckCircle,
   ChevronDown,
-  Users
+  ChevronUp,
+  Users,
+  Search,
+  X,
+  TrendingUp,
+  Beaker,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -60,7 +63,7 @@ interface ProductionRecord {
   created_at: string
   recording_type?: 'individual' | 'group'
   milking_group_id?: string
-  milking_group_name_snapshot?: string  // Captured at record creation time
+  milking_group_name_snapshot?: string
   milking_session_id?: string
   mastitis_test_performed?: boolean
   mastitis_result?: 'negative' | 'mild' | 'severe' | null
@@ -79,12 +82,6 @@ interface GroupData {
   recordCount: number
   mostRecentSession: ProductionRecord | null
   records: ProductionRecord[]
-}
-
-interface MilkingGroup {
-  id: string
-  category_id: string
-  category_name: string
 }
 
 interface ProductionRecordsListProps {
@@ -106,24 +103,81 @@ interface ProductionRecordsListProps {
   onFetchDateRange?: (startDate?: string, endDate?: string) => Promise<void>
 }
 
-// Consistent, hydration-safe date formatting
-const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString('en-GB', {
+const formatDate = (dateString: string) =>
+  new Date(dateString).toLocaleDateString('en-GB', {
     day: '2-digit',
-    month: '2-digit',
+    month: 'short',
     year: 'numeric',
   })
-}
 
-const formatDateTime = (dateString: string) => {
-  return new Date(dateString).toLocaleString('en-GB', {
+const formatDateTime = (dateString: string) =>
+  new Date(dateString).toLocaleString('en-GB', {
     day: '2-digit',
-    month: '2-digit',
+    month: 'short',
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
   })
+
+// ── Pill / Badge helpers ────────────────────────────────────────────────────
+
+function SafetyPill({ status }: { status?: string }) {
+  const map: Record<string, { label: string; cls: string; Icon: React.ElementType }> = {
+    safe:              { label: 'Safe',           cls: 'bg-emerald-50 text-emerald-700 border-emerald-200',  Icon: CheckCircle  },
+    unsafe_health:     { label: 'Unsafe – Health',cls: 'bg-red-50 text-red-700 border-red-200',             Icon: AlertTriangle },
+    unsafe_colostrum:  { label: 'Colostrum',      cls: 'bg-amber-50 text-amber-700 border-amber-200',       Icon: AlertTriangle },
+  }
+  const { label, cls, Icon } = map[status ?? ''] ?? { label: 'Unknown', cls: 'bg-gray-100 text-gray-500 border-gray-200', Icon: AlertTriangle }
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${cls}`}>
+      <Icon className="w-3 h-3" />
+      {label}
+    </span>
+  )
 }
+
+function SessionPill({ name }: { name: string }) {
+  const n = name.toLowerCase()
+  const cls = n.includes('morning')
+    ? 'bg-sky-50 text-sky-700 border-sky-200'
+    : n.includes('afternoon')
+    ? 'bg-amber-50 text-amber-700 border-amber-200'
+    : n.includes('evening')
+    ? 'bg-violet-50 text-violet-700 border-violet-200'
+    : 'bg-gray-100 text-gray-600 border-gray-200'
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${cls}`}>
+      <Clock className="w-3 h-3" />
+      {name}
+    </span>
+  )
+}
+
+// ── Stat tile inside a card ─────────────────────────────────────────────────
+
+function StatTile({ value, label, color }: { value: string; label: string; color: string }) {
+  return (
+    <div className={`flex flex-col items-center justify-center rounded-xl py-2.5 px-2 ${color}`}>
+      <span className="text-base font-semibold leading-tight">{value}</span>
+      <span className="text-[10px] font-medium mt-0.5 opacity-80 tracking-wide uppercase">{label}</span>
+    </div>
+  )
+}
+
+// ── Divider row label ───────────────────────────────────────────────────────
+
+function DayDivider({ date }: { date: string }) {
+  return (
+    <div className="flex items-center gap-3 py-1">
+      <span className="text-xs font-semibold text-gray-400 tracking-widest uppercase whitespace-nowrap">
+        {formatDate(date)}
+      </span>
+      <div className="flex-1 h-px bg-gray-100" />
+    </div>
+  )
+}
+
+// ── Main component ──────────────────────────────────────────────────────────
 
 export function ProductionRecordsList({
   records,
@@ -135,7 +189,7 @@ export function ProductionRecordsList({
   onDelete,
   onView,
   isMobile = false,
-  onFetchDateRange
+  onFetchDateRange,
 }: ProductionRecordsListProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -145,271 +199,171 @@ export function ProductionRecordsList({
   const [filterSafetyStatus, setFilterSafetyStatus] = useState<string>('all')
   const [filterDateFrom, setFilterDateFrom] = useState<string>('')
   const [filterDateTo, setFilterDateTo] = useState<string>('')
-  const [filterDateToTouched, setFilterDateToTouched] = useState(false) // Track if user has focused on "To Date"
+  const [filterDateToTouched, setFilterDateToTouched] = useState(false)
+  const [filterAnimalSearch, setFilterAnimalSearch] = useState<string>('')
+  const [filterCategory, setFilterCategory] = useState<string>('all')
   const [viewTab, setViewTab] = useState<ViewTab>('individual')
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+  const [expandedGroupAnimals, setExpandedGroupAnimals] = useState<Set<string>>(new Set())
+  const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set())
+  const [selectedSession, setSelectedSession] = useState<string | null>(null)
+  const [activeSessionBadge, setActiveSessionBadge] = useState<Record<string, string>>({})
   const [milkingGroups, setMilkingGroups] = useState<Map<string, string>>(new Map())
-  const [groupToCategory, setGroupToCategory] = useState<Map<string, string>>(new Map()) // group ID → category ID
+  const [groupToCategory, setGroupToCategory] = useState<Map<string, string>>(new Map())
   const [availableCategories, setAvailableCategories] = useState<Array<{ id: string; name: string }>>([])
-  const [filterCategory, setFilterCategory] = useState<string>('all')
+  const [availableSessions, setAvailableSessions] = useState<Array<{ id: string; name: string }>>([])
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [editingRecord, setEditingRecord] = useState<ProductionRecord | null>(null)
-  const [editingRecordType, setEditingRecordType] = useState<'individual' | 'group' | undefined>(undefined)
-  const [editingGroupName, setEditingGroupName] = useState<string | undefined>(undefined)
-  const [availableSessions, setAvailableSessions] = useState<Array<{ id: string; name: string }>>([])
-  const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set())
-  const [selectedSession, setSelectedSession] = useState<string | null>(null) // Format: "${cycleDate}-${animalId}|${sessionId}"
-  const [activeSessionBadge, setActiveSessionBadge] = useState<Record<string, string>>({}) // summaryKey → sessionId
-  const [loadedDateRange, setLoadedDateRange] = useState<{ from: string; to: string } | null>(null)
-  const [expandedGroupAnimals, setExpandedGroupAnimals] = useState<Set<string>>(new Set())
+  const [editingRecordType, setEditingRecordType] = useState<'individual' | 'group' | undefined>()
+  const [editingGroupName, setEditingGroupName] = useState<string | undefined>()
+  const [showFilters, setShowFilters] = useState(false)
+
   const RECORDS_PER_PAGE = 10
 
+  // ── Data fetching effects ─────────────────────────────────────────────────
 
-
-  // Fetch milking sessions on mount
   React.useEffect(() => {
     if (!farmId) return
-
-    const fetchMilkingSessions = async () => {
-      try {
-        const response = await fetch(`/api/farms/${farmId}/production/milking-sessions-list`)
-        if (response.ok) {
-          const result = await response.json()
-          const sessions = result.data || []
-
-          // Store ALL sessions (with duplicates) for UUID→name mapping
-          // Component will deduplicate only for dropdown display
-          setAvailableSessions(sessions)
-        }
-      } catch (error) {
-        setAvailableSessions([
+    fetch(`/api/farms/${farmId}/production/milking-sessions-list`)
+      .then(r => r.ok ? r.json() : null)
+      .then(result => {
+        if (result) setAvailableSessions(result.data || [])
+        else setAvailableSessions([
           { id: 'morning', name: 'Morning' },
           { id: 'afternoon', name: 'Afternoon' },
           { id: 'evening', name: 'Evening' },
         ])
-      }
-    }
-
-    fetchMilkingSessions()
+      })
+      .catch(() => setAvailableSessions([
+        { id: 'morning', name: 'Morning' },
+        { id: 'afternoon', name: 'Afternoon' },
+        { id: 'evening', name: 'Evening' },
+      ]))
   }, [farmId])
 
-  // Fetch milking group names and categories on mount
   React.useEffect(() => {
     if (!farmId) return
-
-    const fetchMilkingGroups = async () => {
-      try {
-        const response = await fetch(`/api/farms/${farmId}/production/milking-groups`)
-        if (response.ok) {
-          const result = await response.json()
-          const groups = result.data || result
-          const groupMap = new Map<string, string>()
-          const groupToCategoryMap = new Map<string, string>()
-          const categoriesMap = new Map<string, string>()
-
-          groups.forEach((group: any) => {
-            groupMap.set(group.id, group.category_name)
-            if (group.category_id) {
-              groupToCategoryMap.set(group.id, group.category_id)
-              categoriesMap.set(group.category_id, group.category_name)
-            }
-          })
-
-          setMilkingGroups(groupMap)
-          setGroupToCategory(groupToCategoryMap)
-          setAvailableCategories(Array.from(categoriesMap, ([id, name]) => ({ id, name })))
-        }
-      } catch (error) {
-      }
-    }
-
-    fetchMilkingGroups()
+    fetch(`/api/farms/${farmId}/production/milking-groups`)
+      .then(r => r.ok ? r.json() : null)
+      .then(result => {
+        if (!result) return
+        const groups = result.data || result
+        const gMap = new Map<string, string>()
+        const gcMap = new Map<string, string>()
+        const catMap = new Map<string, string>()
+        groups.forEach((g: any) => {
+          gMap.set(g.id, g.category_name)
+          if (g.category_id) {
+            gcMap.set(g.id, g.category_id)
+            catMap.set(g.category_id, g.category_name)
+          }
+        })
+        setMilkingGroups(gMap)
+        setGroupToCategory(gcMap)
+        setAvailableCategories(Array.from(catMap, ([id, name]) => ({ id, name })))
+      })
+      .catch(() => {})
   }, [farmId])
 
-  // Smart date range fetching: if user filters to a date outside loaded range, fetch those records
   React.useEffect(() => {
-    if (!onFetchDateRange || !filterDateTo || !filterDateFrom) {
+    if (!onFetchDateRange || !filterDateTo || !filterDateFrom || !filterDateToTouched) {
+      console.log('[ProductionRecordsList] Date fetch skipped:', {
+        hasCallback: !!onFetchDateRange,
+        filterDateTo,
+        filterDateFrom,
+        filterDateToTouched,
+      })
       return
     }
-
-    // Only fetch if the user has explicitly set the "To Date" filter
-    if (filterDateToTouched) {
-      // Fetch records for this date range to ensure they're loaded
-      onFetchDateRange(filterDateFrom, filterDateTo).catch((error: any) => {
+    console.log('[ProductionRecordsList] Fetching date range:', {
+      startDate: filterDateFrom,
+      endDate: filterDateTo,
+    })
+    onFetchDateRange(filterDateFrom, filterDateTo).catch((error) => {
+      console.error('[ProductionRecordsList] Date range fetch failed:', {
+        error,
+        startDate: filterDateFrom,
+        endDate: filterDateTo,
+        errorMessage: error?.message,
       })
-    }
+    })
   }, [filterDateFrom, filterDateTo, filterDateToTouched, onFetchDateRange])
 
-  // UUID → session name map (all pairs, no dedup — needed so every UUID resolves)
-  const sessionNameMap = useMemo(() => {
-    const map = new Map(availableSessions.map(s => [s.id, s.name]))
-    return map
+  // ── Derived maps ──────────────────────────────────────────────────────────
+
+  const sessionNameMap = useMemo(
+    () => new Map(availableSessions.map(s => [s.id, s.name])),
+    [availableSessions]
+  )
+
+  const dedupedSessions = useMemo(() => {
+    const seen = new Set<string>()
+    return availableSessions.filter(s => {
+      if (seen.has(s.name)) return false
+      seen.add(s.name)
+      return true
+    })
   }, [availableSessions])
 
-  // Helper to get group name: prefer snapshot (historical), fall back to current name
   const getGroupName = (record: ProductionRecord): string | null => {
-    if (record.milking_group_name_snapshot) {
-      return record.milking_group_name_snapshot  // ✅ Use snapshot if available (immutable)
-    }
-    if (record.milking_group_id) {
-      return milkingGroups.get(record.milking_group_id) || null  // ✅ Fallback to current name
-    }
+    if (record.milking_group_name_snapshot) return record.milking_group_name_snapshot
+    if (record.milking_group_id) return milkingGroups.get(record.milking_group_id) || null
     return null
   }
 
-  // Helper to get group name from first record in collection (for aggregations)
-  const getGroupNameFromFirstRecord = (records: ProductionRecord[]): string | null => {
-    if (records.length === 0) return null
-    const firstRecord = records[0]
-    return getGroupName(firstRecord)
+  const getGroupNameFromFirst = (recs: ProductionRecord[]) =>
+    recs.length ? getGroupName(recs[0]) : null
+
+  const getSessionName = (id?: string) =>
+    id ? (sessionNameMap.get(id) || id) : 'Unknown Session'
+
+  const getSessionColor = (id?: string) => {
+    const n = (id ? getSessionName(id) : '').toLowerCase()
+    return n.includes('morning') ? 'bg-sky-50 text-sky-700 border-sky-200'
+      : n.includes('afternoon') ? 'bg-amber-50 text-amber-700 border-amber-200'
+      : n.includes('evening') ? 'bg-violet-50 text-violet-700 border-violet-200'
+      : 'bg-gray-100 text-gray-600 border-gray-200'
   }
 
-  // Deduplicated sessions for dropdown display (by name only)
-  const dedupedSessions = useMemo(() => {
-    const seenNames = new Set<string>()
-    const deduped = availableSessions.filter((session) => {
-      if (seenNames.has(session.name)) {
-        return false
-      }
-      seenNames.add(session.name)
-      return true
-    })
-    return deduped
-  }, [availableSessions])
+  // ── Filtering ─────────────────────────────────────────────────────────────
 
-  // Apply filters
+  const activeFilterCount = [
+    filterSession !== 'all',
+    filterSafetyStatus !== 'all',
+    filterCategory !== 'all',
+    !!filterDateFrom,
+    !!filterDateTo,
+    !!filterAnimalSearch,
+  ].filter(Boolean).length
+
   const filteredRecords = useMemo(() => {
-    const result = records.filter((record, index) => {
-      // Date range filter - only apply if values are actually set
-      // filterDateFrom has a default value (today), so check if it's set
-      if (filterDateFrom && filterDateFrom.trim() !== '') {
-        const recordDate = new Date(record.record_date).toISOString().split('T')[0]
-        const filterDate = filterDateFrom
-        if (recordDate < filterDate) {
-          return false
-        }
+    const search = filterAnimalSearch.trim().toLowerCase()
+    return records.filter(record => {
+      if (filterDateFrom) {
+        const rd = new Date(record.record_date).toISOString().split('T')[0]
+        if (rd < filterDateFrom) return false
       }
-      
-      // Only check "to date" if it's explicitly set (not empty)
-      if (filterDateTo && filterDateTo.trim() !== '') {
-        const recordDate = new Date(record.record_date).toISOString().split('T')[0]
-        const filterDate = filterDateTo
-        if (recordDate > filterDate) {
-          return false
-        }
+      if (filterDateTo) {
+        const rd = new Date(record.record_date).toISOString().split('T')[0]
+        if (rd > filterDateTo) return false
       }
-
-      // Session filter — compare by resolved name so all UUIDs for the same session type match
       if (filterSession !== 'all') {
-        const recordSessionId = record.milking_session_id || ''
-        const recordSessionName = sessionNameMap.get(recordSessionId) || null
-
-        if (recordSessionName !== filterSession) {
-          return false
-        }
+        const name = sessionNameMap.get(record.milking_session_id || '') || null
+        if (name !== filterSession) return false
       }
-
-      // Safety status filter
-      if (filterSafetyStatus !== 'all' && record.milk_safety_status !== filterSafetyStatus) {
-        return false
-      }
-
-      // Category filter
+      if (filterSafetyStatus !== 'all' && record.milk_safety_status !== filterSafetyStatus) return false
       if (filterCategory !== 'all' && record.milking_group_id) {
-        const recordCategoryId = groupToCategory.get(record.milking_group_id)
-        if (recordCategoryId !== filterCategory) return false
+        const cat = groupToCategory.get(record.milking_group_id)
+        if (cat !== filterCategory) return false
       }
-
+      if (search) {
+        const tag = (record.animals?.tag_number || '').toLowerCase()
+        const name = (record.animals?.name || '').toLowerCase()
+        if (!tag.includes(search) && !name.includes(search)) return false
+      }
       return true
     })
-
-    return result
-  }, [records, filterSession, filterSafetyStatus, filterCategory, filterDateFrom, filterDateTo, groupToCategory, sessionNameMap])
-
-  // Individual tab shows ALL records; Groups tab shows aggregated group data
-  const individualRecords = useMemo(() => {
-    return filteredRecords // Show all records regardless of recording_type
-  }, [filteredRecords])
-
-  // Group records by milking_group_id for groups view
-  const groupedRecords = useMemo(() => {
-    const groupMap = new Map<string | null, ProductionRecord[]>()
-
-    filteredRecords
-      .filter(r => r.recording_type === 'group')
-      .forEach(record => {
-        const groupId = record.milking_group_id || 'default'
-        if (!groupMap.has(groupId)) {
-          groupMap.set(groupId, [])
-        }
-        groupMap.get(groupId)!.push(record)
-      })
-
-    const groups: GroupData[] = Array.from(groupMap.entries()).map(([groupId, records]) => {
-      const sortedByDate = [...records].sort((a, b) =>
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      )
-      const resolvedName = groupId !== 'default' ? getGroupNameFromFirstRecord(records) : undefined
-      // Count unique animals, not records (an animal may have multiple records)
-      const uniqueAnimals = new Set(records.map(r => r.animal_id)).size
-
-      return {
-        milking_group_id: groupId === 'default' ? null : groupId,
-        groupName: resolvedName || (groupId === 'default' ? 'Default Group' : 'Milking Group'),
-        totalMilkVolume: records.reduce((sum, r) => sum + (r.milk_volume || 0), 0),
-        recordCount: uniqueAnimals,
-        mostRecentSession: sortedByDate[0] || null,
-        records: records
-      }
-    })
-
-    // Sort by most recent session date
-    return groups.sort((a, b) => {
-      const dateA = a.mostRecentSession?.created_at || ''
-      const dateB = b.mostRecentSession?.created_at || ''
-      return new Date(dateB).getTime() - new Date(dateA).getTime()
-    })
-  }, [filteredRecords, milkingGroups])
-
-  // Reset to page 1 when filters change
-  const resetPagination = () => {
-    setCurrentPage(1)
-  }
-
-  const handleViewTabChange = (tab: ViewTab) => {
-    setViewTab(tab)
-    setCurrentPage(1)
-    setExpandedGroups(new Set())
-  }
-
-  const handleFilterSessionChange = (session: string) => {
-    setFilterSession(session)
-    resetPagination()
-  }
-
-  const handleFilterSafetyChange = (safety: string) => {
-    setFilterSafetyStatus(safety)
-    resetPagination()
-  }
-
-  const handleFilterCategoryChange = (category: string) => {
-    setFilterCategory(category)
-    resetPagination()
-  }
-
-  const handleFilterDateFromChange = (date: string) => {
-    setFilterDateFrom(date)
-    resetPagination()
-  }
-
-  const handleFilterDateToChange = (date: string) => {
-    // Only accept changes if the user has actually focused on this field
-    if (!filterDateToTouched) {
-      return
-    }
-    setFilterDateTo(date)
-    resetPagination()
-  }
+  }, [records, filterSession, filterSafetyStatus, filterCategory, filterDateFrom, filterDateTo, filterAnimalSearch, groupToCategory, sessionNameMap])
 
   const clearFilters = () => {
     setFilterSession('all')
@@ -417,36 +371,206 @@ export function ProductionRecordsList({
     setFilterCategory('all')
     setFilterDateFrom('')
     setFilterDateTo('')
-    setFilterDateToTouched(false) // Reset the touched flag
+    setFilterDateToTouched(false)
+    setFilterAnimalSearch('')
     setCurrentPage(1)
   }
 
-  const handleDelete = (recordId: string) => {
-    setRecordToDelete(recordId)
-    setDeleteDialogOpen(true)
+  // ── Milking cycle helpers ─────────────────────────────────────────────────
+
+  const getFirstSessionId = () => availableSessions[0]?.id
+
+  const calculateCycleDate = (record: ProductionRecord) => {
+    const firstId = getFirstSessionId()
+    if (!firstId) return record.record_date
+    const ri = availableSessions.findIndex(s => s.id === record.milking_session_id)
+    const fi = availableSessions.findIndex(s => s.id === firstId)
+    if (ri < fi) {
+      const d = new Date(record.record_date)
+      d.setDate(d.getDate() - 1)
+      return d.toISOString().split('T')[0]
+    }
+    return record.record_date
   }
+
+  // ── Daily summary (individual) ────────────────────────────────────────────
+
+  const milkingCycleGrouped = useMemo(() => {
+    if (filterSession !== 'all') return null
+    const map = new Map<string, ProductionRecord[]>()
+    filteredRecords.forEach(r => {
+      const key = calculateCycleDate(r)
+      if (!map.has(key)) map.set(key, [])
+      map.get(key)!.push(r)
+    })
+    return map
+  }, [filteredRecords, filterSession, availableSessions])
+
+  const dailySummaryRecords = useMemo(() => {
+    if (!milkingCycleGrouped) return null
+    const summaries: any[] = []
+    milkingCycleGrouped.forEach((cycleRecs, cycleDate) => {
+      const byAnimal = new Map<string, ProductionRecord[]>()
+      cycleRecs.forEach(r => {
+        if (!byAnimal.has(r.animal_id)) byAnimal.set(r.animal_id, [])
+        byAnimal.get(r.animal_id)!.push(r)
+      })
+      byAnimal.forEach((animalRecs, animalId) => {
+        const vol = animalRecs.reduce((s, r) => s + (r.milk_volume || 0), 0)
+        const fatVals = animalRecs.map(r => r.fat_content).filter((v): v is number => v != null)
+        const protVals = animalRecs.map(r => r.protein_content).filter((v): v is number => v != null)
+        const sessions = [...new Set(animalRecs.map(r => r.milking_session_id).filter(Boolean))] as string[]
+        summaries.push({
+          cycleDate,
+          animal_id: animalId,
+          animalName: animalRecs[0].animals?.name || `Animal ${animalRecs[0].animals?.tag_number}`,
+          animalTag: animalRecs[0].animals?.tag_number || '',
+          totalMilkVolume: vol,
+          recordCount: animalRecs.length,
+          avgFatContent: fatVals.length ? fatVals.reduce((a, b) => a + b, 0) / fatVals.length : null,
+          avgProteinContent: protVals.length ? protVals.reduce((a, b) => a + b, 0) / protVals.length : null,
+          sessions,
+          records: animalRecs,
+          milking_group_name: getGroupName(animalRecs[0]) || null,
+        })
+      })
+    })
+    return summaries.sort((a, b) => {
+      const dc = new Date(b.cycleDate).getTime() - new Date(a.cycleDate).getTime()
+      return dc !== 0 ? dc : a.animalName.localeCompare(b.animalName)
+    })
+  }, [milkingCycleGrouped])
+
+  // ── Daily summary (groups) ────────────────────────────────────────────────
+
+  const dailySummaryGroups = useMemo(() => {
+    if (!milkingCycleGrouped) return null
+    const summaries: any[] = []
+    milkingCycleGrouped.forEach((cycleRecs, cycleDate) => {
+      const byGroup = new Map<string, ProductionRecord[]>()
+      cycleRecs.forEach(r => {
+        const key = r.milking_group_id || '__default__'
+        if (!byGroup.has(key)) byGroup.set(key, [])
+        byGroup.get(key)!.push(r)
+      })
+      byGroup.forEach((groupRecs, groupKey) => {
+        const vol = groupRecs.reduce((s, r) => s + (r.milk_volume || 0), 0)
+        const fatVals = groupRecs.map(r => r.fat_content).filter((v): v is number => v != null)
+        const protVals = groupRecs.map(r => r.protein_content).filter((v): v is number => v != null)
+        const uniqueAnimals = new Set(groupRecs.map(r => r.animal_id)).size
+        const actualGroupId = groupKey === '__default__' ? null : groupKey
+        const groupName = actualGroupId ? getGroupNameFromFirst(groupRecs) : null
+        summaries.push({
+          cycleDate,
+          milking_group_id: actualGroupId,
+          groupName: groupName || (groupKey === '__default__' ? 'Default Group' : 'Milking Group'),
+          totalMilkVolume: vol,
+          totalRecords: groupRecs.length,
+          animalCount: uniqueAnimals,
+          avgFatContent: fatVals.length ? fatVals.reduce((a, b) => a + b, 0) / fatVals.length : null,
+          avgProteinContent: protVals.length ? protVals.reduce((a, b) => a + b, 0) / protVals.length : null,
+          records: groupRecs,
+        })
+      })
+    })
+    return summaries.sort((a, b) => {
+      const dc = new Date(b.cycleDate).getTime() - new Date(a.cycleDate).getTime()
+      return dc !== 0 ? dc : a.groupName.localeCompare(b.groupName)
+    })
+  }, [milkingCycleGrouped, milkingGroups])
+
+  // ── Single session grouped records ────────────────────────────────────────
+
+  const groupedRecords = useMemo(() => {
+    const map = new Map<string, ProductionRecord[]>()
+    filteredRecords.filter(r => r.recording_type === 'group').forEach(r => {
+      const key = r.milking_group_id || '__default__'
+      if (!map.has(key)) map.set(key, [])
+      map.get(key)!.push(r)
+    })
+    return Array.from(map.entries()).map(([key, recs]) => {
+      const sorted = [...recs].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      const actualId = key === '__default__' ? null : key
+      const name = actualId ? getGroupNameFromFirst(recs) : null
+      return {
+        milking_group_id: actualId,
+        groupName: name || (key === '__default__' ? 'Default Group' : 'Milking Group'),
+        totalMilkVolume: recs.reduce((s, r) => s + (r.milk_volume || 0), 0),
+        recordCount: new Set(recs.map(r => r.animal_id)).size,
+        mostRecentSession: sorted[0] || null,
+        records: recs,
+      } as GroupData
+    }).sort((a, b) => {
+      const da = a.mostRecentSession?.created_at || ''
+      const db = b.mostRecentSession?.created_at || ''
+      return new Date(db).getTime() - new Date(da).getTime()
+    })
+  }, [filteredRecords, milkingGroups])
+
+  // ── Display data / pagination ─────────────────────────────────────────────
+
+  const displayData = useMemo(() => {
+    if (filterSession === 'all') {
+      return viewTab === 'individual'
+        ? (dailySummaryRecords || [])
+        : (dailySummaryGroups || [])
+    }
+    return viewTab === 'individual' ? filteredRecords : groupedRecords
+  }, [filterSession, viewTab, dailySummaryRecords, dailySummaryGroups, filteredRecords, groupedRecords])
+
+  const totalPages = Math.ceil(displayData.length / RECORDS_PER_PAGE)
+  const startIndex = (currentPage - 1) * RECORDS_PER_PAGE
+  const paginatedData = displayData.slice(startIndex, startIndex + RECORDS_PER_PAGE)
+
+  const resetPagination = () => setCurrentPage(1)
+
+  // ── Animal aggregates for group expand ────────────────────────────────────
+
+  const calcAnimalAggregates = (recs: ProductionRecord[]) => {
+    const map = new Map<string, any>()
+    recs.forEach(r => {
+      if (!map.has(r.animal_id)) {
+        map.set(r.animal_id, {
+          animal_id: r.animal_id,
+          animal_name: r.animals?.name || `Animal #${r.animals?.tag_number}`,
+          animal_tag: r.animals?.tag_number || '',
+          total_volume: 0,
+          record_count: 0,
+          records: [] as ProductionRecord[],
+        })
+      }
+      const a = map.get(r.animal_id)!
+      a.total_volume += r.milk_volume || 0
+      a.record_count += 1
+      a.records.push(r)
+    })
+    return Array.from(map.values()).sort((a, b) => b.total_volume - a.total_volume)
+  }
+
+  // ── Quality badge ─────────────────────────────────────────────────────────
+
+  const qualityLabel = (fat?: number | null, protein?: number | null) => {
+    if (!fat || !protein) return null
+    const fg = fat >= 3.5 && fat <= 4.5
+    const pg = protein >= 3.0 && protein <= 3.5
+    if (fg && pg) return { label: 'Excellent', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
+    if (fg || pg) return { label: 'Good', cls: 'bg-amber-50 text-amber-700 border-amber-200' }
+    return { label: 'Needs attention', cls: 'bg-red-50 text-red-700 border-red-200' }
+  }
+
+  // ── CRUD handlers ─────────────────────────────────────────────────────────
+
+  const handleDelete = (id: string) => { setRecordToDelete(id); setDeleteDialogOpen(true) }
 
   const executeDelete = async () => {
     if (!recordToDelete) return
-
     setDeletingId(recordToDelete)
     setDeleteDialogOpen(false)
-
     try {
-      const response = await fetch(`/api/production/${recordToDelete}`, {
-        method: 'DELETE',
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to delete record')
-      }
-
-      if (onDelete) {
-        onDelete(recordToDelete)
-      } else {
-        window.location.reload()
-      }
-    } catch (error) {
+      const res = await fetch(`/api/production/${recordToDelete}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error()
+      onDelete ? onDelete(recordToDelete) : window.location.reload()
+    } catch {
       alert('Failed to delete record. Please try again.')
     } finally {
       setDeletingId(null)
@@ -457,15 +581,7 @@ export function ProductionRecordsList({
   const handleEdit = (record: ProductionRecord) => {
     setEditingRecord(record)
     setEditingRecordType(record.recording_type)
-    
-    // Get group name if this is a group record (prefer snapshot for audit trail)
-    if (record.recording_type === 'group' && record.milking_group_id) {
-      const groupName = getGroupName(record)
-      setEditingGroupName(groupName || undefined)
-    } else {
-      setEditingGroupName(undefined)
-    }
-    
+    setEditingGroupName(record.recording_type === 'group' && record.milking_group_id ? getGroupName(record) || undefined : undefined)
     setIsEditModalOpen(true)
   }
 
@@ -478,1498 +594,914 @@ export function ProductionRecordsList({
 
   const handleEditSuccess = () => {
     handleEditModalClose()
-    if (onEdit) {
-      onEdit(editingRecord!)
-    } else {
-      window.location.reload()
-    }
+    onEdit ? onEdit(editingRecord!) : window.location.reload()
   }
 
-  const getSessionBadgeColor = (sessionId?: string) => {
-    const name = (sessionId ? sessionNameMap.get(sessionId) : undefined)?.toLowerCase() || ''
-    if (name.includes('morning')) return 'bg-blue-100 text-blue-800'
-    if (name.includes('afternoon')) return 'bg-yellow-100 text-yellow-800'
-    if (name.includes('evening')) return 'bg-purple-100 text-purple-800'
-    return 'bg-gray-100 text-gray-800'
+  // ── Worst safety across records ───────────────────────────────────────────
+  const worstSafety = (recs: ProductionRecord[]) => {
+    const statuses = recs.map(r => r.milk_safety_status).filter(Boolean)
+    return statuses.includes('unsafe_health') ? 'unsafe_health'
+      : statuses.includes('unsafe_colostrum') ? 'unsafe_colostrum'
+      : statuses.length ? 'safe' : undefined
   }
 
-  const getSessionName = (sessionId?: string) => {
-    if (!sessionId) return 'Unknown Session'
-    return sessionNameMap.get(sessionId) || sessionId
-  }
-
-  // Helper function to get first and last session times
-  const getFirstAndLastSessionTimes = () => {
-    if (availableSessions.length === 0) return { firstTime: '00:00', lastTime: '23:59' }
-    // Assuming sessions in availableSessions are in configured order
-    const firstSession = availableSessions[0]
-    const lastSession = availableSessions[availableSessions.length - 1]
-    return {
-      firstTime: firstSession.id || '00:00',
-      lastTime: lastSession.id || '23:59',
-      firstSessionId: firstSession.id,
-      lastSessionId: lastSession.id
-    }
-  }
-
-  // Helper function to calculate the "milking cycle date" for a record
-  // A cycle runs from first session to last session, potentially crossing calendar days
-  const calculateMilkingCycleDate = (record: ProductionRecord) => {
-    const { firstSessionId } = getFirstAndLastSessionTimes()
-    if (!firstSessionId) return record.record_date
-
-    // Get the index of the record's session in availableSessions
-    const recordSessionIndex = availableSessions.findIndex(s => s.id === record.milking_session_id)
-    const firstSessionIndex = availableSessions.findIndex(s => s.id === firstSessionId)
-
-    // If the record's session comes before the first session in the configured order,
-    // it belongs to the previous day's cycle
-    if (recordSessionIndex < firstSessionIndex) {
-      const prevDate = new Date(record.record_date)
-      prevDate.setDate(prevDate.getDate() - 1)
-      return prevDate.toISOString().split('T')[0]
-    }
-
-    return record.record_date
-  }
-
-  // Group records by milking cycle when "All Sessions" is selected
-  const milkingCycleGroupedRecords = useMemo(() => {
-    if (filterSession !== 'all') return null
-
-    const cycleMap = new Map<string, ProductionRecord[]>()
-
-    filteredRecords.forEach(record => {
-      const cycleDate = calculateMilkingCycleDate(record)
-      if (!cycleMap.has(cycleDate)) {
-        cycleMap.set(cycleDate, [])
-      }
-      cycleMap.get(cycleDate)!.push(record)
-    })
-
-    return cycleMap
-  }, [filteredRecords, filterSession, availableSessions])
-
-  // Create daily summary data for individual animals view
-  const dailySummaryRecords = useMemo(() => {
-    if (!milkingCycleGroupedRecords) return null
-
-    const summaries: Array<{
-      cycleDate: string
-      animal_id: string
-      animalName: string
-      animalTag: string
-      totalMilkVolume: number
-      recordCount: number
-      avgFatContent: number | null
-      avgProteinContent: number | null
-      sessions: string[]
-      records: ProductionRecord[]
-      milking_group_id: string | null
-      milking_group_name: string | null
-    }> = []
-
-    milkingCycleGroupedRecords.forEach((cycleRecords, cycleDate) => {
-      const byAnimal = new Map<string, ProductionRecord[]>()
-
-      cycleRecords.forEach(record => {
-        const animalId = record.animal_id
-        if (!byAnimal.has(animalId)) {
-          byAnimal.set(animalId, [])
-        }
-        byAnimal.get(animalId)!.push(record)
-      })
-
-      byAnimal.forEach((animalRecords, animalId) => {
-        const totalVolume = animalRecords.reduce((sum, r) => sum + (r.milk_volume || 0), 0)
-        const fatRecords = animalRecords.filter(r => r.fat_content)
-        const proteinRecords = animalRecords.filter(r => r.protein_content)
-        const avgFat = fatRecords.length > 0
-          ? fatRecords.reduce((sum, r) => sum + (r.fat_content || 0), 0) / fatRecords.length
-          : null
-        const avgProtein = proteinRecords.length > 0
-          ? proteinRecords.reduce((sum, r) => sum + (r.protein_content || 0), 0) / proteinRecords.length
-          : null
-        const sessions = [...new Set(animalRecords.map(r => r.milking_session_id).filter(Boolean as any))]
-        
-        // Get milking group information from first record (prefer snapshot for consistency)
-        const milkingGroupId = animalRecords[0].milking_group_id || null
-        const milkingGroupName = getGroupName(animalRecords[0]) || null
-
-        summaries.push({
-          cycleDate,
-          animal_id: animalId,
-          animalName: animalRecords[0].animals?.name || `Animal ${animalRecords[0].animals?.tag_number}`,
-          animalTag: animalRecords[0].animals?.tag_number || '',
-          totalMilkVolume: totalVolume,
-          recordCount: animalRecords.length,
-          avgFatContent: avgFat,
-          avgProteinContent: avgProtein,
-          sessions: sessions as string[],
-          records: animalRecords,
-          milking_group_id: milkingGroupId,
-          milking_group_name: milkingGroupName
-        })
-      })
-    })
-
-    // Sort by cycle date (most recent first), then by animal name
-    return summaries.sort((a, b) => {
-      const dateCompare = new Date(b.cycleDate).getTime() - new Date(a.cycleDate).getTime()
-      return dateCompare !== 0 ? dateCompare : a.animalName.localeCompare(b.animalName)
-    })
-  }, [milkingCycleGroupedRecords])
-
-  // Create daily summary data for groups view
-  const dailySummaryGroups = useMemo(() => {
-    if (!milkingCycleGroupedRecords) return null
-
-    const summaries: Array<{
-      cycleDate: string
-      milking_group_id: string | null
-      groupName: string
-      totalMilkVolume: number
-      totalRecords: number
-      avgFatContent: number | null
-      avgProteinContent: number | null
-      animalCount: number
-      records: ProductionRecord[]
-    }> = []
-
-    milkingCycleGroupedRecords.forEach((cycleRecords, cycleDate) => {
-      const byGroup = new Map<string | null, ProductionRecord[]>()
-
-      cycleRecords.forEach(record => {
-        const groupId = record.milking_group_id || 'default'
-        if (!byGroup.has(groupId)) {
-          byGroup.set(groupId, [])
-        }
-        byGroup.get(groupId)!.push(record)
-      })
-
-      byGroup.forEach((groupRecords, groupId) => {
-        const totalVolume = groupRecords.reduce((sum, r) => sum + (r.milk_volume || 0), 0)
-        const fatRecords = groupRecords.filter(r => r.fat_content)
-        const proteinRecords = groupRecords.filter(r => r.protein_content)
-        const avgFat = fatRecords.length > 0
-          ? fatRecords.reduce((sum, r) => sum + (r.fat_content || 0), 0) / fatRecords.length
-          : null
-        const avgProtein = proteinRecords.length > 0
-          ? proteinRecords.reduce((sum, r) => sum + (r.protein_content || 0), 0) / proteinRecords.length
-          : null
-        const uniqueAnimals = new Set(groupRecords.map(r => r.animal_id)).size
-        const actualGroupId = groupId === 'default' ? null : (groupId as string)
-        const groupName = groupId !== 'default' ? getGroupNameFromFirstRecord(groupRecords) : null
-
-        summaries.push({
-          cycleDate,
-          milking_group_id: actualGroupId,
-          groupName: groupName || (groupId === 'default' ? 'Default Group' : 'Milking Group'),
-          totalMilkVolume: totalVolume,
-          totalRecords: groupRecords.length,
-          avgFatContent: avgFat,
-          avgProteinContent: avgProtein,
-          animalCount: uniqueAnimals,
-          records: groupRecords
-        })
-      })
-    })
-
-    // Sort by cycle date (most recent first), then by group name
-    return summaries.sort((a, b) => {
-      const dateCompare = new Date(b.cycleDate).getTime() - new Date(a.cycleDate).getTime()
-      return dateCompare !== 0 ? dateCompare : a.groupName.localeCompare(b.groupName)
-    })
-  }, [milkingCycleGroupedRecords, milkingGroups])
-
-  // Pagination - now declared after all summary memos
-  const displayData = useMemo(() => {
-    if (filterSession === 'all') {
-      return viewTab === 'individual' ? (dailySummaryRecords || []) : (dailySummaryGroups || [])
-    }
-    return viewTab === 'individual' ? individualRecords : groupedRecords
-  }, [filterSession, viewTab, dailySummaryRecords, dailySummaryGroups, individualRecords, groupedRecords])
-
-  const totalPages = Math.ceil(displayData.length / RECORDS_PER_PAGE)
-  const startIndex = (currentPage - 1) * RECORDS_PER_PAGE
-  const endIndex = startIndex + RECORDS_PER_PAGE
-  const paginatedData = displayData.slice(startIndex, endIndex)
-
-  // Helper function to calculate animal aggregates for a group
-  const calculateAnimalAggregates = (records: ProductionRecord[] | undefined) => {
-    const aggregates = new Map<string, {
-      animal_id: string
-      animal_name: string
-      animal_tag: string
-      total_volume: number
-      record_count: number
-      records: ProductionRecord[]
-    }>()
-
-    if (!records) {
-      console.log('🔍 calculateAnimalAggregates: records is undefined/null')
-      return []
-    }
-
-    console.log('🔍 calculateAnimalAggregates: received', records.length, 'records')
-    console.log('🔍 records:', records)
-
-    records.forEach((record: ProductionRecord) => {
-      const key = record.animal_id
-      console.log('🔍 Processing record with animal_id:', key, 'animals:', record.animals)
-      if (!aggregates.has(key)) {
-        aggregates.set(key, {
-          animal_id: record.animal_id,
-          animal_name: record.animals?.name || `Animal #${record.animals?.tag_number}`,
-          animal_tag: record.animals?.tag_number || '',
-          total_volume: 0,
-          record_count: 0,
-          records: []
-        })
-      }
-      const agg = aggregates.get(key)!
-      agg.total_volume += record.milk_volume || 0
-      agg.record_count += 1
-      agg.records.push(record)
-    })
-
-    const result = Array.from(aggregates.values()).sort((a, b) => 
-      b.total_volume - a.total_volume
-    )
-    console.log('🔍 calculateAnimalAggregates: returning', result.length, 'aggregates')
-    return result
-  }
-
-  const getSafetyStatusBadge = (status?: string) => {
-    switch (status) {
-      case 'safe':
-        return { label: 'Safe', color: 'bg-green-100 text-green-800', icon: CheckCircle }
-      case 'unsafe_health':
-        return { label: 'Unsafe - Health', color: 'bg-red-100 text-red-800', icon: AlertTriangle }
-      case 'unsafe_colostrum':
-        return { label: 'Colostrum', color: 'bg-yellow-100 text-yellow-800', icon: AlertTriangle }
-      default:
-        return { label: 'Unknown', color: 'bg-gray-100 text-gray-800', icon: AlertTriangle }
-    }
-  }
-
-  const getQualityIndicator = (fatContent?: number, proteinContent?: number) => {
-    if (!fatContent || !proteinContent) return null
-    const fatGood = fatContent >= 3.5 && fatContent <= 4.5
-    const proteinGood = proteinContent >= 3.0 && proteinContent <= 3.5
-    if (fatGood && proteinGood) return { label: 'Excellent', color: 'bg-green-100 text-green-800' }
-    if (fatGood || proteinGood) return { label: 'Good', color: 'bg-yellow-100 text-yellow-800' }
-    return { label: 'Needs Attention', color: 'bg-red-100 text-red-800' }
-  }
-
-  const getRecordingTypeBadge = (recordingType?: string) => {
-    switch (recordingType) {
-      case 'group':
-        return { label: 'Group Recording', color: 'bg-purple-100 text-purple-800', icon: Users }
-      case 'individual':
-      default:
-        return { label: 'Individual Recording', color: 'bg-blue-100 text-blue-800', icon: Droplets }
-    }
-  }
+  // ── Empty state ───────────────────────────────────────────────────────────
 
   if (records.length === 0) {
     return (
-      <div className="text-center py-12">
-        <Droplets className={`mx-auto text-gray-400 ${isMobile ? 'h-8 w-8' : 'h-12 w-12'}`} />
-        <h3 className="mt-4 text-lg font-medium text-gray-900">No production records</h3>
-        <p className="mt-2 text-sm text-gray-500">
-          Start by recording your first milk production data.
-        </p>
-        <Button className="mt-4">
-          <Droplets className="mr-2 h-4 w-4" />
-          Record Production
-        </Button>
+      <div className="flex flex-col items-center justify-center py-20 text-center">
+        <div className="w-16 h-16 rounded-2xl bg-gray-50 border border-gray-100 flex items-center justify-center mb-4">
+          <Droplets className="w-8 h-8 text-gray-300" />
+        </div>
+        <h3 className="text-base font-semibold text-gray-700 mb-1">No production records yet</h3>
+        <p className="text-sm text-gray-400">Start recording milk production to see data here.</p>
       </div>
     )
   }
 
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  const isBasic = settings?.productionTrackingMode === 'basic'
+
   return (
-    <div className="space-y-6">
-      {/* Filter Section */}
-      <div className={`bg-gray-50 rounded-lg border border-gray-200 ${isMobile ? 'p-3' : 'p-4'}`}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-gray-900 flex items-center">
-            <Filter className="w-4 h-4 mr-2" />
-            Filter Records
-          </h3>
-          {(filterSession !== 'all' || filterSafetyStatus !== 'all' || filterCategory !== 'all' || filterDateFrom || filterDateTo) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={clearFilters}
-              className="text-blue-600 hover:text-blue-700"
-            >
-              Clear All
-            </Button>
+    <div className="space-y-4">
+
+      {/* ── Top bar: search + filter toggle ─────────────────────────────── */}
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+          <input
+            type="text"
+            placeholder="Search animal name or tag…"
+            value={filterAnimalSearch}
+            onChange={e => { setFilterAnimalSearch(e.target.value); resetPagination() }}
+            className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 placeholder:text-gray-400"
+          />
+          {filterAnimalSearch && (
+            <button onClick={() => { setFilterAnimalSearch(''); resetPagination() }} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+              <X className="w-4 h-4" />
+            </button>
           )}
         </div>
-
-        <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-5'}`}>
-          {/* Session Filter */}
-          <div>
-            <label htmlFor="filter-session" className="block text-xs font-medium text-gray-700 mb-1">
-              Milking Session
-            </label>
-            <select
-              id="filter-session"
-              value={filterSession}
-              onChange={(e) => handleFilterSessionChange(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-farm-green"
-            >
-              <option value="all">All Sessions</option>
-              {dedupedSessions.map((session) => (
-                <option key={session.id} value={session.name}>
-                  {session.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Safety Status Filter */}
-          <div>
-            <label htmlFor="filter-safety" className="block text-xs font-medium text-gray-700 mb-1">
-              Milk Safety Status
-            </label>
-            <select
-              id="filter-safety"
-              value={filterSafetyStatus}
-              onChange={(e) => handleFilterSafetyChange(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-farm-green"
-            >
-              <option value="all">All Status</option>
-              <option value="safe">Safe</option>
-              <option value="unsafe_health">Unsafe - Health</option>
-              <option value="unsafe_colostrum">Colostrum</option>
-            </select>
-          </div>
-
-          {/* Animal Category Filter */}
-          <div>
-            <label htmlFor="filter-category" className="block text-xs font-medium text-gray-700 mb-1">
-              Animal Category
-            </label>
-            <select
-              id="filter-category"
-              value={filterCategory}
-              onChange={(e) => handleFilterCategoryChange(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-farm-green"
-            >
-              <option value="all">All Categories</option>
-              {availableCategories.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Date From Filter */}
-          <div>
-            <label htmlFor="filter-date-from" className="block text-xs font-medium text-gray-700 mb-1">
-              From Date
-            </label>
-            <input
-              id="filter-date-from"
-              type="date"
-              autoComplete="off"
-              value={filterDateFrom}
-              onChange={(e) => {
-                handleFilterDateFromChange(e.target.value)
-              }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-farm-green"
-            />
-          </div>
-
-          {/* Date To Filter */}
-          <div>
-            <label htmlFor="filter-date-to" className="block text-xs font-medium text-gray-700 mb-1">
-              To Date
-            </label>
-            <input
-              id="filter-date-to"
-              type="date"
-              autoComplete="off"
-              value={filterDateTo}
-              onFocus={() => {
-                setFilterDateToTouched(true)
-              }}
-              onBlur={() => {
-              }}
-              onChange={(e) => {
-                handleFilterDateToChange(e.target.value)
-              }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-farm-green"
-            />
-          </div>
-        </div>
-
-        {/* Filter Results Summary */}
-        <div className="mt-3 pt-3 border-t border-gray-200">
-          <p className="text-xs text-gray-600">
-            {filterSession === 'all' ? (
-              <>
-                Showing <span className="font-semibold">{paginatedData.length}</span> of <span className="font-semibold">{displayData.length}</span> daily {viewTab === 'individual' ? 'animal totals' : 'group totals'}
-              </>
-            ) : (
-              <>
-                Showing <span className="font-semibold">{paginatedData.length}</span> of <span className="font-semibold">{displayData.length}</span> {viewTab === 'individual' ? 'records' : 'groups'}
-                {displayData.length < filteredRecords.length && ` (${filteredRecords.length - displayData.length} filtered out)`}
-              </>
-            )}
-            {(filterCategory !== 'all' || filterSession !== 'all' || filterSafetyStatus !== 'all' || filterDateFrom || filterDateTo) && (
-              <span className="ml-2 text-blue-600 font-medium">Filters active</span>
-            )}
-          </p>
-        </div>
+        <button
+          onClick={() => setShowFilters(p => !p)}
+          className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-xl border transition-colors ${
+            activeFilterCount > 0 || showFilters
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+              : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          <Filter className="w-4 h-4" />
+          Filters
+          {activeFilterCount > 0 && (
+            <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-600 text-white text-[10px] font-bold">
+              {activeFilterCount}
+            </span>
+          )}
+        </button>
       </div>
 
-      {/* View Tab Selector */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-        <div className={`flex items-center ${isMobile ? 'p-0.5' : 'p-1'}`}>
-          <button
-            onClick={() => handleViewTabChange('individual')}
-            className={`flex-1 ${isMobile ? 'px-2 py-2' : 'px-4 py-3'} rounded-lg font-semibold ${isMobile ? 'text-xs' : 'text-sm'} transition-all duration-200 flex items-center justify-center ${isMobile ? 'gap-1' : 'space-x-2'} ${viewTab === 'individual'
-                ? 'bg-gradient-to-r from-farm-green/20 to-farm-green/10 text-farm-green shadow-sm border border-farm-green/30'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-              }`}
-          >
-            <Droplets className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'} ${viewTab === 'individual' ? 'text-farm-green' : 'text-gray-400'}`} />
-            <span>Individual Animals</span>
-          </button>
-          <button
-            onClick={() => handleViewTabChange('groups')}
-            className={`flex-1 ${isMobile ? 'px-2 py-2' : 'px-4 py-3'} rounded-lg font-semibold ${isMobile ? 'text-xs' : 'text-sm'} transition-all duration-200 flex items-center justify-center ${isMobile ? 'gap-1' : 'space-x-2'} ${viewTab === 'groups'
-                ? 'bg-gradient-to-r from-farm-green/20 to-farm-green/10 text-farm-green shadow-sm border border-farm-green/30'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-              }`}
-          >
-            <Users className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'} ${viewTab === 'groups' ? 'text-farm-green' : 'text-gray-400'}`} />
-            <span>Milking Groups</span>
-          </button>
+      {/* ── Collapsible filter panel ─────────────────────────────────────── */}
+      {showFilters && (
+        <div className="bg-white border border-gray-200 rounded-2xl p-4 space-y-3">
+          <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2 lg:grid-cols-4'}`}>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Milking session</label>
+              <select
+                value={filterSession}
+                onChange={e => { setFilterSession(e.target.value); resetPagination() }}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+              >
+                <option value="all">All sessions</option>
+                {dedupedSessions.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Milk safety</label>
+              <select
+                value={filterSafetyStatus}
+                onChange={e => { setFilterSafetyStatus(e.target.value); resetPagination() }}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+              >
+                <option value="all">All statuses</option>
+                <option value="safe">Safe</option>
+                <option value="unsafe_health">Unsafe – Health</option>
+                <option value="unsafe_colostrum">Colostrum</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">From date</label>
+              <input
+                type="date"
+                value={filterDateFrom}
+                onChange={e => {
+                  console.log('[ProductionRecordsList] From date changed:', {
+                    newValue: e.target.value,
+                    currentDateTo: filterDateTo,
+                  })
+                  setFilterDateFrom(e.target.value)
+                  resetPagination()
+                }}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">To date</label>
+              <input
+                type="date"
+                value={filterDateTo}
+                onFocus={() => {
+                  console.log('[ProductionRecordsList] To date focused')
+                  setFilterDateToTouched(true)
+                }}
+                onChange={e => {
+                  console.log('[ProductionRecordsList] To date changed:', {
+                    newValue: e.target.value,
+                    currentDateFrom: filterDateFrom,
+                    isTouched: filterDateToTouched,
+                  })
+                  if (filterDateToTouched) {
+                    setFilterDateTo(e.target.value)
+                    resetPagination()
+                  }
+                }}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+              />
+            </div>
+            {availableCategories.length > 0 && (
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Animal category</label>
+                <select
+                  value={filterCategory}
+                  onChange={e => { setFilterCategory(e.target.value); resetPagination() }}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                >
+                  <option value="all">All categories</option>
+                  {availableCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+            )}
+          </div>
+          {activeFilterCount > 0 && (
+            <div className="flex justify-end pt-1">
+              <button onClick={clearFilters} className="text-xs text-gray-500 hover:text-red-600 flex items-center gap-1">
+                <X className="w-3 h-3" /> Clear all filters
+              </button>
+            </div>
+          )}
         </div>
+      )}
+
+      {/* ── View tab selector ────────────────────────────────────────────── */}
+      <div className="flex rounded-xl border border-gray-200 bg-gray-50 p-1 gap-1">
+        {(['individual', 'groups'] as ViewTab[]).map(tab => (
+          <button
+            key={tab}
+            onClick={() => { setViewTab(tab); resetPagination(); setExpandedGroups(new Set()) }}
+            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-sm font-medium transition-all ${
+              viewTab === tab
+                ? 'bg-white shadow-sm border border-gray-200 text-gray-900'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {tab === 'individual' ? <Droplets className="w-4 h-4" /> : <Users className="w-4 h-4" />}
+            {tab === 'individual' ? 'Individual animals' : 'Milking groups'}
+          </button>
+        ))}
       </div>
 
-      {/* Records List */}
+      {/* ── Results summary ──────────────────────────────────────────────── */}
+      <p className="text-xs text-gray-400 px-1">
+        {displayData.length === 0 ? 'No results' : (
+          <>Showing {Math.min(paginatedData.length, displayData.length)} of {displayData.length} {filterSession === 'all' ? (viewTab === 'individual' ? 'daily animal totals' : 'daily group totals') : (viewTab === 'individual' ? 'records' : 'groups')}</>
+        )}
+        {activeFilterCount > 0 && <span className="ml-2 text-emerald-600 font-medium">· {activeFilterCount} filter{activeFilterCount > 1 ? 's' : ''} active</span>}
+      </p>
+
+      {/* ── Empty filtered state ─────────────────────────────────────────── */}
       {paginatedData.length === 0 ? (
-        <div className="text-center py-12 bg-gray-50 rounded-lg border border-gray-200">
-          <Droplets className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-4 text-lg font-medium text-gray-900">No {viewTab === 'individual' ? 'records' : 'groups'} match your filters</h3>
-          <p className="mt-2 text-sm text-gray-500">
-            Try adjusting your filter criteria
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={clearFilters}
-            className="mt-4"
-          >
-            Clear Filters
-          </Button>
+        <div className="flex flex-col items-center justify-center py-16 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
+          <Search className="w-8 h-8 text-gray-300 mb-3" />
+          <p className="text-sm font-medium text-gray-600">No records match your filters</p>
+          <button onClick={clearFilters} className="mt-2 text-xs text-emerald-600 hover:underline">Clear filters</button>
         </div>
+
       ) : filterSession === 'all' && viewTab === 'individual' && dailySummaryRecords ? (
-        // Daily totals view for individual animals
-        <div className="space-y-4 max-h-[600px] overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-100 [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded pr-2">
-          {(paginatedData as any[]).map((summary, idx) => {
-            const qualityIndicator = getQualityIndicator(summary.avgFatContent || undefined, summary.avgProteinContent || undefined)
-            const summaryKey = `${summary.cycleDate}-${summary.animal_id}`
-            const isSessionViewActive = selectedSession?.startsWith(summaryKey)
-            // Extract sessionId after the separator '|' to avoid UUID hyphen conflicts
-            const selectedSessionId = isSessionViewActive ? selectedSession?.split('|')[1] : null
-            const sessionRecords = isSessionViewActive
-              ? summary.records.filter((r: ProductionRecord) => r.milking_session_id === selectedSessionId)
-              : []
+        /* ─────────────────────────────────────────────────────────────────
+           ALL SESSIONS — INDIVIDUAL ANIMALS (daily totals)
+        ──────────────────────────────────────────────────────────────── */
+        <div className="space-y-1">
+          {(() => {
+            let lastDate = ''
+            return (paginatedData as any[]).map((summary) => {
+              const summaryKey = `${summary.cycleDate}-${summary.animal_id}`
+              const isSessionViewActive = selectedSession?.startsWith(summaryKey)
+              const selectedSessionId = isSessionViewActive ? selectedSession?.split('|')[1] : null
+              const sessionRecords: ProductionRecord[] = isSessionViewActive
+                ? summary.records.filter((r: ProductionRecord) => r.milking_session_id === selectedSessionId)
+                : []
+              const activeId = activeSessionBadge[summaryKey]
+              const qual = qualityLabel(summary.avgFatContent, summary.avgProteinContent)
+              const showDivider = summary.cycleDate !== lastDate
+              lastDate = summary.cycleDate
 
-            return (
-              <Card key={`summary-${summary.cycleDate}-${summary.animal_id}`} className="hover:shadow-md transition-shadow overflow-hidden">
-                <CardContent className="p-2 md:p-3">
-                  {/* Session Detail View - DEBUG CONDITION */}
-                  {(() => {
-                    const shouldRender = isSessionViewActive && sessionRecords.length > 0
-                    return shouldRender
-                  })() ? (
-                    <div className="space-y-3">
-                      {/* Back Button and Title */}
-                      <div className="flex items-center justify-between mb-3 pb-3 border-b border-gray-200">
-                        <button
-                          onClick={() => {
-                            setSelectedSession(null)
-                          }}
-                          className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors"
-                        >
-                          ← Back to Daily View
-                        </button>
-                        <div className="text-sm font-semibold text-gray-900">
-                          {summary.animalName} • {getSessionName(selectedSessionId || undefined)} • {formatDate(summary.cycleDate)}
+              // Metrics (reactive to active session badge)
+              const recs: ProductionRecord[] = activeId
+                ? summary.records.filter((r: any) => r.milking_session_id === activeId)
+                : summary.records
+              const vol = recs.reduce((s: number, r: any) => s + (r.milk_volume || 0), 0)
+              const fatVals = recs.map((r: any) => r.fat_content).filter((v: any) => v != null)
+              const protVals = recs.map((r: any) => r.protein_content).filter((v: any) => v != null)
+              const avgFat = fatVals.length ? fatVals.reduce((a: number, b: number) => a + b, 0) / fatVals.length : null
+              const avgProt = protVals.length ? protVals.reduce((a: number, b: number) => a + b, 0) / protVals.length : null
+
+              return (
+                <React.Fragment key={summaryKey}>
+                  {showDivider && <DayDivider date={summary.cycleDate} />}
+
+                  <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden hover:border-gray-200 transition-colors">
+
+                    {/* Session detail drill-down */}
+                    {isSessionViewActive && sessionRecords.length > 0 ? (
+                      <div className="p-4 space-y-3">
+                        <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+                          <button
+                            onClick={() => setSelectedSession(null)}
+                            className="text-xs font-medium text-emerald-600 hover:text-emerald-800 flex items-center gap-1"
+                          >
+                            <ChevronLeft className="w-3 h-3" /> Back to daily view
+                          </button>
+                          <span className="text-xs font-semibold text-gray-700">
+                            {summary.animalName} · {getSessionName(selectedSessionId || undefined)} · {formatDate(summary.cycleDate)}
+                          </span>
                         </div>
-                      </div>
-
-                      {/* Individual Session Records */}
-                      {sessionRecords.map((record: ProductionRecord) => {
-                        const safetyStatus = getSafetyStatusBadge(record.milk_safety_status)
-                        const SafetyIcon = safetyStatus.icon
-
-                        return (
-                          <div key={record.id} className="p-2 md:p-3 bg-stone-50 rounded-lg border border-stone-200 space-y-2">
-                            {/* Time and Safety Status */}
+                        {sessionRecords.map((record: ProductionRecord) => (
+                          <div key={record.id} className="p-3 bg-gray-50 rounded-xl border border-gray-100 space-y-3">
                             <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <Clock className="w-3 h-3 text-gray-500" />
-                                <span className="text-xs md:text-sm font-medium text-gray-900">{formatDateTime(record.created_at)}</span>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <Badge className={safetyStatus.color} style={{ fontSize: '0.7rem' }}>
-                                  <SafetyIcon className="w-2 h-2 mr-0.5" />
-                                  {safetyStatus.label}
-                                </Badge>
-                              </div>
+                              <span className="text-xs text-gray-500">{formatDateTime(record.created_at)}</span>
+                              <SafetyPill status={record.milk_safety_status} />
                             </div>
-
-                            {/* Mastitis Test and Temperature Info */}
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-1 text-xs">
-                              <div className="p-1.5 bg-white rounded border border-gray-200">
-                                <p className="font-semibold text-gray-700">Mastitis Test</p>
-                                <p className="text-gray-900">{record.mastitis_test_performed ? (record.mastitis_result ? record.mastitis_result.charAt(0).toUpperCase() + record.mastitis_result.slice(1) : 'Tested') : 'N/A'}</p>
-                              </div>
-                              <div className="p-1.5 bg-white rounded border border-gray-200">
-                                <p className="font-semibold text-gray-700">Temperature</p>
-                                <p className="text-gray-900">{record.temperature !== null && record.temperature !== undefined ? record.temperature.toFixed(1) + '°C' : 'N/A'}</p>
-                              </div>
-                              <div className="p-1.5 bg-white rounded border border-gray-200">
-                                <p className="font-semibold text-gray-700">Milk Safety</p>
-                                <p className="text-gray-900">{safetyStatus.label}</p>
-                              </div>
+                            <div className={`grid gap-2 ${isBasic ? 'grid-cols-2' : 'grid-cols-2 md:grid-cols-4'}`}>
+                              <StatTile value={`${record.milk_volume?.toFixed(1) ?? '—'} L`} label="Volume" color="bg-sky-50 text-sky-700" />
+                              <StatTile value={record.temperature != null ? `${record.temperature.toFixed(1)}°C` : '—'} label="Temp" color="bg-rose-50 text-rose-700" />
+                              {!isBasic && <>
+                                <StatTile value={record.fat_content != null ? `${record.fat_content.toFixed(2)}%` : '—'} label="Fat" color="bg-amber-50 text-amber-700" />
+                                <StatTile value={record.protein_content != null ? `${record.protein_content.toFixed(2)}%` : '—'} label="Protein" color="bg-emerald-50 text-emerald-700" />
+                              </>}
                             </div>
-
-                            {/* Core Metrics */}
-                            <div className={`grid gap-1 ${settings?.productionTrackingMode === 'basic' ? 'grid-cols-2 md:grid-cols-2' : 'grid-cols-2 md:grid-cols-4'}`}>
-                              <div className="text-center p-1.5 bg-blue-50 rounded">
-                                <p className="text-sm md:text-base font-bold text-blue-600">{record.milk_volume?.toFixed(1) || 'N/A'}</p>
-                                <p className="text-xs text-blue-600 font-medium">Volume (L)</p>
-                              </div>
-                              <div className="text-center p-1.5 bg-red-50 rounded">
-                                <p className="text-sm md:text-base font-bold text-red-600">{record.temperature ? record.temperature.toFixed(1) : 'N/A'}</p>
-                                <p className="text-xs text-red-600 font-medium">Temp (°C)</p>
-                              </div>
-                              {settings?.productionTrackingMode !== 'basic' && (
-                                <>
-                                  <div className="text-center p-1.5 bg-orange-50 rounded">
-                                    <p className="text-sm md:text-base font-bold text-orange-600">{record.fat_content !== null && record.fat_content !== undefined ? record.fat_content.toFixed(2) : 'N/A'}</p>
-                                    <p className="text-xs text-orange-600 font-medium">Fat %</p>
-                                  </div>
-                                  <div className="text-center p-1.5 bg-green-50 rounded">
-                                    <p className="text-sm md:text-base font-bold text-green-600">{record.protein_content !== null && record.protein_content !== undefined ? record.protein_content.toFixed(2) : 'N/A'}</p>
-                                    <p className="text-xs text-green-600 font-medium">Protein %</p>
-                                  </div>
-                                </>
-                              )}
-                            </div>
-
-                            {/* Additional Metrics */}
-                            {settings?.productionTrackingMode !== 'basic' && (
-                              <div className="grid grid-cols-2 md:grid-cols-3 gap-1">
-                                <div className="text-center p-1.5 bg-yellow-50 rounded">
-                                  <p className="text-xs md:text-sm font-bold text-yellow-600">{record.somatic_cell_count !== null && record.somatic_cell_count !== undefined ? record.somatic_cell_count.toLocaleString() : 'N/A'}</p>
-                                  <p className="text-xs text-yellow-600 font-medium">SCC</p>
+                            {!isBasic && (
+                              <div className="grid grid-cols-3 gap-2 text-xs">
+                                <div className="p-2 bg-white rounded-lg border border-gray-100">
+                                  <p className="text-gray-400 mb-0.5 font-medium">SCC</p>
+                                  <p className="text-gray-800 font-semibold">{record.somatic_cell_count != null ? record.somatic_cell_count.toLocaleString() : '—'}</p>
                                 </div>
-                                <div className="text-center p-1.5 bg-cyan-50 rounded">
-                                  <p className="text-xs md:text-sm font-bold text-cyan-600">{record.lactose_content !== null && record.lactose_content !== undefined ? record.lactose_content.toFixed(2) : 'N/A'}</p>
-                                  <p className="text-xs text-cyan-600 font-medium">Lactose %</p>
+                                <div className="p-2 bg-white rounded-lg border border-gray-100">
+                                  <p className="text-gray-400 mb-0.5 font-medium">Lactose</p>
+                                  <p className="text-gray-800 font-semibold">{record.lactose_content != null ? `${record.lactose_content.toFixed(2)}%` : '—'}</p>
                                 </div>
-                                <div className="text-center p-1.5 bg-indigo-50 rounded">
-                                  <p className="text-xs md:text-sm font-bold text-indigo-600">{record.ph_level !== null && record.ph_level !== undefined ? record.ph_level.toFixed(2) : 'N/A'}</p>
-                                  <p className="text-xs text-indigo-600 font-medium">pH</p>
+                                <div className="p-2 bg-white rounded-lg border border-gray-100">
+                                  <p className="text-gray-400 mb-0.5 font-medium">pH</p>
+                                  <p className="text-gray-800 font-semibold">{record.ph_level != null ? record.ph_level.toFixed(2) : '—'}</p>
                                 </div>
                               </div>
                             )}
-
-                            {/* Notes */}
-                            {record.notes && (
-                              <div className="p-1.5 bg-gray-100 rounded border border-gray-200">
-                                <p className="text-xs text-gray-700">
-                                  <span className="font-semibold">Notes:</span> {record.notes}
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              <div className="p-2 bg-white rounded-lg border border-gray-100">
+                                <p className="text-gray-400 mb-0.5 font-medium">Mastitis</p>
+                                <p className="text-gray-800 font-semibold">
+                                  {record.mastitis_test_performed
+                                    ? record.mastitis_result
+                                      ? record.mastitis_result.charAt(0).toUpperCase() + record.mastitis_result.slice(1)
+                                      : 'Tested'
+                                    : 'N/A'}
                                 </p>
                               </div>
-                            )}
-
-                            {/* Action Buttons */}
+                              {record.notes && (
+                                <div className="p-2 bg-white rounded-lg border border-gray-100 col-span-1">
+                                  <p className="text-gray-400 mb-0.5 font-medium">Notes</p>
+                                  <p className="text-gray-700 text-[11px] line-clamp-2">{record.notes}</p>
+                                </div>
+                              )}
+                            </div>
                             {canEdit && (
-                              <div className="flex gap-1 justify-end pt-1">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => onView?.(record)}
-                                  className="h-6 px-2 text-xs"
-                                >
-                                  <Eye className="w-3 h-3 mr-1" />
-                                  View
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleEdit(record)}
-                                  className="h-6 px-2 text-xs"
-                                >
-                                  <Edit className="w-3 h-3 mr-1" />
-                                  Edit
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleDelete(record.id)}
-                                  disabled={deletingId === record.id}
-                                  className="h-6 px-2 text-xs text-red-600 hover:text-red-800"
-                                >
-                                  <Trash2 className="w-3 h-3 mr-1" />
-                                  {deletingId === record.id ? 'Deleting' : 'Delete'}
-                                </Button>
+                              <div className="flex gap-2 pt-1">
+                                <button onClick={() => onView?.(record)} className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded-lg hover:bg-gray-100">
+                                  <Eye className="w-3 h-3" /> View
+                                </button>
+                                <button onClick={() => handleEdit(record)} className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded-lg hover:bg-gray-100">
+                                  <Edit className="w-3 h-3" /> Edit
+                                </button>
+                                <button onClick={() => handleDelete(record.id)} disabled={deletingId === record.id} className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 px-2 py-1 rounded-lg hover:bg-red-50">
+                                  <Trash2 className="w-3 h-3" /> {deletingId === record.id ? 'Deleting…' : 'Delete'}
+                                </button>
                               </div>
                             )}
                           </div>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    /* Daily Total View */
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-start space-x-2 flex-1 min-w-0">
-                        <div className="flex-shrink-0">
-                          <div className="w-10 h-10 bg-farm-green/10 rounded-lg flex items-center justify-center">
-                            <Droplets className="w-5 h-5 text-farm-green" />
+                        ))}
+                      </div>
+                    ) : (
+                      /* Daily total card */
+                      <div className="p-4">
+                        {/* Animal header */}
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0">
+                              <Droplets className="w-4 h-4 text-emerald-600" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-gray-900 leading-tight">{summary.animalName}</p>
+                              <p className="text-xs text-gray-400">Tag #{summary.animalTag}</p>
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap justify-end gap-1.5">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-gray-100 text-gray-600 border border-gray-200">
+                              <Clock className="w-3 h-3" />
+                              {summary.recordCount} session{summary.recordCount !== 1 ? 's' : ''}
+                            </span>
+                            {summary.milking_group_name && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <Users className="w-3 h-3" />
+                                {summary.milking_group_name}
+                              </span>
+                            )}
+                            {qual && !isBasic && (
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border ${qual.cls}`}>
+                                {qual.label}
+                              </span>
+                            )}
                           </div>
                         </div>
 
-                        <div className="min-w-0 flex-1">
-                          {/* Header Row */}
-                          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-1 mb-2">
-                            <div>
-                              <h4 className="text-sm md:text-base font-semibold text-gray-900 truncate">
-                                {summary.animalName}
-                              </h4>
-                              <p className="text-xs text-gray-600">
-                                Tag: {summary.animalTag}
-                              </p>
-                            </div>
+                        {/* Stats */}
+                        <div className={`grid gap-2 mb-3 ${isBasic ? 'grid-cols-2' : 'grid-cols-2 md:grid-cols-4'}`}>
+                          <StatTile value={`${vol.toFixed(1)} L`} label={activeId ? `${getSessionName(activeId)}` : 'Total'} color={activeId ? 'bg-indigo-50 text-indigo-700' : 'bg-sky-50 text-sky-700'} />
+                          {!isBasic && <>
+                            <StatTile value={avgFat != null ? `${avgFat.toFixed(2)}%` : '—'} label="Avg fat" color="bg-amber-50 text-amber-700" />
+                            <StatTile value={avgProt != null ? `${avgProt.toFixed(2)}%` : '—'} label="Avg protein" color="bg-emerald-50 text-emerald-700" />
+                          </>}
+                          <StatTile value={String(recs.length)} label="Records" color="bg-violet-50 text-violet-700" />
+                        </div>
 
-                            <div className="flex flex-wrap items-center gap-1">
-                              <Badge className="bg-blue-100 text-blue-800 text-xs">
-                                <Calendar className="w-2 h-2 mr-0.5" />
-                                {formatDate(summary.cycleDate)}
-                              </Badge>
-                              <Badge className="bg-indigo-100 text-indigo-800 text-xs">
-                                <Clock className="w-2 h-2 mr-0.5" />
-                                {summary.recordCount} session{summary.recordCount !== 1 ? 's' : ''}
-                              </Badge>
-                              {summary.milking_group_name && (
-                                <Badge className="bg-green-100 text-green-800 text-xs">
-                                  <Users className="w-2 h-2 mr-0.5" />
-                                  {summary.milking_group_name}
-                                </Badge>
-                              )}
-                              {settings?.productionTrackingMode !== 'basic' && qualityIndicator && (
-                                <Badge className={`${qualityIndicator.color} text-xs`}>
-                                  {qualityIndicator.label}
-                                </Badge>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Production Metrics — reactive to selected session badge */}
+                        {/* Health row */}
+                        <div className="grid grid-cols-3 gap-2 text-xs mb-3">
                           {(() => {
-                            const activeId = activeSessionBadge[summaryKey]
-                            const recs: any[] = activeId
-                              ? summary.records.filter((r: any) => r.milking_session_id === activeId)
-                              : summary.records
-
-                            // Volume
-                            const vol = recs.reduce((s: number, r: any) => s + (r.milk_volume || 0), 0)
-
-                            // Fat & Protein averages
-                            const fatVals = recs.map((r: any) => r.fat_content).filter((v: any) => v != null)
-                            const avgFat = fatVals.length ? fatVals.reduce((a: number, b: number) => a + b, 0) / fatVals.length : null
-
-                            const protVals = recs.map((r: any) => r.protein_content).filter((v: any) => v != null)
-                            const avgProt = protVals.length ? protVals.reduce((a: number, b: number) => a + b, 0) / protVals.length : null
-
-                            // Temperature average
-                            const tempVals = recs.map((r: any) => r.temperature).filter((v: any) => v != null)
-                            const avgTemp = tempVals.length ? tempVals.reduce((a: number, b: number) => a + b, 0) / tempVals.length : null
-
-                            // Mastitis: first record that was tested
-                            const mastitisTested = recs.find((r: any) => r.mastitis_test_performed)
-                            const mastitisTxt = mastitisTested
-                              ? mastitisTested.mastitis_result
-                                ? mastitisTested.mastitis_result.charAt(0).toUpperCase() + mastitisTested.mastitis_result.slice(1)
+                            const mastitis = recs.find((r: any) => r.mastitis_test_performed)
+                            const mastitisTxt = mastitis
+                              ? mastitis.mastitis_result
+                                ? mastitis.mastitis_result.charAt(0).toUpperCase() + mastitis.mastitis_result.slice(1)
                                 : 'Tested'
                               : 'N/A'
-
-                            // Milk safety: worst status wins
-                            const statuses = recs.map((r: any) => r.milk_safety_status).filter(Boolean)
-                            const safetyStatus = statuses.includes('unsafe_health') ? 'unsafe_health'
-                              : statuses.includes('unsafe_colostrum') ? 'unsafe_colostrum'
-                                : statuses.length ? 'safe'
-                                  : null
-                            const safetyBadge = getSafetyStatusBadge(safetyStatus as any)
-
-                            const isFiltered = !!activeId
-                            const volLabel = isFiltered ? `${getSessionName(activeId)} L` : 'Total L'
-
+                            const tempVals = recs.map((r: any) => r.temperature).filter((v: any) => v != null)
+                            const avgTemp = tempVals.length ? (tempVals.reduce((a: number, b: number) => a + b, 0) / tempVals.length).toFixed(1) : null
                             return (
                               <>
-                                <div className={`grid gap-1 mb-1 ${settings?.productionTrackingMode === 'basic' ? 'grid-cols-2 md:grid-cols-2' : 'grid-cols-2 md:grid-cols-4'}`}>
-                                  <div className={`text-center p-1 md:p-2 rounded transition-colors ${isFiltered ? 'bg-indigo-50' : 'bg-blue-50'}`}>
-                                    <p className={`text-base md:text-lg font-bold ${isFiltered ? 'text-indigo-600' : 'text-blue-600'}`}>{vol.toFixed(1)}</p>
-                                    <p className={`text-xs font-medium ${isFiltered ? 'text-indigo-600' : 'text-blue-600'}`}>{volLabel}</p>
-                                  </div>
-                                  {settings?.productionTrackingMode !== 'basic' && (
-                                    <>
-                                      <div className="text-center p-1 md:p-2 bg-orange-50 rounded">
-                                        <p className="text-sm md:text-base font-bold text-orange-600">{avgFat !== null ? avgFat.toFixed(2) + '%' : 'N/A'}</p>
-                                        <p className="text-xs text-orange-600 font-medium">Fat</p>
-                                      </div>
-                                      <div className="text-center p-1 md:p-2 bg-green-50 rounded">
-                                        <p className="text-sm md:text-base font-bold text-green-600">{avgProt !== null ? avgProt.toFixed(2) + '%' : 'N/A'}</p>
-                                        <p className="text-xs text-green-600 font-medium">Protein</p>
-                                      </div>
-                                    </>
-                                  )}
-                                  <div className="text-center p-1 md:p-2 bg-purple-50 rounded">
-                                    <p className="text-sm md:text-base font-bold text-purple-600">{recs.length}</p>
-                                    <p className="text-xs text-purple-600 font-medium">Records</p>
-                                  </div>
+                                <div className="p-2 bg-gray-50 rounded-xl border border-gray-100">
+                                  <p className="text-gray-400 font-medium mb-0.5">Mastitis</p>
+                                  <p className="text-gray-800 font-semibold">{mastitisTxt}</p>
                                 </div>
-
-                                <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-gray-200">
-                                  <div className="text-xs p-2 bg-gray-50 rounded">
-                                    <p className="font-semibold text-gray-700 mb-1">Mastitis Test</p>
-                                    <p className="text-gray-900">{mastitisTxt}</p>
-                                  </div>
-                                  <div className="text-xs p-2 bg-gray-50 rounded">
-                                    <p className="font-semibold text-gray-700 mb-1">Avg Temperature</p>
-                                    <p className="text-gray-900">{avgTemp !== null ? avgTemp.toFixed(1) + '°C' : 'N/A'}</p>
-                                  </div>
-                                  <div className={`text-xs p-2 rounded ${safetyStatus ? safetyBadge.color : 'bg-gray-50'}`}>
-                                    <p className="font-semibold mb-1">Milk Safety</p>
-                                    <p className="font-medium">{safetyBadge.label}</p>
-                                  </div>
+                                <div className="p-2 bg-gray-50 rounded-xl border border-gray-100">
+                                  <p className="text-gray-400 font-medium mb-0.5">Avg temp</p>
+                                  <p className="text-gray-800 font-semibold">{avgTemp ? `${avgTemp}°C` : '—'}</p>
+                                </div>
+                                <div className="p-2 bg-gray-50 rounded-xl border border-gray-100">
+                                  <p className="text-gray-400 font-medium mb-0.5">Safety</p>
+                                  <SafetyPill status={worstSafety(recs)} />
                                 </div>
                               </>
                             )
                           })()}
-
-                          {/* Sessions in this cycle */}
-                          <div className="mt-1 pt-1 border-t border-gray-200">
-                            <button
-                              onClick={() => {
-                                const key = `${summary.cycleDate}-${summary.animal_id}`
-                                const newSet = new Set(expandedSessions)
-                                if (newSet.has(key)) {
-                                  newSet.delete(key)
-                                } else {
-                                  newSet.add(key)
-                                }
-                                setExpandedSessions(newSet)
-                              }}
-                              className="flex items-center gap-1 text-xs font-semibold text-gray-600 hover:text-gray-900 transition-colors cursor-pointer"
-                            >
-                              <ChevronDown
-                                className={`w-3 h-3 transition-transform ${expandedSessions.has(`${summary.cycleDate}-${summary.animal_id}`) ? 'rotate-180' : ''}`}
-                              />
-                              Sessions in cycle ({summary.sessions.length})
-                            </button>
-                            {expandedSessions.has(`${summary.cycleDate}-${summary.animal_id}`) && (
-                              <div className="flex flex-wrap gap-1 mt-1">
-                                {summary.sessions.map((sessionId: string) => {
-                                  const isActive = activeSessionBadge[summaryKey] === sessionId
-                                  return (
-                                    <button
-                                      key={sessionId}
-                                      onClick={() => {
-
-                                        if (activeSessionBadge[summaryKey] === sessionId) {
-                                          // Toggle OFF: clear both states
-                                          const next = { ...activeSessionBadge }
-                                          delete next[summaryKey]
-                                          setActiveSessionBadge(next)
-                                          setSelectedSession(null)
-                                        } else {
-                                          // Toggle ON: set both states at component level
-                                          const newSelectedSession = `${summaryKey}|${sessionId}`
-                                          setActiveSessionBadge(prev => ({ ...prev, [summaryKey]: sessionId }))
-                                          setSelectedSession(newSelectedSession)
-                                        }
-                                      }}
-                                      className="transition-all"
-                                    >
-                                      <Badge
-                                        className={`cursor-pointer hover:opacity-80 hover:shadow-md transition-all ${isActive
-                                            ? 'bg-indigo-200 text-indigo-900 ring-2 ring-indigo-400'
-                                            : getSessionBadgeColor(sessionId)
-                                          }`}
-                                      >
-                                        {getSessionName(sessionId)}
-                                      </Badge>
-                                    </button>
-                                  )
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
-      ) : filterSession === 'all' && viewTab === 'groups' && dailySummaryGroups ? (
-        // Daily totals view for milking groups
-        <div className="space-y-4 max-h-[600px] overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-100 [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded pr-2">
-          {(paginatedData as any[]).map((summary) => {
-            const qualityIndicator = getQualityIndicator(summary.avgFatContent || undefined, summary.avgProteinContent || undefined)
-
-            return (
-              <Card key={`group-summary-${summary.cycleDate}-${summary.milking_group_id}`} className="hover:shadow-md transition-shadow overflow-hidden">
-                <CardContent className="p-4 md:p-6">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex items-start space-x-4 flex-1 min-w-0">
-                      <div className="flex-shrink-0">
-                        <div className="w-12 h-12 bg-farm-green/10 rounded-lg flex items-center justify-center">
-                          <Users className="w-6 h-6 text-farm-green" />
-                        </div>
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        {/* Header Row */}
-                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-3">
-                          <div>
-                            <h4 className="text-base md:text-lg font-semibold text-gray-900 truncate">
-                              {summary.groupName}
-                            </h4>
-                            <p className="text-xs md:text-sm text-gray-600">
-                              {summary.animalCount} animal{summary.animalCount !== 1 ? 's' : ''} • {summary.totalRecords} milking record{summary.totalRecords !== 1 ? 's' : ''}
-                            </p>
-                          </div>
-
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge className="bg-blue-100 text-blue-800">
-                              <Calendar className="w-3 h-3 mr-1" />
-                              {formatDate(summary.cycleDate)}
-                            </Badge>
-                            {settings?.productionTrackingMode !== 'basic' && qualityIndicator && (
-                              <Badge className={qualityIndicator.color}>
-                                {qualityIndicator.label}
-                              </Badge>
-                            )}
-                          </div>
                         </div>
 
-                        {/* Production Metrics Grid */}
-                        <div className={`grid gap-2 ${settings?.productionTrackingMode === 'basic' ? 'grid-cols-2 md:grid-cols-2' : 'grid-cols-2 md:grid-cols-4'}`}>
-                          <div className="text-center p-2 md:p-3 bg-blue-50 rounded">
-                            <p className="text-lg md:text-2xl font-bold text-blue-600">{summary.totalMilkVolume.toFixed(1)}</p>
-                            <p className="text-xs text-blue-600 font-medium">Total Liters</p>
-                          </div>
-                          {settings?.productionTrackingMode !== 'basic' && (
-                            <>
-                              <div className="text-center p-2 md:p-3 bg-orange-50 rounded">
-                                <p className="text-base md:text-xl font-bold text-orange-600">{summary.avgFatContent !== null ? summary.avgFatContent.toFixed(2) + '%' : 'N/A'}</p>
-                                <p className="text-xs text-orange-600 font-medium">Avg Fat</p>
-                              </div>
-                              <div className="text-center p-2 md:p-3 bg-green-50 rounded">
-                                <p className="text-base md:text-xl font-bold text-green-600">{summary.avgProteinContent !== null ? summary.avgProteinContent.toFixed(2) + '%' : 'N/A'}</p>
-                                <p className="text-xs text-green-600 font-medium">Avg Protein</p>
-                              </div>
-                            </>
-                          )}
-                          <div className="text-center p-2 md:p-3 bg-purple-50 rounded">
-                            <p className="text-base md:text-lg font-bold text-purple-600">{summary.totalRecords}</p>
-                            <p className="text-xs text-purple-600 font-medium">Records</p>
-                          </div>
-                        </div>
-
-                        {/* Health and Safety Details */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-4 pt-4 border-t border-gray-200">
-                          <div className="text-sm p-3 bg-gray-50 rounded">
-                            <p className="font-semibold text-gray-700 mb-2">Mastitis Test Status</p>
-                            <p className="text-gray-900">{summary.records.some((r: ProductionRecord) => r.mastitis_test_performed) ? (summary.records.find((r: ProductionRecord) => r.mastitis_result)?.mastitis_result ? summary.records.find((r: ProductionRecord) => r.mastitis_result)?.mastitis_result?.charAt(0).toUpperCase() + summary.records.find((r: ProductionRecord) => r.mastitis_result)?.mastitis_result?.slice(1) : 'Tested') : 'N/A'}</p>
-                          </div>
-                          <div className="text-sm p-3 bg-gray-50 rounded">
-                            <p className="font-semibold text-gray-700 mb-2">Average Temperature</p>
-                            <p className="text-gray-900">{summary.records.filter((r: ProductionRecord) => r.temperature).length > 0 ? (summary.records.filter((r: ProductionRecord) => r.temperature).reduce((sum: number, r: ProductionRecord) => sum + (r.temperature || 0), 0) / summary.records.filter((r: ProductionRecord) => r.temperature).length).toFixed(1) + '°C' : 'N/A'}</p>
-                          </div>
-                          <div className="text-sm p-3 bg-gray-50 rounded">
-                            <p className="font-semibold text-gray-700 mb-2">Milk Safety Status</p>
-                            <p className="text-gray-900">{getSafetyStatusBadge(summary.records[0]?.milk_safety_status).label}</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
-      ) : viewTab === 'individual' ? (
-        // Individual records view
-        <div className="space-y-4 max-h-[600px] overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-100 [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded pr-2">
-          {(paginatedData as any[]).map((record) => {
-            const qualityIndicator = getQualityIndicator(record.avgFatContent || undefined, record.avgProteinContent || undefined)
-            const safetyStatus = getSafetyStatusBadge(record.milk_safety_status)
-            const recordingTypeBadge = getRecordingTypeBadge(record.recording_type)
-            const SafetyIcon = safetyStatus.icon
-            const RecordingTypeIcon = recordingTypeBadge.icon
-
-            return (
-              <Card key={record.id} className="hover:shadow-md transition-shadow overflow-hidden">
-                <CardContent className="p-2 md:p-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-start space-x-2 flex-1 min-w-0">
-                      <div className="flex-shrink-0">
-                        <div className="w-10 h-10 bg-farm-green/10 rounded-lg flex items-center justify-center">
-                          <Droplets className="w-5 h-5 text-farm-green" />
-                        </div>
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        {/* Header Row */}
-                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-1 mb-1">
-                          <div>
-                            <h4 className="text-sm md:text-base font-semibold text-gray-900 truncate">
-                              {record.animals?.name || `Animal ${record.animals?.tag_number}`}
-                            </h4>
-                            <p className="text-xs text-gray-600">
-                              Tag: {record.animals?.tag_number}
-                            </p>
-                          </div>
-
-                          <div className="flex flex-wrap items-center gap-1">
-                            <Badge className={`${getSessionBadgeColor(record.milking_session_id)} text-xs`}>
-                              <Clock className="w-2 h-2 mr-0.5" />
-                              {getSessionName(record.milking_session_id)}
-                            </Badge>
-                            <Badge className={`${safetyStatus.color} text-xs`}>
-                              <SafetyIcon className="w-2 h-2 mr-0.5" />
-                              {safetyStatus.label}
-                            </Badge>
-                            <Badge className={`${recordingTypeBadge.color} text-xs`}>
-                              <RecordingTypeIcon className="w-2 h-2 mr-0.5" />
-                              {recordingTypeBadge.label}
-                            </Badge>
-                            {qualityIndicator && (
-                              <Badge className={`${qualityIndicator.color} text-xs`}>
-                                {qualityIndicator.label}
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Date Info */}
-                        <div className="flex items-center space-x-2 text-xs text-gray-600 mb-2">
-                          <span className="flex items-center">
-                            <Calendar className="w-3 h-3 mr-0.5" />
-                            {formatDate(record.record_date)}
-                          </span>
-                          <span className="text-gray-400">•</span>
-                          <span className="text-gray-500 truncate">
-                            {formatDateTime(record.created_at)}
-                          </span>
-                        </div>
-
-                        {/* Production Metrics Grid */}
-                        <div className={`grid gap-1 mb-2 ${settings?.productionTrackingMode === 'basic' ? 'grid-cols-2 md:grid-cols-2 lg:grid-cols-2' : 'grid-cols-2 md:grid-cols-3 lg:grid-cols-6'}`}>
-                          <div className="text-center p-1 md:p-2 bg-blue-50 rounded">
-                            <p className="text-base md:text-lg font-bold text-blue-600">{record.milk_volume}</p>
-                            <p className="text-xs text-blue-600 font-medium">L</p>
-                          </div>
-                          <div className="text-center p-1 md:p-2 bg-red-50 rounded">
-                            <p className="text-sm md:text-base font-bold text-red-600">{record.temperature ? record.temperature + '°C' : 'N/A'}</p>
-                            <p className="text-xs text-red-600 font-medium">T</p>
-                          </div>
-                          {settings?.productionTrackingMode !== 'basic' && (
-                            <>
-                              <div className="text-center p-1 md:p-2 bg-orange-50 rounded">
-                                <p className="text-sm md:text-base font-bold text-orange-600">{record.fat_content ? record.fat_content + '%' : 'N/A'}</p>
-                                <p className="text-xs text-orange-600 font-medium">Fat</p>
-                              </div>
-                              <div className="text-center p-1 md:p-2 bg-green-50 rounded">
-                                <p className="text-sm md:text-base font-bold text-green-600">{record.protein_content ? record.protein_content + '%' : 'N/A'}</p>
-                                <p className="text-xs text-green-600 font-medium">Protein</p>
-                              </div>
-                              <div className="text-center p-1 md:p-2 bg-purple-50 rounded">
-                                <p className="text-xs md:text-sm font-bold text-purple-600">
-                                  {record.somatic_cell_count ? (record.somatic_cell_count / 1000).toFixed(0) + 'k' : 'N/A'}
-                                </p>
-                                <p className="text-xs text-purple-600 font-medium">SCC</p>
-                              </div>
-                              <div className="text-center p-1 md:p-2 bg-indigo-50 rounded">
-                                <p className="text-sm md:text-base font-bold text-indigo-600">{record.ph_level ? record.ph_level : 'N/A'}</p>
-                                <p className="text-xs text-indigo-600 font-medium">pH</p>
-                              </div>
-                            </>
-                          )}
-                        </div>
-
-                        {/* Health and Safety Details */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-1 mt-2 pt-2 border-t border-gray-200">
-                          <div className="text-xs p-2 bg-gray-50 rounded">
-                            <p className="font-semibold text-gray-700 mb-0.5">Mastitis Test</p>
-                            <p className="text-gray-900">{record.mastitis_test_performed ? (record.mastitis_result ? record.mastitis_result.charAt(0).toUpperCase() + record.mastitis_result.slice(1) : 'Tested') : 'N/A'}</p>
-                          </div>
-                          <div className="text-xs p-2 bg-gray-50 rounded">
-                            <p className="font-semibold text-gray-700 mb-0.5">Temperature</p>
-                            <p className="text-gray-900">{record.temperature !== null && record.temperature !== undefined ? record.temperature.toFixed(1) + '°C' : 'N/A'}</p>
-                          </div>
-                          <div className="text-xs p-2 bg-gray-50 rounded">
-                            <p className="font-semibold text-gray-700 mb-0.5">Milk Safety</p>
-                            <p className="text-gray-900">{getSafetyStatusBadge(record.milk_safety_status).label}</p>
-                          </div>
-                        </div>
-
-                        {/* Notes Section */}
-                        {record.notes && (
-                          <div className="mb-1 p-2 bg-gray-50 rounded border border-gray-200">
-                            <p className="text-xs text-gray-700">
-                              <span className="font-semibold block mb-0.5">Notes:</span>
-                              <span className="text-gray-600">{record.notes}</span>
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Action Buttons */}
-                    {canEdit && (
-                      <div className="flex-shrink-0 flex items-center gap-1">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-                              <MoreHorizontal className="w-4 h-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => onView?.(record)} className="cursor-pointer flex items-center">
-                              <Eye className="w-4 h-4 mr-2" />
-                              View Details
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleEdit(record)} className="cursor-pointer flex items-center">
-                              <Edit className="w-4 h-4 mr-2" />
-                              Edit Record
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => handleDelete(record.id)}
-                              disabled={deletingId === record.id}
-                              className="cursor-pointer flex items-center text-red-600 focus:text-red-600 focus:bg-red-50"
-                            >
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              {deletingId === record.id ? 'Deleting...' : 'Delete'}
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
-      ) : (
-        // Groups view
-        <div className="space-y-4 max-h-[600px] overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-100 [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded pr-2">
-          {(paginatedData as any[]).map((summary: any, index) => {
-            const isExpanded = expandedGroups.has(summary.milking_group_id || 'default')
-            const recentQuality = getQualityIndicator(summary.avgFatContent || undefined, summary.avgProteinContent || undefined)
-            const mostRecent = summary.records && summary.records.length > 0 ? summary.records[0] : null
-            const recentSafety = mostRecent ? getSafetyStatusBadge(mostRecent.milk_safety_status) : null
-            const RecentSafetyIcon = recentSafety?.icon
-            const displayGroupName = (summary as any).groupName || 'Milking Group'
-
-            return (
-              <Card key={`group-${index}`} className="hover:shadow-md transition-shadow overflow-hidden">
-                <CardContent className="p-4 md:p-6">
-                  {/* Group Header */}
-                  <button
-                    onClick={() => {
-                      const newSet = new Set(expandedGroups)
-                      const groupKey = summary.milking_group_id || 'default'
-                      if (newSet.has(groupKey)) {
-                        newSet.delete(groupKey)
-                      } else {
-                        newSet.add(groupKey)
-                      }
-                      setExpandedGroups(newSet)
-                    }}
-                    className="w-full text-left"
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex items-start space-x-4 flex-1 min-w-0">
-                        <div className="flex-shrink-0">
-                          <div className="w-12 h-12 bg-farm-green/10 rounded-lg flex items-center justify-center">
-                            <Users className="w-6 h-6 text-farm-green" />
-                          </div>
-                        </div>
-
-                        <div className="min-w-0 flex-1">
-                          <h4 className="text-base md:text-lg font-semibold text-gray-900">
-                            {displayGroupName}
-                          </h4>
-                          <p className="text-sm text-gray-600 mt-1">
-                            {summary.animalCount || summary.recordCount || summary.totalRecords} animal{summary.animalCount !== 1 ? 's' : ''} recorded
-                          </p>
-
-                          {/* Most Recent Session Info */}
-                          {mostRecent && (
-                            <div className="mt-3 space-y-2">
-                              <p className="text-xs text-gray-600">
-                                <span className="font-semibold">Most Recent Session:</span> {formatDateTime(mostRecent.created_at)}
-                              </p>
-                              <div className="flex flex-wrap items-center gap-2">
-                                <Badge className={getSessionBadgeColor(mostRecent.milking_session_id)}>
-                                  <Clock className="w-3 h-3 mr-1" />
-                                  {getSessionName(mostRecent.milking_session_id)}
-                                </Badge>
-                                {RecentSafetyIcon && (
-                                  <Badge className={recentSafety?.color}>
-                                    <RecentSafetyIcon className="w-3 h-3 mr-1" />
-                                    {recentSafety?.label}
-                                  </Badge>
-                                )}
-                                {recentQuality && (
-                                  <Badge className={recentQuality.color}>
-                                    {recentQuality.label}
-                                  </Badge>
-                                )}
-                              </div>
+                        {/* Sessions expand */}
+                        <div className="border-t border-gray-100 pt-2">
+                          <button
+                            onClick={() => {
+                              const k = summaryKey
+                              const next = new Set(expandedSessions)
+                              next.has(k) ? next.delete(k) : next.add(k)
+                              setExpandedSessions(next)
+                            }}
+                            className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-800 transition-colors"
+                          >
+                            {expandedSessions.has(summaryKey) ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                            Sessions this cycle ({summary.sessions.length})
+                          </button>
+                          {expandedSessions.has(summaryKey) && (
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                              {summary.sessions.map((sid: string) => {
+                                const isActive = activeSessionBadge[summaryKey] === sid
+                                return (
+                                  <button
+                                    key={sid}
+                                    onClick={() => {
+                                      if (activeSessionBadge[summaryKey] === sid) {
+                                        const next = { ...activeSessionBadge }
+                                        delete next[summaryKey]
+                                        setActiveSessionBadge(next)
+                                        setSelectedSession(null)
+                                      } else {
+                                        setActiveSessionBadge(prev => ({ ...prev, [summaryKey]: sid }))
+                                        setSelectedSession(`${summaryKey}|${sid}`)
+                                      }
+                                    }}
+                                  >
+                                    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all cursor-pointer ${
+                                      isActive
+                                        ? 'bg-indigo-100 text-indigo-800 border-indigo-300 ring-2 ring-indigo-300'
+                                        : getSessionColor(sid)
+                                    }`}>
+                                      <Clock className="w-3 h-3" />
+                                      {getSessionName(sid)}
+                                    </span>
+                                  </button>
+                                )
+                              })}
                             </div>
                           )}
                         </div>
                       </div>
+                    )}
+                  </div>
+                </React.Fragment>
+              )
+            })
+          })()}
+        </div>
 
-                      {/* Group Stats */}
-                      <div className="flex-shrink-0 text-right">
-                        <div className="text-2xl font-bold text-farm-green">
-                          {summary.totalMilkVolume.toFixed(1)}
+      ) : filterSession === 'all' && viewTab === 'groups' && dailySummaryGroups ? (
+        /* ─────────────────────────────────────────────────────────────────
+           ALL SESSIONS — MILKING GROUPS (daily totals with animal expand)
+        ──────────────────────────────────────────────────────────────── */
+        <div className="space-y-1">
+          {(() => {
+            let lastDate = ''
+            return (paginatedData as any[]).map((summary) => {
+              const groupKey = `${summary.cycleDate}-${summary.milking_group_id ?? 'default'}`
+              const isExpanded = expandedGroupAnimals.has(groupKey)
+              const qual = qualityLabel(summary.avgFatContent, summary.avgProteinContent)
+              const showDivider = summary.cycleDate !== lastDate
+              lastDate = summary.cycleDate
+
+              const animalAggregates = isExpanded ? calcAnimalAggregates(summary.records) : []
+
+              return (
+                <React.Fragment key={groupKey}>
+                  {showDivider && <DayDivider date={summary.cycleDate} />}
+
+                  <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden hover:border-gray-200 transition-colors">
+                    {/* Group header — clickable */}
+                    <button
+                      className="w-full text-left p-4"
+                      onClick={() => {
+                        const next = new Set(expandedGroupAnimals)
+                        next.has(groupKey) ? next.delete(groupKey) : next.add(groupKey)
+                        setExpandedGroupAnimals(next)
+                      }}
+                    >
+                      <div className="flex items-start justify-between gap-3 mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-xl bg-violet-50 flex items-center justify-center flex-shrink-0">
+                            <Users className="w-4 h-4 text-violet-600" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-gray-900 leading-tight">{summary.groupName}</p>
+                            <p className="text-xs text-gray-400">{summary.animalCount} animal{summary.animalCount !== 1 ? 's' : ''} · {summary.totalRecords} record{summary.totalRecords !== 1 ? 's' : ''}</p>
+                          </div>
                         </div>
-                        <p className="text-xs text-gray-600 font-medium">Total Liters</p>
-                        <div className="mt-3 text-gray-500 hover:text-gray-700 flex justify-end pointer-events-none">
-                          <ChevronDown
-                            className={`w-5 h-5 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
-                          />
+                        <div className="flex items-center gap-2">
+                          {qual && !isBasic && (
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border ${qual.cls}`}>{qual.label}</span>
+                          )}
+                          <div className="w-7 h-7 rounded-lg bg-gray-50 flex items-center justify-center border border-gray-100">
+                            {isExpanded ? <ChevronUp className="w-3.5 h-3.5 text-gray-500" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-500" />}
+                          </div>
                         </div>
+                      </div>
+
+                      {/* Group stats */}
+                      <div className={`grid gap-2 ${isBasic ? 'grid-cols-2' : 'grid-cols-2 md:grid-cols-4'}`}>
+                        <StatTile value={`${summary.totalMilkVolume.toFixed(1)} L`} label="Total volume" color="bg-sky-50 text-sky-700" />
+                        {!isBasic && <>
+                          <StatTile value={summary.avgFatContent != null ? `${summary.avgFatContent.toFixed(2)}%` : '—'} label="Avg fat" color="bg-amber-50 text-amber-700" />
+                          <StatTile value={summary.avgProteinContent != null ? `${summary.avgProteinContent.toFixed(2)}%` : '—'} label="Avg protein" color="bg-emerald-50 text-emerald-700" />
+                        </>}
+                        <StatTile value={String(summary.animalCount)} label="Animals" color="bg-violet-50 text-violet-700" />
+                      </div>
+
+                      {/* Group health summary */}
+                      <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
+                        {(() => {
+                          const recs: ProductionRecord[] = summary.records
+                          const mastitis = recs.find(r => r.mastitis_test_performed)
+                          const mastitisTxt = mastitis
+                            ? mastitis.mastitis_result
+                              ? mastitis.mastitis_result.charAt(0).toUpperCase() + mastitis.mastitis_result.slice(1)
+                              : 'Tested'
+                            : 'N/A'
+                          return (
+                            <>
+                              <div className="p-2 bg-gray-50 rounded-xl border border-gray-100">
+                                <p className="text-gray-400 font-medium mb-0.5">Mastitis</p>
+                                <p className="text-gray-800 font-semibold">{mastitisTxt}</p>
+                              </div>
+                              <div className="p-2 bg-gray-50 rounded-xl border border-gray-100">
+                                <p className="text-gray-400 font-medium mb-0.5">Safety</p>
+                                <SafetyPill status={worstSafety(recs)} />
+                              </div>
+                            </>
+                          )
+                        })()}
+                      </div>
+                    </button>
+
+                    {/* Expanded animal list */}
+                    {isExpanded && (
+                      <div className="border-t border-gray-100 bg-gray-50/60 p-4 space-y-3">
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-2">
+                          Animals in this group ({animalAggregates.length})
+                        </p>
+                        {animalAggregates.length === 0 ? (
+                          <p className="text-sm text-gray-400 py-4 text-center">No animals found</p>
+                        ) : animalAggregates.map(a => {
+                          const fatVals = a.records.map((r: ProductionRecord) => r.fat_content).filter((v: any) => v != null)
+                          const protVals = a.records.map((r: ProductionRecord) => r.protein_content).filter((v: any) => v != null)
+                          const avgFat = fatVals.length ? fatVals.reduce((x: number, y: number) => x + y, 0) / fatVals.length : null
+                          const avgProt = protVals.length ? protVals.reduce((x: number, y: number) => x + y, 0) / protVals.length : null
+                          const aq = qualityLabel(avgFat, avgProt)
+
+                          return (
+                            <div key={a.animal_id} className="bg-white rounded-xl border border-gray-200 p-3">
+                              <div className="flex items-start justify-between mb-2">
+                                <div>
+                                  <p className="text-sm font-semibold text-gray-900">{a.animal_name}</p>
+                                  <p className="text-xs text-gray-400">Tag #{a.animal_tag}</p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-lg font-bold text-emerald-600">{a.total_volume.toFixed(1)} L</p>
+                                  <p className="text-[10px] text-gray-400">{a.record_count} record{a.record_count !== 1 ? 's' : ''}</p>
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-4 gap-1.5 text-xs">
+                                <div className="p-1.5 bg-sky-50 rounded-lg text-center">
+                                  <p className="font-semibold text-sky-700">{(a.total_volume / a.record_count).toFixed(1)} L</p>
+                                  <p className="text-sky-600 text-[10px] font-medium mt-0.5">Avg/record</p>
+                                </div>
+                                <div className="p-1.5 bg-violet-50 rounded-lg text-center">
+                                  <p className="font-semibold text-violet-700">{a.record_count}</p>
+                                  <p className="text-violet-600 text-[10px] font-medium mt-0.5">Records</p>
+                                </div>
+                                <div className="p-1.5 bg-amber-50 rounded-lg text-center">
+                                  <p className="font-semibold text-amber-700">{avgFat != null ? `${avgFat.toFixed(2)}%` : '—'}</p>
+                                  <p className="text-amber-600 text-[10px] font-medium mt-0.5">Fat</p>
+                                </div>
+                                <div className="p-1.5 bg-emerald-50 rounded-lg text-center">
+                                  <p className="font-semibold text-emerald-700">{avgProt != null ? `${avgProt.toFixed(2)}%` : '—'}</p>
+                                  <p className="text-emerald-600 text-[10px] font-medium mt-0.5">Protein</p>
+                                </div>
+                              </div>
+                              {aq && !isBasic && (
+                                <div className="mt-2">
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border ${aq.cls}`}>{aq.label}</span>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </React.Fragment>
+              )
+            })
+          })()}
+        </div>
+
+      ) : viewTab === 'individual' ? (
+        /* ─────────────────────────────────────────────────────────────────
+           SINGLE SESSION — INDIVIDUAL RECORDS
+        ──────────────────────────────────────────────────────────────── */
+        <div className="space-y-3">
+          {(paginatedData as ProductionRecord[]).map(record => {
+            const qual = qualityLabel(record.fat_content, record.protein_content)
+            return (
+              <div key={record.id} className="bg-white rounded-2xl border border-gray-100 p-4 hover:border-gray-200 transition-colors">
+                {/* Header */}
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0">
+                      <Droplets className="w-4 h-4 text-emerald-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900 leading-tight">
+                        {record.animals?.name || `Animal ${record.animals?.tag_number}`}
+                      </p>
+                      <p className="text-xs text-gray-400">Tag #{record.animals?.tag_number} · {formatDate(record.record_date)}</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-start gap-1.5 justify-end">
+                    <SessionPill name={getSessionName(record.milking_session_id)} />
+                    <SafetyPill status={record.milk_safety_status} />
+                    {qual && !isBasic && (
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border ${qual.cls}`}>{qual.label}</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Metrics */}
+                <div className={`grid gap-2 mb-3 ${isBasic ? 'grid-cols-2' : 'grid-cols-2 md:grid-cols-3 lg:grid-cols-6'}`}>
+                  <StatTile value={`${record.milk_volume ?? '—'} L`} label="Volume" color="bg-sky-50 text-sky-700" />
+                  <StatTile value={record.temperature != null ? `${record.temperature}°C` : '—'} label="Temp" color="bg-rose-50 text-rose-700" />
+                  {!isBasic && <>
+                    <StatTile value={record.fat_content != null ? `${record.fat_content}%` : '—'} label="Fat" color="bg-amber-50 text-amber-700" />
+                    <StatTile value={record.protein_content != null ? `${record.protein_content}%` : '—'} label="Protein" color="bg-emerald-50 text-emerald-700" />
+                    <StatTile value={record.somatic_cell_count != null ? `${(record.somatic_cell_count / 1000).toFixed(0)}k` : '—'} label="SCC" color="bg-violet-50 text-violet-700" />
+                    <StatTile value={record.ph_level != null ? `${record.ph_level}` : '—'} label="pH" color="bg-indigo-50 text-indigo-700" />
+                  </>}
+                </div>
+
+                {/* Health row */}
+                <div className="grid grid-cols-3 gap-2 text-xs border-t border-gray-100 pt-3">
+                  <div className="p-2 bg-gray-50 rounded-xl">
+                    <p className="text-gray-400 font-medium mb-0.5">Mastitis</p>
+                    <p className="text-gray-800 font-semibold">
+                      {record.mastitis_test_performed
+                        ? record.mastitis_result
+                          ? record.mastitis_result.charAt(0).toUpperCase() + record.mastitis_result.slice(1)
+                          : 'Tested'
+                        : 'N/A'}
+                    </p>
+                  </div>
+                  <div className="p-2 bg-gray-50 rounded-xl">
+                    <p className="text-gray-400 font-medium mb-0.5">Temperature</p>
+                    <p className="text-gray-800 font-semibold">{record.temperature != null ? `${record.temperature.toFixed(1)}°C` : '—'}</p>
+                  </div>
+                  <div className="p-2 bg-gray-50 rounded-xl">
+                    <p className="text-gray-400 font-medium mb-0.5">Safety</p>
+                    <SafetyPill status={record.milk_safety_status} />
+                  </div>
+                </div>
+
+                {record.notes && (
+                  <div className="mt-2 p-2 bg-gray-50 rounded-xl text-xs text-gray-600 border border-gray-100">
+                    <span className="font-semibold text-gray-700">Notes: </span>{record.notes}
+                  </div>
+                )}
+
+                {/* Actions */}
+                {canEdit && (
+                  <div className="flex justify-end mt-3 pt-2 border-t border-gray-100">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-gray-400 hover:text-gray-600">
+                          <MoreHorizontal className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => onView?.(record)} className="cursor-pointer flex items-center gap-2 text-sm">
+                          <Eye className="w-4 h-4" /> View details
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleEdit(record)} className="cursor-pointer flex items-center gap-2 text-sm">
+                          <Edit className="w-4 h-4" /> Edit record
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => handleDelete(record.id)}
+                          disabled={deletingId === record.id}
+                          className="cursor-pointer flex items-center gap-2 text-sm text-red-600 focus:text-red-600 focus:bg-red-50"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          {deletingId === record.id ? 'Deleting…' : 'Delete'}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+      ) : (
+        /* ─────────────────────────────────────────────────────────────────
+           SINGLE SESSION — MILKING GROUPS (with collapsible animal list)
+        ──────────────────────────────────────────────────────────────── */
+        <div className="space-y-3">
+          {(paginatedData as GroupData[]).map((group, idx) => {
+            const groupKey = group.milking_group_id || '__default__'
+            const isExpanded = expandedGroups.has(groupKey)
+            const mostRecent = group.mostRecentSession
+            const animalAggregates = isExpanded ? calcAnimalAggregates(group.records) : []
+
+            return (
+              <div key={`sg-${idx}`} className="bg-white rounded-2xl border border-gray-100 overflow-hidden hover:border-gray-200 transition-colors">
+                {/* Clickable group header */}
+                <button
+                  className="w-full text-left p-4"
+                  onClick={() => {
+                    const next = new Set(expandedGroups)
+                    next.has(groupKey) ? next.delete(groupKey) : next.add(groupKey)
+                    setExpandedGroups(next)
+                  }}
+                >
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-violet-50 flex items-center justify-center flex-shrink-0">
+                        <Users className="w-4 h-4 text-violet-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900 leading-tight">{group.groupName}</p>
+                        <p className="text-xs text-gray-400">{group.recordCount} animal{group.recordCount !== 1 ? 's' : ''}</p>
                       </div>
                     </div>
-                  </button>
-
-                  {/* Expanded Animals List - Aggregated by animal with total volumes */}
-                  {isExpanded && (() => {
-                    const animalAggregates = calculateAnimalAggregates(summary.records)
-                    
-                    return (
-                      <div className="mt-6 pt-6 border-t border-gray-200 space-y-3">
-                        <h5 className="font-semibold text-gray-900 mb-3">Animals in this group ({animalAggregates.length}):</h5>
-                        {animalAggregates.length === 0 ? (
-                          <p className="text-sm text-gray-500 p-3">No animals in this group</p>
-                        ) : (
-                          animalAggregates.map((animalData) => {
-                            const fatRecords = animalData.records.filter(r => r.fat_content)
-                            const proteinRecords = animalData.records.filter(r => r.protein_content)
-                            
-                            const avgFat = fatRecords.length > 0
-                              ? fatRecords.reduce((sum, r) => sum + (r.fat_content || 0), 0) / fatRecords.length
-                              : null
-                            
-                            const avgProtein = proteinRecords.length > 0
-                              ? proteinRecords.reduce((sum, r) => sum + (r.protein_content || 0), 0) / proteinRecords.length
-                              : null
-                            
-                            const qualityIndicator = getQualityIndicator(avgFat || undefined, avgProtein || undefined)
-
-                            return (
-                              <div
-                                key={animalData.animal_id}
-                                className="p-4 bg-gray-50 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors"
-                              >
-                                <div className="flex items-start justify-between mb-3">
-                                  <div className="flex-1">
-                                    <p className="font-semibold text-gray-900">
-                                      {animalData.animal_name}
-                                    </p>
-                                    <p className="text-xs text-gray-600 mt-0.5">
-                                      Tag: {animalData.animal_tag}
-                                    </p>
-                                  </div>
-                                  <div className="text-right flex-shrink-0">
-                                    <p className="text-2xl font-bold text-farm-green">
-                                      {animalData.total_volume.toFixed(1)}
-                                    </p>
-                                    <p className="text-xs text-gray-600 font-medium">Total Liters</p>
-                                  </div>
-                                </div>
-                                
-                                <div className="grid grid-cols-2 gap-2 md:grid-cols-4 text-xs">
-                                  <div className="p-2 bg-white rounded border border-gray-300">
-                                    <p className="text-gray-600 font-semibold">Records</p>
-                                    <p className="text-gray-900 font-medium">{animalData.record_count}</p>
-                                  </div>
-                                  <div className="p-2 bg-white rounded border border-gray-300">
-                                    <p className="text-gray-600 font-semibold">Avg/Record</p>
-                                    <p className="text-gray-900 font-medium">{(animalData.total_volume / animalData.record_count).toFixed(1)}L</p>
-                                  </div>
-                                  <div className="p-2 bg-white rounded border border-gray-300">
-                                    <p className="text-gray-600 font-semibold">Fat</p>
-                                    <p className="text-gray-900 font-medium">{avgFat ? avgFat.toFixed(2) + '%' : 'N/A'}</p>
-                                  </div>
-                                  <div className="p-2 bg-white rounded border border-gray-300">
-                                    <p className="text-gray-600 font-semibold">Protein</p>
-                                    <p className="text-gray-900 font-medium">{avgProtein ? avgProtein.toFixed(2) + '%' : 'N/A'}</p>
-                                  </div>
-                                </div>
-
-                                {qualityIndicator && (
-                                  <div className="mt-3 flex items-center gap-2">
-                                    <Badge className={qualityIndicator.color}>
-                                      {qualityIndicator.label}
-                                    </Badge>
-                                  </div>
-                                )}
-                              </div>
-                            )
-                          })
-                        )}
+                    <div className="flex items-center gap-2">
+                      <div className="text-right">
+                        <p className="text-lg font-bold text-emerald-600">{group.totalMilkVolume.toFixed(1)} L</p>
+                        <p className="text-[10px] text-gray-400">total</p>
                       </div>
-                    )
-                  })()}
-                </CardContent>
-              </Card>
+                      <div className="w-7 h-7 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center">
+                        {isExpanded ? <ChevronUp className="w-3.5 h-3.5 text-gray-500" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-500" />}
+                      </div>
+                    </div>
+                  </div>
+
+                  {mostRecent && (
+                    <div className="flex flex-wrap gap-1.5">
+                      <SessionPill name={getSessionName(mostRecent.milking_session_id)} />
+                      <SafetyPill status={mostRecent.milk_safety_status} />
+                      {mostRecent.created_at && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-gray-100 text-gray-500 border border-gray-200">
+                          <Calendar className="w-3 h-3" />
+                          {formatDate(mostRecent.record_date)}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </button>
+
+                {/* Expanded animal list */}
+                {isExpanded && (
+                  <div className="border-t border-gray-100 bg-gray-50/60 p-4 space-y-3">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-2">
+                      Animals in this group ({animalAggregates.length})
+                    </p>
+                    {animalAggregates.map(a => {
+                      const fatVals = a.records.map((r: ProductionRecord) => r.fat_content).filter((v: any) => v != null)
+                      const protVals = a.records.map((r: ProductionRecord) => r.protein_content).filter((v: any) => v != null)
+                      const avgFat = fatVals.length ? fatVals.reduce((x: number, y: number) => x + y, 0) / fatVals.length : null
+                      const avgProt = protVals.length ? protVals.reduce((x: number, y: number) => x + y, 0) / protVals.length : null
+                      const aq = qualityLabel(avgFat, avgProt)
+
+                      return (
+                        <div key={a.animal_id} className="bg-white rounded-xl border border-gray-200 p-3">
+                          <div className="flex items-start justify-between mb-2">
+                            <div>
+                              <p className="text-sm font-semibold text-gray-900">{a.animal_name}</p>
+                              <p className="text-xs text-gray-400">Tag #{a.animal_tag}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-lg font-bold text-emerald-600">{a.total_volume.toFixed(1)} L</p>
+                              <p className="text-[10px] text-gray-400">{a.record_count} record{a.record_count !== 1 ? 's' : ''}</p>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-4 gap-1.5 text-xs">
+                            <div className="p-1.5 bg-sky-50 rounded-lg text-center">
+                              <p className="font-semibold text-sky-700">{(a.total_volume / a.record_count).toFixed(1)} L</p>
+                              <p className="text-sky-600 text-[10px] font-medium mt-0.5">Avg/record</p>
+                            </div>
+                            <div className="p-1.5 bg-violet-50 rounded-lg text-center">
+                              <p className="font-semibold text-violet-700">{a.record_count}</p>
+                              <p className="text-violet-600 text-[10px] font-medium mt-0.5">Records</p>
+                            </div>
+                            <div className="p-1.5 bg-amber-50 rounded-lg text-center">
+                              <p className="font-semibold text-amber-700">{avgFat != null ? `${avgFat.toFixed(2)}%` : '—'}</p>
+                              <p className="text-amber-600 text-[10px] font-medium mt-0.5">Fat</p>
+                            </div>
+                            <div className="p-1.5 bg-emerald-50 rounded-lg text-center">
+                              <p className="font-semibold text-emerald-700">{avgProt != null ? `${avgProt.toFixed(2)}%` : '—'}</p>
+                              <p className="text-emerald-600 text-[10px] font-medium mt-0.5">Protein</p>
+                            </div>
+                          </div>
+                          {aq && !isBasic && (
+                            <div className="mt-2">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border ${aq.cls}`}>{aq.label}</span>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
             )
           })}
         </div>
       )}
 
-      {/* Pagination Controls - Device Optimized */}
-      {totalPages > 1 && (() => {
-        // Calculate which page numbers to display (show current +/- 2 on desktop)
-        const getPagesToShow = () => {
-          if (totalPages <= 5) {
-            return Array.from({ length: totalPages }, (_, i) => i + 1)
-          }
-          const pages: (number | string)[] = []
-          const range = 2
-
-          // Always show first page
-          pages.push(1)
-
-          // Add ellipsis or pages before current
-          if (currentPage - range > 2) {
-            pages.push('...')
-          }
-
-          // Pages around current - always include them, don't skip due to ellipsis
-          for (let i = Math.max(2, currentPage - range); i <= Math.min(totalPages - 1, currentPage + range); i++) {
-            pages.push(i)
-          }
-
-          // Add ellipsis or pages after current
-          if (currentPage + range < totalPages - 1) {
-            pages.push('...')
-          }
-
-          // Always show last page
-          if (!pages.includes(totalPages)) {
-            pages.push(totalPages)
-          }
-
-          return pages
-        }
-
-        return (
-          <div className="flex flex-col gap-3 p-3 md:p-4 bg-white rounded-lg border border-gray-200 shadow-sm">
-            {/* Desktop Info Row */}
-            <div className="hidden md:flex items-center justify-between">
-              <div className="text-sm text-gray-600">
-                Showing <span className="font-semibold">{startIndex + 1}</span> to <span className="font-semibold">{Math.min(endIndex, filteredRecords.length)}</span> of <span className="font-semibold">{filteredRecords.length}</span> records
-              </div>
-              <div className="text-sm text-gray-600">
-                Page <span className="font-semibold">{currentPage}</span> of <span className="font-semibold">{totalPages}</span>
-              </div>
-            </div>
-
-            {/* Mobile Info Row */}
-            <div className="md:hidden text-center">
-              <div className="text-xs font-semibold text-gray-900">
-                Page {currentPage} of {totalPages}
-              </div>
-              <div className="text-xs text-gray-600 mt-0.5">
-                {startIndex + 1}–{Math.min(endIndex, filteredRecords.length)} of {filteredRecords.length}
-              </div>
-            </div>
-
-            {/* Pagination Controls */}
-            <div className="flex items-center justify-between gap-2">
-              {/* Left: Previous Button */}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                disabled={currentPage === 1}
-                className="flex items-center gap-1 md:gap-2 px-2 md:px-3 py-2 md:py-2 h-9 md:h-10"
-              >
-                <ChevronLeft className="w-4 h-4 flex-shrink-0" />
-                <span className="hidden sm:inline">Previous</span>
-              </Button>
-
-              {/* Center: Page Numbers - Hide on mobile, show smart range on desktop */}
-              <div className="hidden lg:flex items-center gap-1">
-                {getPagesToShow().map((page, idx) =>
-                  page === '...' ? (
-                    <span key={`ellipsis-${idx}`} className="px-2 text-gray-400 text-xs font-semibold">
-                      …
-                    </span>
-                  ) : (
-                    <Button
-                      key={page}
-                      variant={currentPage === page ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => setCurrentPage(page as number)}
-                      className={`w-9 h-9 p-0 text-sm font-medium transition-all ${currentPage === page
-                          ? 'bg-farm-green text-white border-farm-green'
-                          : 'hover:bg-gray-100'
-                        }`}
-                    >
-                      {page}
-                    </Button>
-                  )
-                )}
-              </div>
-
-              {/* Tablet: Compact page display */}
-              <div className="lg:hidden flex items-center gap-1">
-                {/* Show page buttons only around current page */}
-                {currentPage > 1 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage(currentPage - 1)}
-                    className="w-8 h-8 p-0 text-xs"
-                  >
-                    {currentPage - 1}
-                  </Button>
-                )}
-                <div className="px-2 py-1 bg-farm-green/10 rounded text-farm-green font-bold text-sm min-w-fit">
-                  {currentPage}
-                </div>
-                {currentPage < totalPages && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage(currentPage + 1)}
-                    className="w-8 h-8 p-0 text-xs"
-                  >
-                    {currentPage + 1}
-                  </Button>
-                )}
-              </div>
-
-              {/* Right: Next Button */}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                disabled={currentPage === totalPages}
-                className="flex items-center gap-1 md:gap-2 px-2 md:px-3 py-2 md:py-2 h-9 md:h-10"
-              >
-                <span className="hidden sm:inline">Next</span>
-                <ChevronRight className="w-4 h-4 flex-shrink-0" />
-              </Button>
-            </div>
-
-            {/* Desktop: Quick Jump Input */}
-            <div className="hidden lg:flex items-center justify-end gap-2">
-              <label htmlFor="page-jump" className="text-xs font-medium text-gray-600">
-                Go to page:
-              </label>
-              <input
-                id="page-jump"
-                type="number"
-                min="1"
-                max={totalPages}
-                value={currentPage}
-                onChange={(e) => {
-                  const page = parseInt(e.target.value, 10)
-                  if (!isNaN(page) && page >= 1 && page <= totalPages) {
-                    setCurrentPage(page)
-                  }
-                }}
-                className="w-12 h-9 px-2 border border-gray-300 rounded text-sm text-center focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
-              />
-              <span className="text-xs text-gray-600">/ {totalPages}</span>
-            </div>
+      {/* ── Pagination ───────────────────────────────────────────────────── */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between gap-3 pt-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
+            disabled={currentPage === 1}
+            className="flex items-center gap-1"
+          >
+            <ChevronLeft className="w-4 h-4" /> Previous
+          </Button>
+          <div className="flex items-center gap-1">
+            {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+              let page: number
+              if (totalPages <= 7) {
+                page = i + 1
+              } else if (currentPage <= 4) {
+                page = i + 1 > 6 ? totalPages : i + 1
+              } else if (currentPage >= totalPages - 3) {
+                page = i < 1 ? 1 : totalPages - 6 + i
+              } else {
+                const pages = [1, currentPage - 1, currentPage, currentPage + 1, totalPages]
+                page = pages[i] ?? -1
+              }
+              if (page < 1) return null
+              return (
+                <button
+                  key={page}
+                  onClick={() => setCurrentPage(page)}
+                  className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${
+                    currentPage === page
+                      ? 'bg-emerald-600 text-white'
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  {page}
+                </button>
+              )
+            })}
           </div>
-        )
-      })()}
-
-      {/* Edit Modal */}
-      {isEditModalOpen && editingRecord && (
-        <>
-          <RecordProductionModal
-            isOpen={isEditModalOpen}
-            onClose={handleEditModalClose}
-            farmId={farmId || ''}
-            animals={animals}
-            settings={settings}
-            onSuccess={handleEditSuccess}
-            recordingType={editingRecordType}
-            milkingGroupName={editingGroupName}
-            editingRecord={{
-              id: editingRecord.id,
-              animal_id: editingRecord.animal_id,
-              record_date: editingRecord.record_date,
-              milking_session_id: editingRecord.milking_session_id || '',
-              milk_volume: editingRecord.milk_volume,
-              milk_safety_status: editingRecord.milk_safety_status || 'safe',
-              temperature: editingRecord.temperature,
-              mastitis_test_performed: editingRecord.mastitis_test_performed,
-              mastitis_result: editingRecord.mastitis_result,
-              affected_quarters: editingRecord.affected_quarters,
-              fat_content: editingRecord.fat_content,
-              protein_content: editingRecord.protein_content,
-              somatic_cell_count: editingRecord.somatic_cell_count,
-              lactose_content: editingRecord.lactose_content,
-              ph_level: editingRecord.ph_level,
-              notes: editingRecord.notes,
-              milking_time: editingRecord.created_at?.split('T')[1]?.slice(0, 5)
-            }}
-          />
-        </>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
+            disabled={currentPage === totalPages}
+            className="flex items-center gap-1"
+          >
+            Next <ChevronRight className="w-4 h-4" />
+          </Button>
+        </div>
       )}
 
-      {/* Delete Confirmation Modal */}
+      {/* ── Edit modal ───────────────────────────────────────────────────── */}
+      {isEditModalOpen && editingRecord && (
+        <RecordProductionModal
+          isOpen={isEditModalOpen}
+          onClose={handleEditModalClose}
+          farmId={farmId || ''}
+          animals={animals}
+          settings={settings}
+          onSuccess={handleEditSuccess}
+          recordingType={editingRecordType}
+          milkingGroupName={editingGroupName}
+          editingSessionName={editingRecord.milking_session_id ? getSessionName(editingRecord.milking_session_id) : undefined}
+          editingRecord={{
+            id: editingRecord.id,
+            animal_id: editingRecord.animal_id,
+            record_date: editingRecord.record_date,
+            milking_session_id: editingRecord.milking_session_id || '',
+            milk_volume: editingRecord.milk_volume,
+            milk_safety_status: editingRecord.milk_safety_status || 'safe',
+            temperature: editingRecord.temperature,
+            mastitis_test_performed: editingRecord.mastitis_test_performed,
+            mastitis_result: editingRecord.mastitis_result,
+            affected_quarters: editingRecord.affected_quarters,
+            fat_content: editingRecord.fat_content,
+            protein_content: editingRecord.protein_content,
+            somatic_cell_count: editingRecord.somatic_cell_count,
+            lactose_content: editingRecord.lactose_content,
+            ph_level: editingRecord.ph_level,
+            notes: editingRecord.notes,
+            milking_time: editingRecord.created_at?.split('T')[1]?.slice(0, 5),
+          }}
+        />
+      )}
+
+      {/* ── Delete dialog ────────────────────────────────────────────────── */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent className="bg-slate-900 border border-slate-700">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-white">Delete Production Record?</AlertDialogTitle>
+            <AlertDialogTitle className="text-white">Delete production record?</AlertDialogTitle>
             <AlertDialogDescription className="text-slate-300">
-              Are you sure you want to delete this production record? This action cannot be undone and will affect daily production summaries.
+              This action cannot be undone and will affect daily production summaries.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel className="bg-slate-700 text-white hover:bg-slate-600 border border-slate-600">
               Cancel
             </AlertDialogCancel>
-            <AlertDialogAction 
+            <AlertDialogAction
               onClick={executeDelete}
               disabled={deletingId !== null}
               className="bg-red-600 text-white hover:bg-red-700 border border-red-700"
             >
-              {deletingId ? 'Deleting...' : 'Delete'}
+              {deletingId ? 'Deleting…' : 'Delete'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

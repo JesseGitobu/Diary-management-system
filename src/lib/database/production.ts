@@ -53,6 +53,14 @@ export async function getProductionRecords(
 ) {
   const supabase = await createServerSupabaseClient()
 
+  console.log('[getProductionRecords] Called with:', {
+    farmId,
+    animalId,
+    startDate,
+    endDate,
+    sessionUUIDs,
+  })
+
   let query = supabase
     .from('production_records')
     .select(`
@@ -68,31 +76,43 @@ export async function getProductionRecords(
     .order('created_at', { ascending: false })
 
   if (animalId) {
+    console.log('[getProductionRecords] Adding animal_id filter:', animalId)
     query = query.eq('animal_id', animalId)
   }
 
   if (startDate) {
+    console.log('[getProductionRecords] Adding startDate filter:', startDate)
     query = query.gte('record_date', startDate)
   }
 
   if (endDate) {
+    console.log('[getProductionRecords] Adding endDate filter:', endDate)
     query = query.lte('record_date', endDate)
   }
 
   if (sessionUUIDs && sessionUUIDs.length > 0) {
+    console.log('[getProductionRecords] Adding sessionUUIDs filter:', sessionUUIDs)
     query = (query as any).in('milking_session_id', sessionUUIDs)
   } else if (sessionUUIDs && sessionUUIDs.length === 0) {
+    console.log('[getProductionRecords] Session name was given but no matching sessions found, returning empty')
     // Session name was given but no matching milking_session rows exist yet → no records
     return []
   }
 
+  console.log('[getProductionRecords] Executing query...')
   const { data, error } = await query
 
   if (error) {
+    console.error('[getProductionRecords] Query error:', {
+      code: (error as any).code,
+      message: error.message,
+      details: (error as any).details,
+    })
     return []
   }
 
   const records = (data as any[]) || []
+  console.log('[getProductionRecords] Query successful, returning', records.length, 'records')
 
   return records
 }

@@ -52,6 +52,14 @@ export async function POST(request: NextRequest) {
     const body: BatchHistoryRequest = await request.json()
     const { farmId, animalIds, date, session, session_name } = body
 
+    console.log('[ProductionHistoryBatch] Request:', {
+      farmId,
+      animalIds,
+      date,
+      session,
+      session_name,
+    })
+
     // Verify user's farm access
     if (farmId !== userRole.farm_id) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -80,26 +88,38 @@ export async function POST(request: NextRequest) {
     yesterdayObj.setDate(yesterdayObj.getDate() - 1)
     const yesterdayDate = yesterdayObj.toISOString().split('T')[0]
 
+    console.log('[ProductionHistoryBatch] Calculated dates:', {
+      date,
+      yesterdayDate,
+    })
+
     // ─────────────────────────────────────────────────────────────────
     // OPTIMIZATION 4: Use pre-aggregated daily_production_summary
     // instead of recalculating totals from production_records
     // ─────────────────────────────────────────────────────────────────
-    const { data: dailySummaries } = await supabase
+    const { data: dailySummaries, error: dailySummariesError } = await supabase
       .from('daily_production_summary')
-      .select('farm_id, record_date, total_milk_volume, average_fat_content, average_protein_content')
+      .select('farm_id, record_date, total_milk_volume, sessions_recorded')
       .eq('farm_id', farmId)
       .in('record_date', [yesterdayDate, date])
+
+    console.log('[ProductionHistoryBatch] Daily summaries query:', {
+      error: dailySummariesError,
+      summariesCount: dailySummaries?.length,
+      summaries: dailySummaries,
+    })
 
     const summaryMap = new Map<string, any>()
     ;(dailySummaries || []).forEach((s: any) => {
       summaryMap.set(s.record_date, s)
+      console.log('[ProductionHistoryBatch] Cached summary:', { date: s.record_date, total: s.total_milk_volume })
     })
 
     // ─────────────────────────────────────────────────────────────────
     // OPTIMIZATION 1: Batch fetch all animal records in ONE query
     // Uses composite indexes (farm_id, animal_id, record_date, created_at)
     // ─────────────────────────────────────────────────────────────────
-    const { data: animalRecords } = await supabase
+    const { data: animalRecords, error: animalRecordsError } = await supabase
       .from('production_records')
       .select(`
         animal_id,
@@ -117,6 +137,11 @@ export async function POST(request: NextRequest) {
       .order('record_date', { ascending: false })
       .order('created_at', { ascending: false })
 
+    console.log('[ProductionHistoryBatch] Animal records query:', {
+      error: animalRecordsError,
+      recordsCount: animalRecords?.length,
+    })
+
     // ─────────────────────────────────────────────────────────────────
     // Build response: organize records per animal
     // ─────────────────────────────────────────────────────────────────
@@ -130,9 +155,21 @@ export async function POST(request: NextRequest) {
         (r: any) => r.animal_id === animalId && r.record_date === yesterdayDate
       )
 
+      console.log('[ProductionHistoryBatch] Animal processing:', {
+        animalId,
+        recordsToday: animalRecordsForDate.length,
+        recordsYesterday: animalRecordsYesterday.length,
+      })
+
       // Yesterday's total: fetch from pre-aggregated summary (FAST!)
       const yesterdaySummary = summaryMap.get(yesterdayDate)
       const yesterdayTotal = yesterdaySummary?.total_milk_volume ?? null
+
+      console.log('[ProductionHistoryBatch] Yesterday total for animal:', {
+        animalId,
+        yesterdaySummary,
+        yesterdayTotal,
+      })
 
       // Previous session: most recent record from today, or fallback to yesterday
       let previousSession = animalRecordsForDate[0] || animalRecordsYesterday[0]
@@ -167,8 +204,14 @@ export async function POST(request: NextRequest) {
         sameTimeYesterdaySessionId,
         sameTimeYesterdaySessionName,
       }
+
+      console.log('[ProductionHistoryBatch] Animal result:', {
+        animalId,
+        result: results[animalId],
+      })
     }
 
+    console.log('[ProductionHistoryBatch] Final results:', results)
     return NextResponse.json(results)
   } catch (error) {
     console.error('[ProductionHistoryBatch] Error:', error)

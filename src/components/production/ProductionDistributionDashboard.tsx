@@ -102,47 +102,50 @@ export function ProductionDistributionDashboard({
   }, [activeTab])
 
   // Helper function to calculate stats (moved before state initialization)
-  const calculateProductionStats = (records: any[]) => {
-    const today = new Date().toISOString().split('T')[0]
-    const todayRecords = records.filter(r => r.record_date === today)
+  const calculateProductionStats = (records: any[], selectedDate?: string) => {
+    const targetDate = selectedDate || new Date().toISOString().split('T')[0]
+    console.log('[ProductionDistributionDashboard] Calculating stats for date:', targetDate)
     
-    // 1. RECORDS METRICS (Today only)
-    const totalRecords = todayRecords.length
+    const filteredRecords = records.filter(r => r.record_date === targetDate)
+    console.log('[ProductionDistributionDashboard] Found', filteredRecords.length, 'records for', targetDate)
+    
+    // 1. RECORDS METRICS
+    const totalRecords = filteredRecords.length
     const recordsPerSession: Record<string, number> = {}
     productionSettings?.milkingSessions?.forEach(session => {
       const sessionKey = session.name.toLowerCase().replace(/\s+/g, '')
-      recordsPerSession[sessionKey] = todayRecords.filter(r => r.milking_session_id === sessionKey).length
+      recordsPerSession[sessionKey] = filteredRecords.filter(r => r.milking_session_id === sessionKey).length
     })
     const avgRecordsPerSession = productionSettings?.milkingSessions?.length 
       ? Math.round(totalRecords / productionSettings.milkingSessions.length)
       : 0
 
-    // 2. YIELD METRICS (Today only)
-    const totalVolume = todayRecords.reduce((sum, r) => sum + (r.milk_volume || 0), 0)
-    const avgVolumePerAnimal = todayRecords.length > 0 
-      ? totalVolume / new Set(todayRecords.map(r => r.animal_id)).size
+    // 2. YIELD METRICS
+    const totalVolume = filteredRecords.reduce((sum, r) => sum + (r.milk_volume || 0), 0)
+    const avgVolumePerAnimal = filteredRecords.length > 0 
+      ? totalVolume / new Set(filteredRecords.map(r => r.animal_id)).size
       : 0
     
     // Get groups info (if available in records)
-    const uniqueGroups = new Set(todayRecords.filter(r => r.milking_group_id).map(r => r.milking_group_id))
+    const uniqueGroups = new Set(filteredRecords.filter(r => r.milking_group_id).map(r => r.milking_group_id))
     const avgVolumePerGroup = uniqueGroups.size > 0 
       ? totalVolume / uniqueGroups.size
       : 0
 
-    // 3. ANIMALS MILKED (Today only)
-    const uniqueAnimalsMilked = new Set(todayRecords.map(r => r.animal_id)).size
-    const uniqueGroupsMilked = new Set(todayRecords.filter(r => r.milking_group_id).map(r => r.milking_group_id)).size
+    // 3. ANIMALS MILKED
+    const uniqueAnimalsMilked = new Set(filteredRecords.map(r => r.animal_id)).size
+    const uniqueGroupsMilked = new Set(filteredRecords.filter(r => r.milking_group_id).map(r => r.milking_group_id)).size
 
-    // 4. MILK SAFETY RATE (Today only)
-    const safeRecords = todayRecords.filter(r => r.milk_safety_status === 'safe').length
-    const milkSafetyRate = todayRecords.length > 0 ? Math.round((safeRecords / todayRecords.length) * 100) : 0
+    // 4. MILK SAFETY RATE
+    const safeRecords = filteredRecords.filter(r => r.milk_safety_status === 'safe').length
+    const milkSafetyRate = filteredRecords.length > 0 ? Math.round((safeRecords / filteredRecords.length) * 100) : 0
 
-    // 5. QUALITY METRICS (Today only)
-    const avgFatContent = todayRecords.length > 0
-      ? todayRecords.reduce((sum, r) => sum + (r.fat_content || 0), 0) / todayRecords.length
+    // 5. QUALITY METRICS
+    const avgFatContent = filteredRecords.length > 0
+      ? filteredRecords.reduce((sum, r) => sum + (r.fat_content || 0), 0) / filteredRecords.length
       : 0
-    const avgProteinContent = todayRecords.length > 0
-      ? todayRecords.reduce((sum, r) => sum + (r.protein_content || 0), 0) / todayRecords.length
+    const avgProteinContent = filteredRecords.length > 0
+      ? filteredRecords.reduce((sum, r) => sum + (r.protein_content || 0), 0) / filteredRecords.length
       : 0
 
     // 6. DAILY SUMMARIES for charts (Keep last 30 days for comparison)
@@ -160,7 +163,7 @@ export function ProductionDistributionDashboard({
       milkSafetyRate,
       avgFatContent,
       avgProteinContent,
-      avgDailyVolume: todayRecords.length > 0 ? totalVolume : 0,
+      avgDailyVolume: filteredRecords.length > 0 ? totalVolume : 0,
       dailySummaries,
       periodDays: 1,
       safeRecords
@@ -197,10 +200,18 @@ export function ProductionDistributionDashboard({
   const [showActionSheet, setShowActionSheet] = useState(false)
   const [productionRecords, setProductionRecords] = useState(initialProductionRecords)
   const [distributionRecords, setDistributionRecords] = useState(initialDistributionRecords)
+  const [selectedProductionDate, setSelectedProductionDate] = useState<string | undefined>(undefined)
   
   // Lift production stats to component state for real-time updates
   // Initialize with calculated stats from initial records
   const [stats, setStats] = useState(() => calculateProductionStats(initialProductionRecords))
+
+  // Recalculate stats when selected date or records change
+  useEffect(() => {
+    console.log('[ProductionDistributionDashboard] Updating stats for selected date:', selectedProductionDate)
+    const updatedStats = calculateProductionStats(productionRecords, selectedProductionDate)
+    setStats(updatedStats)
+  }, [selectedProductionDate, productionRecords])
   
   // State for viewing/editing production records
   const [selectedProductionRecord, setSelectedProductionRecord] = useState<any>(null)
@@ -674,6 +685,8 @@ export function ProductionDistributionDashboard({
             <div className={`${isMobile ? 'px-0' : ''}`}>
               <ProductionStatsCards 
                 stats={productionStatsConfig}
+                selectedDate={selectedProductionDate}
+                onDateChange={setSelectedProductionDate}
               />
             </div>
 

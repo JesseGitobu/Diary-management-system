@@ -395,13 +395,30 @@ export function GroupRecordForm({
   }, [selectedAnimals])
 
   // ── Fetch historical data for all selected animals ────────────────────────
-  // OPTIMIZATION: Batch requests (1 API call instead of N) + Cache by session params
+  // OPTIMIZATION: Batch requests (1 API call instead of N) + Cache by session params + animal IDs
   const fetchHistoricalData = useCallback(async () => {
-    // Create cache key from session parameters
-    const cacheKey = `${farmId}|${recordDate}|${session}|${sessionName}`
+    // Skip if no animals selected
+    if (selectedAnimals.length === 0) {
+      console.log('[GroupRecordForm] No animals selected, skipping historical fetch')
+      setHistoricalData({})
+      return
+    }
 
-    // Skip if already loaded for this session
+    // Create cache key including selected animal IDs so different selections get their own cache
+    const animalIdString = selectedAnimals.map(s => s.animal.id).sort().join(',')
+    const cacheKey = `${farmId}|${recordDate}|${session}|${sessionName}|${animalIdString}`
+
+    console.log('[GroupRecordForm] Fetching historical data:', {
+      cacheKey,
+      selectedAnimalsCount: selectedAnimals.length,
+      recordDate,
+      session,
+      sessionName,
+    })
+
+    // Skip if already loaded for this session and animal selection
     if (historicalCacheKey === cacheKey && Object.keys(historicalData).length > 0) {
+      console.log('[GroupRecordForm] Using cached historical data for:', cacheKey)
       return // Already cached!
     }
 
@@ -422,9 +439,15 @@ export function GroupRecordForm({
 
       if (res.ok) {
         const results = await res.json()
+        console.log('[GroupRecordForm] Historical data received:', {
+          cacheKey,
+          animalsCount: Object.keys(results).length,
+          data: results,
+        })
         setHistoricalData(results)
         setHistoricalCacheKey(cacheKey) // Mark as cached
       } else {
+        console.error('[GroupRecordForm] Historical data fetch failed:', { status: res.status })
         setHistoricalData({})
       }
     } catch (error) {
@@ -464,6 +487,13 @@ export function GroupRecordForm({
     await fetchHistoricalData() // Uses cache if available
     setStep(2)
   }
+
+  // Fetch historical data automatically when selected animals change
+  useEffect(() => {
+    if (selectedAnimals.length > 0) {
+      fetchHistoricalData()
+    }
+  }, [selectedAnimals, fetchHistoricalData])
 
   // Reset cache when session parameters change
   useEffect(() => {
@@ -897,6 +927,65 @@ export function GroupRecordForm({
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Historical data for selected animals */}
+      {selectedAnimals.length > 0 && (
+        <div className="p-3 sm:p-4 bg-stone-50 rounded-lg border border-stone-200 space-y-3">
+          <p className="text-xs font-semibold text-stone-600 uppercase tracking-wide">Historical Context for Selected Animals</p>
+          {loadingHistory ? (
+            <div className="flex items-center justify-center py-3">
+              <LoadingSpinner size="sm" />
+            </div>
+          ) : Object.keys(historicalData).length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              {selectedAnimals.map(({ animal }) => {
+                const data = historicalData[animal.id]
+                console.log('[GroupRecordForm] Rendering historical data for animal:', {
+                  animalId: animal.id,
+                  animalTag: animal.tag_number,
+                  data,
+                })
+                if (!data) {
+                  console.log('[GroupRecordForm] No historical data for animal:', animal.id)
+                  return null
+                }
+                return (
+                  <div key={animal.id} className="p-2 bg-white rounded border border-stone-200 space-y-1.5">
+                    <p className="text-xs font-medium text-stone-700">#{animal.tag_number} {animal.name && `· ${animal.name}`}</p>
+                    <div className="space-y-1">
+                      {data.yesterdayTotal && (
+                        <div className="text-[10px] text-stone-600">
+                          <span className="font-medium">Yesterday Total:</span> {data.yesterdayTotal.toFixed(1)}L
+                        </div>
+                      )}
+                      {!data.yesterdayTotal && (
+                        <div className="text-[10px] text-stone-600">
+                          <span className="font-medium">Yesterday Total:</span> <span className="text-stone-400">—</span>
+                        </div>
+                      )}
+                      {data.previousSessionVolume && (
+                        <div className="text-[10px] text-stone-600">
+                          <span className="font-medium">Previous:</span> {data.previousSessionName || 'Session'} {data.previousSessionVolume.toFixed(1)}L
+                        </div>
+                      )}
+                      {data.sameTimeYesterdayVolume && (
+                        <div className="text-[10px] text-stone-600">
+                          <span className="font-medium">Same Time Yesterday:</span> {data.sameTimeYesterdayVolume.toFixed(1)}L
+                        </div>
+                      )}
+                      {!data.yesterdayTotal && !data.previousSessionVolume && !data.sameTimeYesterdayVolume && (
+                        <p className="text-[10px] text-stone-500 italic">No historical data available</p>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <p className="text-[10px] text-stone-500 italic py-2">No historical data available for these animals</p>
+          )}
         </div>
       )}
 

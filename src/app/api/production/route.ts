@@ -216,12 +216,14 @@ export async function GET(request: NextRequest) {
     const user = await getCurrentUser()
 
     if (!user) {
+      console.log('[API /production GET] Unauthorized - no user')
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const userRole = await getUserRole(user.id) as any
 
     if (!userRole?.farm_id) {
+      console.log('[API /production GET] No farm associated with user')
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
     }
 
@@ -231,12 +233,24 @@ export async function GET(request: NextRequest) {
     const endDate     = searchParams.get('end_date')
     const sessionName = searchParams.get('session_name')   // ✅ use name, not UUID
 
+    console.log('[API /production GET] Received parameters:', {
+      animalId,
+      startDate,
+      endDate,
+      sessionName,
+      farmId: userRole.farm_id,
+      userId: user.id,
+    })
+
     // If a session name is given, find the matching milking_sessions UUIDs for the date range
     let sessionUUIDs: string[] | undefined
     if (sessionName && startDate) {
+      console.log('[API /production GET] Looking up session UUIDs for session_name:', sessionName)
       const supabase = await createServerSupabaseClient()
       const dayStart = `${startDate}T00:00:00`
       const dayEnd   = `${endDate || startDate}T23:59:59`
+
+      console.log('[API /production GET] Session date range:', { dayStart, dayEnd })
 
       const { data: sessions, error: sessErr } = await (supabase as any)
         .from('milking_sessions')
@@ -247,11 +261,21 @@ export async function GET(request: NextRequest) {
         .lte('session_start', dayEnd)
 
       if (sessErr) {
+        console.error('[API /production GET] Session lookup error:', sessErr)
         // Session lookup failed - continue with no filter
       } else {
         sessionUUIDs = (sessions ?? []).map((s: any) => s.id)
+        console.log('[API /production GET] Found session UUIDs:', sessionUUIDs)
       }
     }
+
+    console.log('[API /production GET] Calling getProductionRecords with:', {
+      farmId: userRole.farm_id,
+      animalId: animalId || undefined,
+      startDate: startDate || undefined,
+      endDate: endDate || undefined,
+      sessionUUIDs,
+    })
 
     const records = await getProductionRecords(
       userRole.farm_id,
@@ -261,9 +285,18 @@ export async function GET(request: NextRequest) {
       sessionUUIDs
     )
 
+    console.log('[API /production GET] Successfully retrieved records:', {
+      count: records.length,
+    })
+
     return NextResponse.json({ success: true, data: records })
 
   } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+    console.error('[API /production GET] Caught exception:', {
+      error: errorMsg,
+      stack: error instanceof Error ? error.stack : undefined,
+    })
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

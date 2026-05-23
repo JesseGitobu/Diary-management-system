@@ -11,7 +11,22 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { ProductionHistoricalContext } from './ProductionHistoricalContext'
 import { ProductionHealthSection } from './ProductionHealthSection'
 import { ProductionSettings } from '@/types/production-distribution-settings'
-import { Search, ChevronLeft, AlertCircle } from 'lucide-react'
+import {
+  Search,
+  ChevronLeft,
+  AlertCircle,
+  CheckCircle2,
+  Droplets,
+  Users,
+  X,
+  FlaskConical,
+  ShieldCheck,
+  ShieldAlert,
+  ShieldX,
+  ClipboardList,
+} from 'lucide-react'
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 type ProductionFormData = {
   animal_id: string
@@ -51,6 +66,7 @@ interface IndividualRecordFormProps {
   sessionName?: string
   recordingType?: 'individual' | 'group'
   milkingGroupId?: string
+  /** When set, the animal picker is skipped and this animal is pre-loaded */
   preSelectedAnimalId?: string
   editingRecord?: {
     id: string
@@ -71,7 +87,61 @@ interface IndividualRecordFormProps {
     notes?: string | null
     milking_time?: string | null
   } | null
+  /** When editing a record that was created via group recording */
+  sourceRecordingType?: 'individual' | 'group'
+  /** Group name the record was created under (only when sourceRecordingType === 'group') */
+  sourceGroupName?: string
 }
+
+// ── Small UI helpers ──────────────────────────────────────────────────────────
+
+function SafetyPill({ status }: { status?: string }) {
+  const map: Record<string, { label: string; cls: string; Icon: React.ElementType }> = {
+    safe:             { label: 'Safe',           cls: 'bg-emerald-50 text-emerald-700 border-emerald-200',  Icon: ShieldCheck  },
+    unsafe_health:    { label: 'Unsafe – Health', cls: 'bg-red-50 text-red-700 border-red-200',             Icon: ShieldAlert  },
+    unsafe_colostrum: { label: 'Colostrum',       cls: 'bg-amber-50 text-amber-700 border-amber-200',       Icon: ShieldX      },
+  }
+  const { label, cls, Icon } = map[status ?? ''] ?? {
+    label: 'Unknown',
+    cls: 'bg-gray-100 text-gray-500 border-gray-200',
+    Icon: ShieldCheck,
+  }
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${cls}`}>
+      <Icon className="w-3 h-3" />
+      {label}
+    </span>
+  )
+}
+
+function FieldLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
+  return (
+    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+      {children}
+      {required && <span className="text-red-500 ml-0.5">*</span>}
+    </label>
+  )
+}
+
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null
+  return (
+    <p className="flex items-center gap-1 mt-1 text-xs text-red-600">
+      <AlertCircle className="w-3 h-3 flex-shrink-0" />
+      {message}
+    </p>
+  )
+}
+
+function SectionCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`bg-white rounded-2xl border border-gray-100 p-4 ${className}`}>
+      {children}
+    </div>
+  )
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 export function IndividualRecordForm({
   farmId,
@@ -88,9 +158,11 @@ export function IndividualRecordForm({
   sessionName,
   preSelectedAnimalId,
   editingRecord = null,
+  sourceRecordingType,
+  sourceGroupName,
 }: IndividualRecordFormProps) {
   const [step, setStep] = useState<'select' | 'form'>(editingRecord ? 'form' : 'select')
-  const [selectedAnimal, setSelectedAnimal] = useState<typeof animals[0] | null>(
+  const [selectedAnimal, setSelectedAnimal] = useState<(typeof animals)[0] | null>(
     editingRecord ? animals.find(a => a.id === editingRecord.animal_id) || null : null
   )
   const [searchQuery, setSearchQuery] = useState('')
@@ -101,60 +173,49 @@ export function IndividualRecordForm({
   const [preRecordedAnimalIds, setPreRecordedAnimalIds] = useState<Set<string>>(new Set())
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
+  // Whether this edit originated from a group-mode record
+  const isGroupEdit = sourceRecordingType === 'group' || recordingType === 'group'
 
+  // ── Effects ───────────────────────────────────────────────────────────────
 
-  // Reset form when date or session changes
   useEffect(() => {
-    setStep('select')
-    setSelectedAnimal(null)
-    setSearchQuery('')
-    setError(null)
-    setSuccessMessage(null)
+    if (!editingRecord) {
+      setStep('select')
+      setSelectedAnimal(null)
+      setSearchQuery('')
+      setError(null)
+      setSuccessMessage(null)
+    }
   }, [recordDate, session])
 
-  // Auto-dismiss success message after 4 seconds
   useEffect(() => {
     if (successMessage) {
-      const timer = setTimeout(() => {
-        setSuccessMessage(null)
-      }, 4000)
-      return () => clearTimeout(timer)
+      const t = setTimeout(() => setSuccessMessage(null), 4000)
+      return () => clearTimeout(t)
     }
   }, [successMessage])
 
-  // Fetch already-recorded animals for this date and session
   useEffect(() => {
-    const fetchPreRecordedAnimals = async () => {
+    const fetchPreRecorded = async () => {
       try {
-        // Filter server-side by session_name (resolves to milking_sessions UUIDs)
         const url = sessionName
           ? `/api/production?start_date=${recordDate}&end_date=${recordDate}&session_name=${encodeURIComponent(sessionName)}`
           : `/api/production?start_date=${recordDate}&end_date=${recordDate}`
-
-        const response = await fetch(url)
-
-        if (response.ok) {
-          const result = await response.json()
-          const records = Array.isArray(result.data) ? result.data : []
-
-          // Server already filters by milking_session_id when sessionId is provided.
-          // Client-side guard: if no sessionId was sent, fall back to matching by sessionId field.
-          const preRecordedIds = new Set<string>(records.map((r: any) => r.animal_id))
-
-          setPreRecordedAnimalIds(preRecordedIds)
+        const res = await fetch(url)
+        if (res.ok) {
+          const result = await res.json()
+          const records: any[] = Array.isArray(result.data) ? result.data : []
+          setPreRecordedAnimalIds(new Set(records.map(r => r.animal_id)))
         } else {
-          const errBody = await response.json().catch(() => ({}))
           setPreRecordedAnimalIds(new Set())
         }
-      } catch (err) {
+      } catch {
         setPreRecordedAnimalIds(new Set())
       }
     }
-
-    fetchPreRecordedAnimals()
+    fetchPreRecorded()
   }, [recordDate, session, sessionId, sessionName])
 
-  // Auto-select the pre-chosen animal when provided (group recording mode)
   useEffect(() => {
     if (!preSelectedAnimalId) return
     const animal = animals.find(a => a.id === preSelectedAnimalId)
@@ -166,84 +227,54 @@ export function IndividualRecordForm({
     }
   }, [preSelectedAnimalId, animals])
 
-  // Schema with dynamic validation
+  // ── Validation schema ─────────────────────────────────────────────────────
+
   const productionSchema = useMemo(() => {
     const isQualityFocused = settings?.productionTrackingMode === 'quality_focused'
-    
-    // Find current session to check if milking time is required
     const currentSession = settings?.milkingSessions?.find(s => s.id === session)
     const requiresMilkingTime = currentSession?.requiresTimeInput || false
-    
-    const createNumberSchema = (isRequired: boolean, label: string, min = 0, max = 100) => {
-      const schema = z.number()
-        .min(min, `${label} must be at least ${min}`)
-        .max(max, `${label} cannot exceed ${max}`)
-        .nullable()
-        .optional()
-      
-      if (isRequired) {
-        return schema.refine((val) => val !== null && val !== undefined, {
-          message: `${label} is required`
-        })
-      }
-      return schema
+
+    const numField = (required: boolean, label: string, min = 0, max = 100) => {
+      const base = z.number().min(min).max(max).nullable().optional()
+      return required
+        ? base.refine(v => v != null, { message: `${label} is required` })
+        : base
     }
 
-    return z.object({
-      animal_id: z.string().min(1, 'Animal is required'),
-      record_date: z.string().min(1, 'Date is required'),
-      milking_session: z.string().min(1, 'Session is required'),
-      milking_time: requiresMilkingTime 
-        ? z.string().min(1, 'Exact milking time is required for this session')
-        : z.string().optional().nullable(),
-      milk_volume: z.number()
-        .min(0, 'Volume must not be negative')
-        .max(100, 'Volume seems too high'),
-      milk_safety_status: z.enum(['safe', 'unsafe_health', 'unsafe_colostrum']),
-      temperature: createNumberSchema(false, 'Temperature', 35, 41),
-      mastitis_test_performed: z.boolean().optional(),
-      mastitis_result: z.enum(['negative', 'mild', 'severe']).nullable().optional(),
-      affected_quarters: z.array(z.string()).nullable().optional(),
-      fat_content: createNumberSchema(isQualityFocused && !!settings?.fatContentRequired, 'Fat Content', 0, 15),
-      protein_content: createNumberSchema(isQualityFocused && !!settings?.proteinContentRequired, 'Protein Content', 0, 10),
-      somatic_cell_count: createNumberSchema(isQualityFocused && !!settings?.sccRequired, 'SCC', 0, 9999999),
-      lactose_content: createNumberSchema(isQualityFocused && !!settings?.lactoseRequired, 'Lactose', 0, 10),
-      ph_level: createNumberSchema(isQualityFocused && !!settings?.phRequired, 'pH Level', 0, 14),
-      notes: z.string().nullable().optional(),
-    }).refine(
-      (data) => {
-        // If mastitis test is performed, result must be provided
-        // Only validate if mastitis_test_performed is explicitly true
-        if (data.mastitis_test_performed === true && !data.mastitis_result) {
-          return false
-        }
-        return true
-      },
-      {
+    return z
+      .object({
+        animal_id: z.string().min(1, 'Animal is required'),
+        record_date: z.string().min(1, 'Date is required'),
+        milking_session: z.string().min(1, 'Session is required'),
+        milking_time: requiresMilkingTime
+          ? z.string().min(1, 'Exact milking time is required for this session')
+          : z.string().optional().nullable(),
+        milk_volume: z.number().min(0, 'Volume must not be negative').max(100, 'Volume seems too high'),
+        milk_safety_status: z.enum(['safe', 'unsafe_health', 'unsafe_colostrum']),
+        temperature: numField(false, 'Temperature', 35, 41),
+        mastitis_test_performed: z.boolean().optional(),
+        mastitis_result: z.enum(['negative', 'mild', 'severe']).nullable().optional(),
+        affected_quarters: z.array(z.string()).nullable().optional(),
+        fat_content: numField(isQualityFocused && !!settings?.fatContentRequired, 'Fat Content', 0, 15),
+        protein_content: numField(isQualityFocused && !!settings?.proteinContentRequired, 'Protein Content', 0, 10),
+        somatic_cell_count: numField(isQualityFocused && !!settings?.sccRequired, 'SCC', 0, 9999999),
+        lactose_content: numField(isQualityFocused && !!settings?.lactoseRequired, 'Lactose', 0, 10),
+        ph_level: numField(isQualityFocused && !!settings?.phRequired, 'pH Level', 0, 14),
+        notes: z.string().nullable().optional(),
+      })
+      .refine(d => !(d.mastitis_test_performed === true && !d.mastitis_result), {
         message: 'Test result is required when mastitis test is performed',
-        path: ['mastitis_result']
-      }
-    ).refine(
-      (data) => {
-        // If mastitis result is severe, milk safety status must be unsafe_health
-        if (data.mastitis_result === 'severe' && data.milk_safety_status !== 'unsafe_health') {
-          return false
-        }
-        return true
-      },
-      {
-        message: 'Milk safety status must be marked as "Unsafe - Animal Health Issue" when mastitis result is severe',
-        path: ['milk_safety_status']
-      }
-    )
+        path: ['mastitis_result'],
+      })
+      .refine(d => !(d.mastitis_result === 'severe' && d.milk_safety_status !== 'unsafe_health'), {
+        message: 'Milk safety must be "Unsafe – Health" when mastitis is severe',
+        path: ['milk_safety_status'],
+      })
   }, [settings, session])
 
-  // Get current time in HH:MM format for default milking time
   const getCurrentTime = () => {
     const now = new Date()
-    const hours = String(now.getHours()).padStart(2, '0')
-    const minutes = String(now.getMinutes()).padStart(2, '0')
-    return `${hours}:${minutes}`
+    return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
   }
 
   const form = useForm<ProductionFormData>({
@@ -257,7 +288,7 @@ export function IndividualRecordForm({
       milk_volume: editingRecord?.milk_volume ?? undefined,
       milk_safety_status: editingRecord?.milk_safety_status || 'safe',
       temperature: editingRecord?.temperature ?? null,
-      mastitis_test_performed: editingRecord?.mastitis_test_performed ?? (settings?.requireMastitisTest ? false : false),
+      mastitis_test_performed: editingRecord?.mastitis_test_performed ?? false,
       mastitis_result: editingRecord?.mastitis_result ?? null,
       affected_quarters: editingRecord?.affected_quarters ?? null,
       fat_content: editingRecord?.fat_content ?? null,
@@ -269,26 +300,16 @@ export function IndividualRecordForm({
     },
   })
 
-  // Reset form when a new animal is pre-selected in group mode (but not when editing)
+  // Reset when pre-selected animal changes (group mode)
   useEffect(() => {
-    if (!preSelectedAnimalId || editingRecord) {
-      return
-    }
-    
-    // Calculate current time in HH:MM format
-    const now = new Date()
-    const hours = String(now.getHours()).padStart(2, '0')
-    const minutes = String(now.getMinutes()).padStart(2, '0')
-    const currentTime = `${hours}:${minutes}`
-    
+    if (!preSelectedAnimalId || editingRecord) return
     const animal = animals.find(a => a.id === preSelectedAnimalId)
     if (animal) {
-      
       form.reset({
         animal_id: animal.id,
         record_date: recordDate,
         milking_session: session,
-        milking_time: currentTime,
+        milking_time: getCurrentTime(),
         milk_volume: undefined,
         milk_safety_status: 'safe',
         temperature: null,
@@ -301,130 +322,72 @@ export function IndividualRecordForm({
         lactose_content: null,
         ph_level: null,
         notes: '',
-      }, {
-        keepErrors: false,
-        keepDirty: false,
-        keepTouched: false,
-        keepIsSubmitted: false,
-        keepIsValidating: false,
-        keepIsValid: false,
       })
     }
-  }, [preSelectedAnimalId, animals, recordDate, session, editingRecord, form])
+  }, [preSelectedAnimalId, animals, recordDate, session, editingRecord])
 
-  // Watch mastitis result to conditionally show withdrawal period banner
   const mastitisTestPerformed = form.watch('mastitis_test_performed')
   const mastitisResult = form.watch('mastitis_result')
-  const milkSafetyStatus = form.watch('milk_safety_status')
-  const showWithdrawalWarning = mastitisTestPerformed && (mastitisResult === 'mild' || mastitisResult === 'severe')
+  const showWithdrawalWarning =
+    mastitisTestPerformed && (mastitisResult === 'mild' || mastitisResult === 'severe')
 
-
-
-  // Auto-update milk safety status when severe mastitis is detected
   useEffect(() => {
     if (mastitisResult === 'severe') {
-      // Automatically set safety status to unsafe due to animal health when severe mastitis is detected
       form.setValue('milk_safety_status', 'unsafe_health', { shouldValidate: true })
     } else if (mastitisResult === 'negative' || mastitisResult === null) {
-      // When mastitis is negative or cleared, reset to safe
       form.setValue('milk_safety_status', 'safe', { shouldValidate: true })
     }
   }, [mastitisResult, form])
 
-  // Update form when animal is selected
   useEffect(() => {
-    if (selectedAnimal) {
-      form.setValue('animal_id', selectedAnimal.id)
-    }
+    if (selectedAnimal) form.setValue('animal_id', selectedAnimal.id)
   }, [selectedAnimal])
 
-  // Check if quality parameters should be visible
-  // Hide quality parameters if tracking mode is 'basic' (volume only)
-  const isQualityVisible = settings && settings.productionTrackingMode !== 'basic' && (
-    settings.trackFatContent ||
-    settings.trackProteinContent ||
-    settings.trackSomaticCellCount ||
-    settings.trackLactoseContent ||
-    settings.trackPhLevel ||
-    settings.productionTrackingMode === 'quality_focused'
-  )
+  const isQualityVisible =
+    settings &&
+    settings.productionTrackingMode !== 'basic' &&
+    (settings.trackFatContent ||
+      settings.trackProteinContent ||
+      settings.trackSomaticCellCount ||
+      settings.trackLactoseContent ||
+      settings.trackPhLevel ||
+      settings.productionTrackingMode === 'quality_focused')
 
-  // Filter eligible animals based on production settings
+  // ── Eligible animals ──────────────────────────────────────────────────────
+
   const eligibleAnimals = useMemo(() => {
-    const baseAnimals = animals.filter(a => a.gender === 'female')
-    
-    if (!settings) {
-      // If no settings, default to lactating only
-      let filtered = baseAnimals.filter(a => a.production_status === 'lactating')
-      filtered = filtered.filter(a => {
-        const isEditing = a.id === editingRecord?.animal_id
-        const isPreRecorded = preRecordedAnimalIds.has(a.id)
-        const keep = isEditing || !isPreRecorded
-        return keep
-      })
-      return filtered
-    }
-
-    // Apply gender filter from settings
-    let filtered = baseAnimals
-    
-    // Apply eligible statuses from settings
-    const eligibleStatuses = settings.eligibleProductionStatuses || ['lactating']
-    const beforeStatusFilter = filtered.length
-    filtered = filtered.filter(a => {
-      const included = eligibleStatuses.includes(a.production_status)
-      return included
-    })
-    
-    // Filter by eligible genders if specified
-    if (settings.eligibleGenders && settings.eligibleGenders.length > 0) {
-      const beforeGenderFilter = filtered.length
+    let filtered = animals.filter(a => a.gender === 'female')
+    const statuses = settings?.eligibleProductionStatuses || ['lactating']
+    filtered = filtered.filter(a => statuses.includes(a.production_status))
+    if (settings?.eligibleGenders?.length) {
       filtered = filtered.filter(a => settings.eligibleGenders?.includes(a.gender) ?? true)
     }
-    
-    // Exclude pre-recorded animals EXCEPT the one being edited
-    const beforeExcludePreRecorded = filtered.length
-    filtered = filtered.filter(a => {
+    return filtered.filter(a => {
       const isEditing = a.id === editingRecord?.animal_id
-      const isPreRecorded = preRecordedAnimalIds.has(a.id)
-      const keep = isEditing || !isPreRecorded
-      return keep
+      return isEditing || !preRecordedAnimalIds.has(a.id)
     })
-    
-    // TODO: Add these filters when animal object includes required properties
-    // - minAnimalAgeMonths: requires animal birth_date
-    // - maxDaysInMilk: requires animal lactation_start_date
-    // - excludeSickAnimals: requires animal health_status
-    // - excludeTreatmentWithdrawal: requires animal active_treatments
-    
-    return filtered
   }, [animals, settings, preRecordedAnimalIds, editingRecord?.animal_id])
 
-  // Filter based on search query (select step)
   const filteredAnimals = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return eligibleAnimals
-    }
-    const query = searchQuery.toLowerCase()
-    const result = eligibleAnimals.filter(a =>
-      a.tag_number.toLowerCase().includes(query) ||
-      (a.name?.toLowerCase().includes(query) ?? false)
+    if (!searchQuery.trim()) return eligibleAnimals
+    const q = searchQuery.toLowerCase()
+    return eligibleAnimals.filter(
+      a => a.tag_number.toLowerCase().includes(q) || (a.name?.toLowerCase().includes(q) ?? false)
     )
-    return result
   }, [eligibleAnimals, searchQuery])
 
-  // Animals available in the inline picker (exclude currently selected animal)
   const pickerAnimals = useMemo(() => {
-    const withoutCurrent = eligibleAnimals.filter(a => a.id !== selectedAnimal?.id)
-    if (!pickerQuery.trim()) return withoutCurrent
-    const query = pickerQuery.toLowerCase()
-    return withoutCurrent.filter(a =>
-      a.tag_number.toLowerCase().includes(query) ||
-      (a.name?.toLowerCase().includes(query) ?? false)
+    const without = eligibleAnimals.filter(a => a.id !== selectedAnimal?.id)
+    if (!pickerQuery.trim()) return without
+    const q = pickerQuery.toLowerCase()
+    return without.filter(
+      a => a.tag_number.toLowerCase().includes(q) || (a.name?.toLowerCase().includes(q) ?? false)
     )
   }, [eligibleAnimals, selectedAnimal, pickerQuery])
 
-  const selectAnimal = (animal: typeof animals[0]) => {
+  // ── Handlers ──────────────────────────────────────────────────────────────
+
+  const selectAnimal = (animal: (typeof animals)[0]) => {
     setSelectedAnimal(animal)
     form.setValue('animal_id', animal.id)
     setStep('form')
@@ -432,12 +395,7 @@ export function IndividualRecordForm({
     setError(null)
   }
 
-  const handleChangeAnimal = () => {
-    setShowAnimalPicker(true)
-    setPickerQuery('')
-  }
-
-  const selectNewAnimal = (animal: typeof animals[0]) => {
+  const selectNewAnimal = (animal: (typeof animals)[0]) => {
     setSelectedAnimal(animal)
     form.reset({
       animal_id: animal.id,
@@ -462,90 +420,69 @@ export function IndividualRecordForm({
     setError(null)
   }
 
-  // Helper function to create health issue for mastitis
   const createMastitisHealthIssue = async (
     animalId: string,
-    mastitisResult: 'mild' | 'severe',
+    result: 'mild' | 'severe',
     data: ProductionFormData
   ) => {
     try {
-      // Map mastitis severity to health issue severity
-      const healthSeverity = mastitisResult === 'severe' ? 'high' : 'medium'
-      const shouldAlertVeterinarian = mastitisResult === 'severe'
-
-      const healthIssuePayload = {
-        animal_id: animalId,
-        issue_type: 'illness',
-        severity: healthSeverity,
-        description: `Mastitis detected (${mastitisResult}) during production recording`,
-        notes: `Milk volume: ${data.milk_volume}L\nAffected quarters: ${data.affected_quarters?.join(', ') || 'Not specified'}\nRecording notes: ${data.notes || 'None'}`,
-        symptoms: ['mastitis', mastitisResult],
-        alert_veterinarian: shouldAlertVeterinarian,
-        first_observed_at: new Date().toISOString(),
-        // Illness-specific fields
-        illness_temperature: data.temperature?.toString() || null,
-        illness_milk_change: true,
-        illness_onset_hours: '0',
-        illness_other_animals: false,
-        illness_appetite: null,
-      }
-
-      const healthResponse = await fetch('/api/health/issues', {
+      const res = await fetch('/api/health/issues', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(healthIssuePayload),
+        body: JSON.stringify({
+          animal_id: animalId,
+          issue_type: 'illness',
+          severity: result === 'severe' ? 'high' : 'medium',
+          description: `Mastitis detected (${result}) during production recording`,
+          notes: `Milk volume: ${data.milk_volume}L\nAffected quarters: ${data.affected_quarters?.join(', ') || 'Not specified'}`,
+          symptoms: ['mastitis', result],
+          alert_veterinarian: result === 'severe',
+          first_observed_at: new Date().toISOString(),
+          illness_temperature: data.temperature?.toString() || null,
+          illness_milk_change: true,
+          illness_onset_hours: '0',
+          illness_other_animals: false,
+          illness_appetite: null,
+        }),
       })
-
-      if (!healthResponse.ok) {
-        const errorData = await healthResponse.json()
-        // Don't throw - health issue creation failure shouldn't prevent production record from being saved
-      } else {
-        const healthData = await healthResponse.json()
-        
-        // Set success message
-        const severityLabel = mastitisResult === 'severe' ? 'Severe Mastitis' : 'Mild Mastitis'
-        const veterinarianAlert = shouldAlertVeterinarian ? ' Veterinarian has been alerted.' : ''
-        setSuccessMessage(`✓ Production record saved. Health issue created for ${severityLabel}.${veterinarianAlert}`)
-        
-        return true
+      if (res.ok) {
+        const severityLabel = result === 'severe' ? 'Severe Mastitis' : 'Mild Mastitis'
+        const vetAlert = result === 'severe' ? ' Veterinarian has been alerted.' : ''
+        setSuccessMessage(`Production record saved. Health issue created for ${severityLabel}.${vetAlert}`)
       }
-    } catch (err) {
-      // Don't throw - we don't want to fail the production record save if health issue creation fails
+    } catch {
+      // Non-blocking
     }
-    return false
   }
 
   const handleSubmit = async (data: ProductionFormData) => {
-    // Validate mastitis test requirement at submission time
     if (settings?.requireMastitisTest && !data.mastitis_test_performed) {
-      setError('Mastitis test is required for this record before it can be saved')
+      setError('Mastitis test is required before this record can be saved')
       return
     }
-    
-    // Find current session to check if milking time input is required
     const currentSession = settings?.milkingSessions?.find(s => s.id === session)
     if (currentSession?.requiresTimeInput && !data.milking_time) {
       setError('Please provide the exact milking time for this session')
       return
     }
-    
+
     setLoading(true)
     setError(null)
 
     try {
       const endpoint = editingRecord ? `/api/production/${editingRecord.id}` : '/api/production'
       const method = editingRecord ? 'PUT' : 'POST'
-      
-      const response = await fetch(endpoint, {
+
+      const res = await fetch(endpoint, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...data,
           farm_id: farmId,
-          session_name: sessionName || 'Session',   // used by server to resolve milking_sessions UUID
+          session_name: sessionName || 'Session',
           recording_type: recordingType,
           milking_group_id: milkingGroupId || null,
-          milking_session_id: sessionId || null,    // kept for reference; server resolves the real UUID
+          milking_session_id: sessionId || null,
           milking_time: data.milking_time || null,
           temperature: data.temperature === undefined ? null : data.temperature,
           mastitis_test_performed: data.mastitis_test_performed || false,
@@ -560,51 +497,38 @@ export function IndividualRecordForm({
         }),
       })
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || `Failed to ${editingRecord ? 'update' : 'save'} record`)
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || `Failed to ${editingRecord ? 'update' : 'save'} record`)
       }
 
       const animalId = data.animal_id
 
-      // Mark as recorded so the change-animal picker excludes it immediately (only for new records)
       if (!editingRecord) {
         setPreRecordedAnimalIds(prev => new Set([...prev, animalId]))
       }
 
-      // Set success message
       if (editingRecord) {
-        setSuccessMessage('✓ Production record updated successfully')
+        setSuccessMessage('Production record updated successfully')
       }
 
-      // Create health issue if mastitis is detected (mild or severe) - only for new records
       if (!editingRecord && (data.mastitis_result === 'mild' || data.mastitis_result === 'severe')) {
         await createMastitisHealthIssue(animalId, data.mastitis_result, data)
       }
 
-      // For group mode: notify parent without closing
-      if (onRecordSaved) {
-        onRecordSaved(animalId)
-      }
+      onRecordSaved?.(animalId)
+      onSuccess?.()
 
-      // For individual mode: close if configured to do so
-      if (closeAfterSuccess && onSuccess) {
-        onSuccess()
-      }
-
-      // When editing, go back to animal selection after showing success message
       if (editingRecord) {
         setTimeout(() => {
           setSelectedAnimal(null)
           setStep('select')
         }, 1500)
       } else if (recordingType !== 'group') {
-        // For new records in individual mode, reset form
         setSelectedAnimal(null)
         setStep('select')
       }
 
-      // Reset form for new records, but keep data for editing (will auto-dismiss with success message)
       if (!editingRecord) {
         form.reset({
           animal_id: '',
@@ -627,37 +551,53 @@ export function IndividualRecordForm({
     }
   }
 
+  // ── Step 1: Animal picker ─────────────────────────────────────────────────
+
   if (step === 'select') {
     return (
       <div className="space-y-4">
-        <h3 className="text-lg font-semibold">Select Animal</h3>
-        
-        {preRecordedAnimalIds.size > 0 && (
-          <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
-            <p>ℹ️ <strong>{preRecordedAnimalIds.size} animal{preRecordedAnimalIds.size > 1 ? 's' : ''}</strong> {preRecordedAnimalIds.size > 1 ? 'have' : 'has'} already been recorded in this session and {preRecordedAnimalIds.size > 1 ? 'are' : 'is'} hidden from the list below.</p>
-          </div>
-        )}
-        
-        {/* Search Input */}
-        <div className="relative">
-          <Search className="absolute left-3 top-2.5 h-5 w-5 text-stone-400" />
-          <input
-            type="text"
-            placeholder="Search by animal ID or name..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-          />
+        {/* Header */}
+        <div>
+          <h3 className="text-base font-semibold text-gray-900">Select animal</h3>
+          {preRecordedAnimalIds.size > 0 && (
+            <p className="text-xs text-gray-400 mt-0.5">
+              {preRecordedAnimalIds.size} animal{preRecordedAnimalIds.size > 1 ? 's' : ''} already recorded this session are hidden
+            </p>
+          )}
         </div>
 
-        {/* Animal List */}
-        <div className="space-y-2 max-h-96 overflow-y-auto">
+        {/* Search */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+          <input
+            type="text"
+            placeholder="Search by tag or name…"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            className="w-full pl-9 pr-4 py-2.5 text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 placeholder:text-gray-400"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+
+        {/* Animal list */}
+        <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
           {filteredAnimals.length === 0 ? (
-            <div className="text-center py-8 text-stone-500">
-              <p className="text-sm">
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <div className="w-12 h-12 rounded-2xl bg-gray-50 border border-gray-100 flex items-center justify-center mb-3">
+                <Droplets className="w-6 h-6 text-gray-300" />
+              </div>
+              <p className="text-sm font-medium text-gray-600">No animals found</p>
+              <p className="text-xs text-gray-400 mt-1">
                 {eligibleAnimals.length === 0
-                  ? 'No lactating animals available'
-                  : 'No animals match your search'}
+                  ? 'No eligible animals available'
+                  : 'Try a different search'}
               </p>
             </div>
           ) : (
@@ -665,25 +605,22 @@ export function IndividualRecordForm({
               <button
                 key={animal.id}
                 onClick={() => selectAnimal(animal)}
-                className="w-full flex items-center space-x-3 p-3 border border-stone-200 rounded-lg hover:border-green-300 hover:bg-green-50 transition-colors text-left"
+                className="w-full flex items-center gap-3 p-3 bg-white border border-gray-100 rounded-xl hover:border-emerald-300 hover:bg-emerald-50/40 transition-colors text-left group"
               >
-                {/* Avatar */}
-                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
-                  <span className="text-sm font-semibold text-green-700">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0 group-hover:bg-emerald-100 transition-colors">
+                  <span className="text-sm font-bold text-emerald-700">
                     {animal.tag_number.charAt(0).toUpperCase()}
                   </span>
                 </div>
-
-                {/* Info */}
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-stone-900">{animal.tag_number}</p>
-                  <p className="text-sm text-stone-500">{animal.name || 'Unnamed'}</p>
+                  <p className="text-sm font-semibold text-gray-900 truncate">
+                    #{animal.tag_number}
+                  </p>
+                  <p className="text-xs text-gray-500 truncate">{animal.name || 'Unnamed'}</p>
                 </div>
-
-                {/* Status Badge */}
-                <div className="flex-shrink-0 px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium">
-                  Lactating
-                </div>
+                <span className="flex-shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  {animal.production_status.replace(/_/g, ' ')}
+                </span>
               </button>
             ))
           )}
@@ -692,120 +629,133 @@ export function IndividualRecordForm({
     )
   }
 
-  // Step 2: Record Form
-  if (!selectedAnimal) {
-    return null
-  }
+  // ── Step 2: Recording form ────────────────────────────────────────────────
+
+  if (!selectedAnimal) return null
+
+  const milkSafetyStatus = form.watch('milk_safety_status')
 
   return (
-    <div className="space-y-6">
-      {/* Animal Header */}
-      <div className="flex items-center justify-between p-4 bg-stone-50 rounded-lg border border-stone-200">
-        <div className="flex items-center space-x-3">
-          <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
-            <span className="text-sm font-bold text-green-700">
-              {selectedAnimal.tag_number.charAt(0).toUpperCase()}
-            </span>
-          </div>
-          <div>
-            <p className="font-semibold text-stone-900">{selectedAnimal.tag_number}</p>
-            <p className="text-sm text-stone-500">{selectedAnimal.name || 'Unnamed'}</p>
-          </div>
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={handleChangeAnimal}
-        >
-          <ChevronLeft className="w-4 h-4 mr-1" />
-          Change Animal
-        </Button>
-      </div>
+    <div className="space-y-4">
 
-      {/* Inline animal picker */}
-      {showAnimalPicker && (
-        <div className="border border-stone-200 rounded-lg bg-white shadow-md p-3 space-y-2">
-          <div className="flex items-center justify-between mb-1">
-            <p className="text-sm font-medium text-stone-700">Select a different animal</p>
+      {/* ── Animal identity card ──────────────────────────────────────────── */}
+      <SectionCard>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0">
+              <span className="text-base font-bold text-emerald-700">
+                {selectedAnimal.tag_number.charAt(0).toUpperCase()}
+              </span>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-900 leading-tight">
+                #{selectedAnimal.tag_number}
+                {selectedAnimal.name && (
+                  <span className="font-normal text-gray-500 ml-1.5">· {selectedAnimal.name}</span>
+                )}
+              </p>
+              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <Droplets className="w-3 h-3" />
+                  {selectedAnimal.production_status.replace(/_/g, ' ')}
+                </span>
+                {/* Group-origin badge */}
+                {isGroupEdit && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-violet-50 text-violet-700 border border-violet-200">
+                    <Users className="w-3 h-3" />
+                    {sourceGroupName ? `Group: ${sourceGroupName}` : 'Group recording'}
+                  </span>
+                )}
+                {editingRecord && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                    Editing record
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Change animal — only shown when not editing */}
+          {!editingRecord && (
             <button
               type="button"
-              onClick={() => setShowAnimalPicker(false)}
-              className="text-xs text-stone-500 hover:text-stone-800"
+              onClick={() => setShowAnimalPicker(true)}
+              className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
             >
-              Cancel
+              <ChevronLeft className="w-3.5 h-3.5" />
+              Change
             </button>
-          </div>
-          <div className="relative">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-stone-400" />
-            <input
-              type="text"
-              placeholder="Search by tag or name..."
-              value={pickerQuery}
-              onChange={(e) => setPickerQuery(e.target.value)}
-              autoFocus
-              className="w-full pl-9 pr-4 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            />
-          </div>
-          <div className="space-y-1 max-h-52 overflow-y-auto">
-            {pickerAnimals.length === 0 ? (
-              <p className="text-sm text-center py-4 text-stone-500">No other unmilked animals</p>
-            ) : (
-              pickerAnimals.map(animal => (
-                <button
-                  key={animal.id}
-                  type="button"
-                  onClick={() => selectNewAnimal(animal)}
-                  className="w-full flex items-center space-x-3 p-2 rounded-lg hover:bg-green-50 hover:border-green-300 border border-transparent transition-colors text-left"
-                >
-                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
-                    <span className="text-xs font-semibold text-green-700">
-                      {animal.tag_number.charAt(0).toUpperCase()}
-                    </span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-stone-900">{animal.tag_number}</p>
-                    <p className="text-xs text-stone-500">{animal.name || 'Unnamed'}</p>
-                  </div>
-                </button>
-              ))
-            )}
-          </div>
+          )}
         </div>
-      )}
 
+        {/* Inline animal picker */}
+        {showAnimalPicker && (
+          <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-gray-600">Select a different animal</p>
+              <button
+                type="button"
+                onClick={() => setShowAnimalPicker(false)}
+                className="text-xs text-gray-400 hover:text-gray-600"
+              >
+                Cancel
+              </button>
+            </div>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search…"
+                value={pickerQuery}
+                onChange={e => setPickerQuery(e.target.value)}
+                autoFocus
+                className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+              />
+            </div>
+            <div className="max-h-44 overflow-y-auto space-y-1">
+              {pickerAnimals.length === 0 ? (
+                <p className="text-xs text-center py-4 text-gray-400">No other animals available</p>
+              ) : (
+                pickerAnimals.map(animal => (
+                  <button
+                    key={animal.id}
+                    type="button"
+                    onClick={() => selectNewAnimal(animal)}
+                    className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-emerald-50 border border-transparent hover:border-emerald-200 transition-colors text-left"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center flex-shrink-0">
+                      <span className="text-xs font-bold text-emerald-700">
+                        {animal.tag_number.charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">#{animal.tag_number}</p>
+                      <p className="text-xs text-gray-400">{animal.name || 'Unnamed'}</p>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+      </SectionCard>
+
+      {/* ── Status messages ───────────────────────────────────────────────── */}
       {error && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start space-x-2 text-red-700 text-sm">
-          <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+        <div className="flex items-start gap-2.5 p-3.5 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
           <p>{error}</p>
         </div>
       )}
 
       {successMessage && (
-        <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-start space-x-2 text-green-700 text-sm">
-          <svg className="w-5 h-5 flex-shrink-0 mt-0.5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-          </svg>
+        <div className="flex items-start gap-2.5 p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-sm text-emerald-700">
+          <CheckCircle2 className="w-4 h-4 flex-shrink-0 mt-0.5" />
           <p>{successMessage}</p>
         </div>
       )}
 
-      {/* Show all form validation errors for debugging */}
-      {(() => {
-        const filteredErrors = Object.entries(form.formState.errors).filter(([field]) => field !== 'milking_time');
-        return filteredErrors.length > 0 && (
-          <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-            <p className="text-sm font-semibold text-yellow-800 mb-2">Validation Errors:</p>
-            <ul className="text-sm text-yellow-700 space-y-1">
-              {filteredErrors.map(([field, error]: any) => (
-                <li key={field}>• {field}: {error?.message || 'Invalid'}</li>
-              ))}
-            </ul>
-          </div>
-        );
-      })()}
-
-      {/* Historical Context Panel */}
+      {/* ── Historical context ────────────────────────────────────────────── */}
       <ProductionHistoricalContext
         farmId={farmId}
         animalId={selectedAnimal.id}
@@ -815,237 +765,263 @@ export function IndividualRecordForm({
         sessions={settings?.milkingSessions}
       />
 
-      {/* Form */}
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-        {/* Withdrawal Days Warning - Only show if mastitis test is positive (mild or severe) */}
-        {showWithdrawalWarning && settings?.withdrawalDaysAfterTreatment && settings.withdrawalDaysAfterTreatment > 0 && (
-          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
-            <p className="text-sm text-amber-800">
-              <strong>⚠️ Withdrawal Period:</strong> {settings.withdrawalDaysAfterTreatment} days must pass after any treatment before milk from this animal can be recorded as sale-ready.
-            </p>
-          </div>
-        )}
+      {/* ── Main form ─────────────────────────────────────────────────────── */}
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-3">
 
-        {/* Milk Quantity */}
-        <div>
-          <Label htmlFor="milk_volume">Milk Quantity ({settings?.productionUnit || 'Liters'}) *</Label>
-          <div className="relative mt-2">
-            <Input
+        {/* Withdrawal warning */}
+        {showWithdrawalWarning &&
+          settings?.withdrawalDaysAfterTreatment &&
+          settings.withdrawalDaysAfterTreatment > 0 && (
+            <div className="flex items-start gap-2.5 p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
+              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <p>
+                <strong>Withdrawal period:</strong> {settings.withdrawalDaysAfterTreatment} days must pass
+                after any treatment before milk can be recorded as sale-ready.
+              </p>
+            </div>
+          )}
+
+        {/* ── Volume card ────────────────────────────────────────────────── */}
+        <SectionCard>
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-7 h-7 rounded-lg bg-sky-50 flex items-center justify-center">
+              <Droplets className="w-4 h-4 text-sky-600" />
+            </div>
+            <p className="text-sm font-semibold text-gray-800">Milk volume</p>
+          </div>
+
+          <div className="relative">
+            <input
               id="milk_volume"
               type="number"
               step="0.1"
               placeholder="0.0"
-              className="text-2xl font-semibold"
+              className="w-full text-3xl font-bold text-gray-900 pr-16 pl-4 py-3 border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-sky-500/30 focus:border-sky-400 placeholder:text-gray-300"
               {...form.register('milk_volume', { valueAsNumber: true })}
             />
-            <span className="absolute right-4 top-1/2 transform -translate-y-1/2 text-lg font-medium text-stone-500">
+            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-base font-semibold text-gray-400">
               {settings?.productionUnit || 'L'}
             </span>
           </div>
-          {form.formState.errors.milk_volume && (
-            <p className="text-sm text-red-600 mt-1">{form.formState.errors.milk_volume.message}</p>
+          <FieldError message={form.formState.errors.milk_volume?.message} />
+
+          {/* Optional milking time */}
+          {settings?.milkingSessions?.find(s => s.id === session)?.requiresTimeInput && (
+            <div className="mt-3">
+              <FieldLabel required>Exact milking time</FieldLabel>
+              <input
+                type="time"
+                className="w-full text-sm px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                {...form.register('milking_time')}
+              />
+              <FieldError message={form.formState.errors.milking_time?.message} />
+            </div>
           )}
-        </div>
+        </SectionCard>
 
-        {/* Milking Time - Conditionally Required */}
-        {settings?.milkingSessions?.find(s => s.id === session)?.requiresTimeInput && (
-          <div>
-            <Label htmlFor="milking_time">Exact Milking Time *</Label>
-            <Input
-              id="milking_time"
-              type="time"
-              placeholder="HH:MM"
-              className="mt-2"
-              {...form.register('milking_time')}
-            />
-            {form.formState.errors.milking_time && (
-              <p className="text-sm text-red-600 mt-1">{form.formState.errors.milking_time.message}</p>
-            )}
-            <p className="text-xs text-stone-600 mt-1">
-              Record the exact time the animal was milked
-            </p>
+        {/* ── Health & Safety card ────────────────────────────────────────── */}
+        <SectionCard>
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-7 h-7 rounded-lg bg-rose-50 flex items-center justify-center">
+              <ClipboardList className="w-4 h-4 text-rose-600" />
+            </div>
+            <p className="text-sm font-semibold text-gray-800">Health & safety</p>
           </div>
-        )}
 
-        {/* Health & Safety Section */}
-        <ProductionHealthSection
-          form={form}
-          settings={settings}
-        />
+          {/*
+            ProductionHealthSection owns:
+            - Temperature (single field, with inline high/low warning)
+            - Mastitis toggle + result buttons + quarters + alerts
+            The parent no longer renders a second temperature or safety-status field.
+          */}
+          <ProductionHealthSection form={form} settings={settings} />
 
-        {/* Milk Safety Status */}
-        <div>
-          <div className="flex items-center justify-between">
-            <Label htmlFor="milk_safety_status">Milk Safety Status *</Label>
+          {/* Milk safety status — separate from mastitis, lives here in the parent */}
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <div className="flex items-center justify-between mb-2">
+              <FieldLabel required>Milk safety status</FieldLabel>
+              {mastitisResult === 'severe' && (
+                <span className="text-[11px] font-semibold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
+                  Auto-set: severe mastitis
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                { value: 'safe',             label: 'Safe',      sublabel: 'Approved for sale',   cls: 'border-emerald-200 bg-emerald-50 text-emerald-800', activeCls: 'ring-2 ring-emerald-400 border-emerald-400' },
+                { value: 'unsafe_health',    label: 'Unsafe',    sublabel: 'Animal health issue', cls: 'border-red-200 bg-red-50 text-red-800',             activeCls: 'ring-2 ring-red-400 border-red-400'         },
+                { value: 'unsafe_colostrum', label: 'Colostrum', sublabel: 'Cannot sell',         cls: 'border-amber-200 bg-amber-50 text-amber-800',       activeCls: 'ring-2 ring-amber-400 border-amber-400'     },
+              ] as const).map(opt => {
+                const isActive   = milkSafetyStatus === opt.value
+                const isDisabled = mastitisResult === 'severe' && opt.value !== 'unsafe_health'
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    disabled={isDisabled}
+                    onClick={() => form.setValue('milk_safety_status', opt.value, { shouldValidate: true })}
+                    className={`flex flex-col items-center text-center px-2 py-2.5 rounded-xl border transition-all
+                      ${opt.cls}
+                      ${isActive ? opt.activeCls : 'opacity-60 hover:opacity-80'}
+                      ${isDisabled ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'}`}
+                  >
+                    <span className="text-xs font-semibold leading-tight">{opt.label}</span>
+                    <span className="text-[10px] opacity-75 mt-0.5 leading-tight">{opt.sublabel}</span>
+                  </button>
+                )
+              })}
+            </div>
             {mastitisResult === 'severe' && (
-              <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-1 rounded">
-                Auto-set: Severe Mastitis
-              </span>
+              <p className="text-xs text-red-600 mt-1.5">
+                Safety is locked to "Unsafe – Health" while mastitis result is severe.
+              </p>
             )}
+            <FieldError message={form.formState.errors.milk_safety_status?.message} />
           </div>
-          <select
-            id="milk_safety_status"
-            {...form.register('milk_safety_status')}
-            disabled={mastitisResult === 'severe'}
-            className={`w-full mt-2 px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent ${
-              mastitisResult === 'severe' ? 'bg-red-50 cursor-not-allowed opacity-75' : ''
-            }`}
-          >
-            <option value="safe">✓ Safe - Approved for Sale</option>
-            <option value="unsafe_health">⚠️ Unsafe - Animal Health Issue</option>
-            <option value="unsafe_colostrum">✖️ Unsafe - Colostrum (Cannot Sell)</option>
-          </select>
-          {mastitisResult === 'severe' && (
-            <p className="text-xs text-red-600 mt-2 px-2 py-1 bg-red-50 rounded border border-red-200">
-              ℹ️ When mastitis test result is <strong>severe</strong>, milk is automatically marked as <strong>unsafe due to animal health issue</strong>. You cannot change this status until the mastitis result is updated.
-            </p>
-          )}
-          {form.formState.errors.milk_safety_status && (
-            <p className="text-sm text-red-600 mt-1">{form.formState.errors.milk_safety_status.message}</p>
-          )}
-        </div>
+        </SectionCard>
 
-        {/* Quality Parameters */}
+        {/* ── Quality parameters card ──────────────────────────────────────── */}
         {isQualityVisible && (
-          <div className="space-y-4 pt-4 border-t border-stone-200">
-            <h4 className="text-sm font-medium text-stone-700">Quality Parameters</h4>
-            <div className="grid grid-cols-2 gap-4">
+          <SectionCard>
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-7 h-7 rounded-lg bg-violet-50 flex items-center justify-center">
+                <FlaskConical className="w-4 h-4 text-violet-600" />
+              </div>
+              <p className="text-sm font-semibold text-gray-800">Quality parameters</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
               {settings?.trackFatContent && (
                 <div>
-                  <Label htmlFor="fat_content">
-                    Fat Content (%) {settings.productionTrackingMode === 'quality_focused' && settings.fatContentRequired && '*'}
-                  </Label>
-                  <Input
-                    id="fat_content"
+                  <FieldLabel required={settings.productionTrackingMode === 'quality_focused' && !!settings.fatContentRequired}>
+                    Fat content (%)
+                  </FieldLabel>
+                  <input
                     type="number"
                     step="0.01"
-                    placeholder="e.g., 3.75"
+                    placeholder="3.75"
+                    className="w-full text-sm px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
                     {...form.register('fat_content', {
                       valueAsNumber: true,
-                      setValueAs: (value) => value === '' ? null : parseFloat(value) || null
+                      setValueAs: v => (v === '' ? null : parseFloat(v) || null),
                     })}
                   />
-                  {form.formState.errors.fat_content && (
-                    <p className="text-sm text-red-600 mt-1">{form.formState.errors.fat_content.message}</p>
-                  )}
+                  <FieldError message={form.formState.errors.fat_content?.message as string | undefined} />
                 </div>
               )}
-
               {settings?.trackProteinContent && (
                 <div>
-                  <Label htmlFor="protein_content">
-                    Protein (%) {settings.productionTrackingMode === 'quality_focused' && settings.proteinContentRequired && '*'}
-                  </Label>
-                  <Input
-                    id="protein_content"
+                  <FieldLabel required={settings.productionTrackingMode === 'quality_focused' && !!settings.proteinContentRequired}>
+                    Protein (%)
+                  </FieldLabel>
+                  <input
                     type="number"
                     step="0.01"
-                    placeholder="e.g., 3.25"
+                    placeholder="3.25"
+                    className="w-full text-sm px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
                     {...form.register('protein_content', {
                       valueAsNumber: true,
-                      setValueAs: (value) => value === '' ? null : parseFloat(value) || null
+                      setValueAs: v => (v === '' ? null : parseFloat(v) || null),
                     })}
                   />
-                  {form.formState.errors.protein_content && (
-                    <p className="text-sm text-red-600 mt-1">{form.formState.errors.protein_content.message}</p>
-                  )}
+                  <FieldError message={form.formState.errors.protein_content?.message as string | undefined} />
                 </div>
               )}
-
               {settings?.trackSomaticCellCount && (
                 <div>
-                  <Label htmlFor="somatic_cell_count">
-                    SCC {settings.productionTrackingMode === 'quality_focused' && settings.sccRequired && '*'}
-                  </Label>
-                  <Input
-                    id="somatic_cell_count"
+                  <FieldLabel required={settings.productionTrackingMode === 'quality_focused' && !!settings.sccRequired}>
+                    SCC (cells/ml)
+                  </FieldLabel>
+                  <input
                     type="number"
-                    placeholder="e.g., 200000"
+                    placeholder="200000"
+                    className="w-full text-sm px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
                     {...form.register('somatic_cell_count', {
                       valueAsNumber: true,
-                      setValueAs: (value) => value === '' ? null : parseInt(value) || null
+                      setValueAs: v => (v === '' ? null : parseInt(v) || null),
                     })}
                   />
-                  {form.formState.errors.somatic_cell_count && (
-                    <p className="text-sm text-red-600 mt-1">{form.formState.errors.somatic_cell_count.message}</p>
-                  )}
+                  <FieldError message={form.formState.errors.somatic_cell_count?.message as string | undefined} />
                 </div>
               )}
-
               {settings?.trackLactoseContent && (
                 <div>
-                  <Label htmlFor="lactose_content">
-                    Lactose (%) {settings.productionTrackingMode === 'quality_focused' && settings.lactoseRequired && '*'}
-                  </Label>
-                  <Input
-                    id="lactose_content"
+                  <FieldLabel required={settings.productionTrackingMode === 'quality_focused' && !!settings.lactoseRequired}>
+                    Lactose (%)
+                  </FieldLabel>
+                  <input
                     type="number"
                     step="0.01"
-                    placeholder="e.g., 4.8"
+                    placeholder="4.8"
+                    className="w-full text-sm px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
                     {...form.register('lactose_content', {
                       valueAsNumber: true,
-                      setValueAs: (value) => value === '' ? null : parseFloat(value) || null
+                      setValueAs: v => (v === '' ? null : parseFloat(v) || null),
                     })}
                   />
-                  {form.formState.errors.lactose_content && (
-                    <p className="text-sm text-red-600 mt-1">{form.formState.errors.lactose_content.message}</p>
-                  )}
+                  <FieldError message={form.formState.errors.lactose_content?.message as string | undefined} />
                 </div>
               )}
-
               {settings?.trackPhLevel && (
                 <div>
-                  <Label htmlFor="ph_level">
-                    pH Level {settings.productionTrackingMode === 'quality_focused' && settings.phRequired && '*'}
-                  </Label>
-                  <Input
-                    id="ph_level"
+                  <FieldLabel required={settings.productionTrackingMode === 'quality_focused' && !!settings.phRequired}>
+                    pH level
+                  </FieldLabel>
+                  <input
                     type="number"
                     step="0.1"
-                    placeholder="e.g., 6.7"
+                    placeholder="6.7"
+                    className="w-full text-sm px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
                     {...form.register('ph_level', {
                       valueAsNumber: true,
-                      setValueAs: (value) => value === '' ? null : parseFloat(value) || null
+                      setValueAs: v => (v === '' ? null : parseFloat(v) || null),
                     })}
                   />
-                  {form.formState.errors.ph_level && (
-                    <p className="text-sm text-red-600 mt-1">{form.formState.errors.ph_level.message}</p>
-                  )}
+                  <FieldError message={form.formState.errors.ph_level?.message as string | undefined} />
                 </div>
               )}
             </div>
-          </div>
+          </SectionCard>
         )}
 
-        {/* Notes */}
-        <div>
-          <Label htmlFor="notes">Notes / Observations</Label>
+        {/* ── Notes card ───────────────────────────────────────────────────── */}
+        <SectionCard>
+          <FieldLabel>Notes & observations</FieldLabel>
           <textarea
-            id="notes"
-            rows={3}
-            placeholder="Any additional observations about this animal..."
-            className="w-full mt-2 px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            rows={2}
+            placeholder="Any additional observations about this animal…"
+            className="w-full text-sm px-3 py-2.5 border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 resize-none placeholder:text-gray-400"
             {...form.register('notes', {
-              setValueAs: (value) => value === '' ? null : value
+              setValueAs: v => (v === '' ? null : v),
             })}
           />
-        </div>
+        </SectionCard>
 
-        {/* Footer */}
-        <div className="flex justify-end space-x-3 pt-4 border-t border-stone-200">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleChangeAnimal}
-            disabled={loading}
-          >
-            Cancel
-          </Button>
+        {/* ── Submit row ────────────────────────────────────────────────────── */}
+        <div className="flex items-center justify-between gap-3 pt-1 pb-2">
+          {!editingRecord && (
+            <button
+              type="button"
+              onClick={() => { setShowAnimalPicker(false); setStep('select') }}
+              disabled={loading}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              Back
+            </button>
+          )}
           <Button
             type="submit"
             disabled={loading || !form.formState.isValid}
+            className="ml-auto flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold transition-colors disabled:opacity-50"
           >
-            {loading ? <LoadingSpinner size="sm" /> : 'Save Record'}
+            {loading ? (
+              <><LoadingSpinner size="sm" /> Saving…</>
+            ) : editingRecord ? (
+              <><CheckCircle2 className="w-4 h-4" /> Update record</>
+            ) : (
+              <><CheckCircle2 className="w-4 h-4" /> Save record</>
+            )}
           </Button>
         </div>
       </form>
