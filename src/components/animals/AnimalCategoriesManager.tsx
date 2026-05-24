@@ -1132,36 +1132,41 @@ export function AnimalCategoriesManager({
   const ActionButtons = ({ category }: { category: AnimalCategory }) => {
     if (isMobile) {
       return (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm">
-              <MoreVertical className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => handleViewAnimals(category)}>
-              <Eye className="mr-2 h-4 w-4" />
-              View Animals {(category.assigned_animals_count ?? 0) > 0 ? `(${category.assigned_animals_count})` : ''}
-            </DropdownMenuItem>
-            {canEdit && (
-              <>
-                <DropdownMenuItem onClick={() => handleEdit(category)}>
-                  <Edit className="mr-2 h-4 w-4" />
-                  Edit
-                </DropdownMenuItem>
-                {!category.is_default && (
-                  <DropdownMenuItem
-                    onClick={() => setDeletingCategory(category)}
-                    className="text-red-600"
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Delete
-                  </DropdownMenuItem>
-                )}
-              </>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleViewAnimals(category)}
+            className="h-8 px-2 flex-shrink-0 border-blue-200 hover:bg-blue-50"
+            title="View animals in this category"
+          >
+            <Eye className="h-4 w-4" />
+          </Button>
+          {canEdit && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleEdit(category)}
+                className="h-8 px-2 flex-shrink-0 border-gray-200 hover:bg-gray-50"
+                title="Edit category"
+              >
+                <Edit className="h-4 w-4" />
+              </Button>
+              {!category.is_default && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDeletingCategory(category)}
+                  className="h-8 px-2 flex-shrink-0 text-red-600 border-red-200 hover:bg-red-50"
+                  title="Delete category"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
+            </>
+          )}
+        </div>
       )
     }
 
