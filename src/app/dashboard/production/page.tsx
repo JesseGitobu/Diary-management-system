@@ -100,7 +100,7 @@ export default async function ProductionPage() {
         distributionRecords={distributionRecords.map(record => ({
           ...record,
           channelType: record.channelType as "cooperative" | "processor" | "direct" | "retail",
-          status: record.status as "pending" | "delivered" | "paid"
+          status: record.distribution_status as "pending" | "delivered" | "paid"
         }))}
         channels={channels.map(channel => ({
           id: channel.id,

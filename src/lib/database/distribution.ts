@@ -159,7 +159,22 @@ export async function getDistributionRecords(
           id,
           name,
           type,
-          contact_person
+          is_paid_for
+        ),
+        distribution_delivery_logs (
+          id,
+          driver_name,
+          vehicle_number,
+          delivery_date,
+          delivery_time
+        ),
+        distribution_payment_records (
+          id,
+          payment_method,
+          expected_payment_date,
+          actual_payment_date,
+          payment_status,
+          amount_paid
         )
       `)
       .eq('farm_id', farmId)
@@ -191,21 +206,41 @@ export async function getDistributionRecords(
 
     if (error) throw error
 
-    // Transform data to match component interface
-    return  (records as any[]).map(record => ({
-      id: record.id,
-      distribution_date: record.distribution_date,
-      distribution_channels: record.distribution_channels,
-      channelName: record.distribution_channels?.name || 'Unknown Channel',
-      channelType: record.distribution_channels?.type || 'direct',
-      quantity_distributed: record.quantity_distributed,
-      unit_price: record.unit_price,
-      total_amount: record.total_amount,
-      distribution_status: record.distribution_status,
-      status: record.distribution_status,
-      notes: record.notes,
-      deliveries: record.deliveries
-    })) || []
+    // Map Supabase shape to flat, normalized shape for component
+    return (records ?? []).map((r: any) => {
+      const deliveryLog = r.distribution_delivery_logs?.[0] ?? null
+      const paymentRec  = r.distribution_payment_records?.[0] ?? null
+      const channel     = r.distribution_channels ?? {}
+
+      return {
+        id:                    r.id,
+        distribution_date:     r.distribution_date,
+        distribution_status:   r.distribution_status,
+        quantity_distributed:  r.quantity_distributed,
+        unit_price:            r.unit_price,
+        total_amount:          r.total_amount,
+        notes:                 r.notes,
+        channelName:           channel.name ?? 'Unknown channel',
+        channelType:           channel.type ?? 'other',
+        isPaidFor:             channel.is_paid_for !== false,
+        distribution_channels: r.distribution_channels,
+        delivery: deliveryLog ? {
+          id:             deliveryLog.id,
+          driver_name:    deliveryLog.driver_name,
+          vehicle_number: deliveryLog.vehicle_number,
+          delivery_date:  deliveryLog.delivery_date,
+          delivery_time:  deliveryLog.delivery_time,
+        } : null,
+        payment: paymentRec ? {
+          id:                    paymentRec.id,
+          method:                paymentRec.payment_method,
+          expected_date:         paymentRec.expected_payment_date,
+          actual_date:           paymentRec.actual_payment_date,
+          status:                paymentRec.payment_status,
+          amount_paid:           paymentRec.amount_paid,
+        } : null,
+      }
+    }) || []
   } catch (error) {
     console.error('Error fetching distribution records:', error)
     throw error

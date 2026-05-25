@@ -313,6 +313,7 @@ export function AnimalCategoriesManager({
   const [selectedForAdd, setSelectedForAdd] = useState<Set<string>>(new Set())
   const [selectedForRemove, setSelectedForRemove] = useState<Set<string>>(new Set())
   const [assignmentTab, setAssignmentTab] = useState<'assigned' | 'suggested' | 'remove'>('assigned')
+  const [manualAssignmentTab, setManualAssignmentTab] = useState<'add' | 'remove'>('add')
   const [manualModeSearch, setManualModeSearch] = useState('')
   const [selectedAnimalForPreview, setSelectedAnimalForPreview] = useState<string | null>(null)
   // Transfer state
@@ -2323,7 +2324,32 @@ export function AnimalCategoriesManager({
                   </svg>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                {/* Mobile Tab Navigation */}
+                <div className="md:hidden flex space-x-2 border-b border-gray-200">
+                  <button
+                    onClick={() => setManualAssignmentTab('add')}
+                    className={`flex-1 px-4 py-2 border-b-2 font-medium text-sm transition-colors ${
+                      manualAssignmentTab === 'add'
+                        ? 'border-green-500 text-green-600'
+                        : 'border-transparent text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    Add Animals
+                  </button>
+                  <button
+                    onClick={() => setManualAssignmentTab('remove')}
+                    className={`flex-1 px-4 py-2 border-b-2 font-medium text-sm transition-colors ${
+                      manualAssignmentTab === 'remove'
+                        ? 'border-red-500 text-red-600'
+                        : 'border-transparent text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    Remove Animals
+                  </button>
+                </div>
+
+                {/* Desktop Grid / Mobile Tabbed Layout */}
+                <div className="hidden md:grid grid-cols-2 gap-4 h-96">
                   {/* Add Animals Section */}
                   <div className="border border-gray-200 rounded-lg overflow-hidden flex flex-col">
                     <div className="bg-green-50 border-b border-green-200 p-3">
@@ -2471,6 +2497,153 @@ export function AnimalCategoriesManager({
                     </div>
                   </div>
                 </div>
+
+                {/* Mobile Tab Content - Add Animals */}
+                {manualAssignmentTab === 'add' && (
+                  <div className="md:hidden border border-gray-200 rounded-lg overflow-hidden flex flex-col h-96">
+                    <div className="bg-green-50 border-b border-green-200 p-3">
+                      <h4 className="font-medium text-green-900">Add Animals</h4>
+                      <p className="text-xs text-green-700">{viewingAnimals?.production_status || 'Selected'} production status</p>
+                    </div>
+                    <div className="flex-1 overflow-y-auto divide-y">
+                      {(() => {
+                        const filteredAnimals = (assignmentData.allAnimalsByProductionStatus || []).filter((m: any) => {
+                          const isNotAssigned = !assignmentData.assignedAnimals.find((a: any) => a.animal_id === m.id)
+                          const matchesSearch = !manualModeSearch || 
+                            (m.tag_number && m.tag_number.toLowerCase().includes(manualModeSearch.toLowerCase())) ||
+                            (m.name && m.name.toLowerCase().includes(manualModeSearch.toLowerCase()))
+                          return isNotAssigned && matchesSearch
+                        })
+
+                        return filteredAnimals.length > 0 ? (
+                          filteredAnimals.map((animal: any) => {
+                            const inOtherCategory = !!animal.current_category
+                            return (
+                              <div
+                                key={animal.id}
+                                className={`p-3 border-b ${inOtherCategory ? 'bg-amber-50' : 'hover:bg-green-50 cursor-pointer'}`}
+                                onClick={() => !inOtherCategory && setSelectedAnimalForPreview(selectedAnimalForPreview === animal.id ? null : animal.id)}
+                              >
+                                {inOtherCategory ? (
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="font-medium text-sm truncate">#{animal.tag_number}</div>
+                                      {animal.name && <div className="text-xs text-gray-600 truncate">{animal.name}</div>}
+                                      <div className="text-xs text-amber-700 mt-1 flex items-center gap-1">
+                                        🔒 In: <span className="font-medium">{animal.current_category.category_name}</span>
+                                      </div>
+                                    </div>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="text-amber-700 border-amber-300 hover:bg-amber-100 shrink-0 ml-2"
+                                      onClick={(e) => { e.stopPropagation(); handleInitiateTransfer(animal) }}
+                                    >
+                                      ↔ Transfer
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <label className="flex items-center space-x-3 mb-2">
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedForAdd.has(animal.id)}
+                                        onChange={() => {
+                                          const newSet = new Set(selectedForAdd)
+                                          if (newSet.has(animal.id)) newSet.delete(animal.id)
+                                          else newSet.add(animal.id)
+                                          setSelectedForAdd(newSet)
+                                        }}
+                                        className="h-4 w-4 rounded border-gray-300"
+                                        onClick={(e) => e.stopPropagation()}
+                                      />
+                                      <div className="flex-1 min-w-0">
+                                        <div className="font-medium text-sm truncate">#{animal.tag_number}</div>
+                                        {animal.name && <div className="text-xs text-gray-600 truncate">{animal.name}</div>}
+                                        <div className="text-xs text-gray-500 mt-1">
+                                          Age: {formatAnimalAge(animal.age_days)}{animal.days_in_milk ? ` • DIM: ${animal.days_in_milk}` : ''}
+                                        </div>
+                                      </div>
+                                    </label>
+                                    {selectedAnimalForPreview === animal.id && viewingAnimals && (
+                                      <div className="mt-3 pt-3 border-t border-green-200">
+                                        <p className="text-xs font-medium text-gray-700 mb-2">Characteristic Match:</p>
+                                        <CharacteristicMatchDisplay animal={animal} category={viewingAnimals} />
+                                        <p className="text-xs text-amber-600 mt-2 italic">
+                                          ℹ️ You can add this animal even if not all characteristics match the category
+                                        </p>
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            )
+                          })
+                        ) : (
+                          <div className="p-6 text-center text-gray-500 text-sm">
+                            <Users className="mx-auto h-6 w-6 text-gray-400 mb-2" />
+                            {manualModeSearch ? 'No animals match your search' : 'All animals from this production status are assigned or nothing to show'}
+                          </div>
+                        )
+                      })()}
+                    </div>
+                  </div>
+                )}
+
+                {/* Mobile Tab Content - Remove Animals */}
+                {manualAssignmentTab === 'remove' && (
+                  <div className="md:hidden border border-gray-200 rounded-lg overflow-hidden flex flex-col h-96">
+                    <div className="bg-red-50 border-b border-red-200 p-3">
+                      <h4 className="font-medium text-red-900">Remove Animals</h4>
+                      <p className="text-xs text-red-700">Currently assigned</p>
+                    </div>
+                    <div className="flex-1 overflow-y-auto divide-y">
+                      {(() => {
+                        const filteredRemove = assignmentData.assignedAnimals.filter((assignment: any) => {
+                          const matchesSearch = !manualModeSearch || 
+                            (assignment.animal?.tag_number && assignment.animal.tag_number.toLowerCase().includes(manualModeSearch.toLowerCase())) ||
+                            (assignment.animal?.name && assignment.animal.name.toLowerCase().includes(manualModeSearch.toLowerCase()))
+                          return matchesSearch
+                        })
+
+                        return filteredRemove.length > 0 ? (
+                          filteredRemove.map((assignment: any) => (
+                            <div key={assignment.id} className="p-3 hover:bg-red-50">
+                              <label className="flex items-center space-x-3">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedForRemove.has(assignment.animal_id)}
+                                  onChange={() => {
+                                    const newSet = new Set(selectedForRemove)
+                                    if (newSet.has(assignment.animal_id)) {
+                                      newSet.delete(assignment.animal_id)
+                                    } else {
+                                      newSet.add(assignment.animal_id)
+                                    }
+                                    setSelectedForRemove(newSet)
+                                  }}
+                                  className="h-4 w-4 rounded border-gray-300"
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-medium text-sm truncate">#{assignment.animal?.tag_number || 'N/A'}</div>
+                                  {assignment.animal?.name && <div className="text-xs text-gray-600 truncate">{assignment.animal.name}</div>}
+                                  <div className="text-xs text-gray-500 mt-1">
+                                    Assigned: {new Date(assignment.assigned_at).toLocaleDateString()}
+                                  </div>
+                                </div>
+                              </label>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="p-6 text-center text-gray-500 text-sm">
+                            <Users className="mx-auto h-6 w-6 text-gray-400 mb-2" />
+                            {manualModeSearch ? 'No animals match your search' : 'No animals assigned'}
+                          </div>
+                        )
+                      })()}
+                    </div>
+                  </div>
+                )}
 
                 {/* Apply Changes Button */}
                 <Button

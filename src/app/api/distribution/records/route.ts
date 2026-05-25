@@ -23,27 +23,37 @@ export async function GET(request: NextRequest) {
 
     const supabase = await createServerSupabaseClient()
     let query = supabase
-      .from('distribution_records')
-      .select(`
-        *,
-        distribution_channels (
-          id,
-          name,
-          type,
-          contact_person
-        ),
-        deliveries (
-          id,
-          delivery_date,
-          delivery_time,
-          driver_name,
-          vehicle_number,
-          notes
-        )
-      `)
-      .eq('farm_id', userRole.farm_id)
-      .order('distribution_date', { ascending: false })
-      .order('created_at', { ascending: false })
+  .from('distribution_records')
+  .select(`
+    *,
+    distribution_channels (
+      id,
+      name,
+      type,
+      contact_person,
+      is_paid_for,
+      price_per_liter,
+      metadata
+    ),
+    distribution_delivery_logs (
+      id,
+      delivery_date,
+      delivery_time,
+      driver_name,
+      vehicle_number
+    ),
+    distribution_payment_records (
+      id,
+      payment_method,
+      expected_payment_date,
+      actual_payment_date,
+      payment_status,
+      amount_paid
+    )
+  `)
+  .eq('farm_id', userRole.farm_id)
+  .order('distribution_date', { ascending: false })
+  .order('created_at', { ascending: false })
 
     // Apply filters
     if (status) {
@@ -64,7 +74,43 @@ export async function GET(request: NextRequest) {
 
     if (error) throw error
 
-    return NextResponse.json(records || [])
+    // Normalize data to flat shape expected by component
+    const normalized = (records ?? []).map((r: any) => {
+      const deliveryLog = r.distribution_delivery_logs?.[0] ?? null
+      const paymentRec  = r.distribution_payment_records?.[0] ?? null
+      const channel     = r.distribution_channels ?? {}
+
+      return {
+        id:                    r.id,
+        distribution_date:     r.distribution_date,
+        distribution_status:   r.distribution_status,
+        quantity_distributed:  r.quantity_distributed,
+        unit_price:            r.unit_price,
+        total_amount:          r.total_amount,
+        notes:                 r.notes,
+        channelName:           channel.name ?? 'Unknown channel',
+        channelType:           channel.type ?? 'other',
+        isPaidFor:             channel.is_paid_for !== false,
+        distribution_channels: r.distribution_channels,
+        delivery: deliveryLog ? {
+          id:             deliveryLog.id,
+          driver_name:    deliveryLog.driver_name,
+          vehicle_number: deliveryLog.vehicle_number,
+          delivery_date:  deliveryLog.delivery_date,
+          delivery_time:  deliveryLog.delivery_time,
+        } : null,
+        payment: paymentRec ? {
+          id:                    paymentRec.id,
+          method:                paymentRec.payment_method,
+          expected_date:         paymentRec.expected_payment_date,
+          actual_date:           paymentRec.actual_payment_date,
+          status:                paymentRec.payment_status,
+          amount_paid:           paymentRec.amount_paid,
+        } : null,
+      }
+    })
+
+    return NextResponse.json(normalized || [])
   } catch (error) {
     console.error('Error fetching distribution records:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

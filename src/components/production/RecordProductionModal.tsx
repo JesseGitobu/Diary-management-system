@@ -191,12 +191,12 @@ export function RecordProductionModal({
             )}
           </div>
         </div>
-        <button
+        {/* <button
           onClick={onClose}
           className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
         >
           <X className="w-4 h-4" />
-        </button>
+        </button> */}
       </div>
 
       {/* ── Date + session bar ───────────────────────────────────────────── */}
