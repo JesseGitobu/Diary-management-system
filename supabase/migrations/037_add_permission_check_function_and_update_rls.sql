@@ -46,7 +46,7 @@ SET search_path = public
 AS $$
 DECLARE
   v_user_role_id   UUID;
-  v_role_type      TEXT;
+  v_role_type      public.user_role;
   v_policy_id      UUID;
   v_has_grant      BOOLEAN := FALSE;
 BEGIN
@@ -149,6 +149,9 @@ GRANT EXECUTE ON FUNCTION check_farm_permission(UUID, TEXT, TEXT)
 DROP POLICY IF EXISTS "Farm owners and managers can insert animals"     ON animals;
 DROP POLICY IF EXISTS "Farm owners and managers can update animals"     ON animals;
 DROP POLICY IF EXISTS "Farm owners and managers can delete animals"     ON animals;
+DROP POLICY IF EXISTS "Farm members with permission can insert animals"     ON animals;
+DROP POLICY IF EXISTS "Farm members with permission can update animals"     ON animals;
+DROP POLICY IF EXISTS "Farm members with permission can delete animals"     ON animals;
 
 CREATE POLICY "Farm members with permission can insert animals"
   ON animals FOR INSERT
@@ -169,6 +172,9 @@ CREATE POLICY "Farm members with permission can delete animals"
 DROP POLICY IF EXISTS "Farm owners and managers can insert animal purchases"  ON animal_purchases;
 DROP POLICY IF EXISTS "Farm owners and managers can update animal purchases"  ON animal_purchases;
 DROP POLICY IF EXISTS "Farm owners and managers can delete animal purchases"  ON animal_purchases;
+DROP POLICY IF EXISTS "Farm members with permission can insert animal purchases"  ON animal_purchases;
+DROP POLICY IF EXISTS "Farm members with permission can update animal purchases"  ON animal_purchases;
+DROP POLICY IF EXISTS "Farm members with permission can delete animal purchases"  ON animal_purchases;
 
 CREATE POLICY "Farm members with permission can insert animal purchases"
   ON animal_purchases FOR INSERT
@@ -190,6 +196,9 @@ CREATE POLICY "Farm members with permission can delete animal purchases"
 DROP POLICY IF EXISTS "Farm owners and managers can insert animal weight records"  ON animal_weight_records;
 DROP POLICY IF EXISTS "Farm owners and managers can update animal weight records"  ON animal_weight_records;
 DROP POLICY IF EXISTS "Farm owners and managers can delete animal weight records"  ON animal_weight_records;
+DROP POLICY IF EXISTS "Farm members with permission can insert animal weight records"  ON animal_weight_records;
+DROP POLICY IF EXISTS "Farm members with permission can update animal weight records"  ON animal_weight_records;
+DROP POLICY IF EXISTS "Farm members with permission can delete animal weight records"  ON animal_weight_records;
 
 CREATE POLICY "Farm members with permission can insert animal weight records"
   ON animal_weight_records FOR INSERT
@@ -210,6 +219,9 @@ CREATE POLICY "Farm members with permission can delete animal weight records"
 DROP POLICY IF EXISTS "Farm owners and managers can insert animal release records"  ON animal_release_records;
 DROP POLICY IF EXISTS "Farm owners and managers can update animal release records"  ON animal_release_records;
 DROP POLICY IF EXISTS "Farm owners and managers can delete animal release records"  ON animal_release_records;
+DROP POLICY IF EXISTS "Farm members with permission can insert animal release records"  ON animal_release_records;
+DROP POLICY IF EXISTS "Farm members with permission can update animal release records"  ON animal_release_records;
+DROP POLICY IF EXISTS "Farm members with permission can delete animal release records"  ON animal_release_records;
 
 CREATE POLICY "Farm members with permission can insert animal release records"
   ON animal_release_records FOR INSERT
@@ -231,6 +243,9 @@ CREATE POLICY "Farm members with permission can delete animal release records"
 DROP POLICY IF EXISTS "Farm owners and managers can insert service records"  ON service_records;
 DROP POLICY IF EXISTS "Farm owners and managers can update service records"  ON service_records;
 DROP POLICY IF EXISTS "Farm owners and managers can delete service records"  ON service_records;
+DROP POLICY IF EXISTS "Farm members with permission can insert service records"  ON service_records;
+DROP POLICY IF EXISTS "Farm members with permission can update service records"  ON service_records;
+DROP POLICY IF EXISTS "Farm members with permission can delete service records"  ON service_records;
 
 CREATE POLICY "Farm members with permission can insert service records"
   ON service_records FOR INSERT
@@ -251,6 +266,9 @@ CREATE POLICY "Farm members with permission can delete service records"
 DROP POLICY IF EXISTS "Farm owners and managers can insert breeding events"  ON breeding_events;
 DROP POLICY IF EXISTS "Farm owners and managers can update breeding events"  ON breeding_events;
 DROP POLICY IF EXISTS "Farm owners and managers can delete breeding events"  ON breeding_events;
+DROP POLICY IF EXISTS "Farm members with permission can insert breeding events"  ON breeding_events;
+DROP POLICY IF EXISTS "Farm members with permission can update breeding events"  ON breeding_events;
+DROP POLICY IF EXISTS "Farm members with permission can delete breeding events"  ON breeding_events;
 
 CREATE POLICY "Farm members with permission can insert breeding events"
   ON breeding_events FOR INSERT
@@ -271,6 +289,9 @@ CREATE POLICY "Farm members with permission can delete breeding events"
 DROP POLICY IF EXISTS "Farm owners and managers can insert pregnancy records"  ON pregnancy_records;
 DROP POLICY IF EXISTS "Farm owners and managers can update pregnancy records"  ON pregnancy_records;
 DROP POLICY IF EXISTS "Farm owners and managers can delete pregnancy records"  ON pregnancy_records;
+DROP POLICY IF EXISTS "Farm members with permission can insert pregnancy records"  ON pregnancy_records;
+DROP POLICY IF EXISTS "Farm members with permission can update pregnancy records"  ON pregnancy_records;
+DROP POLICY IF EXISTS "Farm members with permission can delete pregnancy records"  ON pregnancy_records;
 
 CREATE POLICY "Farm members with permission can insert pregnancy records"
   ON pregnancy_records FOR INSERT
@@ -291,6 +312,9 @@ CREATE POLICY "Farm members with permission can delete pregnancy records"
 DROP POLICY IF EXISTS "Farm owners and managers can insert calving records"  ON calving_records;
 DROP POLICY IF EXISTS "Farm owners and managers can update calving records"  ON calving_records;
 DROP POLICY IF EXISTS "Farm owners and managers can delete calving records"  ON calving_records;
+DROP POLICY IF EXISTS "Farm members with permission can insert calving records"  ON calving_records;
+DROP POLICY IF EXISTS "Farm members with permission can update calving records"  ON calving_records;
+DROP POLICY IF EXISTS "Farm members with permission can delete calving records"  ON calving_records;
 
 CREATE POLICY "Farm members with permission can insert calving records"
   ON calving_records FOR INSERT
@@ -311,6 +335,9 @@ CREATE POLICY "Farm members with permission can delete calving records"
 DROP POLICY IF EXISTS "Farm owners and managers can insert calf records"  ON calf_records;
 DROP POLICY IF EXISTS "Farm owners and managers can update calf records"  ON calf_records;
 DROP POLICY IF EXISTS "Farm owners and managers can delete calf records"  ON calf_records;
+DROP POLICY IF EXISTS "Farm members with permission can insert calf records"  ON calf_records;
+DROP POLICY IF EXISTS "Farm members with permission can update calf records"  ON calf_records;
+DROP POLICY IF EXISTS "Farm members with permission can delete calf records"  ON calf_records;
 
 CREATE POLICY "Farm members with permission can insert calf records"
   ON calf_records FOR INSERT
@@ -331,6 +358,9 @@ CREATE POLICY "Farm members with permission can delete calf records"
 DROP POLICY IF EXISTS "Farm owners and managers can insert lactation cycle records"  ON lactation_cycle_records;
 DROP POLICY IF EXISTS "Farm owners and managers can update lactation cycle records"  ON lactation_cycle_records;
 DROP POLICY IF EXISTS "Farm owners and managers can delete lactation cycle records"  ON lactation_cycle_records;
+DROP POLICY IF EXISTS "Farm members with permission can insert lactation cycle records"  ON lactation_cycle_records;
+DROP POLICY IF EXISTS "Farm members with permission can update lactation cycle records"  ON lactation_cycle_records;
+DROP POLICY IF EXISTS "Farm members with permission can delete lactation cycle records"  ON lactation_cycle_records;
 
 CREATE POLICY "Farm members with permission can insert lactation cycle records"
   ON lactation_cycle_records FOR INSERT

@@ -93,6 +93,11 @@ export async function POST(request: NextRequest) {
 
     const userRole = await getUserRole(user.id) as any
 
+    console.log('[API Production POST] Initial request received:', {
+      userId: user?.id,
+      timestamp: new Date().toISOString()
+    })
+
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
     }
@@ -104,7 +109,44 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { farm_id, session_name, ...productionData } = body
 
+    console.log('[API Production POST] Request body:', {
+      farmId: farm_id,
+      sessionName: session_name,
+      dataKeys: Object.keys(productionData),
+      animalId: productionData.animal_id,
+      recordDate: productionData.record_date,
+      milkVolume: productionData.milk_volume,
+      safetyStatus: productionData.milk_safety_status
+    })
+
+    console.log('[API Production POST] Permission check:', {
+      userId: user?.id,
+      farmId: farm_id,
+      userFarmId: userRole.farm_id,
+      userRole: userRole.role_type,
+      farmMatch: farm_id === userRole.farm_id
+    })
+
+    console.log('[API Production POST] Request body:', {
+      farmId: farm_id,
+      sessionName: session_name,
+      dataKeys: Object.keys(productionData),
+      animalId: productionData.animal_id,
+      recordDate: productionData.record_date,
+      milkVolume: productionData.milk_volume,
+      safetyStatus: productionData.milk_safety_status
+    })
+
+    console.log('[API Production POST] Permission check:', {
+      userId: user?.id,
+      farmId: farm_id,
+      userFarmId: userRole.farm_id,
+      userRole: userRole.role_type,
+      farmMatch: farm_id === userRole.farm_id
+    })
+
     if (farm_id !== userRole.farm_id) {
+      console.error('[API Production POST] Farm ID mismatch:', { requestFarmId: farm_id, userFarmId: userRole.farm_id })
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -194,11 +236,36 @@ export async function POST(request: NextRequest) {
       recorded_by: user.id,
     }
 
+    console.log('[API Production POST] Data types validation:', {
+      animalId: { value: recordData.animal_id, type: typeof recordData.animal_id },
+      recordDate: { value: recordData.record_date, type: typeof recordData.record_date },
+      milkVolume: { value: recordData.milk_volume, type: typeof recordData.milk_volume },
+      safetyStatus: { value: recordData.milk_safety_status, type: typeof recordData.milk_safety_status },
+      milkingSessionId: { value: recordData.milking_session_id, type: typeof recordData.milking_session_id },
+      recordedBy: { value: recordData.recorded_by, type: typeof recordData.recorded_by }
+    })
+
+    console.log('[API Production POST] Executing insert for production record:', {
+      farmId: userRole.farm_id,
+      animalId: recordData.animal_id,
+      recordDate: recordData.record_date
+    })
+
     const result = await createProductionRecord(userRole.farm_id, recordData)
 
     if (!result.success) {
+      console.error('[API Production POST] Insert failed:', {
+        error: result.error,
+        farmId: userRole.farm_id,
+        animalId: recordData.animal_id
+      })
       return NextResponse.json({ error: result.error }, { status: 400 })
     }
+
+    console.log('[API Production POST] Record created successfully:', {
+      recordId: result.data?.id,
+      farmId: userRole.farm_id
+    })
 
     return NextResponse.json({
       success: true,
@@ -207,6 +274,13 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error) {
+    console.error('[API Production POST] Catch block error:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      code: (error as any)?.code,
+      hint: (error as any)?.hint,
+      details: (error as any)?.details,
+      fullError: error instanceof Error ? error.stack : JSON.stringify(error)
+    })
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

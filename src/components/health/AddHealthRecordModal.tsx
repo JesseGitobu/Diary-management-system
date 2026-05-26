@@ -170,6 +170,11 @@ const healthRecordSchema = z.object({
   calving_outcome_other: z.string().optional(),
   complications: z.string().optional(),
   complications_other: z.string().optional(),
+  vaginal_discharge: z.string().optional(),
+  cervix_condition: z.string().optional(),
+  uterus_tone: z.string().optional(),
+  ovarian_status: z.string().optional(),
+  estrus_signs: z.string().optional(),
 
   // Deworming fields
   product_used: z.string().optional(),
@@ -208,17 +213,17 @@ const healthRecordSchema = z.object({
   root_checkup_id: z.string().optional(),
   linked_health_issue_id: z.string().optional(),
   outbreak_id: z.string().optional(),
-  
+
   // Resolution & Follow-up fields
   completion_status: z.enum(['completed', 'pending', 'in_progress', 'cancelled']).optional(),
   is_resolved: z.boolean().optional(),
   resolved_date: z.string().optional(),
   follow_up_status: z.enum(['none', 'pending', 'scheduled', 'completed']).optional(),
-  
+
   // Treatment tracking fields
   treatment_effectiveness: z.enum(['excellent', 'good', 'fair', 'poor', 'no_response']).optional(),
   medication_changes: z.string().optional(),
-  
+
   // Image field (note: actual file handling is done separately with state)
   images: z.array(z.any()).optional(),
 })
@@ -436,16 +441,16 @@ export function AddHealthRecordModal({
   const [animalSearch, setAnimalSearch] = useState('')
   const [showAllAnimals, setShowAllAnimals] = useState(false)
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set())
-  
+
   // Health issues state
   const [healthIssues, setHealthIssues] = useState<any[]>([])
   const [loadingHealthIssues, setLoadingHealthIssues] = useState(false)
   const [selectedHealthIssue, setSelectedHealthIssue] = useState<any | null>(null)
-  
+
   // Image upload state
   const [imageFiles, setImageFiles] = useState<File[]>([])
   const [imagePreviews, setImagePreviews] = useState<string[]>([])
-  
+
   // Medications state for treatment records
   const [medications, setMedications] = useState<Array<{
     id: string
@@ -455,14 +460,14 @@ export function AddHealthRecordModal({
     route: string
     route_other?: string
   }>>([])
-  
+
   // Custom dropdown state
   const [showAnimalDropdown, setShowAnimalDropdown] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
-  
+
   // Search input ref for auto-focus
   const animalSearchInputRef = useRef<HTMLInputElement>(null)
-  
+
 
   const form = useForm<HealthRecordFormData>({
     resolver: zodResolver(healthRecordSchema) as any,
@@ -479,161 +484,165 @@ export function AddHealthRecordModal({
   })
 
   useEffect(() => {
-  if (isOpen) {
-    if (isEditingMode && recordToEdit) {
-      // Populate form from existing record data
-      console.log('🔍 Populating form with existing record:', recordToEdit.id)
-      
-      // Build medications array from treatment_medications if it's a treatment record
-      let medicationsArray: any[] = []
-      if (recordToEdit.record_type === 'treatment' && recordToEdit.treatment_medications?.length > 0) {
-        medicationsArray = recordToEdit.treatment_medications.map((med: any) => ({
-          id: med.id || `temp-${Date.now()}-${Math.random()}`,
-          name: med.medication_name || '',
-          dosage: med.dosage || '',
-          duration: med.duration || '',
-          route: med.route || '',
-          route_other: med.route_other || '',
-        }))
-      }
-      setMedications(medicationsArray)
-      
-      // Populate all form fields from the existing record
-      form.reset({
-        animal_id: recordToEdit.animal_id || '',
-        record_date: recordToEdit.record_date || new Date().toISOString().split('T')[0],
-        record_time: recordToEdit.record_time || '',
-        record_type: recordToEdit.record_type || 'checkup',
-        description: recordToEdit.description || '',
-        veterinarian: recordToEdit.veterinarian || '',
-        cost: recordToEdit.cost || undefined,
-        notes: recordToEdit.notes || '',
-        physical_exam_notes: recordToEdit.physical_exam_notes || '',
-        
-        // General checkup fields
-        body_condition_score: recordToEdit.body_condition_score || undefined,
-        weight: recordToEdit.weight || undefined,
-        temperature: recordToEdit.temperature || undefined,
-        pulse: recordToEdit.pulse || undefined,
-        respiration: recordToEdit.respiration || undefined,
-        
-        // Vaccination fields
-        vaccine_name: recordToEdit.vaccine_name || '',
-        vaccine_batch_number: recordToEdit.vaccine_batch_number || '',
-        vaccine_dose: recordToEdit.vaccine_dose || '',
-        route_of_administration: recordToEdit.route_of_administration || '',
-        next_due_date: recordToEdit.next_due_date || '',
-        administered_by: recordToEdit.administered_by || '',
-        
-        // Treatment fields
-        diagnosis: recordToEdit.diagnosis || '',
-        medication_name: recordToEdit.medication_name || '',
-        medication_dosage: recordToEdit.medication_dosage || '',
-        medication_duration: recordToEdit.medication_duration || '',
-        treatment_route: recordToEdit.treatment_route || '',
-        withdrawal_period: recordToEdit.withdrawal_period || '',
-        response_notes: recordToEdit.response_notes || '',
-        treating_personnel: recordToEdit.treating_personnel || '',
-        
-        // Injury fields
-        injury_cause: recordToEdit.injury_cause || '',
-        injury_type: recordToEdit.injury_type || '',
-        severity: recordToEdit.severity || (null as any),
-        treatment_given: recordToEdit.treatment_given || '',
-        follow_up_required: recordToEdit.follow_up_required || false,
-        
-        // Illness fields
-        symptoms: recordToEdit.symptoms || '',
-        illness_diagnosis: recordToEdit.illness_diagnosis || '',
-        illness_severity: recordToEdit.illness_severity || (null as any),
-        lab_test_results: recordToEdit.lab_test_results || '',
-        treatment_plan: recordToEdit.treatment_plan || '',
-        recovery_outcome: recordToEdit.recovery_outcome || '',
-        
-        // Reproductive health fields
-        reproductive_type: recordToEdit.reproductive_type || '',
-        sire_id: recordToEdit.sire_id || '',
-        pregnancy_result: recordToEdit.pregnancy_result || 'pending',
-        calving_outcome: recordToEdit.calving_outcome || '',
-        complications: recordToEdit.complications || '',
-        
-        // Deworming fields
-        product_used: recordToEdit.product_used || '',
-        deworming_dose: recordToEdit.deworming_dose || '',
-        next_deworming_date: recordToEdit.next_deworming_date || '',
-        deworming_administered_by: recordToEdit.deworming_administered_by || '',
-        
-        // Dehorning fields
-        dehorning_method: recordToEdit.dehorning_method || '',
-        dehorning_reason: recordToEdit.dehorning_reason || '',
-        dehorning_date: recordToEdit.dehorning_date || '',
-        dehorning_age: recordToEdit.dehorning_age || undefined,
-        dehorning_veterinarian: recordToEdit.dehorning_veterinarian || '',
-        anesthesia_used: recordToEdit.anesthesia_used || false,
-        anesthesia_type: recordToEdit.anesthesia_type || '',
-        post_dehorning_care: recordToEdit.post_dehorning_care || '',
-        dehorning_complications: recordToEdit.dehorning_complications || '',
-        
-        // Post-mortem fields
-        cause_of_death: recordToEdit.cause_of_death || '',
-        death_circumstances: recordToEdit.death_circumstances || '',
-        necropsy_performed: recordToEdit.necropsy_performed || false,
-        necropsy_findings: recordToEdit.necropsy_findings || '',
-        suspected_disease: recordToEdit.suspected_disease || '',
-        location_of_death: recordToEdit.location_of_death || '',
-        body_disposal_method: recordToEdit.body_disposal_method || '',
-        post_mortem_notes: recordToEdit.post_mortem_notes || '',
-        
-        // Linking fields
-        linked_health_issue_id: recordToEdit.linked_health_issue_id || '',
-      })
-      
-      setHealthIssues([])
-      setSelectedHealthIssue(null)
-    } else {
-      // Create mode - existing logic
-      let descriptionText = ''
-      let issueId = ''
-      let recordType = (preSelectedRecordType as any) || 'checkup'
-      
-      // If a health issue is pre-selected, use its information
-      if (preSelectedHealthIssue) {
-        issueId = preSelectedHealthIssue.id
-        recordType = mapIssueTypeToRecordType(preSelectedHealthIssue.issue_type)
-        descriptionText = `Follow-up: ${preSelectedHealthIssue.description}${preSelectedHealthIssue.severity ? ` (${preSelectedHealthIssue.severity})` : ''}`
-        setSelectedHealthIssue(preSelectedHealthIssue)
-      }
-      
-      form.reset({
-        animal_id: preSelectedAnimalId || '',
-        record_date: new Date().toISOString().split('T')[0],
-        record_time: '',
-        record_type: recordType,
-        description: descriptionText,
-        linked_health_issue_id: issueId,
-        severity: null as any,
-        illness_severity: null as any,
-        follow_up_required: false,
-        pregnancy_result: 'pending',
-      })
-      
-      // Clear medications when form resets
-      setMedications([])
-      
-      // Don't clear health issues if we selected one
-      if (!preSelectedHealthIssue) {
+    if (isOpen) {
+      if (isEditingMode && recordToEdit) {
+        // Populate form from existing record data
+        console.log('🔍 Populating form with existing record:', recordToEdit.id)
+
+        // Build medications array from treatment_medications if it's a treatment record
+        let medicationsArray: any[] = []
+        if (recordToEdit.record_type === 'treatment' && recordToEdit.treatment_medications?.length > 0) {
+          medicationsArray = recordToEdit.treatment_medications.map((med: any) => ({
+            id: med.id || `temp-${Date.now()}-${Math.random()}`,
+            name: med.medication_name || '',
+            dosage: med.dosage || '',
+            duration: med.duration || '',
+            route: med.route || '',
+            route_other: med.route_other || '',
+          }))
+        }
+        setMedications(medicationsArray)
+
+        // Populate all form fields from the existing record
+        form.reset({
+          animal_id: recordToEdit.animal_id || '',
+          record_date: recordToEdit.record_date || new Date().toISOString().split('T')[0],
+          record_time: recordToEdit.record_time || '',
+          record_type: recordToEdit.record_type || 'checkup',
+          description: recordToEdit.description || '',
+          veterinarian: recordToEdit.veterinarian || '',
+          cost: recordToEdit.cost || undefined,
+          notes: recordToEdit.notes || '',
+          physical_exam_notes: recordToEdit.physical_exam_notes || '',
+
+          // General checkup fields
+          body_condition_score: recordToEdit.body_condition_score || undefined,
+          weight: recordToEdit.weight || undefined,
+          temperature: recordToEdit.temperature || undefined,
+          pulse: recordToEdit.pulse || undefined,
+          respiration: recordToEdit.respiration || undefined,
+
+          // Vaccination fields
+          vaccine_name: recordToEdit.vaccine_name || '',
+          vaccine_batch_number: recordToEdit.vaccine_batch_number || '',
+          vaccine_dose: recordToEdit.vaccine_dose || '',
+          route_of_administration: recordToEdit.route_of_administration || '',
+          next_due_date: recordToEdit.next_due_date || '',
+          administered_by: recordToEdit.administered_by || '',
+
+          // Treatment fields
+          diagnosis: recordToEdit.diagnosis || '',
+          medication_name: recordToEdit.medication_name || '',
+          medication_dosage: recordToEdit.medication_dosage || '',
+          medication_duration: recordToEdit.medication_duration || '',
+          treatment_route: recordToEdit.treatment_route || '',
+          withdrawal_period: recordToEdit.withdrawal_period || '',
+          response_notes: recordToEdit.response_notes || '',
+          treating_personnel: recordToEdit.treating_personnel || '',
+
+          // Injury fields
+          injury_cause: recordToEdit.injury_cause || '',
+          injury_type: recordToEdit.injury_type || '',
+          severity: recordToEdit.severity || (null as any),
+          treatment_given: recordToEdit.treatment_given || '',
+          follow_up_required: recordToEdit.follow_up_required || false,
+
+          // Illness fields
+          symptoms: recordToEdit.symptoms || '',
+          illness_diagnosis: recordToEdit.illness_diagnosis || '',
+          illness_severity: recordToEdit.illness_severity || (null as any),
+          lab_test_results: recordToEdit.lab_test_results || '',
+          treatment_plan: recordToEdit.treatment_plan || '',
+          recovery_outcome: recordToEdit.recovery_outcome || '',
+
+          // Reproductive health fields
+          reproductive_type: recordToEdit.reproductive_type || '',
+          pregnancy_result: recordToEdit.pregnancy_result || 'pending',
+          calving_outcome: recordToEdit.calving_outcome || '',
+          complications: recordToEdit.complications || '',
+          vaginal_discharge: recordToEdit.vaginal_discharge || '',
+          cervix_condition: recordToEdit.cervix_condition || '',
+          uterus_tone: recordToEdit.uterus_tone || '',
+          ovarian_status: recordToEdit.ovarian_status || '',
+          estrus_signs: recordToEdit.estrus_signs || '',
+
+          // Deworming fields
+          product_used: recordToEdit.product_used || '',
+          deworming_dose: recordToEdit.deworming_dose || '',
+          next_deworming_date: recordToEdit.next_deworming_date || '',
+          deworming_administered_by: recordToEdit.deworming_administered_by || '',
+
+          // Dehorning fields
+          dehorning_method: recordToEdit.dehorning_method || '',
+          dehorning_reason: recordToEdit.dehorning_reason || '',
+          dehorning_date: recordToEdit.dehorning_date || '',
+          dehorning_age: recordToEdit.dehorning_age || undefined,
+          dehorning_veterinarian: recordToEdit.dehorning_veterinarian || '',
+          anesthesia_used: recordToEdit.anesthesia_used || false,
+          anesthesia_type: recordToEdit.anesthesia_type || '',
+          post_dehorning_care: recordToEdit.post_dehorning_care || '',
+          dehorning_complications: recordToEdit.dehorning_complications || '',
+
+          // Post-mortem fields
+          cause_of_death: recordToEdit.cause_of_death || '',
+          death_circumstances: recordToEdit.death_circumstances || '',
+          necropsy_performed: recordToEdit.necropsy_performed || false,
+          necropsy_findings: recordToEdit.necropsy_findings || '',
+          suspected_disease: recordToEdit.suspected_disease || '',
+          location_of_death: recordToEdit.location_of_death || '',
+          body_disposal_method: recordToEdit.body_disposal_method || '',
+          post_mortem_notes: recordToEdit.post_mortem_notes || '',
+
+          // Linking fields
+          linked_health_issue_id: recordToEdit.linked_health_issue_id || '',
+        })
+
         setHealthIssues([])
         setSelectedHealthIssue(null)
+      } else {
+        // Create mode - existing logic
+        let descriptionText = ''
+        let issueId = ''
+        let recordType = (preSelectedRecordType as any) || 'checkup'
+
+        // If a health issue is pre-selected, use its information
+        if (preSelectedHealthIssue) {
+          issueId = preSelectedHealthIssue.id
+          recordType = mapIssueTypeToRecordType(preSelectedHealthIssue.issue_type)
+          descriptionText = `Follow-up: ${preSelectedHealthIssue.description}${preSelectedHealthIssue.severity ? ` (${preSelectedHealthIssue.severity})` : ''}`
+          setSelectedHealthIssue(preSelectedHealthIssue)
+        }
+
+        form.reset({
+          animal_id: preSelectedAnimalId || '',
+          record_date: new Date().toISOString().split('T')[0],
+          record_time: '',
+          record_type: recordType,
+          description: descriptionText,
+          linked_health_issue_id: issueId,
+          severity: null as any,
+          illness_severity: null as any,
+          follow_up_required: false,
+          pregnancy_result: 'pending',
+        })
+
+        // Clear medications when form resets
+        setMedications([])
+
+        // Don't clear health issues if we selected one
+        if (!preSelectedHealthIssue) {
+          setHealthIssues([])
+          setSelectedHealthIssue(null)
+        }
+
+        // Auto-focus search input with a small delay to ensure DOM is ready
+        setTimeout(() => {
+          animalSearchInputRef.current?.focus()
+          animalSearchInputRef.current?.select()
+        }, 100)
       }
-      
-      // Auto-focus search input with a small delay to ensure DOM is ready
-      setTimeout(() => {
-        animalSearchInputRef.current?.focus()
-        animalSearchInputRef.current?.select()
-      }, 100)
     }
-  }
-}, [isOpen, preSelectedAnimalId, preSelectedRecordType, preSelectedHealthIssue, recordToEdit, form])
+  }, [isOpen, preSelectedAnimalId, preSelectedRecordType, preSelectedHealthIssue, recordToEdit, form])
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -704,19 +713,19 @@ export function AddHealthRecordModal({
       url.searchParams.append('status', 'open')
       url.searchParams.append('status', 'in_progress')
       url.searchParams.append('status', 'under_observation')
-      
+
       const fullUrl = url.toString()
       console.log('🔍 Fetching health issues from:', fullUrl)
-      
+
       const response = await fetch(fullUrl, { method: 'GET' })
-      
+
       console.log('🔍 Health issues API response status:', response.status)
 
       if (response.ok) {
         const result = await response.json()
         console.log('🔍 Health issues fetched successfully:', result)
         setHealthIssues(result.issues || [])
-        
+
         if (!result.issues || result.issues.length === 0) {
           console.log('⚠️ No health issues found for animal:', animalId)
         }
@@ -771,20 +780,20 @@ export function AddHealthRecordModal({
   const handleSelectHealthIssue = useCallback((issue: any) => {
     console.log('🔍 Health issue selected:', issue.id, issue.description)
     console.log('🔍 Current animal_id in form:', form.watch('animal_id'))
-    
+
     setSelectedHealthIssue(issue)
-    
+
     // Auto-set record_type based on issue type
     const recordType = mapIssueTypeToRecordType(issue.issue_type)
     form.setValue('record_type', recordType as any)
-    
+
     // Pre-fill description with issue details
     const description = `Follow-up: ${issue.description}${issue.severity ? ` (${issue.severity})` : ''}`
     form.setValue('description', description)
 
     // Link this health record to the health issue
     form.setValue('linked_health_issue_id', issue.id)
-    
+
     // Set the appropriate severity field based on record type
     if (recordType === 'injury' && issue.severity) {
       const mappedSeverity = mapIssueSeverityToInjurySeverity(issue.severity)
@@ -793,7 +802,7 @@ export function AddHealthRecordModal({
       const mappedSeverity = mapIssueSeverityToIllnessSeverity(issue.severity)
       form.setValue('illness_severity', mappedSeverity)
     }
-    
+
     // Verify animal_id is still set after form updates
     setTimeout(() => {
       const currentAnimalId = form.watch('animal_id')
@@ -856,12 +865,12 @@ export function AddHealthRecordModal({
     const files = Array.from(e.target.files || [])
     console.log('\n📸 ========== IMAGE SELECTION ==========')
     console.log(`📸 Files selected: ${files.length}`)
-    files.forEach((f, i) => console.log(`  ${i+1}. ${f.name} (${f.type}, ${f.size} bytes)`))
-    
+    files.forEach((f, i) => console.log(`  ${i + 1}. ${f.name} (${f.type}, ${f.size} bytes)`))
+
     // Filter to image files only
     const imageFilesOnly = files.filter(file => file.type.startsWith('image/'))
     console.log(`📸 Valid image files: ${imageFilesOnly.length}`)
-    
+
     if (imageFilesOnly.length > 0) {
       console.log('📸 Adding files to state...')
       setImageFiles(prev => {
@@ -870,7 +879,7 @@ export function AddHealthRecordModal({
         console.log(`📸 Total files in state: ${newFiles.length}`)
         return newFiles
       })
-      
+
       // Generate previews for new images
       imageFilesOnly.forEach((file, idx) => {
         console.log(`📸 Generating preview ${idx + 1}/${imageFilesOnly.length}: ${file.name}`)
@@ -887,7 +896,7 @@ export function AddHealthRecordModal({
     } else {
       console.warn('⚠️ No valid image files detected')
     }
-    
+
     // Reset input
     if (e.target) {
       e.target.value = ''
@@ -907,7 +916,7 @@ export function AddHealthRecordModal({
     console.log('🚀 Record ID:', recordToEdit?.id || 'N/A')
     console.log('🚀 Raw form data:', data);
     console.log(`🚀 Current imageFiles state: ${imageFiles.length} files`)
-    imageFiles.forEach((f, i) => console.log(`  ${i+1}. ${f.name} (${f.type}, ${f.size} bytes)`))
+    imageFiles.forEach((f, i) => console.log(`  ${i + 1}. ${f.name} (${f.type}, ${f.size} bytes)`))
     console.log(`🚀 Current imagePreviews state: ${imagePreviews.length} previews`)
 
     // Log specific field errors
@@ -941,8 +950,8 @@ export function AddHealthRecordModal({
         farm_id: farmId,
         cost: data.cost || 0,
         is_follow_up: !!originalRecordId,
-      original_record_id: originalRecordId || null,
-      root_checkup_id: rootCheckupId || null,
+        original_record_id: originalRecordId || null,
+        root_checkup_id: rootCheckupId || null,
         // Handle "other" options
         vaccine_name: data.vaccine_name === 'other' ? data.vaccine_name_other : data.vaccine_name,
         route_of_administration: data.route_of_administration === 'other' ? data.route_of_administration_other : data.route_of_administration,
@@ -955,7 +964,7 @@ export function AddHealthRecordModal({
         product_used: data.product_used === 'other' ? data.product_used_other : data.product_used,
         dehorning_method: data.dehorning_method === 'other' ? data.dehorning_method_other : data.dehorning_method,
         // Add medications if record type is treatment
-        medications: data.record_type === 'treatment' ? medications : undefined,
+        medications: ['treatment', 'reproductive'].includes(data.record_type) ? medications : undefined,
       } as any
 
       // Remove the "_other" fields from the final payload
@@ -995,7 +1004,7 @@ export function AddHealthRecordModal({
 
       const apiUrl = isEditingMode ? `/api/health/records/${recordToEdit.id}` : '/api/health/records'
       const apiMethod = isEditingMode ? 'PUT' : 'POST'
-      
+
       console.log('\n🌐 ========== API REQUEST ==========')
       console.log('🌐 URL:', apiUrl)
       console.log('🌐 Method:', apiMethod)
@@ -1025,42 +1034,42 @@ export function AddHealthRecordModal({
       console.log('\n✅ ========== SUCCESS ==========')
       console.log('✅ Health record created:', result.record);
       onRecordAdded(result.record);
-      
+
       // Handle image uploads if any images were selected
       console.log('\n📸 ========== IMAGE UPLOAD CHECK ==========')
       console.log(`📸 imageFiles.length: ${imageFiles.length}`)
       console.log(`📸 imageFiles contents:`, imageFiles)
-      
+
       if (imageFiles.length > 0 && result.record?.id) {
         console.log('\n📸 ========== IMAGE UPLOAD PHASE ==========')
         console.log('📸 Total images to upload:', imageFiles.length);
         console.log('📸 Record ID:', result.record.id);
         console.log('📸 Farm ID:', farmId);
         console.log('📸 Image files:', imageFiles.map((f, i) => ({ index: i, name: f.name, size: f.size, type: f.type })));
-        
+
         const formData = new FormData();
         imageFiles.forEach((file, index) => {
           console.log(`📸 Adding image ${index} to FormData:`, file.name);
           formData.append(`image_${index}`, file);
         });
         formData.append('record_id', result.record.id);
-        
+
         console.log('📸 FormData keys:', Array.from(formData.keys()));
-        
+
         try {
           console.log('📸 Sending POST to /api/health/records/upload-images');
           const imageResponse = await fetch('/api/health/records/upload-images', {
             method: 'POST',
             body: formData,
           });
-          
+
           console.log('📸 Upload response status:', imageResponse.status);
           console.log('📸 Upload response statusText:', imageResponse.statusText);
           console.log('📸 Upload response ok:', imageResponse.ok);
-          
+
           const imageResult = await imageResponse.json();
           console.log('📸 Upload response body:', imageResult);
-          
+
           if (imageResponse.ok) {
             console.log('✅ Images uploaded successfully');
             console.log('✅ Uploaded count:', imageResult.uploadedImages?.length || 0);
@@ -1085,7 +1094,7 @@ export function AddHealthRecordModal({
           console.warn('⚠️ Record ID missing - cannot upload images:', result.record);
         }
       }
-      
+
       form.reset({
         animal_id: '',
         record_date: new Date().toISOString().split('T')[0],
@@ -1219,7 +1228,7 @@ export function AddHealthRecordModal({
             console.log('\n📋 ========== FORM SUBMISSION STARTED ==========')
             console.log('📋 Event type:', e.type)
             console.log('📋 Form submitting?', form.formState.isSubmitting)
-            
+
             form.handleSubmit(
               (data) => {
                 console.log('\n✅ ========== VALIDATION PASSED ==========')
@@ -1229,19 +1238,19 @@ export function AddHealthRecordModal({
                 console.log('✅ Description:', data.description)
                 console.log('✅ Severity:', data.severity)
                 console.log('✅ Illness Severity:', data.illness_severity)
-                
+
                 // Additional validation: Treatment records must have at least one medication
                 if (data.record_type === 'treatment') {
                   console.log('💊 ========== TREATMENT MEDICATION VALIDATION ==========')
                   console.log(`💊 Medications count: ${medications.length}`)
                   console.log(`💊 Medications:`, medications)
-                  
+
                   if (!medications || medications.length === 0) {
                     console.error('❌ Treatment record requires at least one medication')
                     setError('Treatment records require at least one medication. Please click "Add Medication" to add medication details.')
                     return
                   }
-                  
+
                   // Validate that all medications have at least a name
                   const validMeds = medications.filter((med: any) => med.name && med.name.trim().length > 0)
                   if (validMeds.length === 0) {
@@ -1249,10 +1258,10 @@ export function AddHealthRecordModal({
                     setError('All added medications have empty names. Please fill in at least the medication name for each medication.')
                     return
                   }
-                  
+
                   console.log(`✅ Medication validation passed: ${validMeds.length} valid medications`)
                 }
-                
+
                 handleSubmit(data);
               },
               (errors) => {
@@ -1405,9 +1414,8 @@ export function AddHealthRecordModal({
                             form.setValue('animal_id', animal.id)
                             setShowAnimalDropdown(false)
                           }}
-                          className={`w-full px-4 py-3 text-left hover:bg-farm-green/5 transition-colors ${
-                            selectedAnimal?.id === animal.id ? 'bg-farm-green/10 border-l-4 border-farm-green' : ''
-                          }`}
+                          className={`w-full px-4 py-3 text-left hover:bg-farm-green/5 transition-colors ${selectedAnimal?.id === animal.id ? 'bg-farm-green/10 border-l-4 border-farm-green' : ''
+                            }`}
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex-1 min-w-0">
@@ -1493,13 +1501,12 @@ export function AddHealthRecordModal({
                     </p>
                     {selectedHealthIssue && (
                       <p className="text-sm font-medium text-gray-700 mt-1">
-                        <span className="text-blue-600">Health Issue:</span> {selectedHealthIssue.description} 
-                        <Badge className={`inline-block ml-2 text-xs ${
-                          selectedHealthIssue.severity === 'critical' ? 'bg-red-100 text-red-800' :
+                        <span className="text-blue-600">Health Issue:</span> {selectedHealthIssue.description}
+                        <Badge className={`inline-block ml-2 text-xs ${selectedHealthIssue.severity === 'critical' ? 'bg-red-100 text-red-800' :
                           selectedHealthIssue.severity === 'high' ? 'bg-orange-100 text-orange-800' :
-                          selectedHealthIssue.severity === 'medium' ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-blue-100 text-blue-800'
-                        }`}>
+                            selectedHealthIssue.severity === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-blue-100 text-blue-800'
+                          }`}>
                           {selectedHealthIssue.severity || 'medium'}
                         </Badge>
                       </p>
@@ -1519,7 +1526,7 @@ export function AddHealthRecordModal({
                 </h4>
                 {loadingHealthIssues && <LoadingSpinner className="w-4 h-4" />}
               </div>
-              
+
               <p className="text-sm text-gray-600 mb-3">
                 Click an issue below to auto-fill the record type and details. This is optional.
               </p>
@@ -1530,22 +1537,20 @@ export function AddHealthRecordModal({
                     key={issue.id}
                     type="button"
                     onClick={() => handleSelectHealthIssue(issue)}
-                    className={`w-full text-left p-3 rounded-lg border-2 transition-all ${
-                      selectedHealthIssue?.id === issue.id
-                        ? 'bg-blue-100 border-blue-500 ring-2 ring-blue-300'
-                        : 'bg-white border-blue-200 hover:border-blue-400'
-                    }`}
+                    className={`w-full text-left p-3 rounded-lg border-2 transition-all ${selectedHealthIssue?.id === issue.id
+                      ? 'bg-blue-100 border-blue-500 ring-2 ring-blue-300'
+                      : 'bg-white border-blue-200 hover:border-blue-400'
+                      }`}
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center space-x-2 mb-1">
                           <span className="font-medium text-gray-900">{issue.description}</span>
-                          <Badge className={`text-xs ${
-                            issue.severity === 'critical' ? 'bg-red-100 text-red-800' :
+                          <Badge className={`text-xs ${issue.severity === 'critical' ? 'bg-red-100 text-red-800' :
                             issue.severity === 'high' ? 'bg-orange-100 text-orange-800' :
-                            issue.severity === 'medium' ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-blue-100 text-blue-800'
-                          }`}>
+                              issue.severity === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-blue-100 text-blue-800'
+                            }`}>
                             {issue.severity || 'medium'}
                           </Badge>
                         </div>
@@ -1566,7 +1571,7 @@ export function AddHealthRecordModal({
                   </button>
                 ))}
               </div>
-              
+
               {selectedHealthIssue && (
                 <button
                   type="button"
@@ -2091,56 +2096,151 @@ export function AddHealthRecordModal({
               isOpen={!collapsedSections.has('reproductive')}
               onToggle={() => toggleSection('reproductive')}
             >
+              {/* === EVENT TYPE === */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="reproductive_type">Type</Label>
+                  <Label htmlFor="reproductive_type">Reproductive Event Type</Label>
                   <select
                     id="reproductive_type"
                     {...form.register('reproductive_type')}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
                   >
                     <option value="">Select type...</option>
+                    <option value="estrus_check">Estrus / Heat Detection</option>
                     <option value="AI">Artificial Insemination</option>
                     <option value="natural_service">Natural Service</option>
-                    <option value="pregnancy_check">Pregnancy Check</option>
-                    <option value="calving">Calving</option>
-                    <option value="abortion">Abortion</option>
+                    <option value="pregnancy_check">Pregnancy Check / Palpation</option>
+                    <option value="calving">Calving / Parturition</option>
+                    <option value="abortion">Abortion / Pregnancy Loss</option>
                     <option value="retained_placenta">Retained Placenta</option>
+                    <option value="uterine_treatment">Uterine Treatment / Flushing</option>
+                    <option value="reproductive_exam">General Reproductive Examination</option>
                     <option value="other">Other (specify)</option>
                   </select>
                   {watchedReproductiveType === 'other' && (
                     <Input
                       {...form.register('reproductive_type_other')}
-                      placeholder="Enter type"
+                      placeholder="Describe the event"
                       className="mt-2"
                     />
                   )}
                 </div>
 
                 <div>
-                  <Label htmlFor="sire_id">Sire ID (if applicable)</Label>
-                  <Input
-                    id="sire_id"
-                    {...form.register('sire_id')}
-                    placeholder="Bull identification"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="pregnancy_result">Pregnancy Result</Label>
+                  <Label htmlFor="pregnancy_result">Pregnancy Status</Label>
                   <select
                     id="pregnancy_result"
                     {...form.register('pregnancy_result')}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
                   >
-                    <option value="pending">Pending</option>
-                    <option value="yes">Pregnant</option>
-                    <option value="no">Not Pregnant</option>
+                    <option value="pending">Not Yet Confirmed</option>
+                    <option value="yes">Confirmed Pregnant</option>
+                    <option value="no">Not Pregnant (Open)</option>
                   </select>
                 </div>
+              </div>
 
+              {/* === REPRODUCTIVE TRACT EXAMINATION === */}
+              <div className="border border-gray-200 rounded-lg p-4 bg-gray-50 space-y-4">
+                <Label className="text-sm font-semibold text-gray-800">Reproductive Tract Examination</Label>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="vaginal_discharge">Vaginal Discharge</Label>
+                    <select
+                      id="vaginal_discharge"
+                      {...form.register('vaginal_discharge' as any)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+                    >
+                      <option value="">Select...</option>
+                      <option value="none">None</option>
+                      <option value="clear_normal">Clear / Normal (mucus)</option>
+                      <option value="bloody_normal">Blood-tinged (post-calving normal)</option>
+                      <option value="purulent">Purulent / Pus (abnormal)</option>
+                      <option value="foul_smelling">Foul-smelling (metritis/pyometra)</option>
+                      <option value="lochia_normal">Lochia — normal post-calving</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="cervix_condition">Cervix Condition</Label>
+                    <select
+                      id="cervix_condition"
+                      {...form.register('cervix_condition' as any)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+                    >
+                      <option value="">Select...</option>
+                      <option value="closed_normal">Closed — normal</option>
+                      <option value="open_estrus">Open — estrus/heat</option>
+                      <option value="open_post_calving">Open — post-calving</option>
+                      <option value="dilated_abnormal">Dilated — abnormal</option>
+                      <option value="cervicitis">Cervicitis (inflamed)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="uterus_tone">Uterine Tone / Involution</Label>
+                    <select
+                      id="uterus_tone"
+                      {...form.register('uterus_tone' as any)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+                    >
+                      <option value="">Select...</option>
+                      <option value="normal">Normal tone</option>
+                      <option value="involuting">Involuting normally (post-calving)</option>
+                      <option value="poor_involution">Poor involution</option>
+                      <option value="enlarged">Enlarged / Distended</option>
+                      <option value="fluid_filled">Fluid-filled (pyometra suspected)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="ovarian_status">Ovarian Status</Label>
+                    <select
+                      id="ovarian_status"
+                      {...form.register('ovarian_status' as any)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+                    >
+                      <option value="">Select...</option>
+                      <option value="normal_cycling">Normal cycling</option>
+                      <option value="corpus_luteum">Corpus luteum present</option>
+                      <option value="follicle_dominant">Dominant follicle</option>
+                      <option value="cystic_follicle">Cystic follicle</option>
+                      <option value="cystic_luteal">Cystic luteal (luteal cyst)</option>
+                      <option value="anestrus">Anestrus — no activity</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <Label htmlFor="physical_exam_notes">Examination Findings / Notes</Label>
+                  <textarea
+                    id="physical_exam_notes"
+                    {...form.register('physical_exam_notes')}
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+                    placeholder="Describe palpation or ultrasound findings, physical observations..."
+                  />
+                </div>
+              </div>
+
+              {/* === ESTRUS / HEAT SIGNS === */}
+              <div>
+                <Label htmlFor="estrus_signs">Estrus / Heat Signs Observed</Label>
+                <textarea
+                  id="estrus_signs"
+                  {...form.register('estrus_signs' as any)}
+                  rows={2}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+                  placeholder="Standing heat, mounting, restlessness, swelling, mucus — describe observed signs..."
+                />
+              </div>
+
+              {/* === CALVING OUTCOME (only relevant when calving) === */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="calving_outcome">Calving Outcome</Label>
                   <select
@@ -2148,53 +2248,131 @@ export function AddHealthRecordModal({
                     {...form.register('calving_outcome')}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
                   >
-                    <option value="">Select outcome...</option>
-                    <option value="alive_single">Single Calf - Alive</option>
-                    <option value="alive_twins">Twins - Alive</option>
+                    <option value="">Not applicable / select...</option>
+                    <option value="alive_single">Single calf — alive</option>
+                    <option value="alive_twins">Twins — both alive</option>
+                    <option value="one_alive_one_dead">Twins — one alive, one dead</option>
                     <option value="stillbirth">Stillbirth</option>
-                    <option value="dystocia">Difficult Birth (Dystocia)</option>
+                    <option value="dystocia">Difficult birth (dystocia)</option>
+                    <option value="assisted_delivery">Assisted delivery</option>
+                    <option value="caesarean">Caesarean section</option>
                     <option value="other">Other (specify)</option>
                   </select>
                   {watchedCalvingOutcome === 'other' && (
                     <Input
                       {...form.register('calving_outcome_other')}
-                      placeholder="Enter outcome"
+                      placeholder="Describe the outcome"
+                      className="mt-2"
+                    />
+                  )}
+                </div>
+
+                <div>
+                  <Label htmlFor="complications">Complications Observed</Label>
+                  <select
+                    id="complications"
+                    {...form.register('complications')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+                  >
+                    <option value="">No complications</option>
+                    <option value="milk_fever">Milk fever (hypocalcemia)</option>
+                    <option value="ketosis">Ketosis / Acetonemia</option>
+                    <option value="prolapse_uterus">Uterine prolapse</option>
+                    <option value="prolapse_vaginal">Vaginal prolapse</option>
+                    <option value="retained_placenta">Retained placenta</option>
+                    <option value="metritis">Metritis (uterine infection)</option>
+                    <option value="mastitis">Mastitis</option>
+                    <option value="hemorrhage">Hemorrhage</option>
+                    <option value="other">Other (specify)</option>
+                  </select>
+                  {watchedComplications === 'other' && (
+                    <Input
+                      {...form.register('complications_other')}
+                      placeholder="Describe the complication"
                       className="mt-2"
                     />
                   )}
                 </div>
               </div>
 
-              <div>
-                <Label htmlFor="complications">Complications</Label>
-                <select
-                  id="complications"
-                  {...form.register('complications')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
-                >
-                  <option value="">No complications</option>
-                  <option value="milk_fever">Milk Fever</option>
-                  <option value="prolapse">Prolapse</option>
-                  <option value="mastitis">Mastitis</option>
-                  <option value="retained_placenta">Retained Placenta</option>
-                  <option value="other">Other (specify)</option>
-                </select>
-                {watchedComplications === 'other' && (
+              {/* === BODY CONDITION === */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label htmlFor="body_condition_score">Body Condition Score (1–5)</Label>
                   <Input
-                    {...form.register('complications_other')}
-                    placeholder="Enter complication"
-                    className="mt-2"
+                    id="body_condition_score"
+                    type="number"
+                    min="1"
+                    max="5"
+                    step="0.5"
+                    {...form.register('body_condition_score')}
+                    placeholder="3.0"
                   />
-                )}
+                </div>
+                <div>
+                  <Label htmlFor="temperature">Temperature (°C)</Label>
+                  <Input
+                    id="temperature"
+                    type="number"
+                    step="0.1"
+                    {...form.register('temperature')}
+                    placeholder="38.5"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="weight">Weight (kg)</Label>
+                  <Input
+                    id="weight"
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    {...form.register('weight')}
+                    placeholder="350.0"
+                  />
+                </div>
               </div>
-              <div className="flex items-center space-x-2 pt-6">
+
+              {/* === MEDICATIONS (same pattern as treatment) === */}
+              <MedicationsSection
+                medications={medications}
+                onAddMedication={addMedication}
+                onRemoveMedication={removeMedication}
+                onUpdateMedication={updateMedication}
+              />
+
+              {/* === HORMONE / TREATMENT PROTOCOL === */}
+              <div>
+                <Label htmlFor="treatment_plan">Hormone / Treatment Protocol Used</Label>
+                <textarea
+                  id="treatment_plan"
+                  {...form.register('treatment_plan')}
+                  rows={2}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+                  placeholder="e.g., CIDR insert, GnRH, PGF2α, oxytocin, calcium IV — describe the protocol..."
+                />
+              </div>
+
+              {/* === POST-EVENT MONITORING === */}
+              <div>
+                <Label htmlFor="response_notes">Post-Event Health Monitoring Notes</Label>
+                <textarea
+                  id="response_notes"
+                  {...form.register('response_notes')}
+                  rows={2}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-farm-green focus:border-transparent"
+                  placeholder="Animal's condition after the procedure — appetite, mobility, discharge, temperature trends..."
+                />
+              </div>
+
+              {/* === FOLLOW-UP === */}
+              <div className="flex items-center space-x-2">
                 <input
                   type="checkbox"
                   id="follow_up_required"
                   {...form.register('follow_up_required')}
                   className="rounded border-gray-300 text-farm-green focus:ring-farm-green"
                 />
-                <Label htmlFor="follow_up_required" className="text-sm">Follow-up Required</Label>
+                <Label htmlFor="follow_up_required" className="text-sm">Follow-up examination required</Label>
               </div>
             </CollapsibleSection>
           )}
@@ -2573,7 +2751,7 @@ export function AddHealthRecordModal({
             )}
           </div>
 
-          
+
 
           {/* Action Buttons */}
           <div className="flex justify-end space-x-3 pt-6 border-t">

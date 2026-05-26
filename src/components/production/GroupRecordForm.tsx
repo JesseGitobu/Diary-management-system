@@ -571,6 +571,12 @@ export function GroupRecordForm({
   const handleSubmit = async () => {
     setSubmitting(true)
     setSubmitError(null)
+    console.log('[GroupRecordForm] Submit started:', {
+      selectedAnimalsCount: selectedAnimals.length,
+      farmId,
+      recordDate,
+      sessionName
+    })
     let ok = 0
     let fail = 0
 
@@ -644,6 +650,12 @@ export function GroupRecordForm({
               milking_group_id: groupId !== 'all_eligible' ? groupId : null,
             }),
           })
+          console.log('[GroupRecordForm] API response received:', {
+            animalId: animal.id,
+            animalTag: animal.tag_number,
+            status: res.status,
+            ok: res.ok
+          })
           if (res.ok) {
             ok++
             if (health?.mastitis_result === 'mild' || health?.mastitis_result === 'severe') {
@@ -651,9 +663,15 @@ export function GroupRecordForm({
             }
           } else {
             fail++
+            console.error('[GroupRecordForm] API response error:', {
+              animalTag: animal.tag_number,
+              status: res.status,
+              statusText: res.statusText
+            })
             // Surface the API error message so the user sees what went wrong
             try {
               const errData = await res.json()
+              console.log('[GroupRecordForm] Error data from API:', errData)
               errors.push(`#${animal.tag_number}: ${errData.error || res.statusText}`)
             } catch {
               errors.push(`#${animal.tag_number}: ${res.statusText}`)
@@ -661,6 +679,12 @@ export function GroupRecordForm({
           }
         } catch (err) {
           fail++
+          console.error('[GroupRecordForm] Catch block error for animal:', {
+            animalId: animal.id,
+            animalTag: animal.tag_number,
+            message: err instanceof Error ? err.message : 'Unknown error',
+            error: JSON.stringify(err, null, 2)
+          })
           errors.push(`#${animal.tag_number}: Network error`)
         }
       })
@@ -931,7 +955,7 @@ export function GroupRecordForm({
       )}
 
       {/* Historical data for selected animals */}
-      {selectedAnimals.length > 0 && (
+      {/* {selectedAnimals.length > 0 && (
         <div className="p-3 sm:p-4 bg-stone-50 rounded-lg border border-stone-200 space-y-3">
           <p className="text-xs font-semibold text-stone-600 uppercase tracking-wide">Historical Context for Selected Animals</p>
           {loadingHistory ? (
@@ -987,7 +1011,7 @@ export function GroupRecordForm({
             <p className="text-[10px] text-stone-500 italic py-2">No historical data available for these animals</p>
           )}
         </div>
-      )}
+      )} */}
 
       {/* Selected animals — chip strip + next button */}
       {selectedAnimals.length > 0 && (

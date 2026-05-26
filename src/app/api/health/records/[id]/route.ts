@@ -14,26 +14,26 @@ export async function GET(
 ) {
   try {
     const user = await getCurrentUser()
-    
+
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    
+
     const userRole = await getUserRole(user.id) as any
-    
+
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
     }
-    
+
     const { id } = await params
     const record = await getHealthRecordById(id, userRole.farm_id)
-    
+
     if (!record) {
       return NextResponse.json({ error: 'Health record not found' }, { status: 404 })
     }
-    
+
     return NextResponse.json({ success: true, record })
-    
+
   } catch (error) {
     console.error('Health record GET API error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -47,26 +47,27 @@ export async function PUT(
 ) {
   try {
     const user = await getCurrentUser()
-    
+
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    
+
     const userRole = await getUserRole(user.id) as any
-    
+
     if (!userRole?.farm_id || !['farm_owner', 'farm_manager', 'worker'].includes(userRole.role_type)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
-    
+
     const body = await request.json()
-    const { 
+    const {
       // Basic fields
-      animal_id, 
-      record_date, 
-      record_type, 
-      description, 
-      veterinarian, 
-      cost, 
+      animal_id,
+      record_date,
+      record_time,
+      record_type,
+      description,
+      veterinarian,
+      cost,
       notes,
       next_due_date,
       medication,
@@ -79,7 +80,7 @@ export async function PUT(
       treatment_effectiveness,
       is_resolved,
       resolved_date,
-      
+
       // General checkup fields
       body_condition_score,
       weight,
@@ -87,14 +88,14 @@ export async function PUT(
       pulse,
       respiration,
       physical_exam_notes,
-      
+
       // Vaccination fields
       vaccine_name,
       vaccine_batch_number,
       vaccine_dose,
       route_of_administration,
       administered_by,
-      
+
       // Treatment fields
       diagnosis,
       medication_name,
@@ -104,40 +105,66 @@ export async function PUT(
       withdrawal_period,
       response_notes,
       treating_personnel,
-      
+
       // Injury fields
       injury_cause,
       injury_type,
       treatment_given,
       follow_up_required,
-      
+
       // Illness fields
       illness_diagnosis,
       illness_severity,
       lab_test_results,
       treatment_plan,
       recovery_outcome,
-      
+
       // Reproductive health fields
       reproductive_type,
       sire_id,
       pregnancy_result,
       calving_outcome,
       complications,
-      
+      vaginal_discharge,
+      cervix_condition,
+      uterus_tone,
+      ovarian_status,
+      estrus_signs,
+
       // Deworming fields
       product_used,
       deworming_dose,
       next_deworming_date,
       deworming_administered_by,
-      
+
+      // Dehorning fields
+      dehorning_method,
+      dehorning_reason,
+      dehorning_date,
+      dehorning_age,
+      dehorning_veterinarian,
+      anesthesia_used,
+      anesthesia_type,
+      post_dehorning_care,
+      dehorning_complications,
+
+      // Post-mortem fields
+      cause_of_death,
+      death_circumstances,
+      location_of_death,
+      suspected_disease,
+      necropsy_performed,
+      necropsy_findings,
+      body_disposal_method,
+      post_mortem_notes,
+
       // Multiple medications for treatment records
       medications
     } = body
-    
+
     const { id } = await params
     const supabase = await createServerSupabaseClient()
-    
+
     // First verify the record belongs to the user's farm and get current state
     // Cast supabase to any to prevent 'never' type inference on the result
     const { data: existingRecord, error: initialFetchError } = await (supabase as any)
@@ -145,23 +172,24 @@ export async function PUT(
       .select('id, farm_id, is_auto_generated, completion_status, animal_id, resolved_date')
       .eq('id', id)
       .single()
-    
+
     if (initialFetchError || !existingRecord) {
       return NextResponse.json({ error: 'Health record not found' }, { status: 404 })
     }
-    
+
     if (existingRecord.farm_id !== userRole.farm_id) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
-    
+
     // Determine if this is completing an auto-generated record
-    const isCompletingAutoRecord = existingRecord.is_auto_generated && 
-                                  (symptoms || veterinarian || medication || treatment)
-    
+    const isCompletingAutoRecord = existingRecord.is_auto_generated &&
+      (symptoms || veterinarian || medication || treatment)
+
     // Prepare comprehensive update data
     const updateData: any = {
       animal_id: animal_id || existingRecord.animal_id,
       record_date,
+      record_time,
       record_type,
       description,
       veterinarian: veterinarian || null,
@@ -172,7 +200,7 @@ export async function PUT(
       severity: severity || null,
       symptoms: symptoms || null,
       treatment: treatment || null,
-      
+
       // General checkup fields
       body_condition_score: body_condition_score || null,
       weight: weight || null,
@@ -180,14 +208,14 @@ export async function PUT(
       pulse: pulse || null,
       respiration: respiration || null,
       physical_exam_notes: physical_exam_notes || null,
-      
+
       // Vaccination fields
       vaccine_name: vaccine_name || null,
       vaccine_batch_number: vaccine_batch_number || null,
       vaccine_dose: vaccine_dose || null,
       route_of_administration: route_of_administration || null,
       administered_by: administered_by || null,
-      
+
       // Treatment fields
       diagnosis: diagnosis || null,
       medication_name: medication_name || null,
@@ -197,44 +225,70 @@ export async function PUT(
       withdrawal_period: withdrawal_period || null,
       response_notes: response_notes || null,
       treating_personnel: treating_personnel || null,
-      
+
       // Injury fields
       injury_cause: injury_cause || null,
       injury_type: injury_type || null,
       treatment_given: treatment_given || null,
       follow_up_required: follow_up_required || false,
-      
+
       // Illness fields
       illness_diagnosis: illness_diagnosis || null,
       illness_severity: illness_severity || null,
       lab_test_results: lab_test_results || null,
       treatment_plan: treatment_plan || null,
       recovery_outcome: recovery_outcome || null,
-      
+
       // Reproductive health fields
       reproductive_type: reproductive_type || null,
       sire_id: sire_id || null,
       pregnancy_result: pregnancy_result || null,
       calving_outcome: calving_outcome || null,
       complications: complications || null,
-      
+      vaginal_discharge: vaginal_discharge || null,
+      cervix_condition: cervix_condition || null,
+      uterus_tone: uterus_tone || null,
+      ovarian_status: ovarian_status || null,
+      estrus_signs: estrus_signs || null,
+
       // Deworming fields
       product_used: product_used || null,
       deworming_dose: deworming_dose || null,
       next_deworming_date: next_deworming_date || null,
-      deworming_administered_by: deworming_administered_by || null
+      deworming_administered_by: deworming_administered_by || null,
+
+      // Dehorning fields
+      dehorning_method: dehorning_method || null,
+      dehorning_reason: dehorning_reason || null,
+      dehorning_date: dehorning_date || null,
+      dehorning_age: dehorning_age || null,
+      dehorning_veterinarian: dehorning_veterinarian || null,
+      anesthesia_used: anesthesia_used || false,
+      anesthesia_type: anesthesia_type || null,
+      post_dehorning_care: post_dehorning_care || null,
+      dehorning_complications: dehorning_complications || null,
+
+      // Post-mortem fields
+      cause_of_death: cause_of_death || null,
+      death_circumstances: death_circumstances || null,
+      location_of_death: location_of_death || null,
+      suspected_disease: suspected_disease || null,
+      necropsy_performed: necropsy_performed || false,
+      necropsy_findings: necropsy_findings || null,
+      body_disposal_method: body_disposal_method || null,
+      post_mortem_notes: post_mortem_notes || null
     }
-    
+
     // Handle auto-generated record completion
     if (isCompletingAutoRecord) {
       updateData.is_auto_generated = false
       updateData.completion_status = 'completed'
-      
+
       // Update the corresponding animal's health tracking status
       await (supabase as any)
         .from('animals_requiring_health_attention')
-        .update({ 
-          health_record_completed: true 
+        .update({
+          health_record_completed: true
         })
         .eq('id', existingRecord.animal_id)
         .eq('farm_id', userRole.farm_id)
@@ -247,7 +301,7 @@ export async function PUT(
         updateData.is_auto_generated = is_auto_generated
       }
     }
-    
+
     // Handle follow-up fields
     if (follow_up_status) {
       updateData.follow_up_status = follow_up_status
@@ -263,14 +317,14 @@ export async function PUT(
         updateData.resolved_date = null
       }
     }
-    
+
     // Remove null/undefined values to avoid overwriting existing data
     Object.keys(updateData).forEach(key => {
       if (updateData[key] === undefined) {
         delete updateData[key]
       }
     })
-    
+
     // Update with comprehensive field support
     // Cast supabase to any to prevent type errors on update
     const { data, error } = await (supabase as any)
@@ -288,20 +342,20 @@ export async function PUT(
         )
       `)
       .single()
-    
+
     if (error) {
       console.error('Database update error:', error)
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
-    
+
     // Handle medications update for treatment records
-    if (record_type === 'treatment' && medications && Array.isArray(medications)) {
+    if (['treatment', 'reproductive'].includes(record_type) && medications && Array.isArray(medications)) {
       // Delete existing medications for this record
       await (supabase as any)
         .from('treatment_medications')
         .delete()
         .eq('health_record_id', id)
-      
+
       // Insert new medications
       if (medications.length > 0) {
         const medicationsToInsert = medications.map((med: any, index: number) => ({
@@ -314,18 +368,18 @@ export async function PUT(
           sequence: index + 1,
           created_by: user.id
         }))
-        
+
         const { error: medicationsError } = await (supabase as any)
           .from('treatment_medications')
           .insert(medicationsToInsert)
-        
+
         if (medicationsError) {
           console.error('Error updating medications:', medicationsError)
           // Continue without throwing - the record was already updated
         }
       }
     }
-    
+
     // Fetch the updated record with medications relationship
     const { data: updatedRecord, error: fetchError } = await (supabase as any)
       .from('animal_health_records')
@@ -349,16 +403,16 @@ export async function PUT(
       `)
       .eq('id', id)
       .single()
-    
-    return NextResponse.json({ 
-      success: true, 
+
+    return NextResponse.json({
+      success: true,
       record: updatedRecord || data,
       wasAutoCompleted: isCompletingAutoRecord,
-      message: isCompletingAutoRecord 
-        ? 'Health record completed successfully' 
+      message: isCompletingAutoRecord
+        ? 'Health record completed successfully'
         : 'Health record updated successfully'
     })
-    
+
   } catch (error) {
     console.error('Health record PUT API error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -372,20 +426,20 @@ export async function DELETE(
 ) {
   try {
     const user = await getCurrentUser()
-    
+
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    
+
     const userRole = await getUserRole(user.id) as any
-    
+
     if (!userRole?.farm_id || !['farm_owner', 'farm_manager', 'worker'].includes(userRole.role_type)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
-    
+
     const { id } = await params
     const supabase = await createServerSupabaseClient()
-    
+
     // First verify the record belongs to the user's farm and get details
     // Cast supabase to any for the select to avoid 'never' issues
     const { data: existingRecord, error: fetchError } = await (supabase as any)
@@ -393,20 +447,20 @@ export async function DELETE(
       .select('id, farm_id, animal_id, is_auto_generated')
       .eq('id', id)
       .single()
-    
+
     if (fetchError || !existingRecord) {
       return NextResponse.json({ error: 'Health record not found' }, { status: 404 })
     }
-    
+
     if (existingRecord.farm_id !== userRole.farm_id) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
-    
+
     // If this is an auto-generated record, update the animal's tracking status
     if (existingRecord.is_auto_generated) {
       await (supabase as any)
         .from('animals_requiring_health_attention')
-        .update({ 
+        .update({
           health_record_created: false,
           health_record_completed: false,
           auto_health_record_id: null
@@ -414,30 +468,30 @@ export async function DELETE(
         .eq('id', existingRecord.animal_id)
         .eq('farm_id', userRole.farm_id)
     }
-    
+
     // Delete any follow-up relationships first
     await (supabase as any)
       .from('health_record_follow_ups')
       .delete()
       .or(`original_record_id.eq.${id},follow_up_record_id.eq.${id}`)
-    
+
     // Delete the record
     const { error } = await (supabase as any)
       .from('animal_health_records')
       .delete()
       .eq('id', id)
       .eq('farm_id', userRole.farm_id)
-    
+
     if (error) {
       console.error('Database delete error:', error)
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
-    
-    return NextResponse.json({ 
-      success: true, 
+
+    return NextResponse.json({
+      success: true,
       message: 'Health record deleted successfully'
     })
-    
+
   } catch (error) {
     console.error('Health record DELETE API error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -489,7 +543,7 @@ export async function PATCH(
         completion_status: 'completed',
         record_date: body.record_date || new Date().toISOString().split('T')[0],
         record_type: body.record_type || 'checkup',
-        
+
         // Include all the comprehensive fields with null defaults
         body_condition_score: body.body_condition_score || null,
         weight: body.weight || null,
@@ -536,7 +590,7 @@ export async function PATCH(
         .insert(createData)
         .select('*, animals!animal_health_records_animal_id_fkey(id, tag_number, name)')
         .single();
-      
+
       if (error) {
         console.error('Database insert error for missing record:', error);
         return NextResponse.json({ error }, { status: 400 });
@@ -547,13 +601,13 @@ export async function PATCH(
         .update({ health_record_completed: true, health_record_created: true })
         .eq('id', animalId);
 
-      return NextResponse.json({ 
-        success: true, 
+      return NextResponse.json({
+        success: true,
         record: data,
         message: 'Health record created and completed successfully'
       });
     }
-    
+
     // Handle existing record updates
     else {
       // Cast supabase to any
@@ -562,34 +616,34 @@ export async function PATCH(
         .select('id, farm_id, is_auto_generated, animal_id, original_health_status, requires_record_type_selection, record_type')
         .eq('id', id)
         .single();
-    
+
       if (fetchError || !existingRecord) {
         return NextResponse.json({ error: 'Health record not found' }, { status: 404 });
       }
-    
+
       if (existingRecord.farm_id !== userRole.farm_id) {
         return NextResponse.json({ error: 'Access denied' }, { status: 403 });
       }
-      
+
       const updateData: any = { ...body };
-      
+
       // Handle record type selection for pending records
       if (existingRecord.requires_record_type_selection && body.record_type) {
         updateData.requires_record_type_selection = false;
         updateData.record_type = body.record_type;
       }
-      
+
       // Handle completion of auto-generated records
       if (existingRecord.is_auto_generated && (body.symptoms || body.veterinarian || body.medication)) {
         updateData.is_auto_generated = false;
         updateData.completion_status = 'completed';
-        
+
         await (supabase as any)
           .from('animals_requiring_health_attention')
           .update({ health_record_completed: true })
           .eq('id', existingRecord.animal_id);
       }
-      
+
       // Cast supabase to any
       const { data, error } = await (supabase as any)
         .from('animal_health_records')
@@ -597,14 +651,14 @@ export async function PATCH(
         .eq('id', id)
         .select('*, animals!animal_health_records_animal_id_fkey(id, tag_number, name)')
         .single();
-    
+
       if (error) {
         console.error('Database update error:', error);
         return NextResponse.json({ error: error.message }, { status: 400 });
       }
-    
-      return NextResponse.json({ 
-        success: true, 
+
+      return NextResponse.json({
+        success: true,
         record: data,
         message: 'Health record updated successfully'
       });
@@ -624,6 +678,6 @@ function validateRecordTypeChoice(originalHealthStatus: HealthStatus, selectedRe
     'quarantined': ['checkup', 'vaccination', 'illness', 'treatment'],
     'sick': ['illness']
   };
-  
+
   return allowedChoices[originalHealthStatus]?.includes(selectedRecordType) || false;
 }

@@ -170,7 +170,7 @@ export function RecordProductionModal({
   const isEditingGroupRecord = !!editingRecord && recordingType === 'group'
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} className="sm:max-w-2xl">
+    <Modal isOpen={isOpen} onClose={onClose} className="sm:max-w-2xl" closeOnOverlayClick={false}>
 
       {/* ── Modal header ─────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">

@@ -5,9 +5,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
-import { getAnimalHealthRecords, createHealthRecordWithStatusUpdate, getFollowUpRecords,
+import {
+  getAnimalHealthRecords, createHealthRecordWithStatusUpdate, getFollowUpRecords,
   getHealthRecordsWithFollowUps,
-  updateAnimalHealthStatus, createHealthRecord } from '@/lib/database/health'
+  updateAnimalHealthStatus, createHealthRecord
+} from '@/lib/database/health'
 import {
   generateOperationId,
   logApiRequest,
@@ -31,33 +33,33 @@ export async function POST(request: NextRequest) {
 
   try {
     const user = await getCurrentUser()
-    
+
     if (!user) {
       logFinalResponse(operationId, false, null, 'Unauthorized')
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    
+
     const userRole = await getUserRole(user.id) as any
-    
+
     if (!userRole?.farm_id || !['farm_owner', 'farm_manager', 'worker', 'veterinarian'].includes(userRole.role_type)) {
       logFinalResponse(operationId, false, null, 'Insufficient permissions')
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
-    
+
     const body = await request.json()
-    
+
     // Log incoming request
     logApiRequest(operationId, body, user.id, userRole.farm_id)
-    
-    const { 
+
+    const {
       // Basic fields
-      animal_id, 
+      animal_id,
       record_date,
       record_time,
-      record_type, 
-      description, 
-      veterinarian, 
-      cost, 
+      record_type,
+      description,
+      veterinarian,
+      cost,
       notes,
       next_due_date,
       medication,
@@ -66,23 +68,23 @@ export async function POST(request: NextRequest) {
       treatment,
       is_auto_generated = false,
       completion_status = 'completed',
-      
+
       // Follow-up fields
       is_follow_up = false,
       original_record_id = null,
       root_checkup_id = null,
       linked_health_issue_id = null,
       outbreak_id = null,
-      
+
       // Resolution & Follow-up fields
       is_resolved = false,
       resolved_date = null,
       follow_up_status = 'none',
-      
+
       // Treatment tracking fields
       treatment_effectiveness = null,
       medication_changes = null,
-      
+
       // General checkup fields
       body_condition_score,
       weight,
@@ -90,14 +92,14 @@ export async function POST(request: NextRequest) {
       pulse,
       respiration,
       physical_exam_notes,
-      
+
       // Vaccination fields
       vaccine_name,
       vaccine_batch_number,
       vaccine_dose,
       route_of_administration,
       administered_by,
-      
+
       // Treatment fields
       diagnosis,
       medication_name,
@@ -107,33 +109,38 @@ export async function POST(request: NextRequest) {
       withdrawal_period,
       response_notes,
       treating_personnel,
-      
+
       // Injury fields
       injury_cause,
       injury_type,
       treatment_given,
       follow_up_required,
-      
+
       // Illness fields
       illness_diagnosis,
       illness_severity,
       lab_test_results,
       treatment_plan,
       recovery_outcome,
-      
+
       // Reproductive health fields
       reproductive_type,
       sire_id,
       pregnancy_result,
       calving_outcome,
       complications,
-      
+      vaginal_discharge,
+      cervix_condition,
+      uterus_tone,
+      ovarian_status,
+      estrus_signs,
+
       // Deworming fields
       product_used,
       deworming_dose,
       next_deworming_date,
       deworming_administered_by,
-      
+
       // Dehorning fields
       dehorning_method,
       dehorning_reason,
@@ -144,7 +151,7 @@ export async function POST(request: NextRequest) {
       anesthesia_type,
       post_dehorning_care,
       dehorning_complications,
-      
+
       // Post-mortem fields
       cause_of_death,
       death_circumstances,
@@ -154,48 +161,48 @@ export async function POST(request: NextRequest) {
       necropsy_findings,
       body_disposal_method,
       post_mortem_notes,
-      
+
       // Multiple medications (new)
       medications = []
     } = body
-    
+
     // Validate required fields
     const requiredFields = { animal_id, record_date, record_type, description }
     const validationErrors: string[] = []
-    
+
     if (!animal_id) validationErrors.push('animal_id is required')
     if (!record_date) validationErrors.push('record_date is required')
     // record_time is optional, don't validate it as required
     if (!record_type) validationErrors.push('record_type is required')
     if (!description) validationErrors.push('description is required')
-    
+
     // Log validation
     logValidation(operationId, requiredFields, validationErrors.length === 0, validationErrors)
-    
+
     if (validationErrors.length > 0) {
       logFinalResponse(operationId, false, null, validationErrors.join('; '))
-      return NextResponse.json({ 
-        error: 'Missing required fields: animal_id, record_date, record_type, description' 
+      return NextResponse.json({
+        error: 'Missing required fields: animal_id, record_date, record_type, description'
       }, { status: 400 })
     }
-    
+
     // Validate record type
     const validRecordTypes = ['vaccination', 'treatment', 'checkup', 'injury', 'illness', 'reproductive', 'deworming', 'dehorning', 'post_mortem']
     if (!validRecordTypes.includes(record_type)) {
       logFinalResponse(operationId, false, null, `Invalid record type: ${record_type}`)
-      return NextResponse.json({ 
-        error: `Invalid record type. Must be one of: ${validRecordTypes.join(', ')}` 
+      return NextResponse.json({
+        error: `Invalid record type. Must be one of: ${validRecordTypes.join(', ')}`
       }, { status: 400 })
     }
-    
+
     // Validate follow-up relationship
     if (is_follow_up && !original_record_id) {
       logFinalResponse(operationId, false, null, 'original_record_id required for follow-ups')
-      return NextResponse.json({ 
-        error: 'original_record_id is required when is_follow_up is true' 
+      return NextResponse.json({
+        error: 'original_record_id is required when is_follow_up is true'
       }, { status: 400 })
     }
-    
+
     // Prepare comprehensive record data
     const recordData = {
       farm_id: userRole.farm_id,
@@ -215,11 +222,11 @@ export async function POST(request: NextRequest) {
       treatment: treatment || null,
       is_auto_generated,
       completion_status,
-      
+
       // Follow-up fields - ADD THESE
       is_follow_up,
       original_record_id,
-      
+
       // General checkup fields
       body_condition_score: body_condition_score || null,
       weight: weight || null,
@@ -227,14 +234,14 @@ export async function POST(request: NextRequest) {
       pulse: pulse || null,
       respiration: respiration || null,
       physical_exam_notes: physical_exam_notes || null,
-      
+
       // Vaccination fields
       vaccine_name: vaccine_name || null,
       vaccine_batch_number: vaccine_batch_number || null,
       vaccine_dose: vaccine_dose || null,
       route_of_administration: route_of_administration || null,
       administered_by: administered_by || null,
-      
+
       // Treatment fields
       diagnosis: diagnosis || null,
       medication_name: medication_name || null,
@@ -244,33 +251,38 @@ export async function POST(request: NextRequest) {
       withdrawal_period: withdrawal_period || null,
       response_notes: response_notes || null,
       treating_personnel: treating_personnel || null,
-      
+
       // Injury fields
       injury_cause: injury_cause || null,
       injury_type: injury_type || null,
       treatment_given: treatment_given || null,
       follow_up_required: follow_up_required || false,
-      
+
       // Illness fields
       illness_diagnosis: illness_diagnosis || null,
       illness_severity: illness_severity || null,
       lab_test_results: lab_test_results || null,
       treatment_plan: treatment_plan || null,
       recovery_outcome: recovery_outcome || null,
-      
+
       // Reproductive health fields
       reproductive_type: reproductive_type || null,
       sire_id: sire_id || null,
       pregnancy_result: pregnancy_result || null,
       calving_outcome: calving_outcome || null,
       complications: complications || null,
-      
+      vaginal_discharge: vaginal_discharge || null,
+      cervix_condition: cervix_condition || null,
+      uterus_tone: uterus_tone || null,
+      ovarian_status: ovarian_status || null,
+      estrus_signs: estrus_signs || null,
+
       // Deworming fields
       product_used: product_used || null,
       deworming_dose: deworming_dose || null,
       next_deworming_date: next_deworming_date || null,
       deworming_administered_by: deworming_administered_by || null,
-      
+
       // Dehorning fields
       dehorning_method: dehorning_method || null,
       dehorning_reason: dehorning_reason || null,
@@ -281,7 +293,7 @@ export async function POST(request: NextRequest) {
       anesthesia_type: anesthesia_type || null,
       post_dehorning_care: post_dehorning_care || null,
       dehorning_complications: dehorning_complications || null,
-      
+
       // Post-mortem fields
       cause_of_death: cause_of_death || null,
       death_circumstances: death_circumstances || null,
@@ -291,42 +303,42 @@ export async function POST(request: NextRequest) {
       necropsy_findings: necropsy_findings || null,
       body_disposal_method: body_disposal_method || null,
       post_mortem_notes: post_mortem_notes || null,
-      
+
       // Linking & outbreak fields
       root_checkup_id: root_checkup_id || null,
       linked_health_issue_id: linked_health_issue_id || null,
       outbreak_id: outbreak_id || null,
-      
+
       // Resolution & Follow-up fields
       is_resolved: is_resolved || false,
       resolved_date: resolved_date || null,
       follow_up_status: follow_up_status || 'none',
-      
+
       // Treatment tracking fields
       treatment_effectiveness: treatment_effectiveness || null,
       medication_changes: medication_changes || null,
-      
+
       // Multiple medications
       medications: Array.isArray(medications) && medications.length > 0 ? medications : null
     }
-    
+
     // Log data preparation
     logDataPreparation(operationId, 'animal_health_records', recordData)
-    
+
     // Create the supabase client for additional operations
     const supabase = await createServerSupabaseClient()
-    
+
     // Use enhanced function that updates health status
     const result = await createHealthRecordWithStatusUpdate(recordData, operationId) as any
-    
+
     if (!result.success) {
       logFinalResponse(operationId, false, null, result.error)
       return NextResponse.json({ error: result.error }, { status: 400 })
     }
-    
+
     // Log successful insert
     logDatabaseInsert(operationId, 'animal_health_records', result.data.id, recordData)
-    
+
     // Insert medications into treatment_medications table for treatment records
     let medicationsInserted = 0
     console.log(`\n💊 ========== MEDICATION INSERTION CHECK ==========`)
@@ -337,10 +349,10 @@ export async function POST(request: NextRequest) {
     console.log(`💊 result.data exists: ${!!result.data}`)
     console.log(`💊 result.data.id: ${result.data?.id}`)
     console.log(`💊 Combined condition result: ${record_type === 'treatment' && Array.isArray(medications) && medications.length > 0 && result.data}`)
-    
-    if (record_type === 'treatment' && Array.isArray(medications) && medications.length > 0 && result.data) {
+
+    if (['treatment', 'reproductive'].includes(record_type) && Array.isArray(medications) && medications.length > 0 && result.data) {
       console.log(`💊 Inserting ${medications.length} medications for treatment record ${result.data.id}`)
-      
+
       try {
         // Filter out empty medications - validate required fields
         const validMedications = medications.filter((med: any) => {
@@ -349,7 +361,7 @@ export async function POST(request: NextRequest) {
           return hasName
         })
         console.log(`💊 Valid medications after filtering: ${validMedications.length} out of ${medications.length}`)
-        
+
         if (validMedications.length === 0) {
           console.warn(`⚠️ No valid medications found after filtering - all medications have empty names`)
           console.warn(`⚠️ Medications received:`, JSON.stringify(medications, null, 2))
@@ -371,30 +383,30 @@ export async function POST(request: NextRequest) {
             console.log(`💊 Medication ${index + 1} prepared:`, JSON.stringify(row, null, 2))
             return row
           })
-          
+
           console.log(`💊 Attempting to insert ${medicationRows.length} medication rows into database...`)
           console.log(`💊 Current user.id: ${user.id}`)
           console.log(`💊 Health record ID: ${result.data.id}`)
-          
+
           // Debug: Check if health record actually exists before trying to link
           const { data: healthRecordCheck, error: checkError } = await (supabase as any)
             .from('animal_health_records')
             .select('id')
             .eq('id', result.data.id)
             .single()
-          
+
           if (checkError) {
             console.error(`❌ Health record check failed:`, checkError)
             console.error(`❌ Cannot verify health record exists - may cause FK constraint error`)
           } else {
             console.log(`✅ Health record verified - ID exists and is accessible`)
           }
-          
+
           const { data: insertedMeds, error: medsError } = await (supabase as any)
             .from('treatment_medications')
             .insert(medicationRows)
             .select()
-          
+
           if (medsError) {
             console.error(`❌ ========== MEDICATION INSERT ERROR ==========`)
             console.error(`❌ Error code: ${medsError.code}`)
@@ -402,16 +414,16 @@ export async function POST(request: NextRequest) {
             console.error(`❌ Error hint: ${(medsError as any).hint}`)
             console.error(`❌ Error details:`, JSON.stringify(medsError, null, 2))
             console.error(`❌ Attempted to insert:`, JSON.stringify(medicationRows, null, 2))
-            logRelationshipCreation(operationId, 'treatment_medications', 
-              { health_record_id: result.data.id, count: validMedications.length }, 
+            logRelationshipCreation(operationId, 'treatment_medications',
+              { health_record_id: result.data.id, count: validMedications.length },
               'N/A', `${medsError.code}: ${medsError.message}`)
           } else {
             medicationsInserted = insertedMeds?.length || 0
             console.log(`✅ ========== MEDICATION INSERT SUCCESS ==========`)
             console.log(`✅ Successfully inserted ${medicationsInserted} medications`)
             console.log(`✅ Inserted records:`, JSON.stringify(insertedMeds, null, 2))
-            logRelationshipCreation(operationId, 'treatment_medications', 
-              { health_record_id: result.data.id, count: validMedications.length }, 
+            logRelationshipCreation(operationId, 'treatment_medications',
+              { health_record_id: result.data.id, count: validMedications.length },
               `${medicationsInserted} medications inserted`)
           }
         }
@@ -434,7 +446,7 @@ export async function POST(request: NextRequest) {
       console.log(`   - medications.length > 0: ${medications?.length > 0} (actual: ${medications?.length})`)
       console.log(`   - result.data exists: ${!!result.data} (id: ${result.data?.id})`)
     }
-    
+
     // If this is a follow-up record, create the relationship in health_record_follow_ups table
     if (is_follow_up && original_record_id && result.data) {
       // Cast supabase to any to fix "Argument of type ... is not assignable to parameter of type 'never'"
@@ -449,17 +461,17 @@ export async function POST(request: NextRequest) {
         })
         .select()
         .single()
-      
+
       if (relationError) {
         console.error('Error creating follow-up relationship:', relationError)
-        logRelationshipCreation(operationId, 'health_record_follow_ups', 
-          { original_record_id, follow_up_record_id: result.data.id }, 
+        logRelationshipCreation(operationId, 'health_record_follow_ups',
+          { original_record_id, follow_up_record_id: result.data.id },
           'N/A', relationError.message)
         // Don't fail the entire operation, but log the error
         // The record is still created, just not linked properly
       } else {
-        logRelationshipCreation(operationId, 'health_record_follow_ups', 
-          { original_record_id, follow_up_record_id: result.data.id }, 
+        logRelationshipCreation(operationId, 'health_record_follow_ups',
+          { original_record_id, follow_up_record_id: result.data.id },
           relationData.id)
       }
     }
@@ -474,14 +486,14 @@ export async function POST(request: NextRequest) {
         })
         .eq('id', linked_health_issue_id)
         .eq('farm_id', userRole.farm_id)
-      
+
       if (linkError) {
         console.error('Error linking health issue to record:', linkError)
       } else {
         console.log('✅ Health issue linked to record:', linked_health_issue_id, '<->', result.data.id)
       }
     }
-    
+
     const response: {
       success: boolean;
       record: any;
@@ -490,32 +502,32 @@ export async function POST(request: NextRequest) {
       newHealthStatus?: string;
       updatedAnimal?: any;
       medicationsInserted?: number;
-    } = { 
-      success: true, 
+    } = {
+      success: true,
       record: result.data,
-      message: is_follow_up 
+      message: is_follow_up
         ? 'Follow-up health record created successfully'
         : 'Health record created successfully'
     }
-    
+
     // Include medication insertion info
     if (record_type === 'treatment' && medicationsInserted > 0) {
       response.medicationsInserted = medicationsInserted
       response.message += ` with ${medicationsInserted} medication${medicationsInserted !== 1 ? 's' : ''}`
     }
-    
+
     // Include animal health status update info if available
     if (result.animalHealthStatusUpdated) {
       response.animalHealthStatusUpdated = true
       response.newHealthStatus = result.newHealthStatus
       response.updatedAnimal = result.updatedAnimal
     }
-    
+
     // Log final response
     logFinalResponse(operationId, true, response.record)
-    
+
     return NextResponse.json(response)
-    
+
   } catch (error) {
     console.error('Health record POST API error:', error)
     logFinalResponse(operationId, false, null, error instanceof Error ? error.message : 'Unknown error')
@@ -526,13 +538,13 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const user = await getCurrentUser()
-    
+
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    
+
     const userRole = await getUserRole(user.id) as any
-    
+
     if (!userRole?.farm_id) {
       return NextResponse.json({ error: 'No farm associated with user' }, { status: 400 })
     }
@@ -552,7 +564,7 @@ export async function GET(request: NextRequest) {
 
     // Create supabase client for medication fetching
     const supabase = await createServerSupabaseClient()
-    
+
     let healthRecords
 
     if (includeFollowUps) {
@@ -560,10 +572,10 @@ export async function GET(request: NextRequest) {
         baseRecords.map(async (record: any) => {
           // CURRENT - LIMITED:
           // if (['illness', 'injury', 'treatment', 'checkup'].includes(record.record_type)) {
-          
+
           // UPDATED - ALL TYPES CAN HAVE FOLLOW-UPS:
           const followUps = await getFollowUpRecords(record.id, userRole.farm_id!)
-          
+
           // Add medications for treatment records
           let medications = []
           if (record.record_type === 'treatment') {
@@ -574,7 +586,7 @@ export async function GET(request: NextRequest) {
               .order('sequence', { ascending: true })
             medications = meds || []
           }
-          
+
           return {
             ...record,
             follow_ups: followUps,
@@ -606,12 +618,12 @@ export async function GET(request: NextRequest) {
       healthRecords = recordsWithMeds
     }
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       healthRecords,
       total: healthRecords.length
     })
-    
+
   } catch (error) {
     console.error('Health records API error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

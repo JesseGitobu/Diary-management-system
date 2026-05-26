@@ -118,7 +118,16 @@ interface HealthRecordCardProps {
     pregnancy_result?: 'pending' | 'yes' | 'no'
     calving_outcome?: string
     complications?: string
-    
+    vaginal_discharge?: string
+    cervix_condition?: string
+    uterus_tone?: string
+    ovarian_status?: string
+    estrus_signs?: string
+    // Shared fields already exist but confirm these are present:
+    response_notes?: string
+    // treatment_plan?: string
+    // physical_exam_notes?: string
+
     // Post-mortem fields
     cause_of_death?: string
     death_circumstances?: string
@@ -128,11 +137,11 @@ interface HealthRecordCardProps {
     necropsy_findings?: string
     body_disposal_method?: string
     post_mortem_notes?: string
-    
+
     // Deworming fields
     next_deworming_date?: string
     deworming_administered_by?: string
-    
+
     // Dehorning fields
     dehorning_method?: string
     dehorning_reason?: string
@@ -143,7 +152,7 @@ interface HealthRecordCardProps {
     anesthesia_type?: string
     post_dehorning_care?: string
     dehorning_complications?: string
-    
+
     // Treatment medications array
     treatment_medications?: Array<{
       id: string
@@ -246,12 +255,12 @@ export function HealthRecordCard({
 
   const fetchSignedUrls = async (imagesToSign: HealthRecordImage[]) => {
     if (imagesToSign.length === 0) return
-    
+
     console.log(`🔐 Fetching ${imagesToSign.length} signed URL(s)...`)
     setLoadingSignedUrls(true)
     try {
       const urls: Record<string, string> = {}
-      
+
       // Fetch signed URLs for each image
       for (const image of imagesToSign) {
         try {
@@ -260,7 +269,7 @@ export function HealthRecordCard({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ imageId: image.id })
           })
-          
+
           if (response.ok) {
             const data = await response.json()
             urls[image.id] = data.signedUrl
@@ -274,7 +283,7 @@ export function HealthRecordCard({
           urls[image.id] = image.image_url // Fallback to stored URL
         }
       }
-      
+
       setSignedUrls(urls)
       console.log(`✅ All signed URLs fetched`)
     } catch (error) {
@@ -291,7 +300,7 @@ export function HealthRecordCard({
       if (response.ok) {
         const data = await response.json()
         // Sort by most recent first (reported_at descending)
-        const issues = (data.issues || []).sort((a: any, b: any) => 
+        const issues = (data.issues || []).sort((a: any, b: any) =>
           new Date(b.reported_at).getTime() - new Date(a.reported_at).getTime()
         )
         setHealthIssues(issues)
@@ -407,7 +416,7 @@ export function HealthRecordCard({
   const formatDateTime = (dateString?: string, timeString?: string) => {
     const dateFormatted = formatDate(dateString)
     if (!timeString) return dateFormatted
-    
+
     // Parse time string (HH:mm format)
     try {
       const [hour, minute] = timeString.split(':')
@@ -485,13 +494,12 @@ export function HealthRecordCard({
 
             <div className="flex items-start space-x-3">
               <div className="flex-shrink-0 mt-1">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center z-10 relative ${
-                  issue.status === 'resolved' ? 'bg-green-500' : 
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center z-10 relative ${issue.status === 'resolved' ? 'bg-green-500' :
                   issue.severity === 'critical' ? 'bg-red-600' :
-                  issue.severity === 'high' ? 'bg-red-500' :
-                  issue.severity === 'medium' ? 'bg-yellow-500' :
-                  'bg-green-500'
-                }`}>
+                    issue.severity === 'high' ? 'bg-red-500' :
+                      issue.severity === 'medium' ? 'bg-yellow-500' :
+                        'bg-green-500'
+                  }`}>
                   {issue.status === 'resolved' ? (
                     <CheckCircle className="w-4 h-4 text-white" />
                   ) : (
@@ -500,9 +508,8 @@ export function HealthRecordCard({
                 </div>
               </div>
 
-              <div className={`flex-1 rounded-lg p-4 border-l-4 ${
-                severityColors[issue.severity as keyof typeof severityColors] || 'border-l-blue-400 bg-blue-50'
-              }`}>
+              <div className={`flex-1 rounded-lg p-4 border-l-4 ${severityColors[issue.severity as keyof typeof severityColors] || 'border-l-blue-400 bg-blue-50'
+                }`}>
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex-1 min-w-0">
                     <h5 className="font-semibold text-gray-900 text-sm">
@@ -875,22 +882,20 @@ export function HealthRecordCard({
               {/* REPRODUCTIVE RENDERING */}
               {record.record_type === 'reproductive' && (
                 <div className="space-y-3">
+                  {/* Event Type */}
                   {record.reproductive_type && (
                     <div>
                       <p className="text-xs font-semibold text-gray-900 mb-1 flex items-center space-x-1">
                         <Heart className="w-3 h-3" />
-                        <span>Type:</span>
+                        <span>Event Type:</span>
                       </p>
-                      <p className="text-sm text-gray-800">{record.reproductive_type}</p>
+                      <p className="text-sm text-gray-800">
+                        {record.reproductive_type.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                      </p>
                     </div>
                   )}
 
-                  {record.sire_id && (
-                    <div>
-                      <p className="text-xs text-gray-600">Sire ID: {record.sire_id}</p>
-                    </div>
-                  )}
-
+                  {/* Pregnancy Status */}
                   {record.pregnancy_result && record.pregnancy_result !== 'pending' && (
                     <div className={`rounded p-2 border ${record.pregnancy_result === 'yes'
                         ? 'bg-green-50 border-green-200'
@@ -898,26 +903,149 @@ export function HealthRecordCard({
                       }`}>
                       <p className={`text-xs font-medium ${record.pregnancy_result === 'yes' ? 'text-green-800' : 'text-gray-700'
                         }`}>
-                        Pregnancy: {record.pregnancy_result === 'yes' ? 'Confirmed' : 'Not Confirmed'}
+                        Pregnancy: {record.pregnancy_result === 'yes' ? '✓ Confirmed Pregnant' : '✗ Not Pregnant (Open)'}
                       </p>
                     </div>
                   )}
 
+                  {/* Reproductive Tract Examination */}
+                  {(record.vaginal_discharge || record.cervix_condition || record.uterus_tone || record.ovarian_status) && (
+                    <div className="border border-gray-200 rounded-lg p-3 bg-pink-50 space-y-2">
+                      <p className="text-xs font-semibold text-gray-800">Reproductive Tract Examination:</p>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        {record.vaginal_discharge && (
+                          <div>
+                            <p className="text-xs text-gray-500">Vaginal Discharge</p>
+                            <p className="text-xs font-medium text-gray-800">
+                              {record.vaginal_discharge.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                            </p>
+                          </div>
+                        )}
+                        {record.cervix_condition && (
+                          <div>
+                            <p className="text-xs text-gray-500">Cervix</p>
+                            <p className="text-xs font-medium text-gray-800">
+                              {record.cervix_condition.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                            </p>
+                          </div>
+                        )}
+                        {record.uterus_tone && (
+                          <div>
+                            <p className="text-xs text-gray-500">Uterine Tone</p>
+                            <p className="text-xs font-medium text-gray-800">
+                              {record.uterus_tone.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                            </p>
+                          </div>
+                        )}
+                        {record.ovarian_status && (
+                          <div>
+                            <p className="text-xs text-gray-500">Ovarian Status</p>
+                            <p className="text-xs font-medium text-gray-800">
+                              {record.ovarian_status.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Physical Exam / Palpation Notes */}
+                  {record.physical_exam_notes && (
+                    <div className="bg-white rounded p-2 border border-gray-200">
+                      <p className="text-xs font-semibold text-gray-700 mb-1">Examination Findings:</p>
+                      <p className="text-sm text-gray-800">{record.physical_exam_notes}</p>
+                    </div>
+                  )}
+
+                  {/* Estrus / Heat Signs */}
+                  {record.estrus_signs && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-900 mb-1">Estrus / Heat Signs:</p>
+                      <p className="text-sm text-gray-800">{record.estrus_signs}</p>
+                    </div>
+                  )}
+
+                  {/* Vitals if recorded */}
+                  {(record.temperature || record.body_condition_score || record.weight) && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-900 mb-1 flex items-center space-x-1">
+                        <Thermometer className="w-3 h-3" />
+                        <span>Clinical Vitals:</span>
+                      </p>
+                      <p className="text-sm text-gray-800">
+                        {[
+                          record.temperature && `Temp ${record.temperature}°C`,
+                          record.body_condition_score && `BCS ${record.body_condition_score}/5`,
+                          record.weight && `Weight ${record.weight}kg`
+                        ].filter(Boolean).join(' • ')}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Calving Outcome */}
                   {record.calving_outcome && (
                     <div>
                       <p className="text-xs font-semibold text-gray-900 mb-1">Calving Outcome:</p>
-                      <p className="text-sm text-gray-800">{record.calving_outcome}</p>
-                    </div>
-                  )}
-
-                  {record.complications && (
-                    <div className="bg-orange-50 rounded p-2 border border-orange-200">
-                      <p className="text-xs text-orange-800">
-                        <strong>Complications:</strong> {record.complications}
+                      <p className="text-sm text-gray-800">
+                        {record.calving_outcome.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}
                       </p>
                     </div>
                   )}
 
+                  {/* Complications */}
+                  {record.complications && (
+                    <div className="bg-orange-50 rounded p-2 border border-orange-200">
+                      <p className="text-xs font-semibold text-orange-800 mb-1">⚠️ Complications:</p>
+                      <p className="text-sm text-orange-800">
+                        {record.complications.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Medications (from treatment_medications table) */}
+                  {record.treatment_medications && record.treatment_medications.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-900 mb-2 flex items-center space-x-1">
+                        <Pill className="w-3 h-3" />
+                        <span>Medications / Treatments Administered:</span>
+                      </p>
+                      <div className="space-y-2">
+                        {record.treatment_medications
+                          .sort((a, b) => a.sequence - b.sequence)
+                          .map((med) => (
+                            <div key={med.id} className="bg-pink-50 rounded p-2 border border-pink-200">
+                              <p className="text-sm font-medium text-gray-900">{med.medication_name}</p>
+                              <p className="text-xs text-gray-600 mt-0.5">
+                                {[
+                                  med.dosage,
+                                  med.route && `${med.route}${med.route_other ? ` (${med.route_other})` : ''}`,
+                                  med.duration && `for ${med.duration}`
+                                ].filter(Boolean).join(' • ')}
+                              </p>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Hormone / Treatment Protocol */}
+                  {record.treatment_plan && (
+                    <div className="bg-purple-50 rounded p-2 border border-purple-200">
+                      <p className="text-xs font-semibold text-purple-800 mb-1">Hormone / Treatment Protocol:</p>
+                      <p className="text-sm text-purple-800">{record.treatment_plan}</p>
+                    </div>
+                  )}
+
+                  {/* Post-Event Monitoring */}
+                  {record.response_notes && (
+                    <div className="bg-blue-50 rounded p-2 border border-blue-200">
+                      <p className="text-xs font-semibold text-blue-800 mb-1">Post-Event Monitoring:</p>
+                      <p className="text-sm text-blue-800">{record.response_notes}</p>
+                    </div>
+                  )}
+
+                  {/* General description / notes */}
                   {record.description && (
                     <div>
                       <p className="text-xs font-semibold text-gray-900 mb-1">Details:</p>
@@ -2058,11 +2186,10 @@ export function HealthRecordCard({
                       <button
                         key={image.id}
                         onClick={() => setCurrentImageIndex(idx)}
-                        className={`flex-shrink-0 w-12 h-12 rounded border-2 overflow-hidden transition-all ${
-                          idx === currentImageIndex
-                            ? 'border-blue-500 opacity-100'
-                            : 'border-gray-600 opacity-50 hover:opacity-75'
-                        }`}
+                        className={`flex-shrink-0 w-12 h-12 rounded border-2 overflow-hidden transition-all ${idx === currentImageIndex
+                          ? 'border-blue-500 opacity-100'
+                          : 'border-gray-600 opacity-50 hover:opacity-75'
+                          }`}
                       >
                         <img
                           src={signedUrls[image.id] || image.image_url}
