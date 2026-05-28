@@ -95,6 +95,7 @@ export async function getProductionStats(farmId: string) {
     // SAFE: Wrapped with explicit error handling for missing foreign key
     let todayProductionData: any[] = []
     let weeklyProductionData: any[] = []
+    let animalProductionStats: any[] = []
     
     try {
       const { data, error } = await supabase
@@ -132,15 +133,35 @@ export async function getProductionStats(farmId: string) {
       .eq('farm_id', farmId)
       .in('production_status', ['lactating', 'served'])
     
+    // Get animal production statistics with dynamic targets based on historical performance
+    try {
+      const { data, error } = await supabase
+        .from('animal_production_statistics')
+        .select('animal_id, best_weekly_avg, target_weekly_milk, target_daily_milk')
+        .eq('farm_id', farmId)
+      
+      if (error) throw error
+      animalProductionStats = data || []
+    } catch (statsError) {
+      console.warn('⚠️ Animal production statistics query failed:', (statsError as any).message)
+      animalProductionStats = []
+    }
+    
     // FIXED: Cast to any[] to bypass 'never' type error
     const todayMilk = (todayProductionData as any[])?.reduce((sum, record) => sum + (record.milk_volume || 0), 0) || 0
     const weeklyTotal = (weeklyProductionData as any[])?.reduce((sum, record) => sum + (record.milk_volume || 0), 0) || 0
     
-    const weeklyAvg = weeklyTotal / 7
+    // Calculate weekly average based on ACTUAL number of days with records, not assumed 7 days
+    const uniqueDaysWithData = new Set((weeklyProductionData as any[])?.map(record => record.record_date)).size
+    const weeklyAvg = uniqueDaysWithData > 0 ? weeklyTotal / uniqueDaysWithData : 0
     const avgPerCow = milkingCows ? (todayMilk / milkingCows) : 0
     
-    // Calculate weekly progress (assuming 30L per cow per day target)
-    const weeklyTarget = (milkingCows || 0) * 30 * 7
+    // Calculate dynamic weekly target from animal production statistics
+    // Target = sum of (best_weekly_avg * 1.05) for each animal
+    const weeklyTarget = animalProductionStats.length > 0
+      ? animalProductionStats.reduce((sum, stat) => sum + (parseFloat(stat.target_weekly_milk) || 0), 0)
+      : (milkingCows || 0) * 30 * 7 // Fallback to 30L/cow/day if no historical data
+    
     const weeklyProgress = weeklyTarget > 0 ? Math.min((weeklyTotal / weeklyTarget) * 100, 100) : 0
     
     return {
@@ -148,7 +169,10 @@ export async function getProductionStats(farmId: string) {
       weeklyAvg: Math.round(weeklyAvg),
       avgPerCow: Math.round(avgPerCow * 10) / 10, // Round to 1 decimal
       weeklyProgress: Math.round(weeklyProgress),
-      milkingCows: milkingCows || 0
+      milkingCows: milkingCows || 0,
+      // Include additional metrics for transparency
+      dynamicTarget: animalProductionStats.length > 0,
+      weeklyTarget: Math.round(weeklyTarget)
     }
   } catch (error) {
     console.error('❌ Error getting production stats:', error)
@@ -157,7 +181,9 @@ export async function getProductionStats(farmId: string) {
       weeklyAvg: 0,
       avgPerCow: 0,
       weeklyProgress: 0,
-      milkingCows: 0
+      milkingCows: 0,
+      dynamicTarget: false,
+      weeklyTarget: 0
     }
   }
 }
@@ -872,4 +898,38 @@ function getTimeAgo(timestamp: string): string {
   if (diffInDays < 7) return `${diffInDays}d ago`
   
   return past.toLocaleDateString()
+}
+
+/**
+ * Get production targets for all animals in a farm
+ * 
+ * Target calculation:
+ * - For animals with production history: best_weekly_avg * 1.05 (5% improvement target)
+ * - For new animals: defaults to 30L/day until historical data is available
+ * 
+ * @param farmId - The farm ID
+ * @returns Array of animal production statistics with targets
+ */
+export async function getAnimalProductionTargets(farmId: string) {
+  const supabase = await createServerSupabaseClient()
+  
+  try {
+    const { data, error } = await supabase
+      .from('animal_production_statistics')
+      .select('animal_id, best_weekly_avg, target_weekly_milk, target_daily_milk, avg_daily_milk')
+      .eq('farm_id', farmId)
+    
+    if (error) throw error
+    
+    return (data || []).map(stat => ({
+      animalId: stat.animal_id ?? '',
+      bestWeeklyAvg: Number(stat.best_weekly_avg ?? 0),
+      targetWeeklyMilk: Number(stat.target_weekly_milk ?? 0),
+      targetDailyMilk: Number(stat.target_daily_milk ?? 0),
+      fallbackDailyMilk: Number(stat.avg_daily_milk ?? 30)
+    }))
+  } catch (error) {
+    console.error('Error getting animal production targets:', error)
+    return []
+  }
 }
