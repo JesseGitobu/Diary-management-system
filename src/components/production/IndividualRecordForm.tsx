@@ -172,6 +172,7 @@ export function IndividualRecordForm({
   const [error, setError] = useState<string | null>(null)
   const [preRecordedAnimalIds, setPreRecordedAnimalIds] = useState<Set<string>>(new Set())
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [animalLactationNumbers, setAnimalLactationNumbers] = useState<Map<string, number>>(new Map())
 
   // Whether this edit originated from a group-mode record
   const isGroupEdit = sourceRecordingType === 'group' || recordingType === 'group'
@@ -215,6 +216,34 @@ export function IndividualRecordForm({
     }
     fetchPreRecorded()
   }, [recordDate, session, sessionId, sessionName])
+
+  // Fetch lactation cycle records to filter out heifers without calving history
+  useEffect(() => {
+    if (!farmId) return
+    const fetchLactationData = async () => {
+      try {
+        const res = await fetch(`/api/farms/${farmId}/lactation-cycles`)
+        if (res.ok) {
+          const result = await res.json()
+          const cycles: any[] = Array.isArray(result.data) ? result.data : []
+          // Create a map of animal_id to max lactation_number
+          const lactationMap = new Map<string, number>()
+          cycles.forEach(cycle => {
+            if (cycle.animal_id && cycle.lactation_number) {
+              const existing = lactationMap.get(cycle.animal_id) || 0
+              lactationMap.set(cycle.animal_id, Math.max(existing, cycle.lactation_number))
+            }
+          })
+          setAnimalLactationNumbers(lactationMap)
+        } else {
+          setAnimalLactationNumbers(new Map())
+        }
+      } catch {
+        setAnimalLactationNumbers(new Map())
+      }
+    }
+    fetchLactationData()
+  }, [farmId])
 
   useEffect(() => {
     if (!preSelectedAnimalId) return
@@ -362,11 +391,14 @@ export function IndividualRecordForm({
     if (settings?.eligibleGenders?.length) {
       filtered = filtered.filter(a => settings.eligibleGenders?.includes(a.gender) ?? true)
     }
-    return filtered.filter(a => {
+    // Filter out heifers: only include animals with lactation_number >= 1
+    filtered = filtered.filter(a => {
       const isEditing = a.id === editingRecord?.animal_id
-      return isEditing || !preRecordedAnimalIds.has(a.id)
+      const lactationNumber = animalLactationNumbers.get(a.id) || 0
+      return isEditing || (lactationNumber >= 1 && !preRecordedAnimalIds.has(a.id))
     })
-  }, [animals, settings, preRecordedAnimalIds, editingRecord?.animal_id])
+    return filtered
+  }, [animals, settings, preRecordedAnimalIds, editingRecord?.animal_id, animalLactationNumbers])
 
   const filteredAnimals = useMemo(() => {
     if (!searchQuery.trim()) return eligibleAnimals
@@ -480,7 +512,8 @@ export function IndividualRecordForm({
           ...data,
           farm_id: farmId,
           session_name: sessionName || 'Session',
-          recording_type: recordingType,
+          // When editing a group record, preserve the group recording type
+          recording_type: editingRecord && sourceRecordingType ? sourceRecordingType : recordingType,
           milking_group_id: milkingGroupId || null,
           milking_session_id: sessionId || null,
           milking_time: data.milking_time || null,

@@ -428,7 +428,7 @@ export async function initializeDefaultPolicies(farmId: string, userId: string):
           animals:    ['view_list','view_stats','view_profile','view_overview_tab','view_health_tab','view_production_tab','view_timeline','add_newborn','add_purchased','update_weight','update_status'],
           health:     ['view_records','view_stats','view_vaccinations','add_record','record_vaccination'],
           production: ['view_records','view_stats','view_charts','record_yield'],
-          breeding:   ['view_overview','view_calendar','view_pregnant'],
+          breeding:   ['view_overview','view_calendar','view_pregnant','record_heat','record_insemination','record_pregnancy_check','record_calving','register_calf','edit_record'],
           dashboard:  ['view_stats','view_alerts','view_activity','view_management_cards'],
         },
       },
@@ -439,6 +439,7 @@ export async function initializeDefaultPolicies(farmId: string, userId: string):
         operations: {
           animals:    ['view_list','view_stats','view_profile','view_overview_tab','view_health_tab','view_timeline'],
           health:     ['view_records','view_stats','view_vaccinations','view_veterinarians','view_protocols','view_outbreaks','view_vet_visits','add_record','report_issue','add_vet','schedule_vet_visit','record_vaccination','open_outbreak','edit_record','edit_vet','manage_protocols','update_outbreak','delete_record','delete_vet','export'],
+          breeding:   ['view_overview','view_calendar','view_pregnant','record_heat','record_insemination','record_pregnancy_check','record_calving','register_calf','edit_record'],
           reports:    ['view_overview','view_kpi','view_trends','view_custom','export_pdf','export_excel'],
           dashboard:  ['view_stats','view_alerts','view_activity','view_management_cards'],
         },

@@ -44,6 +44,8 @@ interface RecordProductionModalProps {
   onSuccess?: () => void
   /** Only set when editing an existing record */
   recordingType?: 'individual' | 'group'
+  /** Milking group ID when editing a group record */
+  milkingGroupId?: string
   /** Group name snapshot from the record being edited (group records only) */
   milkingGroupName?: string
   /** Session name for the editing record (helps display the original session) */
@@ -77,6 +79,7 @@ export function RecordProductionModal({
   settings,
   onSuccess,
   recordingType,
+  milkingGroupId,
   milkingGroupName,
   editingSessionName,
   editingRecord,
@@ -301,6 +304,7 @@ export function RecordProductionModal({
               editingRecord={editingRecord}
               sourceRecordingType={recordingType}
               sourceGroupName={milkingGroupName}
+              milkingGroupId={milkingGroupId}
               onSuccess={handleSuccess}
             />
           </>

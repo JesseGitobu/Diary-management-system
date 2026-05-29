@@ -42,6 +42,10 @@ interface ProductionRecord {
   notes?: string
   created_at: string
   milk_safety_status?: 'safe' | 'unsafe_health' | 'unsafe_colostrum'
+  milking_sessions?: {
+    id: string
+    session_name: string
+  } | null
 }
 
 interface AnimalProductionStats {
@@ -89,6 +93,10 @@ export function AnimalProductionRecords({
   const [daysUntilDryOff, setDaysUntilDryOff] = useState(0)
   const [daysPregnant, setDaysPregnant] = useState(0)
   
+  // ✅ ENHANCED: Historical Production View for Dry/Previously Served Animals
+  const [viewingHistoricalRecords, setViewingHistoricalRecords] = useState(false)
+  const [historicalViewPeriod, setHistoricalViewPeriod] = useState<7 | 30 | 90>(90)
+  
   // ✅ ENHANCED: Recent Production Records Filters & Pagination
   const [filterRecordsDateFrom, setFilterRecordsDateFrom] = useState<string>('')
   const [filterRecordsDateTo, setFilterRecordsDateTo] = useState<string>('')
@@ -110,7 +118,8 @@ export function AnimalProductionRecords({
   const hasNoLactationHistory = !lactationCycleRecord || !lactationCycleRecord.lactation_number
   const isProducingMilk = (isLactating || isServed) && !hasNoLactationHistory
   
-  const showProductionRecords = isProducingMilk
+  // ✅ ENHANCED: Show production records if actively producing OR if viewing historical data
+  const showProductionRecords = isProducingMilk || viewingHistoricalRecords
   const canAddProductionRecords = canAddRecords && isProducingMilk
 
   useEffect(() => {
@@ -141,7 +150,9 @@ export function AnimalProductionRecords({
         try {
           setLoading(true)
           const endDate = new Date().toISOString().split('T')[0]
-          const startDate = new Date(Date.now() - selectedPeriod * 24 * 60 * 60 * 1000)
+          // ✅ ENHANCED: Use historicalViewPeriod when viewing historical records
+          const period = viewingHistoricalRecords ? historicalViewPeriod : selectedPeriod
+          const startDate = new Date(Date.now() - period * 24 * 60 * 60 * 1000)
             .toISOString().split('T')[0]
           
           const response = await fetch(
@@ -161,7 +172,7 @@ export function AnimalProductionRecords({
       }
       fetchData()
     }
-  }, [animalId, selectedPeriod, showProductionRecords])
+  }, [animalId, selectedPeriod, historicalViewPeriod, viewingHistoricalRecords, showProductionRecords])
   
   // ✅ NEW: Load lactation metrics
   useEffect(() => {
@@ -433,7 +444,13 @@ export function AnimalProductionRecords({
   }
   
   // Helper function to get readable session name from session ID
-  const getSessionName = (sessionId?: string): string => {
+  const getSessionName = (sessionId?: string, record?: ProductionRecord): string => {
+    // ✅ ENHANCED: First try to get session_name directly from joined milking_sessions data
+    if (record?.milking_sessions?.session_name) {
+      return String(record.milking_sessions.session_name).trim()
+    }
+    
+    // Fallback to settings-based lookup if direct data not available
     if (!sessionId) return 'Not Set'
     
     const normalizedId = String(sessionId).trim().toLowerCase()
@@ -594,7 +611,7 @@ export function AnimalProductionRecords({
                   <p className="text-2xl md:text-3xl font-bold text-blue-600 mt-2">
                     {stats.totalVolume.toFixed(1)}L
                   </p>
-                  <p className="text-xs text-gray-500">Last {selectedPeriod} days</p>
+                  <p className="text-xs text-gray-500">Last {viewingHistoricalRecords ? historicalViewPeriod : selectedPeriod} days</p>
                 </div>
                 <Droplets className="w-6 h-6 md:w-8 md:h-8 text-blue-400 flex-shrink-0" />
               </div>
@@ -710,6 +727,33 @@ export function AnimalProductionRecords({
       {/* Active Production Section */}
       {showProductionRecords && !loading && (
         <>
+          {/* ✅ ENHANCED: Historical View Banner */}
+          {viewingHistoricalRecords && (
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <Calendar className="w-5 h-5 text-amber-600" />
+                <div>
+                  <p className="font-medium text-amber-900">Viewing Historical Production Records</p>
+                  <p className="text-sm text-amber-700">
+                    This animal is currently not actively producing milk. Showing records from the past {historicalViewPeriod} days.
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setViewingHistoricalRecords(false)
+                  setRecordsPageNumber(1)
+                  setRecords([])
+                  setStats(null)
+                }}
+              >
+                ✕ Close
+              </Button>
+            </div>
+          )}
+          
           {/* Production Statistics - Only show if NOT lactating (lactating animals have combined metrics above) */}
           {!isLactating && stats && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-3 md:gap-4">
@@ -721,7 +765,7 @@ export function AnimalProductionRecords({
                       <p className="text-2xl md:text-3xl font-bold text-blue-600 mt-2">
                         {stats.totalVolume.toFixed(1)}L
                       </p>
-                      <p className="text-xs text-gray-500">Last {selectedPeriod} days</p>
+                      <p className="text-xs text-gray-500">Last {viewingHistoricalRecords ? historicalViewPeriod : selectedPeriod} days</p>
                     </div>
                     <Droplets className="w-6 h-6 md:w-8 md:h-8 text-blue-400 flex-shrink-0" />
                   </div>
@@ -746,19 +790,38 @@ export function AnimalProductionRecords({
           )}
           
           {/* Period Selector */}
-          <div className="flex items-center space-x-2">
-            <span className="text-sm text-gray-600">Period:</span>
-            {([7, 30, 90] as const).map((days) => (
-              <Button
-                key={days}
-                variant={selectedPeriod === days ? "default" : "outline"}
-                size="sm"
-                onClick={() => setSelectedPeriod(days)}
-              >
-                {days} days
-              </Button>
-            ))}
-          </div>
+          {!viewingHistoricalRecords ? (
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-gray-600">Period:</span>
+              {([7, 30, 90] as const).map((days) => (
+                <Button
+                  key={days}
+                  variant={selectedPeriod === days ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setSelectedPeriod(days)}
+                >
+                  {days} days
+                </Button>
+              ))}
+            </div>
+          ) : (
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-gray-600">Historical Period:</span>
+              {([7, 30, 90] as const).map((days) => (
+                <Button
+                  key={days}
+                  variant={historicalViewPeriod === days ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    setHistoricalViewPeriod(days)
+                    setRecordsPageNumber(1)
+                  }}
+                >
+                  {days} days
+                </Button>
+              ))}
+            </div>
+          )}
           
           {/* Production Trend Chart */}
           {chartData.length > 0 && (
@@ -769,7 +832,7 @@ export function AnimalProductionRecords({
                   <span>Production Trends</span>
                 </CardTitle>
                 <CardDescription>
-                  Daily milk volume and quality over the last {selectedPeriod} days
+                  Daily milk volume and quality over the last {viewingHistoricalRecords ? historicalViewPeriod : selectedPeriod} days
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -914,12 +977,32 @@ export function AnimalProductionRecords({
                   {(() => {
                     // Apply filters
                     const filteredRecords = records.filter((record) => {
-                      // Date range filter
+                      // Date range filter - include full day for "To Date"
                       if (filterRecordsDateFrom && new Date(record.record_date) < new Date(filterRecordsDateFrom)) return false
-                      if (filterRecordsDateTo && new Date(record.record_date) > new Date(filterRecordsDateTo)) return false
+                      if (filterRecordsDateTo) {
+                        const toDateEnd = new Date(filterRecordsDateTo)
+                        toDateEnd.setDate(toDateEnd.getDate() + 1) // Include full day
+                        if (new Date(record.record_date) >= toDateEnd) return false
+                      }
                       
-                      // Session filter
-                      if (filterRecordsSession !== 'all' && record.milking_session_id !== filterRecordsSession) return false
+                      // ✅ ENHANCED: Session filter - compare session names
+                      if (filterRecordsSession !== 'all') {
+                        // Get the selected session's name from settings
+                        const selectedSession = productionSettings?.milkingSessions?.find(
+                          (s: any) => String(s.id).trim().toLowerCase() === String(filterRecordsSession).trim().toLowerCase()
+                        )
+                        const selectedSessionName = selectedSession?.name ? String(selectedSession.name).trim().toLowerCase() : ''
+                        
+                        // Get the record's session name from joined data (prioritized) or settings
+                        const recordSessionName = record.milking_sessions?.session_name 
+                          ? String(record.milking_sessions.session_name).trim().toLowerCase()
+                          : ''
+                        
+                        // Compare names (case-insensitive)
+                        if (recordSessionName && selectedSessionName && recordSessionName !== selectedSessionName) {
+                          return false
+                        }
+                      }
                       
                       // Milk Safety filter
                       if (filterRecordsMilkSafety !== 'all' && record.milk_safety_status !== filterRecordsMilkSafety) return false
@@ -958,7 +1041,7 @@ export function AnimalProductionRecords({
                             {new Date(record.record_date).toLocaleDateString('en-GB')}
                           </span>
                           <Badge className="bg-blue-100 text-blue-800 text-xs">
-                            {getSessionName(record.milking_session_id)}
+                            {getSessionName(record.milking_session_id, record)}
                           </Badge>
                           {isHighQuality && (
                             <Badge className="bg-green-100 text-green-800 text-xs flex items-center gap-1">
@@ -1108,7 +1191,9 @@ export function AnimalProductionRecords({
                   <Button 
                     variant="outline"
                     onClick={() => {
-                      setSelectedPeriod(90)
+                      setViewingHistoricalRecords(true)
+                      setHistoricalViewPeriod(90)
+                      setRecordsPageNumber(1)
                     }}
                   >
                     <Calendar className="mr-2 h-4 w-4" />

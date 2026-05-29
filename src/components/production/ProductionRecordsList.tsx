@@ -1459,6 +1459,7 @@ export function ProductionRecordsList({
           settings={settings}
           onSuccess={handleEditSuccess}
           recordingType={editingRecordType}
+          milkingGroupId={editingRecord.milking_group_id}
           milkingGroupName={editingGroupName}
           editingSessionName={editingRecord.milking_session_id ? getSessionName(editingRecord.milking_session_id) : undefined}
           editingRecord={{

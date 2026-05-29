@@ -69,6 +69,10 @@ export async function getProductionRecords(
         id,
         tag_number,
         name
+      ),
+      milking_sessions (
+        id,
+        session_name
       )
     `)
     .eq('farm_id', farmId)

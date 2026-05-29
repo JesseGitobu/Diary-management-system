@@ -157,7 +157,7 @@ export function BreedingDashboard({
   }, [])
 
   const { isMobile } = useDeviceInfo()
-  const canManageBreeding = ['farm_owner', 'farm_manager'].includes(userRole)
+  const canManageBreeding = ['farm_owner', 'farm_manager', 'worker', 'veterinarian'].includes(userRole)
 
   // Debug logs
   useEffect(() => {
