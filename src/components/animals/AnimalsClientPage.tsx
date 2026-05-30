@@ -15,6 +15,7 @@ import { useDeviceInfo } from '@/lib/hooks/useDeviceInfo'
 import CompleteHealthRecordModal from '@/components/health/CompleteHealthRecordModal'
 import { AnimalCategoriesManager } from './AnimalCategoriesManager'
 import { HousingAndFacilities } from './HousingAndFacilities'
+import { WeightManagementModal } from '@/components/weight/WeightManagementModal'
 import {
   Plus,
   Users,
@@ -107,13 +108,14 @@ export function AnimalsClientPage({
   const [showAddHousingModal, setShowAddHousingModal] = useState(false)
   const [showHousingImportModal, setShowHousingImportModal] = useState(false)
   const [selectedHousingFacility, setSelectedHousingFacility] = useState<any>(null)
+  const [showWeightManagementModal, setShowWeightManagementModal] = useState(false)
 
   const { isMobile } = useDeviceInfo()
 
-  const canAddAnimals       = permissions.canCreateAnimals
-  const canManageAnimals    = permissions.canCreateAnimals || permissions.canEditAnimals
-  const canExportData       = permissions.canExportAnimals
-  const canImportData       = permissions.canCreateAnimals
+  const canAddAnimals = permissions.canCreateAnimals
+  const canManageAnimals = permissions.canCreateAnimals || permissions.canEditAnimals
+  const canExportData = permissions.canExportAnimals
+  const canImportData = permissions.canCreateAnimals
   const canManageCategories = permissions.canManageAnimals
 
   // Load categories when modal opens
@@ -147,71 +149,71 @@ export function AnimalsClientPage({
 
 
 
-useEffect(() => {
-  const handleMobileNavAction = (event: Event) => {
-    const customEvent = event as CustomEvent
-    const { action } = customEvent.detail
+  useEffect(() => {
+    const handleMobileNavAction = (event: Event) => {
+      const customEvent = event as CustomEvent
+      const { action } = customEvent.detail
 
-    if (action === 'showAddAnimalModal') {
-      setShowAddModal(true)
+      if (action === 'showAddAnimalModal') {
+        setShowAddModal(true)
+      }
+    }
+
+    // Listen for mobile nav modal actions
+    window.addEventListener('mobileNavModalAction', handleMobileNavAction)
+
+    // Cleanup listener on unmount
+    return () => {
+      window.removeEventListener('mobileNavModalAction', handleMobileNavAction)
+    }
+  }, [])
+
+  // Initialize housing facilities with sample data
+  useEffect(() => {
+    if (housingFacilities.length === 0) {
+      setHousingFacilities(housingFacilitiesData)
+    }
+  }, [housingFacilities.length])
+
+  // Add handler for weight update
+  const [selectedAnimalForWeight, setSelectedAnimalForWeight] = useState<any>(null)
+  const [showWeightUpdateModal, setShowWeightUpdateModal] = useState(false)
+
+
+  const handleWeightUpdateClick = (requirement: any) => {
+    const animal = animals.find(a => a.id === requirement.animal_id)
+    if (animal) {
+      setSelectedAnimalForWeight({
+        ...animal,
+        weightUpdateReason: requirement.reason,
+        weightDueDate: requirement.due_date
+      })
+      setShowWeightUpdateModal(true)
     }
   }
 
-  // Listen for mobile nav modal actions
-  window.addEventListener('mobileNavModalAction', handleMobileNavAction)
+  const handleWeightUpdated = (updatedAnimal: Animal) => {
+    setAnimals(prev =>
+      prev.map(a => a.id === updatedAnimal.id ? updatedAnimal : a)
+    )
 
-  // Cleanup listener on unmount
-  return () => {
-    window.removeEventListener('mobileNavModalAction', handleMobileNavAction)
+    setAnimalsNeedingWeight(prev =>
+      prev.filter(req => req.animal_id !== updatedAnimal.id)
+    )
+
+    setShowWeightUpdateModal(false)
+    setSelectedAnimalForWeight(null)
   }
-}, [])
-
-// Initialize housing facilities with sample data
-useEffect(() => {
-  if (housingFacilities.length === 0) {
-    setHousingFacilities(housingFacilitiesData)
-  }
-}, [housingFacilities.length])
-
-// Add handler for weight update
-const [selectedAnimalForWeight, setSelectedAnimalForWeight] = useState<any>(null)
-const [showWeightUpdateModal, setShowWeightUpdateModal] = useState(false)
-
-
-const handleWeightUpdateClick = (requirement: any) => {
-  const animal = animals.find(a => a.id === requirement.animal_id)
-  if (animal) {
-    setSelectedAnimalForWeight({
-      ...animal,
-      weightUpdateReason: requirement.reason,
-      weightDueDate: requirement.due_date
-    })
-    setShowWeightUpdateModal(true)
-  }
-}
-
-const handleWeightUpdated = (updatedAnimal: Animal) => {
-  setAnimals(prev => 
-    prev.map(a => a.id === updatedAnimal.id ? updatedAnimal : a)
-  )
-  
-  setAnimalsNeedingWeight(prev => 
-    prev.filter(req => req.animal_id !== updatedAnimal.id)
-  )
-  
-  setShowWeightUpdateModal(false)
-  setSelectedAnimalForWeight(null)
-}
 
 
   const handleAnimalAdded = (newAnimal: Animal) => {
 
-    
-  // Update local state with new animal
-  setAnimals(prev => [newAnimal, ...prev])
-  updateStatsForNewAnimal(newAnimal)
-  setShowAddModal(false)
-}
+
+    // Update local state with new animal
+    setAnimals(prev => [newAnimal, ...prev])
+    updateStatsForNewAnimal(newAnimal)
+    setShowAddModal(false)
+  }
 
   const handleHealthRecordCreated = (_healthRecord: any, updatedAnimal?: any) => {
 
@@ -541,8 +543,8 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
         ? `${stats.byHealth.needsAttention} need attention`
         : "All healthy",
       icon: <div className={`h-5 w-5 rounded-full ${stats.byHealth?.needsAttention && stats.byHealth.needsAttention > 0
-          ? 'bg-yellow-500'
-          : 'bg-green-500'
+        ? 'bg-yellow-500'
+        : 'bg-green-500'
         }`} />,
       color: stats.byHealth?.needsAttention && stats.byHealth.needsAttention > 0
         ? "bg-yellow-500"
@@ -566,371 +568,379 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
         /> */}
 
         {/* Weight Update Notifications */}
-      {!loadingWeightRequirements && animalsNeedingWeight.length > 0 && (
-      <div className="mb-4 p-4 bg-orange-50 border-l-4 border-orange-500 rounded-r-lg">
-        <div className="flex items-start space-x-3">
-          <Scale className="w-5 h-5 text-orange-600 mt-0.5 flex-shrink-0" />
-          <div className="flex-1">
-            <h3 className="font-medium text-orange-900 mb-1">
-              Weight Updates Required
-            </h3>
-            <p className="text-sm text-orange-700 mb-3">
-              {animalsNeedingWeight.length} animal{animalsNeedingWeight.length !== 1 ? 's' : ''} need weight recording
-            </p>
-            <div className="space-y-2">
-              {animalsNeedingWeight.slice(0, 3).map((req: any) => {
-                const animal = animals.find(a => a.id === req.animal_id)
-                return (
-                  <div 
-                    key={req.id}
-                    className="flex items-center justify-between p-2 bg-white rounded border border-orange-200"
-                  >
-                    <div className="flex items-center space-x-3">
-                      <Badge variant="outline" className="text-xs">
-                        #{animal?.tag_number}
-                      </Badge>
-                      <span className="text-sm font-medium text-gray-900">
-                        {animal?.name || `Animal ${animal?.tag_number}`}
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        {getWeightReasonLabel(req.reason)}
-                      </span>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleWeightUpdateClick(req)}
-                      className="text-orange-600 border-orange-300 hover:bg-orange-50"
-                    >
-                      <Scale className="w-3 h-3 mr-1" />
-                      Record Weight
-                    </Button>
-                  </div>
-                )
-              })}
-            </div>
-            {animalsNeedingWeight.length > 3 && (
-              <p className="text-xs text-orange-600 mt-2">
-                +{animalsNeedingWeight.length - 3} more animals need weight updates
-              </p>
-            )}
-          </div>
-        </div>
-      </div>
-    )}
-
-      {/* Main Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-2 mb-6">
-          <TabsTrigger value="animals">
-            <GiCow className="h-4 w-4 mr-2" />
-            Animals
-          </TabsTrigger>
-          <TabsTrigger value="housing">
-            <Home className="h-4 w-4 mr-2" />
-            Housing & Facilities
-          </TabsTrigger>
-        </TabsList>
-
-        {/* ANIMALS TAB */}
-        <TabsContent value="animals" className="space-y-4 lg:space-y-6">
-          {/* Mobile Header vs Desktop Header */}
-          {isMobile ? (
-            /* Mobile Header */
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Animals</h1>
-                <p className="text-sm text-gray-600 mt-1">{stats.total} animals in your herd</p>
-              </div>
-              {/* Quick Actions Menu */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button size="sm">
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
-                  {canManageAnimals && (
-                    <DropdownMenuItem onClick={() => setShowAddModal(true)}>
-                      <Plus className="mr-2 h-4 w-4" />
-                      Add Animal
-                    </DropdownMenuItem>
-                  )}
-                  {canImportData && (
-                    <DropdownMenuItem onClick={() => setShowImportModal(true)}>
-                      <Upload className="mr-2 h-4 w-4" />
-                      Import Animals
-                    </DropdownMenuItem>
-                  )}
-                  {canExportData && (
-                    <DropdownMenuItem 
-                      onClick={handleExportAnimals}
-                      disabled={animals.length === 0}
-                    >
-                      <Download className="mr-2 h-4 w-4" />
-                      Export Animals
-                    </DropdownMenuItem>
-                  )}
-                  {canManageCategories && (
-                    <DropdownMenuItem onClick={handleOpenCategoriesModal}>
-                      <Tags className="mr-2 h-4 w-4" />
-                      Create Animal Categories
-                    </DropdownMenuItem>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          ) : (
-            /* Desktop Header */
-            <div className="flex items-center justify-between mb-8">
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900">Animals</h1>
-                <p className="text-gray-600 mt-2">
-                  Manage your herd and track individual animal information
+        {!loadingWeightRequirements && animalsNeedingWeight.length > 0 && (
+          <div className="mb-4 p-4 bg-orange-50 border-l-4 border-orange-500 rounded-r-lg">
+            <div className="flex items-start space-x-3">
+              <Scale className="w-5 h-5 text-orange-600 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <h3 className="font-medium text-orange-900 mb-1">
+                  Weight Updates Required
+                </h3>
+                <p className="text-sm text-orange-700 mb-3">
+                  {animalsNeedingWeight.length} animal{animalsNeedingWeight.length !== 1 ? 's' : ''} need weight recording
                 </p>
+                <div className="space-y-2">
+                  {animalsNeedingWeight.slice(0, 3).map((req: any) => {
+                    const animal = animals.find(a => a.id === req.animal_id)
+                    return (
+                      <div
+                        key={req.id}
+                        className="flex items-center justify-between p-2 bg-white rounded border border-orange-200"
+                      >
+                        <div className="flex items-center space-x-3">
+                          <Badge variant="outline" className="text-xs">
+                            #{animal?.tag_number}
+                          </Badge>
+                          <span className="text-sm font-medium text-gray-900">
+                            {animal?.name || `Animal ${animal?.tag_number}`}
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            {getWeightReasonLabel(req.reason)}
+                          </span>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleWeightUpdateClick(req)}
+                          className="text-orange-600 border-orange-300 hover:bg-orange-50"
+                        >
+                          <Scale className="w-3 h-3 mr-1" />
+                          Record Weight
+                        </Button>
+                      </div>
+                    )
+                  })}
+                </div>
+                {animalsNeedingWeight.length > 3 && (
+                  <p className="text-xs text-orange-600 mt-2">
+                    +{animalsNeedingWeight.length - 3} more animals need weight updates
+                  </p>
+                )}
               </div>
+            </div>
+          </div>
+        )}
 
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button size="default">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Quick Actions
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
-                  {canManageAnimals && (
-                    <DropdownMenuItem onClick={() => setShowAddModal(true)}>
+        {/* Main Tabs */}
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="grid w-full grid-cols-2 mb-6">
+            <TabsTrigger value="animals">
+              <GiCow className="h-4 w-4 mr-2" />
+              Animals
+            </TabsTrigger>
+            <TabsTrigger value="housing">
+              <Home className="h-4 w-4 mr-2" />
+              Housing & Facilities
+            </TabsTrigger>
+          </TabsList>
+
+          {/* ANIMALS TAB */}
+          <TabsContent value="animals" className="space-y-4 lg:space-y-6">
+            {/* Mobile Header vs Desktop Header */}
+            {isMobile ? (
+              /* Mobile Header */
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-900">Animals</h1>
+                  <p className="text-sm text-gray-600 mt-1">{stats.total} animals in your herd</p>
+                </div>
+                {/* Quick Actions Menu */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm">
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    {canManageAnimals && (
+                      <DropdownMenuItem onClick={() => setShowAddModal(true)}>
+                        <Plus className="mr-2 h-4 w-4" />
+                        Add Animal
+                      </DropdownMenuItem>
+                    )}
+                    {canImportData && (
+                      <DropdownMenuItem onClick={() => setShowImportModal(true)}>
+                        <Upload className="mr-2 h-4 w-4" />
+                        Import Animals
+                      </DropdownMenuItem>
+                    )}
+                    {canExportData && (
+                      <DropdownMenuItem
+                        onClick={handleExportAnimals}
+                        disabled={animals.length === 0}
+                      >
+                        <Download className="mr-2 h-4 w-4" />
+                        Export Animals
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem onClick={() => setShowWeightManagementModal(true)}>
+                      <Scale className="mr-2 h-4 w-4" />
+                      Manage Weights
+                    </DropdownMenuItem>
+                    {canManageCategories && (
+                      <DropdownMenuItem onClick={handleOpenCategoriesModal}>
+                        <Tags className="mr-2 h-4 w-4" />
+                        Manage Animal Categories
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            ) : (
+              /* Desktop Header */
+              <div className="flex items-center justify-between mb-8">
+                <div>
+                  <h1 className="text-3xl font-bold text-gray-900">Animals</h1>
+                  <p className="text-gray-600 mt-2">
+                    Manage your herd and track individual animal information
+                  </p>
+                </div>
+
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="default">
                       <Plus className="mr-2 h-4 w-4" />
-                      Add Animal
+                      Quick Actions
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    {canManageAnimals && (
+                      <DropdownMenuItem onClick={() => setShowAddModal(true)}>
+                        <Plus className="mr-2 h-4 w-4" />
+                        Add Animal
+                      </DropdownMenuItem>
+                    )}
+                    {canImportData && (
+                      <DropdownMenuItem onClick={() => setShowImportModal(true)}>
+                        <Upload className="mr-2 h-4 w-4" />
+                        Import Animals
+                      </DropdownMenuItem>
+                    )}
+                    {canExportData && (
+                      <DropdownMenuItem
+                        onClick={handleExportAnimals}
+                        disabled={animals.length === 0}
+                      >
+                        <Download className="mr-2 h-4 w-4" />
+                        Export Animals
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem onClick={() => setShowWeightManagementModal(true)}>
+                      <Scale className="mr-2 h-4 w-4" />
+                      Manage Weights
                     </DropdownMenuItem>
-                  )}
-                  {canImportData && (
-                    <DropdownMenuItem onClick={() => setShowImportModal(true)}>
-                      <Upload className="mr-2 h-4 w-4" />
-                      Import Animals
-                    </DropdownMenuItem>
-                  )}
-                  {canExportData && (
-                    <DropdownMenuItem 
-                      onClick={handleExportAnimals}
-                      disabled={animals.length === 0}
-                    >
-                      <Download className="mr-2 h-4 w-4" />
-                      Export Animals
-                    </DropdownMenuItem>
-                  )}
-                  {canManageCategories && (
-                    <DropdownMenuItem onClick={handleOpenCategoriesModal}>
-                      <Tags className="mr-2 h-4 w-4" />
-                      Create Animal Categories
-                    </DropdownMenuItem>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          )}
-
-      {/* Mobile Stats Carousel vs Desktop Grid */}
-      {isMobile ? (
-        <MobileStatsCarousel cards={statsCards} className="mb-6" />
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Animals</CardTitle>
-              <GiCow className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.total}</div>
-              <p className="text-xs text-muted-foreground">
-                {stats.bySource
-                  ? `${stats.bySource.newborn_calves} born here, ${stats.bySource.purchased} purchased`
-                  : 'Active animals in your herd'
-                }
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Lactating Cows</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {(stats.byProduction?.lactating || 0) + (stats.byProduction?.served || 0)}
+                    {canManageCategories && (
+                      <DropdownMenuItem onClick={handleOpenCategoriesModal}>
+                        <Tags className="mr-2 h-4 w-4" />
+                        Manage Animal Categories
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
-              <p className="text-xs text-muted-foreground">
-                {stats.byProduction
-                  ? `${stats.byProduction.lactating || 0} lactating, ${stats.byProduction.served || 0} served`
-                  : 'Lactating and served'
-                }
-              </p>
-            </CardContent>
-          </Card>
+            )}
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Young Stock</CardTitle>
-              <BarChart3 className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {(stats.byProduction?.calves || 0) + (stats.byProduction?.heifers || 0)}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {stats.byProduction?.calves || 0} calves, {stats.byProduction?.heifers || 0} heifers
-              </p>
-            </CardContent>
-          </Card>
+            {/* Mobile Stats Carousel vs Desktop Grid */}
+            {isMobile ? (
+              <MobileStatsCarousel cards={statsCards} className="mb-6" />
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Total Animals</CardTitle>
+                    <GiCow className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{stats.total}</div>
+                    <p className="text-xs text-muted-foreground">
+                      {stats.bySource
+                        ? `${stats.bySource.newborn_calves} born here, ${stats.bySource.purchased} purchased`
+                        : 'Active animals in your herd'
+                      }
+                    </p>
+                  </CardContent>
+                </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Health Status</CardTitle>
-              <div className={`h-4 w-4 rounded-full ${stats.byHealth?.needsAttention && stats.byHealth.needsAttention > 0
-                  ? 'bg-yellow-500'
-                  : 'bg-green-500'
-                }`} />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">
-                {stats.byHealth?.healthy || stats.total}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Healthy animals
-                {stats.byHealth?.needsAttention && stats.byHealth.needsAttention > 0 &&
-                  `, ${stats.byHealth.needsAttention} need attention`
-                }
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Total Lactating Cows</CardTitle>
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">
+                      {(stats.byProduction?.lactating || 0) + (stats.byProduction?.served || 0)}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {stats.byProduction
+                        ? `${stats.byProduction.lactating || 0} lactating, ${stats.byProduction.served || 0} served`
+                        : 'Lactating and served'
+                      }
+                    </p>
+                  </CardContent>
+                </Card>
 
-      {/* Herd Composition - Responsive Layout */}
-      {stats.byProduction && (
-        <Card className={`mb-6 ${isMobile ? 'mx-0' : 'mb-8'}`}>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className={isMobile ? "text-base" : "text-lg"}>
-                  Herd Composition
-                </CardTitle>
-                <CardDescription className={isMobile ? "text-sm" : undefined}>
-                  Breakdown by production status
-                </CardDescription>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Young Stock</CardTitle>
+                    <BarChart3 className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">
+                      {(stats.byProduction?.calves || 0) + (stats.byProduction?.heifers || 0)}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {stats.byProduction?.calves || 0} calves, {stats.byProduction?.heifers || 0} heifers
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Health Status</CardTitle>
+                    <div className={`h-4 w-4 rounded-full ${stats.byHealth?.needsAttention && stats.byHealth.needsAttention > 0
+                      ? 'bg-yellow-500'
+                      : 'bg-green-500'
+                      }`} />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-green-600">
+                      {stats.byHealth?.healthy || stats.total}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Healthy animals
+                      {stats.byHealth?.needsAttention && stats.byHealth.needsAttention > 0 &&
+                        `, ${stats.byHealth.needsAttention} need attention`
+                      }
+                    </p>
+                  </CardContent>
+                </Card>
               </div>
-              {!isMobile && (
-                <TrendingUp className="h-5 w-5 text-muted-foreground" />
-              )}
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className={`
+            )}
+
+            {/* Herd Composition - Responsive Layout */}
+            {stats.byProduction && (
+              <Card className={`mb-6 ${isMobile ? 'mx-0' : 'mb-8'}`}>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className={isMobile ? "text-base" : "text-lg"}>
+                        Herd Composition
+                      </CardTitle>
+                      <CardDescription className={isMobile ? "text-sm" : undefined}>
+                        Breakdown by production status
+                      </CardDescription>
+                    </div>
+                    {!isMobile && (
+                      <TrendingUp className="h-5 w-5 text-muted-foreground" />
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className={`
               grid gap-4
               ${isMobile
-                ? 'grid-cols-3'
-                : 'grid-cols-3 lg:grid-cols-6'
-              }
+                      ? 'grid-cols-3'
+                      : 'grid-cols-3 lg:grid-cols-6'
+                    }
             `}>
-              <div className="text-center">
-                <div className={`font-bold text-yellow-600 ${isMobile ? 'text-xl' : 'text-2xl'
-                  }`}>
-                  {stats.byProduction.calves}
-                </div>
-                <div className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'
-                  }`}>
-                  Calves
-                </div>
-              </div>
-              <div className="text-center">
-                <div className={`font-bold text-blue-600 ${isMobile ? 'text-xl' : 'text-2xl'
-                  }`}>
-                  {stats.byProduction.heifers}
-                </div>
-                <div className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'
-                  }`}>
-                  Heifers
-                </div>
-              </div>
-              <div className="text-center">
-                <div className={`font-bold text-purple-600 ${isMobile ? 'text-xl' : 'text-2xl'
-                  }`}>
-                  {stats.byProduction.served}
-                </div>
-                <div className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'
-                  }`}>
-                  Served
-                </div>
-              </div>
-              {!isMobile && (
-                <>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-green-600">
-                      {stats.byProduction.lactating}
+                    <div className="text-center">
+                      <div className={`font-bold text-yellow-600 ${isMobile ? 'text-xl' : 'text-2xl'
+                        }`}>
+                        {stats.byProduction.calves}
+                      </div>
+                      <div className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'
+                        }`}>
+                        Calves
+                      </div>
                     </div>
-                    <div className="text-sm text-gray-600">Lactating</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-orange-600">
-                      {stats.byProduction.steaming_dry_cows || 0}
+                    <div className="text-center">
+                      <div className={`font-bold text-blue-600 ${isMobile ? 'text-xl' : 'text-2xl'
+                        }`}>
+                        {stats.byProduction.heifers}
+                      </div>
+                      <div className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'
+                        }`}>
+                        Heifers
+                      </div>
                     </div>
-                    <div className="text-sm text-gray-600">Steaming Dry</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-gray-600">
-                      {stats.byProduction.open_culling_dry_cows || 0}
+                    <div className="text-center">
+                      <div className={`font-bold text-purple-600 ${isMobile ? 'text-xl' : 'text-2xl'
+                        }`}>
+                        {stats.byProduction.served}
+                      </div>
+                      <div className={`text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'
+                        }`}>
+                        Served
+                      </div>
                     </div>
-                    <div className="text-sm text-gray-600">Open Culling</div>
+                    {!isMobile && (
+                      <>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-green-600">
+                            {stats.byProduction.lactating}
+                          </div>
+                          <div className="text-sm text-gray-600">Lactating</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-orange-600">
+                            {stats.byProduction.steaming_dry_cows || 0}
+                          </div>
+                          <div className="text-sm text-gray-600">Steaming Dry</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-gray-600">
+                            {stats.byProduction.open_culling_dry_cows || 0}
+                          </div>
+                          <div className="text-sm text-gray-600">Open Culling</div>
+                        </div>
+                      </>
+                    )}
                   </div>
-                </>
-              )}
-            </div>
 
-            {/* Mobile: Show remaining stats in second row */}
-            {isMobile && (
-              <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t border-gray-200">
-                <div className="text-center">
-                  <div className="text-xl font-bold text-green-600">
-                    {stats.byProduction.lactating}
-                  </div>
-                  <div className="text-xs text-gray-600">Lactating</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-xl font-bold text-orange-600">
-                    {stats.byProduction.steaming_dry_cows || 0}
-                  </div>
-                  <div className="text-xs text-gray-600">Steaming Dry</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-xl font-bold text-gray-600">
-                    {stats.byProduction.open_culling_dry_cows || 0}
-                  </div>
-                  <div className="text-xs text-gray-600">Open Culling</div>
-                </div>
-              </div>
+                  {/* Mobile: Show remaining stats in second row */}
+                  {isMobile && (
+                    <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t border-gray-200">
+                      <div className="text-center">
+                        <div className="text-xl font-bold text-green-600">
+                          {stats.byProduction.lactating}
+                        </div>
+                        <div className="text-xs text-gray-600">Lactating</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-xl font-bold text-orange-600">
+                          {stats.byProduction.steaming_dry_cows || 0}
+                        </div>
+                        <div className="text-xs text-gray-600">Steaming Dry</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-xl font-bold text-gray-600">
+                          {stats.byProduction.open_culling_dry_cows || 0}
+                        </div>
+                        <div className="text-xs text-gray-600">Open Culling</div>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             )}
-          </CardContent>
-        </Card>
-      )}
 
-          {/* Animals List */}
-          <AnimalsList
-            animals={animals}
-            farmId={farmId}
-            userRole={userRole}
-            onAnimalUpdated={handleAnimalUpdated}
-            onExportAnimals={handleExportAnimals}
-            loading={loading}
-            enrichedDataMap={enrichedDataMap}
-          />
-        </TabsContent>
+            {/* Animals List */}
+            <AnimalsList
+              animals={animals}
+              farmId={farmId}
+              userRole={userRole}
+              onAnimalUpdated={handleAnimalUpdated}
+              onExportAnimals={handleExportAnimals}
+              loading={loading}
+              enrichedDataMap={enrichedDataMap}
+            />
+          </TabsContent>
 
-        {/* HOUSING & FACILITIES TAB */}
-        <TabsContent value="housing" className="space-y-4 lg:space-y-6">
-          <HousingAndFacilities farmId={farmId} isMobile={isMobile} />
-        </TabsContent>
-      </Tabs>
+          {/* HOUSING & FACILITIES TAB */}
+          <TabsContent value="housing" className="space-y-4 lg:space-y-6">
+            <HousingAndFacilities farmId={farmId} isMobile={isMobile} />
+          </TabsContent>
+        </Tabs>
       </div>
 
       {/* Add Animal Modal */}
@@ -961,51 +971,60 @@ const handleWeightUpdated = (updatedAnimal: Animal) => {
       )}
 
       {showWeightUpdateModal && selectedAnimalForWeight && (
-      <AddAnimalModal
-        farmId={farmId}
-        isOpen={showWeightUpdateModal}
-        onClose={() => {
-          setShowWeightUpdateModal(false)
-          setSelectedAnimalForWeight(null)
-        }}
-        editingAnimal={selectedAnimalForWeight}
-        onAnimalAdded={handleWeightUpdated}
-      />
-    )}
+        <AddAnimalModal
+          farmId={farmId}
+          isOpen={showWeightUpdateModal}
+          onClose={() => {
+            setShowWeightUpdateModal(false)
+            setSelectedAnimalForWeight(null)
+          }}
+          editingAnimal={selectedAnimalForWeight}
+          onAnimalAdded={handleWeightUpdated}
+        />
+      )}
 
-    {/* Animal Categories Modal */}
-    {showCategoriesModal && (
-      <div className="fixed inset-0 z-50 bg-black/50 flex items-end lg:items-center justify-center lg:p-4">
-        <div className={`${isMobile ? 'w-full h-[90vh] rounded-t-2xl' : 'w-full max-w-4xl max-h-[90vh] rounded-lg'} bg-white shadow-lg overflow-auto`}>
-          <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-900">Animal Categories Manager</h2>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowCategoriesModal(false)}
-              className="text-gray-500 hover:text-gray-700"
-            >
-              ✕
-            </Button>
-          </div>
-          <div className="p-4 lg:p-6">
-            {loadingCategories ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              </div>
-            ) : (
-              <AnimalCategoriesManager
-                farmId={farmId}
-                categories={categories}
-                onCategoriesUpdate={handleCategoriesUpdated}
-                canEdit={true}
-                isMobile={isMobile}
-              />
-            )}
+      {/* Animal Categories Modal */}
+      {showCategoriesModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-end lg:items-center justify-center lg:p-4">
+          <div className={`${isMobile ? 'w-full h-[90vh] rounded-t-2xl' : 'w-full max-w-4xl max-h-[90vh] rounded-lg'} bg-white shadow-lg overflow-auto`}>
+            <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900">Animal Categories Manager</h2>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowCategoriesModal(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </Button>
+            </div>
+            <div className="p-4 lg:p-6">
+              {loadingCategories ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                </div>
+              ) : (
+                <AnimalCategoriesManager
+                  farmId={farmId}
+                  categories={categories}
+                  onCategoriesUpdate={handleCategoriesUpdated}
+                  canEdit={true}
+                  isMobile={isMobile}
+                />
+              )}
+            </div>
           </div>
         </div>
-      </div>
-    )}
+      )}
+      {showWeightManagementModal && (
+        <WeightManagementModal
+          isOpen={showWeightManagementModal}
+          onClose={() => setShowWeightManagementModal(false)}
+          farmId={farmId}
+        // Optionally pass real enriched weight data:
+        // animals={weightSummariesFromEnrichedData}
+        />
+      )}
     </div>
   )
 }
