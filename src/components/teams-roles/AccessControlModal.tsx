@@ -119,8 +119,8 @@ export function AccessControlModal({ isOpen, onClose, farmId, editingPolicy }: A
     setError(null)
     try {
       const [policiesRes, membersRes] = await Promise.all([
-        fetch(`/api/access-control?farmId=${farmId}`),
-        fetch(`/api/access-control/team-members?farmId=${farmId}`),
+        fetch(`/api/access-control?farmId=${farmId}`, { credentials: 'include' }),
+        fetch(`/api/access-control/team-members?farmId=${farmId}`, { credentials: 'include' }),
       ])
       if (!policiesRes.ok) throw new Error('Failed to fetch policies')
       setPolicies(await policiesRes.json() || [])

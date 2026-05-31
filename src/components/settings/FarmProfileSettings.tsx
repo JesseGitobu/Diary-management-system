@@ -193,7 +193,7 @@ export function FarmProfileSettings({
 
     ;(async () => {
       try {
-        const res = await fetch(`/api/farms/${farmId}/farm-profile`)
+        const res = await fetch(`/api/farms/${farmId}/farm-profile`, { credentials: 'include' })
         if (!res.ok) return
         const json = await res.json()
         const profile = json.data || json

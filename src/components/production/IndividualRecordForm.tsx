@@ -222,7 +222,7 @@ export function IndividualRecordForm({
     if (!farmId) return
     const fetchLactationData = async () => {
       try {
-        const res = await fetch(`/api/farms/${farmId}/lactation-cycles`)
+        const res = await fetch(`/api/farms/${farmId}/lactation-cycles`, { credentials: 'include' })
         if (res.ok) {
           const result = await res.json()
           const cycles: any[] = Array.isArray(result.data) ? result.data : []

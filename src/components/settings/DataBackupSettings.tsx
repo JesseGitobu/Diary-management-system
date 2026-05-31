@@ -110,7 +110,7 @@ export default function DataBackupSettings({
       toast.success('Backup created successfully!')
       
       // Refresh backup history
-      const historyResponse = await fetch(`/api/settings/data-backup?farmId=${farmId}&includeHistory=true`)
+      const historyResponse = await fetch(`/api/settings/data-backup?farmId=${farmId}&includeHistory=true`, { credentials: 'include' })
       const historyData = await historyResponse.json()
       if (historyData.history) {
         setBackupHistory(historyData.history)

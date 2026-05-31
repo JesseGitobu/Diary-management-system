@@ -86,12 +86,12 @@ export function MilkingGroupsManager({
     setError(null)
     try {
       // Fetch animal categories
-      const categoriesResponse = await fetch(`/api/farms/${farmId}/animal-categories`)
+      const categoriesResponse = await fetch(`/api/farms/${farmId}/animal-categories`, { credentials: 'include' })
       if (!categoriesResponse.ok) throw new Error('Failed to fetch categories')
       const categoriesData = await categoriesResponse.json()
       
       // Fetch existing milking groups
-      const groupsResponse = await fetch(`/api/farms/${farmId}/production/milking-groups`)
+      const groupsResponse = await fetch(`/api/farms/${farmId}/production/milking-groups`, { credentials: 'include' })
       let groupsData: MilkingGroup[] = []
 
       if (groupsResponse.ok) {

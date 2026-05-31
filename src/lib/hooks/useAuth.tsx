@@ -34,9 +34,10 @@ const DEV_MODE = process.env.NODE_ENV === 'development' // ← This will be true
 
 const SESSION_CONFIG = {
   IDLE_TIMEOUT: DEV_MODE ? 30 * 60 * 1000 : 30 * 60 * 1000, // 5 min in dev, 30 min in prod
-  REFRESH_BUFFER: 5 * 60 * 1000,
+  REFRESH_BUFFER: 15 * 60 * 1000, // ✅ IMPROVED: Refresh 15 min before expiry (was 5 min)
   ACTIVITY_THROTTLE: 1000,
   PERMISSION_CACHE_TTL: 5 * 60 * 1000,
+  VISIBILITY_REFRESH_BUFFER: 10 * 60 * 1000, // Refresh if tab was hidden for > 10 min
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -64,7 +65,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const setupRefreshTimer = useCallback(async () => {
     try {
-      const { data: { session }, error } = await supabase.auth.getSession()
+      let session = null
+      let error = null
+      
+      try {
+        const result = await supabase.auth.getSession()
+        session = result.data.session
+        error = result.error
+      } catch (err) {
+        // Network error or other exception - try blind refresh
+        debugLogger.debug('AuthProvider', 'Exception getting session, attempting blind refresh')
+        try {
+          const { data: { session: refreshedSession } } = await supabase.auth.refreshSession()
+          session = refreshedSession
+        } catch (refreshErr) {
+          debugLogger.warning('AuthProvider', 'Blind refresh also failed', { error: refreshErr })
+          return
+        }
+      }
       
       // ✅ FIXED: Handle missing session gracefully
       if (error) {
@@ -88,6 +106,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return
       }
 
+      // ✅ IMPROVED: More aggressive refresh timing (15 min before expiry instead of 5)
       const refreshTime = timeUntilExpiry - SESSION_CONFIG.REFRESH_BUFFER
 
       if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current)
@@ -123,6 +142,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       activityThrottleRef.current = null
     }, SESSION_CONFIG.ACTIVITY_THROTTLE)
   }, [resetIdleTimer])
+
+  // ✅ PHASE 1: Page visibility listener - Refresh session when tab becomes visible
+  useEffect(() => {
+    if (!user) return
+
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible') {
+        debugLogger.debug('AuthProvider', 'Page became visible, checking session freshness')
+        
+        try {
+          const { data: { session }, error } = await supabase.auth.getSession()
+          
+          if (error?.message?.includes('AuthSessionMissingError') || !session) {
+            debugLogger.warning('AuthProvider', 'Session missing after tab became visible, refreshing...')
+            await refreshSession()
+            return
+          }
+          
+          // Check if session is close to expiry (within 10 min buffer)
+          if (session?.expires_at) {
+            const expiresAt = new Date(session.expires_at * 1000).getTime()
+            const now = Date.now()
+            const timeUntilExpiry = expiresAt - now
+            
+            if (timeUntilExpiry < SESSION_CONFIG.VISIBILITY_REFRESH_BUFFER) {
+              debugLogger.debug('AuthProvider', 'Session expiring soon after visibility change, refreshing...')
+              await refreshSession()
+            }
+          }
+        } catch (err) {
+          debugLogger.warning('AuthProvider', 'Error checking session on visibility change', { error: err })
+        }
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [user, supabase])
 
   useEffect(() => {
     if (!user) return
@@ -342,14 +399,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // ✅ IMPROVED: Better refresh handling with error detection
   const refreshSession = async () => {
     debugLogger.debug('AuthProvider', 'Manual session refresh triggered')
 
     try {
       const { data: { session }, error } = await supabase.auth.refreshSession()
 
-      if (error || !session) {
-        debugLogger.error('AuthProvider', 'Session refresh failed', { error: error?.message })
+      if (error) {
+        // If it's AuthSessionMissingError, user truly logged out - sign them out
+        if (error.message?.includes('AuthSessionMissingError')) {
+          debugLogger.warning('AuthProvider', 'Session refresh failed: no auth session')
+          await signOut()
+          return
+        }
+        debugLogger.error('AuthProvider', 'Session refresh failed', { error: error.message })
+        // Don't auto sign out for other errors - might be temporary
+        return
+      }
+      
+      if (!session) {
+        debugLogger.warning('AuthProvider', 'Session refresh returned no session')
         await signOut()
         return
       }
@@ -358,10 +428,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await setupRefreshTimer()
     } catch (error) {
       debugLogger.error('AuthProvider', 'Session refresh exception', { error })
-      await signOut()
+      // Don't auto sign out for exceptions - might be temporary network issue
     }
   }
 
+  // ✅ IMPROVED: Better sign out with aggressive cleanup
   const signOut = async () => {
     debugLogger.info('AuthProvider', 'Sign out initiated')
 
@@ -369,32 +440,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       clearAllTimers()
       
       // Call Supabase sign out to clear session and refresh token
-      const { error } = await supabase.auth.signOut()
+      let signOutError = null
+      try {
+        const { error } = await supabase.auth.signOut({ scope: 'global' })
+        signOutError = error
+      } catch (err) {
+        debugLogger.warning('AuthProvider', 'Supabase signOut threw exception', { error: err })
+        // Continue with logout even if signOut throws
+      }
 
-      if (error) {
-        debugLogger.error('AuthProvider', 'Sign out error', { error: error.message })
+      if (signOutError) {
+        // Log but don't fail - some errors are expected (e.g., already logged out)
+        if (!signOutError.message?.includes('AuthSessionMissingError')) {
+          debugLogger.error('AuthProvider', 'Sign out error', { error: signOutError.message })
+        }
       } else {
         debugLogger.success('AuthProvider', 'Sign out successful')
       }
 
-      // Clear local state
+      // Clear local state first (before redirect)
       setUser(null)
       setUserRole(null)
       setSessionStatus('unauthenticated')
       setLastActivity(0)
 
-      // Force redirect to auth page using hard redirect
-      // This ensures middleware re-evaluates and redirects correctly
+      // ✅ IMPROVED: Use setTimeout to ensure state is cleared before redirect
       if (typeof window !== 'undefined') {
-        // Use a hard redirect to ensure browser makes a fresh request
-        // Middleware will then evaluate and confirm no active session
-        window.location.replace('/auth')
+        setTimeout(() => {
+          // Hard redirect to ensure browser makes a fresh request
+          // Middleware will then evaluate and confirm no active session
+          window.location.replace('/auth')
+        }, 100)
       }
     } catch (error) {
       debugLogger.error('AuthProvider', 'Sign out exception', { error })
-      // Still attempt hard redirect even if there's an error
+      // Clear state and redirect anyway
+      setUser(null)
+      setUserRole(null)
+      setSessionStatus('unauthenticated')
+      
       if (typeof window !== 'undefined') {
-        window.location.replace('/auth')
+        setTimeout(() => {
+          window.location.replace('/auth')
+        }, 100)
       }
     }
   }

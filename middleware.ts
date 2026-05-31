@@ -58,6 +58,22 @@ export async function middleware(request: NextRequest) {
         user = null
       } else {
         user = fetchedUser ?? null
+        
+        // ✅ IMPROVED: If user found, refresh session to ensure cookies are fresh
+        // This ensures API routes have valid session cookies
+        if (user) {
+          try {
+            await supabase.auth.refreshSession()
+            if (process.env.NODE_ENV === 'development') {
+              console.log('✅ Middleware: Session refreshed for user:', user.id)
+            }
+          } catch (refreshErr) {
+            // Refresh errors are not critical - user is still authenticated
+            if (process.env.NODE_ENV === 'development') {
+              console.log('⚠️ Middleware: Could not refresh session:', refreshErr)
+            }
+          }
+        }
       }
     } catch (error) {
       if (

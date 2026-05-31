@@ -702,7 +702,7 @@ export default function AnimalTaggingSettings({
       if (!farmId) return
 
       try {
-        const response = await fetch(`/api/settings/animal-tagging?farmId=${farmId}`)
+        const response = await fetch(`/api/settings/animal-tagging?farmId=${farmId}`, { credentials: 'include' })
 
         if (!response.ok) {
           return
@@ -773,7 +773,7 @@ export default function AnimalTaggingSettings({
       if (!farmId) return
 
       try {
-        const response = await fetch(`/api/settings/calf-management?farmId=${farmId}`)
+        const response = await fetch(`/api/settings/calf-management?farmId=${farmId}`, { credentials: 'include' })
 
         if (!response.ok) {
           // 404 or other error - use defaults (not an error condition for new farms)

@@ -107,13 +107,13 @@ function AccessControlPoliciesView({ farmId, onOpenModal, onEditPolicy, onDelete
 
     try {
       // Fetch policies
-      const policiesResponse = await fetch(`/api/access-control?farmId=${farmId}`)
+      const policiesResponse = await fetch(`/api/access-control?farmId=${farmId}`, { credentials: 'include' })
       if (!policiesResponse.ok) throw new Error('Failed to fetch policies')
       const policiesData = await policiesResponse.json()
       setPolicies(policiesData || [])
 
       // Fetch team members
-      const membersResponse = await fetch(`/api/access-control/team-members?farmId=${farmId}`)
+      const membersResponse = await fetch(`/api/access-control/team-members?farmId=${farmId}`, { credentials: 'include' })
       if (membersResponse.ok) {
         const membersData = await membersResponse.json()
         setTeamMembers(membersData || [])
@@ -614,7 +614,7 @@ export function TeamRolesManagement({
     if (!farmId) return
     try {
       setIsLoadingDepartments(true)
-      const response = await fetch('/api/teams/departments')
+      const response = await fetch('/api/teams/departments', { credentials: 'include' })
       if (response.ok) {
         const result = await response.json()
         setDepartments(result.data || [])
@@ -641,7 +641,7 @@ export function TeamRolesManagement({
     setInvitationsError(null)
 
     try {
-      const response = await fetch('/api/teams/invitations')
+      const response = await fetch('/api/teams/invitations', { credentials: 'include' })
       if (!response.ok) {
         throw new Error('Failed to fetch invitations')
       }
@@ -659,7 +659,7 @@ export function TeamRolesManagement({
   const fetchFarmOwner = async () => {
     if (!farmId) return
     try {
-      const response = await fetch(`/api/teams/farm-owner?farmId=${farmId}`)
+      const response = await fetch(`/api/teams/farm-owner?farmId=${farmId}`, { credentials: 'include' })
       if (!response.ok) return
       const data = await response.json()
       setFarmOwners(data || [])
@@ -674,7 +674,7 @@ export function TeamRolesManagement({
     setIsLoadingPolicies(true)
     setPoliciesError(null)
     try {
-      const response = await fetch(`/api/access-control?farmId=${farmId}`)
+      const response = await fetch(`/api/access-control?farmId=${farmId}`, { credentials: 'include' })
       const data = await response.json()
 
       if (!response.ok) {
@@ -685,7 +685,7 @@ export function TeamRolesManagement({
       setPolicies(data || [])
 
       // Fetch team members to get user-policy assignments
-      const membersResponse = await fetch(`/api/access-control/team-members?farmId=${farmId}`)
+      const membersResponse = await fetch(`/api/access-control/team-members?farmId=${farmId}`, { credentials: 'include' })
       if (membersResponse.ok) {
         const members = await membersResponse.json()
         const policyMap: { [email: string]: string | null } = {}
@@ -729,7 +729,7 @@ export function TeamRolesManagement({
               ? `/api/access-control/${id}`
               : `/api/teams/invitations/${id}`
 
-      const response = await fetch(endpoint, { method: 'DELETE' })
+      const response = await fetch(endpoint, { method: 'DELETE', credentials: 'include' })
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
@@ -823,6 +823,7 @@ export function TeamRolesManagement({
       setAssigningPolicy(userEmail)
       const response = await fetch('/api/access-control/assign-team-member', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           teamMemberId: userRoleId,
@@ -854,6 +855,7 @@ export function TeamRolesManagement({
     try {
       const response = await fetch(`/api/teams/invitations/${invitationId}/resend`, {
         method: 'POST',
+        credentials: 'include',
       })
       if (!response.ok) throw new Error('Failed to resend invitation')
       await fetchInvitations()

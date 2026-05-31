@@ -260,7 +260,7 @@ export function GroupRecordForm({
       try {
         setLoadingGroups(true)
         setGroupError(null)
-        const res = await fetch(`/api/farms/${farmId}/production/milking-groups`)
+        const res = await fetch(`/api/farms/${farmId}/production/milking-groups`, { credentials: 'include' })
         if (!res.ok) throw new Error('Failed to fetch milking groups')
         const result = await res.json()
         const groups: MilkingGroup[] = result.data || []

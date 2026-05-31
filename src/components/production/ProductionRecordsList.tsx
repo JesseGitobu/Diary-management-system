@@ -224,7 +224,7 @@ export function ProductionRecordsList({
 
   React.useEffect(() => {
     if (!farmId) return
-    fetch(`/api/farms/${farmId}/production/milking-sessions-list`)
+    fetch(`/api/farms/${farmId}/production/milking-sessions-list`, { credentials: 'include' })
       .then(r => r.ok ? r.json() : null)
       .then(result => {
         if (result) setAvailableSessions(result.data || [])
@@ -243,7 +243,7 @@ export function ProductionRecordsList({
 
   React.useEffect(() => {
     if (!farmId) return
-    fetch(`/api/farms/${farmId}/production/milking-groups`)
+    fetch(`/api/farms/${farmId}/production/milking-groups`, { credentials: 'include' })
       .then(r => r.ok ? r.json() : null)
       .then(result => {
         if (!result) return
@@ -567,7 +567,7 @@ export function ProductionRecordsList({
     setDeletingId(recordToDelete)
     setDeleteDialogOpen(false)
     try {
-      const res = await fetch(`/api/production/${recordToDelete}`, { method: 'DELETE' })
+      const res = await fetch(`/api/production/${recordToDelete}`, { method: 'DELETE', credentials: 'include' })
       if (!res.ok) throw new Error()
       onDelete ? onDelete(recordToDelete) : window.location.reload()
     } catch {

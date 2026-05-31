@@ -23,7 +23,7 @@ export function useAnimalData(initialAnimal: any, refreshTrigger?: any) {
 
     setIsRefreshing(true)
     try {
-      const response = await fetch(`/api/animals/${initialAnimal.id}`)
+      const response = await fetch(`/api/animals/${initialAnimal.id}`, { credentials: 'include' })
       if (response.ok) {
         const { animal: updatedAnimal } = await response.json()
         setAnimalData(updatedAnimal)

@@ -62,7 +62,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     const loadTicket = async () => {
       try {
         // 4. Use the unwrapped 'id' variable instead of 'params.id'
-        const response = await fetch(`/api/support/tickets/${id}`)
+        const response = await fetch(`/api/support/tickets/${id}`, { credentials: 'include' })
         
         if (!response.ok) {
           if (response.status === 404) {

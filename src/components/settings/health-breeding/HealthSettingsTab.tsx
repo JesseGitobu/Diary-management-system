@@ -345,7 +345,7 @@ export default function HealthSettingsTab({
         const fetchVaccinationDiseases = async () => {
             try {
                 setIsLoadingDiseases(true)
-                const response = await fetch(`/api/settings/vaccination-diseases?farmId=${farmId}`)
+                const response = await fetch(`/api/settings/vaccination-diseases?farmId=${farmId}`, { credentials: 'include' })
                 const result = await response.json()
                 
                 if (result.success && result.data) {

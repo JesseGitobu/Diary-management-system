@@ -75,37 +75,61 @@ export const createAdminClient = () => {
 export const getUserIdFromSession = async () => {
   try {
     const cookieStore = await cookies()
-    const sessionCookie = cookieStore.get('sb-auth-token')
     
-    if (!sessionCookie?.value) {
-      console.log('🔍 No session cookie found')
-      return null
-    }
-
-    // Session cookie format: base64 encoded JSON
-    try {
-      const decoded = JSON.parse(Buffer.from(sessionCookie.value, 'base64').toString())
-      const userId = decoded?.user?.id
+    // Try multiple cookie name patterns used by Supabase SSR
+    const cookieNames = [
+      'sb-auth-token',
+      'sb-token',
+      'auth-token',
+      'sb-session'
+    ]
+    
+    for (const cookieName of cookieNames) {
+      const sessionCookie = cookieStore.get(cookieName)
       
-      if (userId) {
-        console.log('🔍 User ID from session cookie:', userId)
-        return userId
+      if (!sessionCookie?.value) {
+        continue
       }
-    } catch (parseErr) {
-      console.log('🔍 Could not parse session cookie - trying legacy format')
-      // Try alternative cookie name
-      const legacySb = cookieStore.get('sb:token')
-      if (legacySb?.value) {
+
+      try {
+        // Try parsing as-is (JSON string)
+        let decoded: any
         try {
-          const decoded = JSON.parse(legacySb.value)
-          const userId = decoded?.user?.id
-          if (userId) {
-            console.log('🔍 User ID from legacy session cookie:', userId)
-            return userId
-          }
+          decoded = JSON.parse(sessionCookie.value)
         } catch {
-          // Continue to fallback
+          // Try base64 decoding first
+          try {
+            decoded = JSON.parse(Buffer.from(sessionCookie.value, 'base64').toString())
+          } catch {
+            continue
+          }
         }
+        
+        const userId = decoded?.user?.id
+        if (userId) {
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`✅ User ID from ${cookieName} cookie:`, userId)
+          }
+          return userId
+        }
+      } catch (parseErr) {
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`⚠️ Failed to parse ${cookieName} cookie`)
+        }
+        continue
+      }
+    }
+    
+    // If no standard cookies found, log all available cookies for debugging
+    if (process.env.NODE_ENV === 'development') {
+      const allCookies = cookieStore.getAll()
+      const authCookies = allCookies.filter(c => 
+        c.name.includes('auth') || c.name.includes('sb') || c.name.includes('session')
+      )
+      if (authCookies.length > 0) {
+        console.log('🔍 Available auth-related cookies:', authCookies.map(c => c.name))
+      } else {
+        console.log('🔍 No auth-related cookies found')
       }
     }
     
@@ -119,15 +143,34 @@ export const getUserIdFromSession = async () => {
 // ✅ FIXED: Wrap getUser() with proper error handling and fallback to session cookies
 export const getCurrentUser = async () => {
   try {
-    console.log('🔍 Attempting to get user via getUser()')
     const supabase = await createServerSupabaseClient()
     const { data: { user }, error } = await supabase.auth.getUser()
     
     if (error) {
-      // Check if it's the expected AuthSessionMissingError
-      if (error.message?.includes('AuthSessionMissingError')) {
-        // Expected for unauthenticated users - don't log it
-        console.log('🔍 No authenticated session (AuthSessionMissingError)')
+      // ✅ IMPROVED: Check for AuthSessionMissingError multiple ways
+      const isAuthMissingError = 
+        error.message?.includes('AuthSessionMissingError') ||
+        error.status === 400 ||
+        error.code === 'session_not_found'
+      
+      if (isAuthMissingError) {
+        // Session missing - try fallback
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🔍 No authenticated session (AuthSessionMissingError) - trying fallback...')
+        }
+        
+        // Try fallback: get user ID from session cookies
+        const userId = await getUserIdFromSession()
+        if (userId) {
+          if (process.env.NODE_ENV === 'development') {
+            console.log('✅ Recovered user ID from fallback:', userId)
+          }
+          return { id: userId } as any // Minimal user object with just the ID
+        }
+        
+        if (process.env.NODE_ENV === 'development') {
+          console.log('❌ Fallback also failed - no session found')
+        }
         return null
       }
       // Log unexpected errors only
@@ -136,7 +179,9 @@ export const getCurrentUser = async () => {
     }
     
     if (user) {
-      console.log('✅ Got user via getUser():', user.id)
+      if (process.env.NODE_ENV === 'development') {
+        console.log('✅ Got user via getUser():', user.id)
+      }
       return user
     }
     
@@ -145,7 +190,19 @@ export const getCurrentUser = async () => {
     // Handle any runtime exceptions (like network timeouts)
     if (err instanceof Error) {
       if (err.message.includes('AuthSessionMissingError')) {
-        console.log('🔍 No authenticated session (caught exception)')
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🔍 No authenticated session (caught exception) - trying fallback...')
+        }
+        
+        // Try fallback
+        const userId = await getUserIdFromSession()
+        if (userId) {
+          if (process.env.NODE_ENV === 'development') {
+            console.log('✅ Recovered user ID from fallback:', userId)
+          }
+          return { id: userId } as any
+        }
+        
         return null
       }
       
@@ -173,9 +230,14 @@ export const getCurrentAdmin = async () => {
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError) {
-      // Check if it's the expected AuthSessionMissingError
-      if (userError.message?.includes('AuthSessionMissingError')) {
-        // Expected for unauthenticated users - don't log it
+      // ✅ IMPROVED: Check for AuthSessionMissingError multiple ways
+      const isAuthMissingError = 
+        userError.message?.includes('AuthSessionMissingError') ||
+        userError.status === 400 ||
+        userError.code === 'session_not_found'
+      
+      if (isAuthMissingError) {
+        // Expected for unauthenticated users - don't log as error
         return null
       }
       // Log unexpected errors only
