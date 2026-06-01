@@ -464,13 +464,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSessionStatus('unauthenticated')
       setLastActivity(0)
 
-      // ✅ IMPROVED: Use setTimeout to ensure state is cleared before redirect
+      // ✅ CRITICAL: Immediate redirect without delay to avoid race conditions
       if (typeof window !== 'undefined') {
-        setTimeout(() => {
-          // Hard redirect to ensure browser makes a fresh request
-          // Middleware will then evaluate and confirm no active session
+        try {
+          debugLogger.debug('AuthProvider', 'Redirecting to auth page')
+          // Use replace() to prevent back button returning to protected page
           window.location.replace('/auth')
-        }, 100)
+        } catch (redirectErr) {
+          debugLogger.error('AuthProvider', 'Redirect failed', { error: redirectErr })
+          // Fallback: try using href assignment
+          try {
+            window.location.href = '/auth'
+          } catch (fallbackErr) {
+            debugLogger.error('AuthProvider', 'Redirect fallback failed', { error: fallbackErr })
+          }
+        }
       }
     } catch (error) {
       debugLogger.error('AuthProvider', 'Sign out exception', { error })
@@ -480,9 +488,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSessionStatus('unauthenticated')
       
       if (typeof window !== 'undefined') {
-        setTimeout(() => {
+        try {
+          debugLogger.debug('AuthProvider', 'Exception - redirecting to auth page')
           window.location.replace('/auth')
-        }, 100)
+        } catch (redirectErr) {
+          debugLogger.error('AuthProvider', 'Exception redirect failed', { error: redirectErr })
+          try {
+            window.location.href = '/auth'
+          } catch (fallbackErr) {
+            debugLogger.error('AuthProvider', 'Exception redirect fallback failed', { error: fallbackErr })
+          }
+        }
       }
     }
   }
@@ -522,8 +538,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export const useAuth = () => {
   const context = useContext(AuthContext)
+  
+  // ✅ IMPROVED: Return safe default instead of throwing
+  // This handles edge cases where components might render before AuthProvider is ready
+  // (e.g., during Next.js hydration or SSR edge cases)
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider')
+    // Log the warning so we can track if this is happening
+    if (typeof window !== 'undefined') {
+      console.warn('⚠️ useAuth called outside AuthProvider - returning safe defaults')
+    }
+    
+    // Return safe defaults that won't crash the app
+    return {
+      user: null,
+      userRole: null,
+      loading: true,
+      sessionStatus: 'loading' as const,
+      lastActivity: Date.now(),
+      signIn: async () => ({ error: 'Auth not initialized' }),
+      signUp: async () => ({ error: 'Auth not initialized' }),
+      signOut: async () => {},
+      refreshSession: async () => {},
+      resetPassword: async () => ({ error: 'Auth not initialized' }),
+      hasPermission: () => false,
+    } satisfies AuthContextType
   }
+  
   return context
 }

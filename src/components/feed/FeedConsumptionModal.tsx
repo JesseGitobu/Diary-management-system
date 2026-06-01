@@ -500,7 +500,7 @@ function FeedConsumptionModalInner({
   useEffect(() => {
     if (isOpen && loadedRations.length === 0 && feedRations.length === 0) {
       setIsLoadingRations(true)
-      fetch(`/api/farms/${farmId}/feed-rations`)
+      fetch(`/api/farms/${farmId}/feed-rations`, { credentials: 'include' })
         .then(r => r.json())
         .then(json => {
           const rations = json.data ?? []

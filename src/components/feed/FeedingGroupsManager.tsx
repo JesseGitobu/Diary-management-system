@@ -84,7 +84,7 @@ export function FeedingGroupsManager({
     setError(null)
     try {
       // Fetch animal categories
-      const categoriesResponse = await fetch(`/api/farms/${farmId}/animal-categories`)
+      const categoriesResponse = await fetch(`/api/farms/${farmId}/animal-categories`, { credentials: 'include' })
       if (!categoriesResponse.ok) throw new Error('Failed to fetch categories')
       const categoriesData = await categoriesResponse.json()
       

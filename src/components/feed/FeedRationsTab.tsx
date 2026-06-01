@@ -229,7 +229,7 @@ export function FeedRationsTab({
   async function loadRations() {
     setIsLoading(true)
     try {
-      const res = await fetch(`/api/farms/${farmId}/feed-rations`)
+      const res = await fetch(`/api/farms/${farmId}/feed-rations`, { credentials: 'include' })
       if (!res.ok) throw new Error('Failed to load rations')
       const json = await res.json()
       console.log('🔄 Loaded feed rations:', json.data)

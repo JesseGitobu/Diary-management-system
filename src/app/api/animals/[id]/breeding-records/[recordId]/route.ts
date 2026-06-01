@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser, createServerSupabaseClient } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
+import type { ProductionStatus } from '@/types/database'
 
 interface AbortionDetails {
   abortion_date: string
@@ -22,9 +23,10 @@ export async function PATCH(
   try {
     const { id, recordId } = await params
     const body = await request.json()
-    const { pregnancy_status, abortion_details } = body as {
+    const { pregnancy_status, abortion_details, new_production_status } = body as {
       pregnancy_status?: string
       abortion_details?: AbortionDetails
+      new_production_status?: ProductionStatus | null
     }
 
     console.log('📋 [abortion] Processing request:', { animalId: id, recordId, hasAbortionDetails: !!abortion_details })
@@ -105,6 +107,26 @@ export async function PATCH(
       return NextResponse.json({ error: 'Failed to update pregnancy record' }, { status: 500 })
     }
 
+    // Update animal's production status if provided
+    if (new_production_status) {
+      console.log('🐄 [abortion] Updating animal production status to:', new_production_status)
+      const { error: animalUpdateError } = await supabase
+        .from('animals')
+        .update({
+          production_status: new_production_status,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+
+      if (animalUpdateError) {
+        console.error('Failed to update animal production status:', animalUpdateError)
+        // Don't fail the whole operation if animal update fails
+        console.warn('Warning: Animal production status was not updated:', animalUpdateError)
+      } else {
+        console.log('✓ Animal production status updated successfully')
+      }
+    }
+
     // Store abortion details in abortion_records table if provided
     if (abortion_details && abortion_details.abortion_date) {
       // Build the abortion record with only the provided fields
@@ -146,8 +168,9 @@ export async function PATCH(
 
     return NextResponse.json({
       success: true,
-      message: 'Pregnancy marked as aborted and abortion record saved',
-      record: updatedRecord
+      message: 'Pregnancy marked as aborted, abortion record saved, and animal status updated',
+      record: updatedRecord,
+      productionStatusUpdated: !!new_production_status
     })
   } catch (error) {
     console.error('API error:', error)

@@ -124,9 +124,12 @@ export function AnimalsClientPage({
     if (categories.length === 0) {
       setLoadingCategories(true)
       try {
-        const response = await fetch(`/api/farms/${farmId}/animal-categories`)
+        console.log('📡 [AnimalsClientPage] Fetching animal categories from:', `/api/farms/${farmId}/animal-categories`)
+        const response = await fetch(`/api/farms/${farmId}/animal-categories`, { credentials: 'include' })
+        console.log('📡 [AnimalsClientPage] Response status:', response.status, response.statusText)
         if (response.ok) {
           const data = await response.json()
+          console.log('✅ [AnimalsClientPage] Successfully loaded categories:', data.data?.length)
           setCategories(data.data || [])
         }
       } catch (error) {

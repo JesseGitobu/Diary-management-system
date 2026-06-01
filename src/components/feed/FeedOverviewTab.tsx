@@ -61,8 +61,8 @@ export function FeedOverviewTab({
       setSummaryLoading(true)
       try {
         const [wasteRes, rationsRes] = await Promise.all([
-          fetch(`/api/farms/${farmId}/feed-waste?limit=100`),
-          fetch(`/api/farms/${farmId}/feed-rations`),
+          fetch(`/api/farms/${farmId}/feed-waste?limit=100`, { credentials: 'include' }),
+          fetch(`/api/farms/${farmId}/feed-rations`, { credentials: 'include' }),
         ])
         if (cancelled) return
         if (wasteRes.ok) {

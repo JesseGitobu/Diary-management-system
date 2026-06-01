@@ -94,28 +94,6 @@ export async function POST(request: NextRequest) {
     })
 
     // ─────────────────────────────────────────────────────────────────
-    // OPTIMIZATION 4: Use pre-aggregated daily_production_summary
-    // instead of recalculating totals from production_records
-    // ─────────────────────────────────────────────────────────────────
-    const { data: dailySummaries, error: dailySummariesError } = await supabase
-      .from('daily_production_summary')
-      .select('farm_id, record_date, total_milk_volume, sessions_recorded')
-      .eq('farm_id', farmId)
-      .in('record_date', [yesterdayDate, date])
-
-    console.log('[ProductionHistoryBatch] Daily summaries query:', {
-      error: dailySummariesError,
-      summariesCount: dailySummaries?.length,
-      summaries: dailySummaries,
-    })
-
-    const summaryMap = new Map<string, any>()
-    ;(dailySummaries || []).forEach((s: any) => {
-      summaryMap.set(s.record_date, s)
-      console.log('[ProductionHistoryBatch] Cached summary:', { date: s.record_date, total: s.total_milk_volume })
-    })
-
-    // ─────────────────────────────────────────────────────────────────
     // OPTIMIZATION 1: Batch fetch all animal records in ONE query
     // Uses composite indexes (farm_id, animal_id, record_date, created_at)
     // ─────────────────────────────────────────────────────────────────
@@ -161,14 +139,21 @@ export async function POST(request: NextRequest) {
         recordsYesterday: animalRecordsYesterday.length,
       })
 
-      // Yesterday's total: fetch from pre-aggregated summary (FAST!)
-      const yesterdaySummary = summaryMap.get(yesterdayDate)
-      const yesterdayTotal = yesterdaySummary?.total_milk_volume ?? null
+      // Yesterday's total: Calculate from THIS ANIMAL'S production records (not farm total!)
+      // Sum all milking sessions for the specific animal on yesterday
+      const yesterdayTotal =
+        animalRecordsYesterday.length > 0
+          ? animalRecordsYesterday.reduce((sum: number, r: any) => sum + (r.milk_volume || 0), 0)
+          : null
 
       console.log('[ProductionHistoryBatch] Yesterday total for animal:', {
         animalId,
-        yesterdaySummary,
+        recordsYesterdayCount: animalRecordsYesterday.length,
         yesterdayTotal,
+        breakdown: animalRecordsYesterday.map((r: any) => ({
+          sessionName: r.milking_sessions?.session_name,
+          volume: r.milk_volume,
+        })),
       })
 
       // Previous session: most recent record from today, or fallback to yesterday

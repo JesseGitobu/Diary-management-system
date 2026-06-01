@@ -9,8 +9,14 @@ export async function GET(
   { params }: { params: Promise<{ farmId: string }> }
 ) {
   try {
+    console.log('🔡 [API] feed-rations GET called')
     const user = await getCurrentUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    console.log('🔡 [API] User authenticated:', user?.id || 'null')
+    
+    if (!user) {
+      console.error('❌ [API] Unauthorized - no user found')
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
 
     const userRole = await getUserRole(user.id) as any
     if (!userRole?.farm_id) {

@@ -88,7 +88,7 @@ export async function POST(
       const { error: removeError } = await (supabase as any)
         .from('animal_category_assignments')
         .update({
-          removed_at: now,
+          removed_at: transfer_date,
           notes: notes
             ? `Transferred to ${(targetCategory as any).name}: ${notes}`
             : `Transferred to ${(targetCategory as any).name}`
@@ -126,7 +126,7 @@ export async function POST(
         animal_id,
         category_id: categoryId,
         assignment_method: 'manual',
-        assigned_at: now,
+        assigned_at: transfer_date,
         transfer_date: transfer_date, // Store the user-provided transfer date
         notes: notes || `Transferred from ${currentAssignment?.animal_categories?.name ?? 'previous category'}`
       })

@@ -296,7 +296,7 @@ export function AnimalFeedingRecords({ animalId, farmId, canAddRecords, feedType
 
     // 2. Find matching animal category
     console.log('📊 Fetching animal categories from:', `/api/farms/${farmId}/animal-categories`)
-    const categoriesResponse = await fetch(`/api/farms/${farmId}/animal-categories`)
+    const categoriesResponse = await fetch(`/api/farms/${farmId}/animal-categories`, { credentials: 'include' })
 
     console.log('📊 Categories response status:', categoriesResponse.status)
     if (!categoriesResponse.ok) {

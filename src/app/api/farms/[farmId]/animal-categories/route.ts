@@ -17,9 +17,12 @@ export async function GET(
   { params }: { params: Promise<{ farmId: string }> }
 ) {
   try {
+    console.log('📡 [API] animal-categories GET called')
     const user = await getCurrentUser()
+    console.log('📡 [API] User authenticated:', user?.id || 'null')
     
     if (!user) {
+      console.error('❌ [API] Unauthorized - no user found')
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     

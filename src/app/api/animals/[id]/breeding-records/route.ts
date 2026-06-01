@@ -43,7 +43,7 @@ export async function GET(
     // 1. Transform Breeding Records — service_records fields mapped to component interface
     const transformedRecords = history.breedingRecords.map(record => {
       const pregnancy = history.pregnancyRecords.find(
-        p => p.breeding_record_id === record.id
+        p => p.service_record_id === record.id
       )
 
       // Check for most recent pregnancy check event for this animal
@@ -72,6 +72,7 @@ export async function GET(
       const transformed = {
         id: record.id,
         animal_id: record.animal_id,
+        pregnancy_record_id: pregnancy?.id || null,
         service_date: record.service_date,
         service_type: record.service_type,
         service_number: record.service_number,

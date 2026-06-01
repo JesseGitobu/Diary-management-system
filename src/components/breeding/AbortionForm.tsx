@@ -25,6 +25,7 @@ interface FormData {
   veterinarian_name: string | null
   treatment_given: string | null
   recovery_status: string | null
+  production_status: string
   notes: string | null
 }
 
@@ -56,6 +57,7 @@ export function AbortionForm({
     veterinarian_name: null,
     treatment_given: null,
     recovery_status: 'recovering',
+    production_status: 'lactating',
     notes: null
   })
 
@@ -117,7 +119,7 @@ export function AbortionForm({
     setError(null)
 
     try {
-      if (!pregnancyRecord?.id) {
+      if (!pregnancyRecord?.pregnancy_record_id) {
         throw new Error('Pregnancy record not found')
       }
 
@@ -136,15 +138,19 @@ export function AbortionForm({
       if (formData.recovery_status) abortionDetails.recovery_status = formData.recovery_status
       if (formData.notes) abortionDetails.notes = formData.notes
 
+      // Include the new production status
+      const newProductionStatus = formData.production_status
+
       // Call the API endpoint to update pregnancy record and create abortion record
       const response = await fetch(
-        `/api/animals/${animalId}/breeding-records/${pregnancyRecord.id}`,
+        `/api/animals/${animalId}/breeding-records/${pregnancyRecord.pregnancy_record_id}`,
         {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             pregnancy_status: 'aborted',
-            abortion_details: abortionDetails
+            abortion_details: abortionDetails,
+            new_production_status: newProductionStatus
           })
         }
       )
@@ -408,6 +414,25 @@ export function AbortionForm({
             <option value="deceased">Animal Died</option>
           </select>
           <p className="mt-1 text-xs text-gray-500">Optional field</p>
+        </div>
+
+        {/* Production Status After Abortion */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Animal Production Status After Abortion <span className="text-red-500">*</span>
+          </label>
+          <select
+            name="production_status"
+            value={formData.production_status}
+            onChange={handleChange}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 bg-white"
+          >
+            <option value="lactating">Return to Lactating (Heat Cycle)</option>
+            <option value="served">Plan to Rebreed</option>
+            <option value="steaming_dry_cows">Dry Off for Rest</option>
+            <option value="open_culling_dry_cows">Consider for Culling</option>
+          </select>
+          <p className="mt-1 text-xs text-gray-500">Choose the animal's status after recovery. This will be updated in the system.</p>
         </div>
 
         {/* Additional Notes */}

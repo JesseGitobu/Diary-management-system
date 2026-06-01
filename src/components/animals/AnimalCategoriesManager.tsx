@@ -396,10 +396,15 @@ export function AnimalCategoriesManager({
   useEffect(() => {
     const fetchFeedRations = async () => {
       try {
-        const response = await fetch(`/api/farms/${farmId}/feed-rations`)
+        console.log('📡 [AnimalCategoriesManager] Fetching feed rations from:', `/api/farms/${farmId}/feed-rations`)
+        const response = await fetch(`/api/farms/${farmId}/feed-rations`, { credentials: 'include' })
+        console.log('📡 [AnimalCategoriesManager] Response status:', response.status, response.statusText)
         if (response.ok) {
           const data = await response.json()
+          console.log('✅ [AnimalCategoriesManager] Successfully loaded feed rations:', data.data?.length)
           setFeedRations(data.data || [])
+        } else {
+          console.error('❌ [AnimalCategoriesManager] Failed to load feed rations:', response.status)
         }
       } catch (error) {
         console.error('Failed to fetch feed rations:', error)
@@ -872,7 +877,8 @@ export function AnimalCategoriesManager({
     setTransferAnimal(animal)
     setSelectedTransferTarget('')
     setTransferNotes('')
-    setTransferDate(new Date().toISOString().split('T')[0]) // Set to today's date
+    // Initialize with empty string to let user select the date - don't auto-set to today
+    setTransferDate('')
     setTransferRecommendations([])
     setLoadingTransferRecs(true)
     try {
@@ -918,7 +924,7 @@ export function AnimalCategoriesManager({
       if (viewingAnimals) await handleViewAnimals(viewingAnimals)
       // Refresh category counts
       try {
-        const catRes = await fetch(`/api/farms/${farmId}/animal-categories`)
+        const catRes = await fetch(`/api/farms/${farmId}/animal-categories`, { credentials: 'include' })
         if (catRes.ok) {
           const catData = await catRes.json()
           if (catData.data) onCategoriesUpdate(catData.data)
@@ -2685,7 +2691,7 @@ export function AnimalCategoriesManager({
 
                       // Refresh overall categories list to show updated animal counts
                       try {
-                        const categoriesResponse = await fetch(`/api/farms/${farmId}/animal-categories`)
+                        const categoriesResponse = await fetch(`/api/farms/${farmId}/animal-categories`, { credentials: 'include' })
                         if (categoriesResponse.ok) {
                           const result = await categoriesResponse.json()
                           if (result.data) {
@@ -2828,6 +2834,9 @@ export function AnimalCategoriesManager({
               {!transferDate && (
                 <p className="text-xs text-red-600 mt-1">Transfer date is required</p>
               )}
+              <p className="text-xs text-gray-500 mt-1">
+                Today's date: {new Date().toISOString().split('T')[0]}
+              </p>
             </div>
           </div>
 

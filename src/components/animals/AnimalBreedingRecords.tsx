@@ -42,6 +42,7 @@ import { AbortionForm } from '@/components/breeding/AbortionForm'
 interface BreedingRecord {
   id: string
   animal_id: string
+  pregnancy_record_id?: string | null
   service_date: string
   service_type: 'natural' | 'artificial_insemination' | 'embryo_transfer'
   bull_tag_or_semen_code?: string
