@@ -195,6 +195,30 @@ export async function processCalvingAction(calvingEvent: CalvingEvent, farmId: s
       } else {
         console.log('🐄 processCalving: Created calf record detail')
       }
+
+      // 5B. CREATE ANIMAL WEIGHT RECORD FOR BIRTH WEIGHT
+      if (calvingEvent.calf_weight) {
+        const weightRecordData = {
+          farm_id: farmId,
+          animal_id: newCalf.id,
+          weight_date: calvingDate,
+          weight_kg: calvingEvent.calf_weight,
+          weight_unit: 'kg',
+          measurement_purpose: 'Birth Weight Measurement',
+          measured_by: calvingEvent.veterinarian || null,
+          method: 'scale',
+          notes: 'Birth weight recorded during calving event'
+        }
+
+        const { error: weightError } = await (supabase.from('animal_weight_records') as any)
+          .insert(weightRecordData)
+
+        if (weightError) {
+          console.warn('⚠️ processCalving: Could not create animal weight record (optional):', weightError.message)
+        } else {
+          console.log('🐄 processCalving: Created animal weight record for birth weight')
+        }
+      }
     } else {
       console.log('🐄 processCalving: Skipping calf record detail (calving_records not available)')
     }

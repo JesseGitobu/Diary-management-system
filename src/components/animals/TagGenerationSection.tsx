@@ -31,6 +31,8 @@ interface TagGenerationSectionProps {
   customAttributes?: CustomAttribute[]
   animalSource?: 'newborn_calf' | 'purchased_animal'  // ✅ NEW: Animal source for source-specific formats
   autoGenerateTagNumbers?: boolean  // ✅ NEW: Auto-generate setting from tagging settings
+  isEditMode?: boolean  // ✅ NEW: Whether we're editing an existing animal
+  existingTag?: string  // ✅ NEW: The existing tag number from the animals table
 }
 
 interface TagPreviewData {
@@ -49,7 +51,9 @@ export function TagGenerationSection({
   onTagChange,
   customAttributes = [],
   animalSource,  // ✅ NEW: Receive animal source
-  autoGenerateTagNumbers = true  // ✅ NEW: Receive auto-generate setting
+  autoGenerateTagNumbers = true,  // ✅ NEW: Receive auto-generate setting
+  isEditMode = false,  // ✅ NEW: Receive edit mode flag
+  existingTag  // ✅ NEW: Receive existing tag number
 }: TagGenerationSectionProps) {
   const [autoGenerate, setAutoGenerate] = useState(autoGenerateTagNumbers)
   const [manualTag, setManualTag] = useState('')
@@ -59,23 +63,30 @@ export function TagGenerationSection({
   const [tagSettings, setTagSettings] = useState<any>(null)
   const [lastFormData, setLastFormData] = useState<any>(null)
 
-  // ✅ NEW: Initialize auto-generate mode based on tagging settings
+  // ✅ NEW: Initialize with existing tag when in edit mode
   useEffect(() => {
-    if (!autoGenerateTagNumbers) {
+    if (isEditMode && existingTag) {
+      // When editing, show the existing tag as manual entry
+      setAutoGenerate(false)
+      setManualTag(existingTag)
+      setPreviewTag(existingTag)
+      // Notify parent component with existing tag
+      onTagChange(existingTag, false)
+    } else if (!autoGenerateTagNumbers) {
       // If auto-generate is disabled in settings, force manual mode
       setAutoGenerate(false)
     } else {
-      // If auto-generate is enabled, default to auto mode
+      // If auto-generate is enabled and not editing, default to auto mode
       setAutoGenerate(true)
     }
-  }, [autoGenerateTagNumbers])
+  }, [autoGenerateTagNumbers, isEditMode, existingTag])
 
-  // Generate initial preview on mount
+  // Generate initial preview on mount (skip if editing - use existing tag instead)
   useEffect(() => {
-    if (farmId) {
+    if (farmId && !isEditMode) {
       generatePreview()
     }
-  }, [farmId])
+  }, [farmId, isEditMode])
 
   // Re-generate preview when form data changes (with debouncing)
   useEffect(() => {
@@ -191,7 +202,12 @@ export function TagGenerationSection({
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg flex items-center space-x-2">
             <Hash className="w-5 h-5 text-blue-600" />
-            <span>Animal Tag Generation</span>
+            <span>Animal Tag {isEditMode ? '(Edit Existing)' : 'Generation'}</span>
+            {isEditMode && (
+              <Badge variant="outline" className="ml-2 text-xs bg-amber-50 text-amber-700 border-amber-200">
+                Editing
+              </Badge>
+            )}
           </CardTitle>
           
           {tagSettings && (
@@ -208,8 +224,28 @@ export function TagGenerationSection({
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {/* Generation Method Toggle - Only show if auto-generate is enabled in settings */}
-        {autoGenerateTagNumbers ? (
+        {/* Edit Mode - Show existing tag info */}
+        {isEditMode && existingTag && (
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+            <div className="flex items-start space-x-3">
+              <Hash className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-amber-900">
+                  Current Tag Number
+                </p>
+                <p className="text-xs text-amber-700 mt-1">
+                  This animal was previously assigned the tag: <span className="font-mono font-bold">{existingTag}</span>
+                </p>
+                <p className="text-xs text-amber-700 mt-2">
+                  You can modify this tag below if necessary, or keep the existing value.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Generation Method Toggle - Only show if auto-generate is enabled in settings and NOT editing */}
+        {autoGenerateTagNumbers && !isEditMode ? (
           <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
             <div className="flex items-center space-x-3">
               <Sparkles className="w-4 h-4 text-blue-600" />
@@ -346,14 +382,14 @@ export function TagGenerationSection({
         {!autoGenerate && (
           <div className="space-y-3">
             <Label htmlFor="manual_tag" className="text-sm font-medium">
-              Enter Tag Number Manually
+              {isEditMode ? 'Edit Tag Number' : 'Enter Tag Number Manually'}
             </Label>
             <div className="relative">
               <Input
                 id="manual_tag"
                 value={manualTag}
                 onChange={(e) => handleManualTagChange(e.target.value)}
-                placeholder="e.g., COW-001, CUSTOM-123"
+                placeholder={isEditMode ? "Modify or keep the existing tag..." : "e.g., COW-001, CUSTOM-123"}
                 className="pr-10"
               />
               {manualTag && (
@@ -367,7 +403,10 @@ export function TagGenerationSection({
               )}
             </div>
             <p className="text-xs text-gray-500">
-              Enter a unique tag number for this animal. Make sure it follows your farm's tagging conventions.
+              {isEditMode 
+                ? 'Update the tag number if needed. Any changes will be saved when you submit the form.'
+                : 'Enter a unique tag number for this animal. Make sure it follows your farm\'s tagging conventions.'
+              }
             </p>
           </div>
         )}
@@ -378,7 +417,9 @@ export function TagGenerationSection({
             {manualTag.length >= 3 ? (
               <>
                 <CheckCircle className="w-3 h-3 text-green-500" />
-                <span className="text-green-600">Tag format looks good</span>
+                <span className="text-green-600">
+                  {isEditMode ? 'Tag updated' : 'Tag format looks good'}
+                </span>
               </>
             ) : (
               <>

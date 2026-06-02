@@ -11,6 +11,7 @@ interface AddWeightModalProps {
   isOpen: boolean
   onClose: () => void
   animal: AnimalWeightSummary
+  farmId: string  // ✅ NEW: Farm ID needed for creating weight records
   onWeightAdded: (record: WeightRecord) => void
 }
 
@@ -20,7 +21,7 @@ const MEASUREMENT_METHODS = [
   { value: 'visual_estimate', label: 'Visual Estimate', icon: '👁️' },
 ] as const
 
-export function AddWeightModal({ isOpen, onClose, animal, onWeightAdded }: AddWeightModalProps) {
+export function AddWeightModal({ isOpen, onClose, animal, farmId, onWeightAdded }: AddWeightModalProps) {
   const [weight, setWeight] = useState<string>('')
   const [method, setMethod] = useState<'scale' | 'tape_measure' | 'visual_estimate'>('scale')
   const [bcs, setBcs] = useState<number | ''>('')
@@ -48,11 +49,46 @@ export function AddWeightModal({ isOpen, onClose, animal, onWeightAdded }: AddWe
 
     setSaving(true)
     try {
-      // Simulate API call
-      await new Promise(r => setTimeout(r, 600))
+      // Extract date from recordedAt (ISO datetime to date)
+      const weightDate = new Date(recordedAt).toISOString().split('T')[0]
+      
+      // Prepare payload for the API
+      const payload = {
+        farm_id: farmId,
+        animal_id: animal.animal_id,
+        weight_date: weightDate,
+        weight_kg: parseFloat(weight),
+        weight_unit: 'kg',
+        measurement_purpose: null,  // Can be extended if needed
+        measured_by: recordedBy || null,
+        method: method,
+        body_condition_score: bcs !== '' ? parseFloat(String(bcs)) : null,
+        notes: notes || null,
+      }
 
+      console.log('[DEBUG AddWeightModal] Saving weight record:', payload)
+
+      // Call API to save weight record
+      const response = await fetch('/api/weight-records', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.error('[DEBUG AddWeightModal] API Error:', errorData)
+        throw new Error(errorData.error || 'Failed to save weight record')
+      }
+
+      const result = await response.json()
+      console.log('[DEBUG AddWeightModal] Weight record saved:', result)
+
+      // Create record object for local state update
       const record: WeightRecord = {
-        id: `wr-${Date.now()}`,
+        id: result.id || `wr-${Date.now()}`,
         animal_id: animal.animal_id,
         weight_kg: parseFloat(weight),
         recorded_at: new Date(recordedAt).toISOString(),
@@ -64,8 +100,9 @@ export function AddWeightModal({ isOpen, onClose, animal, onWeightAdded }: AddWe
 
       onWeightAdded(record)
       onClose()
-    } catch {
-      // handle error
+    } catch (error: any) {
+      console.error('[DEBUG AddWeightModal] Error saving weight record:', error)
+      setErrors({ save: error.message || 'Failed to save weight record' })
     } finally {
       setSaving(false)
     }
@@ -105,6 +142,13 @@ export function AddWeightModal({ isOpen, onClose, animal, onWeightAdded }: AddWe
           <div className="mx-5 mt-4 p-3 bg-blue-50 rounded-xl flex items-center justify-between">
             <span className="text-xs text-blue-700 font-medium">Last recorded weight</span>
             <span className="text-sm font-bold text-blue-900">{animal.current_weight} kg</span>
+          </div>
+        )}
+
+        {/* Error message */}
+        {errors.save && (
+          <div className="mx-5 mt-4 p-3 bg-red-50 border border-red-200 rounded-xl">
+            <p className="text-xs text-red-700">{errors.save}</p>
           </div>
         )}
 

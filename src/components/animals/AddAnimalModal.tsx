@@ -11,7 +11,7 @@ import CompleteHealthRecordModal from '@/components/health/CompleteHealthRecordM
 import { WeightUpdateModal } from '@/components/animals/WeightUpdateModal'
 import { Baby, ShoppingCart, Upload, ArrowLeft, AlertTriangle } from 'lucide-react'
 import { toast } from 'react-hot-toast'
-import { TagGenerationSection } from './TagGenerationSection'
+
 import { Animal } from '@/types/database'
 
 interface AddAnimalModalProps {
@@ -77,6 +77,10 @@ export default function AddAnimalModal({
     }
   }, [farmId, isOpen])
 
+  // ✅ NEW: State for fresh animal data in edit mode
+  const [freshEditingAnimal, setFreshEditingAnimal] = useState<Animal | null>(null)
+  const [loadingFreshData, setLoadingFreshData] = useState(false)
+
   // ✅ NEW: Initialize modal state based on mode (add vs edit)
   React.useEffect(() => {
     if (isOpen && isEditMode && editingAnimal) {
@@ -90,6 +94,48 @@ export default function AddAnimalModal({
       setShowSourceSelection(true)
     }
   }, [isOpen, isEditMode, editingAnimal])
+
+  // 🔍 DEBUG: NEW - Fetch fresh animal data when in edit mode
+  useEffect(() => {
+    const fetchFreshAnimalData = async () => {
+      if (!isEditMode || !editingAnimal?.id) return
+
+      setLoadingFreshData(true)
+      console.log('[DEBUG AddAnimalModal] Fetching fresh animal data for edit:', {
+        animal_id: editingAnimal.id,
+        current_birth_weight: editingAnimal.birth_weight,
+      })
+
+      try {
+        const response = await fetch(`/api/animals/${editingAnimal.id}`)
+        if (!response.ok) {
+          console.error('[DEBUG AddAnimalModal] Failed to fetch fresh data:', response.status)
+          // Fallback to the prop data if fetch fails
+          setFreshEditingAnimal(editingAnimal)
+          return
+        }
+
+        const result = await response.json()
+        console.log('[DEBUG AddAnimalModal] Fresh animal data fetched:', {
+          animal_id: result.animal?.id,
+          birth_weight_from_server: result.animal?.birth_weight,
+          birth_weight_type: typeof result.animal?.birth_weight,
+        })
+
+        setFreshEditingAnimal(result.animal)
+      } catch (error) {
+        console.error('[DEBUG AddAnimalModal] Error fetching fresh data:', error)
+        // Fallback to the prop data if there's an error
+        setFreshEditingAnimal(editingAnimal)
+      } finally {
+        setLoadingFreshData(false)
+      }
+    }
+
+    if (isOpen && isEditMode) {
+      fetchFreshAnimalData()
+    }
+  }, [isOpen, isEditMode, editingAnimal?.id])
 
   const handleSourceSelection = (source: 'newborn_calf' | 'purchased_animal') => {
     setAnimalSource(source)
@@ -183,6 +229,7 @@ export default function AddAnimalModal({
     setCreatedAnimal(null)
     setShowHealthRecordModal(false)
     setShowImportModal(false)
+    setFreshEditingAnimal(null)  // 🔍 Clear fresh data when closing
     onClose()
   }
 
@@ -376,12 +423,16 @@ export default function AddAnimalModal({
               </div>
 
               {/* Dynamic Form */}
-              {animalSource === 'newborn_calf' ? (
+              {loadingFreshData ? (
+                <div className="flex items-center justify-center p-8 bg-blue-50 border border-blue-200 rounded-lg">
+                  <span className="text-sm text-blue-700">Loading animal data...</span>
+                </div>
+              ) : animalSource === 'newborn_calf' ? (
                 <NewbornCalfForm
                   farmId={farmId}
                   onSuccess={handleSuccess}
                   onCancel={handleCancel}
-                  editingAnimal={editingAnimal}
+                  editingAnimal={freshEditingAnimal || editingAnimal}
                   isEditMode={isEditMode}
                   autoGenerateTagNumbers={autoGenerateTagNumbers}
                 />
@@ -390,7 +441,7 @@ export default function AddAnimalModal({
                   farmId={farmId}
                   onSuccess={handleSuccess}
                   onCancel={handleCancel}
-                  editingAnimal={editingAnimal}
+                  editingAnimal={freshEditingAnimal || editingAnimal}
                   isEditMode={isEditMode}
                   autoGenerateTagNumbers={autoGenerateTagNumbers}
                 />

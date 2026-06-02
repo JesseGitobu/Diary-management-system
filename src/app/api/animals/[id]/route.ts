@@ -28,6 +28,20 @@ export async function GET(
     const { id: animalId } = await params
     
     const animal = await getAnimalById(animalId)
+    
+    // 🔍 DEBUG: Log birth_weight retrieval from GET endpoint
+    console.log('[DEBUG GET /api/animals/[id]] Animal fetched from getAnimalById:', {
+      found: !!animal,
+      animal_id: animalId,
+      tag_number: (animal as any)?.tag_number,
+      animal_source: (animal as any)?.animal_source,
+      birth_weight: (animal as any)?.birth_weight,
+      birth_weight_type: typeof (animal as any)?.birth_weight,
+      birth_weight_is_null: (animal as any)?.birth_weight === null,
+      birth_weight_is_undefined: (animal as any)?.birth_weight === undefined,
+      all_keys: Object.keys(animal as any)
+    })
+    
     console.log('✅✅✅ [API] Animal fetched:', {
       found: !!animal,
       tag_number: (animal as any)?.tag_number,
@@ -49,12 +63,20 @@ export async function GET(
       breed: (animal as any)?.breed,
       production_status: (animal as any)?.production_status,
       current_daily_production: (animal as any)?.current_daily_production,
+      birth_weight: (animal as any)?.birth_weight,
       latest_calving: (animal as any)?.latest_calving,
       breeding_events: (animal as any)?.breeding_events,
       breeding_events_count: (animal as any)?.breeding_events?.length || 0,
     })
     
     console.log('[API] ========== FIELD ANALYSIS ==========')
+    console.log('[API] birth_weight status:', {
+      value: (animal as any)?.birth_weight,
+      isNull: (animal as any)?.birth_weight === null,
+      isUndefined: (animal as any)?.birth_weight === undefined,
+      type: typeof (animal as any)?.birth_weight,
+      animal_source: (animal as any)?.animal_source,
+    })
     console.log('[API] current_daily_production status:', {
       value: (animal as any)?.current_daily_production,
       isNull: (animal as any)?.current_daily_production === null,
@@ -81,6 +103,17 @@ export async function GET(
       success: true, 
       animal 
     }
+    
+    // 🔍 DEBUG: Log response being sent to client
+    console.log('[DEBUG GET /api/animals/[id]] Response being sent:', {
+      status: 'success',
+      animal_id: (animal as any)?.id,
+      tag_number: (animal as any)?.tag_number,
+      animal_source: (animal as any)?.animal_source,
+      birth_weight_in_response: (response.animal as any)?.birth_weight,
+      birth_weight_type: typeof (response.animal as any)?.birth_weight,
+      birth_weight_is_null: (response.animal as any)?.birth_weight === null,
+    })
     
     console.log('[API] ✅ Returning response:', {
       status: 'success',
@@ -120,6 +153,15 @@ export async function PUT(
     const body = await request.json()
     const { id: animalId } = await params
     
+    // 🔍 DEBUG: Log request body
+    console.log('[DEBUG PUT /api/animals/[id]] Request received:', {
+      animal_id: animalId,
+      birth_weight_in_body: body.birth_weight,
+      birth_weight_type: typeof body.birth_weight,
+      animal_source: body.animal_source,
+      body_keys: Object.keys(body)
+    })
+    
     if (!body.tag_number || !body.breed || !body.gender) {
       return NextResponse.json({ 
         error: 'Missing required fields: tag_number, breed, gender' 
@@ -136,6 +178,16 @@ export async function PUT(
     
     // 🆕 GET CURRENT ANIMAL DATA BEFORE UPDATE
     const currentAnimal = await getAnimalById(animalId) as any
+    
+    // 🔍 DEBUG: Log current animal data
+    console.log('[DEBUG PUT /api/animals/[id]] Current animal fetched:', {
+      animal_id: animalId,
+      tag_number: currentAnimal?.tag_number,
+      animal_source: currentAnimal?.animal_source,
+      current_birth_weight: currentAnimal?.birth_weight,
+      current_birth_weight_type: typeof currentAnimal?.birth_weight,
+      has_calf_info: !!currentAnimal?.calf_info
+    })
     
     if (!currentAnimal) {
       return NextResponse.json({ error: 'Animal not found' }, { status: 404 })
@@ -157,8 +209,113 @@ export async function PUT(
     
     const supabase = await createServerSupabaseClient()
     
+    // ===== CALF_RECORDS HANDLING FOR NEWBORN CALVES =====
+    // For newborn calves, save birth_weight to calf_records table instead of animal_weight_records
+    if (currentAnimal.animal_source === 'newborn_calf' && body.birth_weight !== undefined) {
+      console.log('[DEBUG PUT] Processing calf_records update:', {
+        animal_id: animalId,
+        birth_weight_to_save: body.birth_weight,
+        is_newborn_calf: currentAnimal.animal_source === 'newborn_calf',
+        birth_weight_defined: body.birth_weight !== undefined
+      })
+      
+      // Get existing calf record
+      const { data: calfRecord, error: calfFetchError } = await (supabase as any)
+        .from('calf_records')
+        .select('id')
+        .eq('animal_id', animalId)
+        .eq('farm_id', userRole.farm_id)
+        .single()
+      
+      console.log('[DEBUG PUT] Calf record fetch result:', {
+        calfRecord_found: !!calfRecord,
+        calfRecord_id: calfRecord?.id,
+        calfFetchError: calfFetchError?.message
+      })
+      
+      if (calfRecord) {
+        // Update existing calf record with birth_weight
+        const { data: updateResult, error: calfUpdateError } = await (supabase as any)
+          .from('calf_records')
+          .update({
+            birth_weight: body.birth_weight || null,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', calfRecord.id)
+          .select()
+        
+        console.log('[DEBUG PUT] Calf record update result:', {
+          calf_record_id: calfRecord.id,
+          birth_weight_saved: body.birth_weight,
+          update_success: !calfUpdateError,
+          update_error: calfUpdateError?.message,
+          updated_record: updateResult
+        })
+        
+        if (calfUpdateError) {
+          console.warn('[API] Warning: Failed to update birth_weight in calf_records:', calfUpdateError)
+        } else {
+          console.log('[API] ✅ Birth weight updated in calf_records for animal:', animalId)
+        }
+
+        // Also save birth weight to animal_weight_records table
+        if (body.birth_weight) {
+          // Check if weight record already exists for this birth date
+          const birthDate = currentAnimal.birth_date || new Date().toISOString().split('T')[0]
+          const { data: existingWeightRecord } = await (supabase as any)
+            .from('animal_weight_records')
+            .select('id')
+            .eq('animal_id', animalId)
+            .eq('farm_id', userRole.farm_id)
+            .eq('weight_date', birthDate)
+            .eq('measurement_purpose', 'Birth Weight Measurement')
+            .single()
+
+          if (existingWeightRecord) {
+            // Update existing weight record
+            const { error: weightUpdateError } = await (supabase as any)
+              .from('animal_weight_records')
+              .update({
+                weight_kg: body.birth_weight,
+                method: 'scale',
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', existingWeightRecord.id)
+            
+            if (weightUpdateError) {
+              console.warn('[API] Warning: Failed to update weight record:', weightUpdateError)
+            } else {
+              console.log('[API] ✅ Birth weight record updated in animal_weight_records')
+            }
+          } else {
+            // Create new weight record
+            const { error: weightInsertError } = await (supabase as any)
+              .from('animal_weight_records')
+              .insert({
+                farm_id: userRole.farm_id,
+                animal_id: animalId,
+                weight_date: birthDate,
+                weight_kg: body.birth_weight,
+                weight_unit: 'kg',
+                measurement_purpose: 'Birth Weight Measurement',
+                measured_by: null,
+                method: 'scale',
+                notes: 'Birth weight recorded'
+              })
+            
+            if (weightInsertError) {
+              console.warn('[API] Warning: Failed to create birth weight record:', weightInsertError)
+            } else {
+              console.log('[API] ✅ Birth weight record created in animal_weight_records')
+            }
+          }
+        }
+      }
+    }
+    
     // ===== WEIGHT HANDLING (animal_weight_records, animals_requiring_weight_update) =====
-    if (newWeight !== undefined && newWeight !== null && newWeight !== oldWeight) {
+    // Note: For newborn calves, birth_weight is stored in calf_records, not animal_weight_records
+    if (newWeight !== undefined && newWeight !== null && newWeight !== oldWeight && currentAnimal.animal_source !== 'newborn_calf') {
       // Create weight record
       const { data: weightRecord, error: weightError } = await (supabase as any)
         .from('animal_weight_records')
@@ -309,6 +466,14 @@ export async function PUT(
         }
       }
     }
+    
+    // 🔍 DEBUG: Log response data
+    console.log('[DEBUG PUT /api/animals/[id]] Response being sent:', {
+      animal_id: result.data?.id,
+      birth_weight_in_response: result.data?.birth_weight,
+      animal_source: result.data?.animal_source,
+      all_animal_keys: result.data ? Object.keys(result.data) : []
+    })
     
     return NextResponse.json({ 
       success: true, 

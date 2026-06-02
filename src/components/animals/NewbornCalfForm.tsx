@@ -139,6 +139,22 @@ export function NewbornCalfForm({ farmId, onSuccess, onCancel, editingAnimal, is
   const [lastBreedingCycleNumber, setLastBreedingCycleNumber] = useState<number | ''>('')
 
 
+  // 🔍 DEBUG: Log editingAnimal data on component mount
+  useEffect(() => {
+    if (isEditMode && editingAnimal) {
+      console.log('[DEBUG NewbornCalfForm] Edit mode - editingAnimal received:', {
+        animal_id: editingAnimal.id,
+        tag_number: editingAnimal.tag_number,
+        animal_source: editingAnimal.animal_source,
+        birth_weight: editingAnimal.birth_weight,
+        birth_weight_type: typeof editingAnimal.birth_weight,
+        calf_info: editingAnimal.calf_info,
+        all_keys: Object.keys(editingAnimal),
+        full_object: editingAnimal
+      })
+    }
+  }, [isEditMode, editingAnimal])
+
   const form = useForm<NewbornCalfFormData>({
     resolver: zodResolver(newbornCalfSchema),
     defaultValues: isEditMode && editingAnimal ? {
@@ -170,6 +186,16 @@ export function NewbornCalfForm({ farmId, onSuccess, onCancel, editingAnimal, is
 
   // Watch form data for tag generation context
   const formData = form.watch()
+
+  // 🔍 DEBUG: Log form initialization
+  useEffect(() => {
+    console.log('[DEBUG NewbornCalfForm] Form initialized with default values:', {
+      birth_weight_in_form: form.getValues('birth_weight'),
+      birth_weight_type: typeof form.getValues('birth_weight'),
+      isEditMode,
+      has_editing_animal: !!editingAnimal
+    })
+  }, [])
 
   // ✅ NEW: Pre-populate production-specific state variables from editingAnimal when in edit mode
   useEffect(() => {
@@ -364,6 +390,15 @@ export function NewbornCalfForm({ farmId, onSuccess, onCancel, editingAnimal, is
     setError(null)
 
     console.log(`Submitting calf with calculated production status: ${calculatedProductionStatus}`)
+    console.log('[DEBUG NewbornCalfForm] Form submission data:', {
+      tag_number: data.tag_number,
+      birth_weight: data.birth_weight,
+      birth_weight_type: typeof data.birth_weight,
+      animal_source: 'newborn_calf',
+      isEditMode,
+      animal_id: editingAnimal?.id,
+      form_data_keys: Object.keys(data)
+    })
 
     try {
       // ✅ UPDATED: Build production-specific fields
@@ -401,6 +436,15 @@ export function NewbornCalfForm({ farmId, onSuccess, onCancel, editingAnimal, is
         autoGenerateTag: data.autoGenerateTag,
       }
 
+      // 🔍 DEBUG: Log request data being sent
+      console.log('[DEBUG NewbornCalfForm] Request data to API:', {
+        method: isEditMode ? 'PUT' : 'POST',
+        url: isEditMode ? `/api/animals/${editingAnimal.id}` : '/api/animals',
+        birth_weight: requestData.birth_weight,
+        birth_weight_type: typeof requestData.birth_weight,
+        request_data: requestData
+      })
+
       // ✅ NEW: Use PUT for edit mode, POST for add mode
       const method = isEditMode ? 'PUT' : 'POST'
       const url = isEditMode ? `/api/animals/${editingAnimal.id}` : '/api/animals'
@@ -415,10 +459,29 @@ export function NewbornCalfForm({ farmId, onSuccess, onCancel, editingAnimal, is
 
       if (!response.ok) {
         const errorData = await response.json()
+        console.error('[DEBUG NewbornCalfForm] API Error Response:', {
+          status: response.status,
+          statusText: response.statusText,
+          error_message: errorData.error,
+          full_error: errorData
+        })
         throw new Error(errorData.error || (isEditMode ? 'Failed to update calf' : 'Failed to add calf'))
       }
 
       const result = await response.json()
+      console.log('[DEBUG NewbornCalfForm] API Success Response:', {
+        status: 'success',
+        result_keys: Object.keys(result),
+        result
+      })
+
+      // 🔍 DEBUG: Log API response
+      console.log('[DEBUG NewbornCalfForm] API response received:', {
+        status: 'success',
+        birth_weight_in_response: result?.animal?.birth_weight || result?.birth_weight,
+        animal_id: result?.animal?.id || result?.id,
+        result: result
+      })
 
       // Show success message with generated tag if applicable
       if (result.generatedTagNumber) {
@@ -457,6 +520,8 @@ export function NewbornCalfForm({ farmId, onSuccess, onCancel, editingAnimal, is
           customAttributes={getCustomAttributesForTagData()}
           animalSource="newborn_calf"  // ✅ NEW: Specify animal source
           autoGenerateTagNumbers={autoGenerateTagNumbers}  // ✅ NEW: Pass auto-generate setting
+          isEditMode={isEditMode}  // ✅ NEW: Pass edit mode flag
+          existingTag={editingAnimal?.tag_number}  // ✅ NEW: Pass existing tag number
         />
 
         {/* Basic Information */}
@@ -830,7 +895,14 @@ export function NewbornCalfForm({ farmId, onSuccess, onCancel, editingAnimal, is
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="birth_weight">Birth Weight (kg)</Label>
+              <Label htmlFor="birth_weight" className="flex items-center gap-2">
+                Birth Weight (kg)
+                {isEditMode && editingAnimal?.birth_weight && (
+                  <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-200">
+                    From calf record
+                  </span>
+                )}
+              </Label>
               <Input
                 id="birth_weight"
                 type="number"
@@ -839,7 +911,7 @@ export function NewbornCalfForm({ farmId, onSuccess, onCancel, editingAnimal, is
                 {...form.register('birth_weight', { setValueAs: (v: string) => v === '' || v === null || v === undefined ? undefined : parseFloat(v) })}
                 placeholder="e.g., 35.5"
               />
-              <p className="text-xs text-gray-500">Weight at birth in kilograms</p>
+              <p className="text-xs text-gray-500">Weight at birth in kilograms{isEditMode ? ' (sourced from calf_records)' : ''}</p>
             </div>
           </div>
         </CollapsibleFormSection>

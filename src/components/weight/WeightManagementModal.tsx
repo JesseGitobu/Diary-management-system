@@ -315,7 +315,7 @@ export function WeightManagementModal({ isOpen, onClose, farmId }: WeightManagem
 
       {addWeightTarget && (
         <AddWeightModal isOpen={!!addWeightTarget} onClose={() => setAddWeightTarget(null)}
-          animal={addWeightTarget} onWeightAdded={handleWeightAdded} />
+          animal={addWeightTarget} farmId={farmId} onWeightAdded={handleWeightAdded} />
       )}
     </>
   )

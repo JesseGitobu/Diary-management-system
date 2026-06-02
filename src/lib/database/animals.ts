@@ -310,10 +310,33 @@ export async function getAnimalById(animalId: string) {
     ? Math.floor((new Date().getTime() - new Date(lactationStartDate).getTime()) / (1000 * 60 * 60 * 24))
     : null
 
+  // ✅ For newborn calves, prioritize birth_weight from calf_records
+  // For other animals, use weight from animal_weight_records
+  const birthWeightFromCalf = (calfData as any)?.[0]?.birth_weight ?? null
+  const weightFromRecords = (weightData as any)?.[0]?.weight_kg ?? null
+
+  // 🔍 DEBUG: Log birth_weight resolution for newborn calves
+  if (typedData.animal_source === 'newborn_calf') {
+    console.log('[DEBUG getAnimalById] Newborn calf birth_weight resolution:', {
+      animal_id: animalId,
+      animal_source: typedData.animal_source,
+      tag_number: typedData.tag_number,
+      calfData_exists: !!calfData,
+      calfData_length: (calfData as any)?.length,
+      birthWeightFromCalf,
+      animals_table_birth_weight: typedData.birth_weight,
+      final_birth_weight: birthWeightFromCalf ?? typedData.birth_weight ?? null,
+      calf_record: (calfData as any)?.[0]
+    })
+  }
+
   return {
     ...typedData,
     // Physical measurements
-    weight: (weightData as any)?.[0]?.weight_kg ?? null,
+    weight: weightFromRecords ?? null,
+    
+    // Birth weight: use calf_records if available (for newborns), otherwise use animals.birth_weight
+    birth_weight: birthWeightFromCalf ?? typedData.birth_weight ?? null,
     
     // Lactation cycle info
     lactation_number: (lactationData as any)?.[0]?.lactation_number ?? null,
@@ -633,13 +656,15 @@ export async function updateAnimal(animalId: string, farmId: string, animalData:
     }
     
     // ✅ VALID DATABASE COLUMNS for the animals table
+    // NOTE: birth_weight is NOT included here - it's stored in calf_records for newborn calves
+    // and in animal_weight_records for weight history tracking
     const validColumns = new Set([
       'id', 'farm_id', 'tag_number', 'name', 'breed', 'gender', 'birth_date', 
       'weight', 'status', 'notes', 'animal_source', 'mother_id', 'father_id',
       'purchase_date', 'health_status', 'production_status', 'service_date',
       'service_method', 'expected_calving_date', 'current_daily_production',
       'days_in_milk', 'purchase_price', 'seller_info', 'father_info',
-      'birth_weight', 'auto_generate_tag', 'updated_at'
+      'auto_generate_tag', 'updated_at'
     ])
     
     // ✅ DATE FIELDS that should accept null instead of empty strings

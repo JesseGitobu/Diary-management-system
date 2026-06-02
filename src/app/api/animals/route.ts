@@ -391,6 +391,28 @@ export async function POST(request: NextRequest) {
           } else {
             console.log('✅ [API] calf_records created (calving_record_id:', calvingRecordId, ')')
           }
+
+          // Create animal_weight_records for birth weight
+          if (animalData.birth_weight) {
+            const { error: weightError } = await (supabase as any)
+              .from('animal_weight_records')
+              .insert({
+                farm_id: userRole.farm_id,
+                animal_id: createdAnimal.id,
+                weight_date: animalData.birth_date,
+                weight_kg: animalData.birth_weight,
+                weight_unit: 'kg',
+                measurement_purpose: 'Birth Weight Measurement',
+                measured_by: null,
+                method: 'scale',
+                notes: 'Birth weight recorded during calf registration'
+              })
+            if (weightError) {
+              console.warn('⚠️ [API] animal_weight_records insert failed:', weightError.message)
+            } else {
+              console.log('✅ [API] animal_weight_records created for birth weight')
+            }
+          }
         } else {
           console.error('❌ [API] Could not obtain calving_record_id — calf_records skipped')
         }
