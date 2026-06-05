@@ -516,8 +516,8 @@ export function AddFeedInventoryModal({
     source: 'purchased',
     source_type: null,
     yield_source: null,
-    quantity_kg: undefined as any,
-    quantity_in_preferred_unit: undefined as any,
+    quantity_kg: 0,
+    quantity_in_preferred_unit: 0,
     cost_per_kg: undefined,
     total_cost: undefined,
     purchase_date: new Date().toISOString().split('T')[0],
@@ -549,6 +549,7 @@ export function AddFeedInventoryModal({
         // Format dates specifically for HTML5 date inputs
         supplier: initialData.supplier ?? '',
         notes: initialData.notes ?? '',
+        quantity_kg: kgValue,
         quantity_in_preferred_unit: preferredVal,
         source: initialData.source || 'purchased',
         purchase_date: initialData.purchase_date
@@ -839,13 +840,17 @@ export function AddFeedInventoryModal({
     const n = val === '' ? 0 : Number(val)
     form.setValue('quantity_kg', n)
     if (n > 0) {
-      if (currentUnit) form.setValue('quantity_in_preferred_unit', convertFromKg(n, currentUnit))
+      // Always set quantity_in_preferred_unit (convert if currentUnit exists, otherwise use kg value)
+      const preferredValue = currentUnit ? convertFromKg(n, currentUnit) : n
+      form.setValue('quantity_in_preferred_unit', preferredValue)
       if (!isCalculating) {
         setIsCalculating(true)
         if (costPerKg && costPerKg > 0) form.setValue('total_cost', calcTotal(costPerKg, n))
         else if (totalCost && totalCost > 0) form.setValue('cost_per_kg', calcCpk(totalCost, n))
         setIsCalculating(false)
       }
+    } else {
+      form.setValue('quantity_in_preferred_unit', 0)
     }
   }
 
@@ -855,7 +860,6 @@ export function AddFeedInventoryModal({
     setLoading(true);
     setError(null);
     try {
-
       const {
         protein_pct, fat_pct, fiber_pct, moisture_pct, ash_pct,
         dry_matter_pct, ndf_pct, adf_pct, energy_mj_kg,
@@ -896,8 +900,6 @@ export function AddFeedInventoryModal({
         record_id: isEditMode ? initialData?.id : null,
       };
 
-
-
       // Use PUT for editing, POST for new
       const method = isEditMode ? 'PUT' : 'POST';
       // If editing, we use feed_type_id in the URL as per API route pattern
@@ -905,15 +907,11 @@ export function AddFeedInventoryModal({
         ? `/api/feed/inventory/${data.feed_type_id}`
         : '/api/feed/inventory';
 
-
-
       const response = await fetch(endpoint, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-
-
 
       if (!response.ok) {
         const err = await response.json();

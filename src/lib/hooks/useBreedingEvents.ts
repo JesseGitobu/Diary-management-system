@@ -203,7 +203,7 @@ export function useBreedingEvents(animalId: string | null, farmId?: string) {
             animal_id,
             farm_id,
             heat_action_taken,
-            animals:animal_id (tag_number, name, breed),
+            animals:animal_id (id, tag_number, name, breed),
             heat_detection_signs (sign),
             service_records (service_type, bull_tag_or_semen_code, bull_name_or_semen_source, semen_type, technician_name, expected_calving_date, service_cost, outcome, notes, created_at, updated_at),
             pregnancy_records (pregnancy_status, confirmed_date, confirmation_method, expected_calving_date, gestation_length_days, veterinarian, pregnancy_notes, steaming_date, created_at, updated_at),
@@ -223,11 +223,24 @@ export function useBreedingEvents(animalId: string | null, farmId?: string) {
         if (abortController.signal.aborted) return
         if (fetchError) throw fetchError
 
+        console.log('📡 [useBreedingEvents] Events fetched:', {
+          count: data?.length,
+          farmId,
+          animalId,
+          totalCount: count,
+          sampleAnimalData: data?.[0]?.animals
+        })
+
         const normalized = normalizeEvents(data || [])
         const newOffset = currentOffset + normalized.length
 
         if (loadMore) {
-          setEvents(prev => [...prev, ...normalized])
+          // Deduplicate by event ID to prevent duplicate key warnings
+          setEvents(prev => {
+            const existingIds = new Set(prev.map((e: any) => e.id))
+            const newEvents = normalized.filter((e: any) => !existingIds.has(e.id))
+            return [...prev, ...newEvents]
+          })
         } else {
           setEvents(normalized)
         }

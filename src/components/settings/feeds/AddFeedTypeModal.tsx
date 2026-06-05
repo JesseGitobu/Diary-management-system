@@ -316,11 +316,21 @@ export function AddFeedTypeModal({
                 ) : (
                   <Select
                     key={`category-${selectKey}`}
-                    value={form.watch('category_id')}
+                    value={form.watch('category_id') || ''}
                     onValueChange={(value) => form.setValue('category_id', value, { shouldValidate: true })}
                   >
                     <SelectTrigger className={form.formState.errors.category_id ? 'border-red-300' : ''}>
-                      <SelectValue placeholder="Select feed category" />
+                      {selectedFeedCategory ? (
+                        <div className="flex items-center space-x-2">
+                          <div
+                            className="w-3 h-3 rounded-full"
+                            style={{ backgroundColor: selectedFeedCategory.color || '#999999' }}
+                          />
+                          <span>{selectedFeedCategory.category_name}</span>
+                        </div>
+                      ) : (
+                        <SelectValue placeholder="Select feed category" />
+                      )}
                     </SelectTrigger>
                     <SelectContent>
                       {feedTypeCategories.map((category) => (

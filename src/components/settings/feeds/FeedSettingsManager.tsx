@@ -1,7 +1,7 @@
 // src/components/settings/feeds/FeedSettingsManager.tsx
 'use client'
 
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
@@ -597,8 +597,8 @@ export function FeedSettingsManager({
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {freqDefaults.map(def => (
-                  <>
-                    <tr key={def.id} className="hover:bg-gray-50">
+                  <Fragment key={def.id}>
+                    <tr className="hover:bg-gray-50">
                       <td className="px-4 py-3 font-medium text-gray-900">
                         {def.animal_categories?.name ?? '—'}
                       </td>
@@ -642,7 +642,7 @@ export function FeedSettingsManager({
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 ))}
               </tbody>
             </table>

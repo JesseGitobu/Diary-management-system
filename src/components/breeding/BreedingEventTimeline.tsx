@@ -132,6 +132,50 @@ export function BreedingEventTimeline({
     }
   }, [refreshTrigger, refetch, animalId])
 
+  // Global animal search - debounced
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      if (searchQuery.trim() && farmId) {
+        console.log('🔍 [Search] Starting global animal search:', {
+          query: searchQuery,
+          farmId,
+          timestamp: new Date().toISOString()
+        })
+        setIsSearchingGlobal(true)
+        try {
+          const response = await fetch(
+            `/api/animals/global-search?q=${encodeURIComponent(searchQuery)}&farm_id=${farmId}`
+          )
+          if (response.ok) {
+            const data = await response.json()
+            console.log('✅ [Search] Results received:', {
+              totalResults: data.results?.length || 0,
+              results: data.results?.map((a: any) => ({
+                id: a.id,
+                tag: a.tag_number,
+                name: a.name,
+                breed: a.breed
+              }))
+            })
+            setGlobalSearchResults(data.results || [])
+          } else {
+            console.error('❌ [Search] API error:', response.status, response.statusText)
+          }
+        } catch (err) {
+          console.error('❌ [Search] Fetch error:', err)
+          setGlobalSearchResults([])
+        } finally {
+          setIsSearchingGlobal(false)
+        }
+      } else {
+        console.log('⏭️ [Search] Skipping search - empty query or no farmId')
+        setGlobalSearchResults([])
+      }
+    }, 300) // Debounce 300ms
+
+    return () => clearTimeout(timer)
+  }, [searchQuery, farmId])
+
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -154,6 +198,57 @@ export function BreedingEventTimeline({
 
   // Collapsible subsections for calving details on mobile
   const [expandedCalvingSections, setExpandedCalvingSections] = useState<Record<string, Set<string>>>({})
+  
+  // Global animal search state
+  const [globalSearchResults, setGlobalSearchResults] = useState<any[]>([])
+  const [isSearchingGlobal, setIsSearchingGlobal] = useState(false)
+  const [selectedAnimalForFiltering, setSelectedAnimalForFiltering] = useState<string | null>(null)
+  const [selectedAnimalEvents, setSelectedAnimalEvents] = useState<any[]>([])
+  const [loadingSelectedAnimalEvents, setLoadingSelectedAnimalEvents] = useState(false)
+
+  // When an animal is selected via search, fetch events for that animal
+  useEffect(() => {
+    if (selectedAnimalForFiltering && farmId) {
+      const fetchSelectedAnimalEvents = async () => {
+        console.log('🐄 [Animal Selection] Fetching events for selected animal:', {
+          animalId: selectedAnimalForFiltering,
+          farmId
+        })
+        setLoadingSelectedAnimalEvents(true)
+        try {
+          const response = await fetch(
+            `/api/breeding-events?animal_id=${selectedAnimalForFiltering}&farm_id=${farmId}`
+          )
+          if (response.ok) {
+            const data = await response.json()
+            console.log('✅ [Animal Selection] Events fetched for selected animal:', {
+              animalId: selectedAnimalForFiltering,
+              eventCount: data.events?.length || 0,
+              events: data.events?.map((e: any) => ({
+                id: e.id,
+                type: e.event_type,
+                date: e.event_date,
+                animalTag: e.animals?.tag_number
+              }))
+            })
+            setSelectedAnimalEvents(data.events || [])
+          } else {
+            console.error('❌ [Animal Selection] Failed to fetch animal events:', response.status)
+            setSelectedAnimalEvents([])
+          }
+        } catch (err) {
+          console.error('❌ [Animal Selection] Error fetching animal events:', err)
+          setSelectedAnimalEvents([])
+        } finally {
+          setLoadingSelectedAnimalEvents(false)
+        }
+      }
+      
+      fetchSelectedAnimalEvents()
+    } else {
+      setSelectedAnimalEvents([])
+    }
+  }, [selectedAnimalForFiltering, farmId])
 
   const handleDelete = async (eventId: string) => {
     setIsDeleting(true)
@@ -180,30 +275,111 @@ export function BreedingEventTimeline({
   }
 
   const filteredEvents = useMemo(() => {
-    let filtered = [...events] as BreedingEvent[]
+    console.log('🔄 [Filter] Computing filtered events:', {
+      totalEvents: events.length,
+      selectedEventTypes,
+      dateFilter,
+      searchQuery,
+      selectedAnimalForFiltering,
+      usingSelectedAnimalEvents: selectedAnimalForFiltering ? true : false
+    })
 
-    if (selectedEventTypes.length > 0) {
-      filtered = filtered.filter(e => selectedEventTypes.includes(e.event_type))
+    // If an animal is selected, use their specific events instead of filtering farm-wide events
+    let sourceEvents = selectedAnimalForFiltering ? selectedAnimalEvents : events
+    
+    let filtered = [...sourceEvents] as BreedingEvent[]
+    console.log('📋 [Filter] Starting with events:', {
+      source: selectedAnimalForFiltering ? 'selected-animal' : 'farm-wide',
+      count: filtered.length
+    })
+    
+    // Debug: Show structure of first few events
+    if (filtered.length > 0) {
+      console.log('🔍 [Debug] First event structure:', {
+        eventId: filtered[0].id,
+        eventType: filtered[0].event_type,
+        animals: filtered[0].animals,
+        animalsId: filtered[0].animals?.id,
+        animalsTag: filtered[0].animals?.tag_number,
+        animalsName: filtered[0].animals?.name,
+        fullEvent: filtered[0]
+      })
+      
+      // Show all unique animal IDs in events
+      const uniqueAnimalIds = new Set(filtered.map(e => e.animals?.id).filter(Boolean))
+      const uniqueAnimalTags = new Set(filtered.map(e => e.animals?.tag_number).filter(Boolean))
+      console.log('🔍 [Debug] Unique animals in loaded events:', {
+        animalIds: Array.from(uniqueAnimalIds),
+        tags: Array.from(uniqueAnimalTags),
+        totalUnique: uniqueAnimalIds.size
+      })
     }
 
+    // Filter by event type
+    if (selectedEventTypes.length > 0) {
+      const beforeCount = filtered.length
+      filtered = filtered.filter(e => selectedEventTypes.includes(e.event_type))
+      console.log('📌 [Filter] Filtered by event types:', {
+        types: selectedEventTypes,
+        before: beforeCount,
+        after: filtered.length
+      })
+    }
+
+    // Filter by date range
     if (dateFilter !== 'all') {
+      const beforeCount = filtered.length
       const daysMap = { '7days': 7, '30days': 30, '90days': 90 } as const
       const cutoff = new Date(Date.now() - daysMap[dateFilter] * 86400000)
       filtered = filtered.filter(e => new Date(e.event_date) >= cutoff)
+      console.log('📅 [Filter] Filtered by date range:', {
+        range: dateFilter,
+        cutoffDate: cutoff.toISOString(),
+        before: beforeCount,
+        after: filtered.length
+      })
     }
 
-    if (searchQuery.trim()) {
+    // Filter by search query (only if not using selected animal events)
+    if (searchQuery.trim() && !selectedAnimalForFiltering) {
+      const beforeCount = filtered.length
       const query = searchQuery.toLowerCase().trim()
       filtered = filtered.filter(e => {
         const tagMatch = e.animals?.tag_number?.toLowerCase().includes(query)
         const nameMatch = e.animals?.name?.toLowerCase().includes(query)
         return tagMatch || nameMatch
       })
+      console.log('🔎 [Filter] Filtered by search query:', {
+        query: searchQuery,
+        before: beforeCount,
+        after: filtered.length
+      })
     }
 
+    // Sort by event date
     filtered.sort((a, b) => new Date(b.event_date).getTime() - new Date(a.event_date).getTime())
+    console.log('📊 [Filter] After sorting:', filtered.length)
+    
+    // Deduplicate by event ID to prevent duplicate key warnings
+    const seen = new Set<string>()
+    filtered = filtered.filter(e => {
+      if (seen.has(e.id)) return false
+      seen.add(e.id)
+      return true
+    })
+    
+    console.log('✨ [Filter] Final result:', {
+      totalFiltered: filtered.length,
+      events: filtered.map(e => ({
+        id: e.id,
+        type: e.event_type,
+        date: e.event_date,
+        animal: e.animals?.tag_number
+      }))
+    })
+    
     return filtered
-  }, [events, selectedEventTypes, dateFilter, searchQuery])
+  }, [events, selectedEventTypes, dateFilter, searchQuery, selectedAnimalForFiltering, selectedAnimalEvents])
 
   const toggleEventType = (type: string) =>
     setSelectedEventTypes(prev =>
@@ -235,13 +411,15 @@ export function BreedingEventTimeline({
   }
 
   const clearFilters = () => {
+    console.log('🧹 [Filter] Clearing all filters')
     setSelectedEventTypes([])
     setDateFilter('all')
     setSearchQuery('')
+    setSelectedAnimalForFiltering(null)
   }
 
-  const hasActiveFilters = selectedEventTypes.length > 0 || dateFilter !== 'all' || searchQuery.trim() !== ''
-  const activeFilterCount = selectedEventTypes.length + (dateFilter !== 'all' ? 1 : 0) + (searchQuery.trim() ? 1 : 0)
+  const hasActiveFilters = selectedEventTypes.length > 0 || dateFilter !== 'all' || searchQuery.trim() !== '' || selectedAnimalForFiltering !== null
+  const activeFilterCount = selectedEventTypes.length + (dateFilter !== 'all' ? 1 : 0) + (searchQuery.trim() ? 1 : 0) + (selectedAnimalForFiltering ? 1 : 0)
 
   // ── Early returns ──────────────────────────────────────────────────────────
   if (error) {
@@ -254,6 +432,14 @@ export function BreedingEventTimeline({
   }
 
   if (loading && events.length === 0) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <LoadingSpinner />
+      </div>
+    )
+  }
+
+  if (loadingSelectedAnimalEvents) {
     return (
       <div className="flex items-center justify-center py-12">
         <LoadingSpinner />
@@ -301,7 +487,13 @@ export function BreedingEventTimeline({
           <div className="flex items-center gap-2">
             {/* Results summary */}
             <span className="text-xs text-gray-500">
-              {hasActiveFilters
+              {selectedAnimalForFiltering && selectedAnimalEvents.length > 0
+                ? `${filteredEvents.length} event${filteredEvents.length !== 1 ? 's' : ''} for ${globalSearchResults.find(a => a.id === selectedAnimalForFiltering)?.tag_number || 'selected animal'}`
+                : selectedAnimalForFiltering && selectedAnimalEvents.length === 0
+                ? `No events found for ${globalSearchResults.find(a => a.id === selectedAnimalForFiltering)?.tag_number || 'selected animal'}`
+                : searchQuery.trim() && globalSearchResults.length > 0 
+                ? `${globalSearchResults.filter(a => events.some(e => e.animals?.id === a.id)).length} of ${globalSearchResults.length} animals have events`
+                : hasActiveFilters
                 ? `${filteredEvents.length} of ${events.length} shown`
                 : `${events.length} event${events.length !== 1 ? 's' : ''}`}
               {totalCount && totalCount > events.length ? ` (${totalCount} total)` : ''}
@@ -331,6 +523,88 @@ export function BreedingEventTimeline({
                 isMobile ? "text-sm" : "text-base"
               )}
             />
+            
+            {/* Global search results dropdown */}
+            {searchQuery.trim() && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-96 overflow-y-auto">
+                {isSearchingGlobal ? (
+                  <div className="p-4 flex items-center justify-center">
+                    <LoadingSpinner size="sm" />
+                  </div>
+                ) : globalSearchResults.length > 0 ? (
+                  <div className="p-2 space-y-1">
+                    <div className="px-3 py-2 text-xs font-semibold text-gray-600 bg-gray-50">
+                      {globalSearchResults.length} animal{globalSearchResults.length !== 1 ? 's' : ''} found in database
+                    </div>
+                    {globalSearchResults.map(animal => {
+                      // Check if this animal has events
+                      const hasEvents = events.some(e => e.animals?.id === animal.id)
+                      const isSelected = selectedAnimalForFiltering === animal.id
+                      return (
+                        <button
+                          key={animal.id}
+                          onClick={() => {
+                            console.log('🖱️ [Animal Selection] Clicked on animal:', {
+                              animalId: animal.id,
+                              tag: animal.tag_number,
+                              name: animal.name,
+                              currentSelection: selectedAnimalForFiltering,
+                              willToggle: isSelected
+                            })
+                            
+                            // Toggle selection
+                            if (isSelected) {
+                              console.log('➖ [Animal Selection] Deselecting animal')
+                              setSelectedAnimalForFiltering(null)
+                            } else {
+                              console.log('➕ [Animal Selection] Selecting animal')
+                              setSelectedAnimalForFiltering(animal.id)
+                              // Close dropdown after selection
+                              setOpenDropdown(null)
+                            }
+                          }}
+                          className={cn(
+                            "w-full px-3 py-2 rounded-lg border text-xs transition-colors text-left cursor-pointer",
+                            isSelected
+                              ? "bg-farm-green text-white border-farm-green font-semibold"
+                              : hasEvents
+                              ? "bg-farm-green/5 border-farm-green/30 text-gray-800 hover:bg-farm-green/10"
+                              : "bg-gray-50 border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-100"
+                          )}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1">
+                              <p className="font-medium">{animal.tag_number}</p>
+                              <p className={cn("text-gray-500", isSelected && "text-white/80")}>
+                                {animal.name && `${animal.name} • `}
+                                {animal.breed}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              {hasEvents && (
+                                <span className={cn(
+                                  "text-xs px-2 py-0.5 rounded whitespace-nowrap",
+                                  isSelected ? "bg-white text-farm-green" : "bg-farm-green text-white"
+                                )}>
+                                  {isSelected ? '✓ ' : ''}Events
+                                </span>
+                              )}
+                              {isSelected && !hasEvents && (
+                                <span className="text-xs text-yellow-200">⚠️ No events</span>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="p-4 text-center text-sm text-gray-500">
+                    No animals found matching "{searchQuery}"
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Filter Dropdowns - Single Row */}
@@ -438,9 +712,21 @@ export function BreedingEventTimeline({
           </div>
 
           {/* Active filter tags (when filters set) */}
-          {hasActiveFilters && (
+          {(hasActiveFilters || selectedAnimalForFiltering) && (
             <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-gray-100">
               <span className="text-xs text-gray-400">Active:</span>
+              {selectedAnimalForFiltering && globalSearchResults.length > 0 && (
+                <button
+                  onClick={() => {
+                    console.log('❌ [Filter] Clearing animal filter')
+                    setSelectedAnimalForFiltering(null)
+                  }}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border bg-purple-50 text-purple-700 border-purple-200"
+                >
+                  {globalSearchResults.find(a => a.id === selectedAnimalForFiltering)?.tag_number || 'Animal'}
+                  <X className="w-2.5 h-2.5 ml-0.5" />
+                </button>
+              )}
               {selectedEventTypes.map(type => {
                 const config = eventConfig[type as keyof typeof eventConfig]
                 return (
@@ -487,8 +773,24 @@ export function BreedingEventTimeline({
         {filteredEvents.length === 0 && events.length > 0 ? (
           <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 p-8 text-center">
             <Filter className="mx-auto h-10 w-10 text-gray-300 mb-3" />
-            <h3 className="text-sm font-medium text-gray-700 mb-1">No events match your filters</h3>
-            <p className="text-xs text-gray-500 mb-4">Try adjusting or clearing the filters above</p>
+            <h3 className="text-sm font-medium text-gray-700 mb-1">
+              {selectedAnimalForFiltering 
+                ? 'No events for this animal' 
+                : 'No events match your filters'}
+            </h3>
+            {selectedAnimalForFiltering && selectedAnimalEvents.length === 0 && (
+              <p className="text-xs text-gray-500 mb-4">
+                {globalSearchResults.find(a => a.id === selectedAnimalForFiltering)?.tag_number || 'This animal'} hasn't had any breeding records recorded yet.
+              </p>
+            )}
+            {searchQuery.trim() && globalSearchResults.length > 0 && !selectedAnimalForFiltering && (
+              <p className="text-xs text-gray-500 mb-4">
+                Found {globalSearchResults.length} animal{globalSearchResults.length !== 1 ? 's' : ''} in the database, but they have no recorded events.
+              </p>
+            )}
+            {!searchQuery.trim() && !selectedAnimalForFiltering && (
+              <p className="text-xs text-gray-500 mb-4">Try adjusting or clearing the filters above</p>
+            )}
             <Button variant="outline" size="sm" onClick={clearFilters}>
               Clear All Filters
             </Button>
@@ -1411,14 +1713,16 @@ export function BreedingEventTimeline({
       {/* ── Pagination Footer ────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-1 py-2 border-t border-gray-100">
         <p className="text-xs text-gray-400">
-          {hasActiveFilters
+          {selectedAnimalForFiltering
+            ? `${filteredEvents.length} event${filteredEvents.length !== 1 ? 's' : ''} for selected animal`
+            : hasActiveFilters
             ? `${filteredEvents.length} of ${events.length} events match filters`
             : `${filteredEvents.length} event${filteredEvents.length !== 1 ? 's' : ''} total`}
           {totalCount && totalCount > events.length
             ? ` — ${totalCount - events.length} more on server`
             : ''}
         </p>
-        {loading && events.length > 0 && (
+        {(loading || loadingSelectedAnimalEvents) && events.length > 0 && (
           <span className="flex items-center gap-1.5 text-xs text-gray-400">
             <LoadingSpinner size="sm" />
             Refreshing…

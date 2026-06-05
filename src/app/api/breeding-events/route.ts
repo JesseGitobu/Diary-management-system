@@ -406,11 +406,20 @@ export async function GET(request: NextRequest) {
     let query = supabase
       .from('breeding_events')
       .select(`
-        *,
-        animals (
-          tag_number,
-          name
-        )
+        id,
+        event_type,
+        event_date,
+        notes,
+        created_at,
+        animal_id,
+        farm_id,
+        heat_action_taken,
+        animals:animal_id (id, tag_number, name, breed),
+        heat_detection_signs (sign),
+        service_records (service_type, bull_tag_or_semen_code, bull_name_or_semen_source, semen_type, technician_name, expected_calving_date, service_cost, outcome, notes, created_at, updated_at),
+        pregnancy_records (pregnancy_status, confirmed_date, confirmation_method, expected_calving_date, gestation_length_days, veterinarian, pregnancy_notes, steaming_date, created_at, updated_at),
+        calving_records (calving_difficulty, assistance_required, veterinarian, complications, calf_alive, colostrum_quality, colostrum_produced, notes, created_at, updated_at, calf_records (gender, birth_weight, registration_number, health_status, animal_id, calf_animal:animal_id (id, tag_number, name, gender))),
+        breeding_follow_ups (id, event_id, insemination_scheduled_at, insemination_confirmed, natural_breeding_start, natural_breeding_end, monitoring_plan, ovulation_date, ovulation_start_time, ovulation_end_time, ovulation_amount_ml, steaming_date, next_check_date, expected_heat_date, placenta_expelled, placenta_expelled_at, has_medical_issue, medical_issue_description, vet_name, vet_observation, notes, created_at, updated_at, created_by)
       `)
       .eq('farm_id', userRole.farm_id)
       .order('event_date', { ascending: false })
@@ -422,6 +431,18 @@ export async function GET(request: NextRequest) {
     const { data, error } = await query
 
     if (error) throw error
+
+    console.log('📡 [GET /api/breeding-events] Fetched events:', {
+      animalId,
+      farmId: userRole.farm_id,
+      count: data?.length || 0,
+      sampleEvent: data?.[0] ? {
+        id: data[0].id,
+        type: data[0].event_type,
+        animal: data[0].animals?.tag_number,
+        animalId: data[0].animals?.id
+      } : null
+    })
 
     return NextResponse.json({
       success: true,

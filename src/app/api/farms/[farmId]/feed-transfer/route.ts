@@ -97,7 +97,7 @@ export async function POST(
     // ── Check current stock ──────────────────────────────────────────────────
     const { data: stockData, error: stockError } = await supabase
       .from('feed_inventory')
-      .select('quantity_kg')
+      .select('quantity_in_stock')
       .eq('farm_id', farmId)
       .eq('feed_type_id', feed_type_id)
       .single()
@@ -110,7 +110,7 @@ export async function POST(
       )
     }
 
-    const currentStock = stockData?.quantity_kg ?? 0
+    const currentStock = stockData?.quantity_in_stock ?? 0
     if (currentStock < quantity_kg) {
       return NextResponse.json(
         {

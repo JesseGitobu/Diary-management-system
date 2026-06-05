@@ -2225,14 +2225,14 @@ function FeedConsumptionModalInner({
             </p>
           </div>
         </div>
-        <button
+        {/* <button
           type="button"
           onClick={onClose}
           className="rounded-full p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors flex-shrink-0"
           aria-label="Close"
         >
           <X className="w-5 h-5" />
-        </button>
+        </button> */}
       </div>
 
       {/* Tab Switcher — hidden when editing an existing record */}

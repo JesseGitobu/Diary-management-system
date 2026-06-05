@@ -4,8 +4,7 @@ import { recordFeedTransactionRPC, writeInventoryTransactions, type TransactionT
 
 type FeedType = Database['public']['Tables']['feed_types']['Row']
 type FeedTypeInsert = Database['public']['Tables']['feed_types']['Insert']
-type FeedInventory = Database['public']['Tables']['feed_inventory']['Row']
-type FeedInventoryInsert = Database['public']['Tables']['feed_inventory']['Insert']
+
 type FeedConsumption = Database['public']['Tables']['feed_consumption_records']['Row']
 type FeedConsumptionInsert = Database['public']['Tables']['feed_consumption_records']['Insert']
 
@@ -31,6 +30,8 @@ type FeedConsumptionInsert = Database['public']['Tables']['feed_consumption_reco
  *    - Tracks ingredient breakdowns via feed_inventory_transactions with transaction_type='formulation_use'
  *    - Records output via 'restock_formulation' transaction type
  */
+
+
 
 // Feed Types Management
 const FEED_TYPE_ALLOWED_COLUMNS = [
@@ -115,422 +116,311 @@ export async function getFeedTypes(farmId: string) {
 }
 
 // Feed Inventory Management
+/**
+ * Helper to handle freetext source types for produced feed
+ */
+function resolveSourceType(rawSourceType: string | null | undefined, currentNotes: string | null | undefined) {
+  const VALID_SOURCE_TYPES = ['crop_harvest', 'animal_production', 'fermentation', 'processing', 'other'];
+  if (!rawSourceType) return { source_type: null, notes: currentNotes ?? null };
+
+  if (VALID_SOURCE_TYPES.includes(rawSourceType)) {
+    return { source_type: rawSourceType, notes: currentNotes ?? null };
+  }
+
+  const annotation = `Source detail: ${rawSourceType}`;
+  const notes = currentNotes ? `${currentNotes}\n${annotation}` : annotation;
+  return { source_type: 'other', notes };
+}
+
 export async function addFeedInventory(farmId: string, data: any) {
-  const supabase = await createServerSupabaseClient()
-  const authUser = (await supabase.auth.getUser()).data.user
+  const supabase = await createServerSupabaseClient();
+  const authUser = (await supabase.auth.getUser()).data.user;
 
   const {
-    feed_type_id, 
-    quantity_kg, 
-    source = 'purchased', // 'purchased', 'produced', 'formulate'
-    cost_per_kg, 
-    purchase_date, 
-    expiry_date,
-    supplier_id,
-    supplier,
-    batch_number, 
-    notes,
-    storage_location_id,
-    nutritional_data,
-    source_type,
-    yield_source,
-  } = data
-
-  // 1. Determine Logic based on Source
-  // ─────────────────────────────────────────────────────────
-  const isPurchased = source === 'purchased' || source === 'formulate';
-
-  // Mapping for the Database Table "feed_inventory"
-  // Note: source='formulate' is stored as-is (not mapped)
-  const dbInventorySource = source === 'formulate' ? 'formulate' : (isPurchased ? 'purchased' : 'produced');
-
-  // Determine the Transaction Type for the Ledger
-  let transactionType: TransactionType = 'restock_purchase';
-  if (source === 'produced') transactionType = 'restock_harvest';
-  if (source === 'formulate') transactionType = 'restock_formulation';
-
-  // Determine which source table to use
-  // Formulated feeds use feed_purchases just like regular purchases
-  const tableName = isPurchased ? 'feed_purchases' : 'feed_harvests';
-  const dateField = isPurchased ? 'purchase_date' : 'harvest_date';
-
-  // Calculate total_cost
-  const totalCost = data.total_cost ?? 
-    (cost_per_kg && quantity_kg ? Number((cost_per_kg * quantity_kg).toFixed(2)) : null);
-
-  // 2. Ensure feed_inventory record exists
-  // ─────────────────────────────────────────────────────────
-  const { data: feedTypeData, error: feedTypeError } = await supabase
-    .from('feed_types')
-    .select('id, low_stock_threshold')
-    .eq('id', feed_type_id)
-    .eq('farm_id', farmId)
-    .single();
-
-  if (feedTypeError) return { success: false, error: 'Feed type not found' };
-
-  const { data: existingInventory, error: checkError } = await supabase
-    .from('feed_inventory')
-    .select('id')
-    .eq('farm_id', farmId)
-    .eq('feed_type_id', feed_type_id)
-    .single();
-
-  if (checkError && checkError.code !== 'PGRST116') {
-    return { success: false, error: checkError.message };
-  }
-
-  if (!existingInventory) {
-    const { error: createError } = await supabase
-      .from('feed_inventory')
-      .insert({
-        farm_id: farmId,
-        feed_type_id: feed_type_id,
-        source: dbInventorySource, // 'purchased', 'formulate', or 'produced'
-        quantity_kg: 0,
-        minimum_threshold: feedTypeData?.low_stock_threshold ?? null,
-        storage_location_id: storage_location_id ?? null,
-        created_by: authUser?.id ?? null,
-      });
-
-    if (createError) return { success: false, error: createError.message };
-  }
-
-  // 3. Record the source entry (Purchase or Harvest)
-  // ─────────────────────────────────────────────────────────
-  const recordData: any = {
-    farm_id: farmId,
     feed_type_id,
     quantity_kg,
-    cost_per_kg: cost_per_kg ?? null,
-    total_cost: totalCost,
-    [dateField]: purchase_date ?? new Date().toISOString().split('T')[0],
-    expiry_date: expiry_date ?? null,
-    batch_number: batch_number ?? null,
-    notes: notes ?? null,
-    storage_location_id: storage_location_id ?? null,
-    created_by: authUser?.id ?? null,
-  };
+    source = 'purchased', // 'purchased' or 'produced'
+    cost_per_kg,
+    total_cost,
+    purchase_date, // used as entry_date
+    expiry_date,
+    batch_number,
+    storage_location_id,
+    supplier_id,
+    supplier, // supplier_name fallback
+    source_type: rawSourceType,
+    yield_source,
+    notes: rawNotes,
+    nutritional_data
+  } = data;
 
-  if (isPurchased) {
-    recordData.supplier_id = supplier_id ?? null;
-    recordData.supplier = supplier ?? null;
-  } else {
-    recordData.source_type = source_type ?? (source === 'formulate' ? 'processing' : null);
-    recordData.yield_source = yield_source ?? null;
-  }
+  const resolvedSource = source === 'produced' ? 'produced' : 'purchased';
+  const { source_type, notes } = resolveSourceType(rawSourceType, rawNotes);
+  const entryDate = purchase_date ?? new Date().toISOString().split('T')[0];
 
-  const { data: record, error: recordError } = await (supabase
-    .from(tableName) as any)
-    .insert(recordData)
+  // 1. Insert into feed_stock_entries (The Source Document)
+  const { data: stockEntry, error: stockError } = await supabase
+    .from('feed_stock_entries')
+    .insert({
+      farm_id: farmId,
+      feed_type_id,
+      source: resolvedSource,
+      source_type: resolvedSource === 'produced' ? source_type : null,
+      yield_source: resolvedSource === 'produced' ? (yield_source ?? null) : null,
+      supplier_id: resolvedSource === 'purchased' ? (supplier_id || null) : null,
+      supplier_name: resolvedSource === 'purchased' ? (supplier || null) : null,
+      storage_location_id: storage_location_id || null,
+      quantity_kg: Number(quantity_kg),
+      cost_per_kg: cost_per_kg ? Number(cost_per_kg) : null,
+      total_cost: total_cost ? Number(total_cost) : null,
+      entry_date: entryDate,
+      expiry_date: expiry_date || null,
+      batch_number: batch_number || null,
+      notes,
+      created_by: authUser?.id
+    })
     .select()
     .single();
 
-  if (recordError) return { success: false, error: recordError.message };
+  if (stockError) return { success: false, error: stockError.message };
 
-  // 4. Record transaction via RPC (Ledger + Quantity Sync)
-  // ─────────────────────────────────────────────────────────
-  const txResult = await recordFeedTransactionRPC({
-    farmId,
-    feedTypeId: feed_type_id,
-    transactionType: transactionType,
-    quantityKg: quantity_kg,
-    storageLoc: storage_location_id,
-    costPerKg: cost_per_kg,
-    totalCost: totalCost,
-    purchaseId: isPurchased ? record.id : undefined,
-    harvestId: !isPurchased ? record.id : undefined,
-    notes: notes || `${transactionType.replace('_', ' ')} recorded`,
-    createdBy: authUser?.id,
-    transactionDate: recordData[dateField],
-  });
-
-  // Fallback to direct transaction write if RPC fails
-  if (!txResult.success) {
-    console.warn('RPC failed, falling back to direct transaction write:', txResult.error)
-    const fallbackResult = await writeInventoryTransactions([{
+  // 2. Insert Ledger Transaction
+  // NOTE: balance_after_kg is calculated by the DB TRIGGER. We pass 0 as placeholder.
+  const transactionType = resolvedSource === 'purchased' ? 'restock_purchase' : 'restock_harvest';
+  
+  const { data: transaction, error: txError } = await supabase
+    .from('feed_inventory_transactions')
+    .insert({
       farm_id: farmId,
       feed_type_id,
-      quantity_kg,
+      storage_location_id: storage_location_id || null,
       transaction_type: transactionType,
-      reference_id: isPurchased ? record.id : (!isPurchased ? record.id : undefined),
-      reference_type: isPurchased ? 'feed_purchase' : 'feed_harvest',
-      notes: notes || `${transactionType.replace('_', ' ')} recorded`,
-      created_by: authUser?.id,
-    }])
-    
-    if (!fallbackResult.success) {
-      return { success: false, error: fallbackResult.error };
-    }
-    
-    // Sync feed_inventory quantity from the transaction balance
-    if (fallbackResult.data && fallbackResult.data.length > 0) {
-      const latestTx = fallbackResult.data[fallbackResult.data.length - 1]
-      await (supabase as any)
-        .from('feed_inventory')
-        .upsert({
-          farm_id: farmId,
-          feed_type_id,
-          quantity_kg: latestTx.balance_after_kg,
-          source: dbInventorySource,
-        }, {
-          onConflict: 'farm_id,feed_type_id',
-        })
-    }
-    
-    return { success: true, data: record, transaction: fallbackResult.data };
-  }
-
-  // RPC succeeded - sync feed_inventory if needed
-  const { data: latestTx } = await (supabase as any)
-    .from('feed_inventory_transactions')
-    .select('balance_after_kg')
-    .eq('farm_id', farmId)
-    .eq('feed_type_id', feed_type_id)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .single()
-
-  if (latestTx) {
-    await (supabase as any)
-      .from('feed_inventory')
-      .upsert({
-        farm_id: farmId,
-        feed_type_id,
-        quantity_kg: latestTx.balance_after_kg,
-        source: dbInventorySource,
-      }, {
-        onConflict: 'farm_id,feed_type_id',
-      })
-  }
-
-  // 5. Update Inventory Total Cost Snapshot
-  // ─────────────────────────────────────────────────────────
-  const { data: currentInventory } = await supabase
-    .from('feed_inventory')
-    .select('total_cost')
-    .eq('farm_id', farmId)
-    .eq('feed_type_id', feed_type_id)
+      quantity_kg: Number(quantity_kg),
+      balance_after_kg: 0, 
+      cost_per_kg: cost_per_kg ? Number(cost_per_kg) : null,
+      total_cost: total_cost ? Number(total_cost) : null,
+      reference_type: 'feed_stock_entry',
+      reference_id: stockEntry.id,
+      transaction_date: entryDate,
+      notes: notes,
+      created_by: authUser?.id
+    })
+    .select()
     .single();
 
-  if (currentInventory) {
-    const existingCost = currentInventory.total_cost || 0;
-    const newTotalCost = totalCost ? existingCost + totalCost : existingCost;
-
-    await supabase
-      .from('feed_inventory')
-      .update({
-        total_cost: Number(newTotalCost.toFixed(2)),
-        updated_by: authUser?.id ?? null,
-      })
-      .eq('farm_id', farmId)
-      .eq('feed_type_id', feed_type_id);
+  if (txError) {
+    // Cleanup the stock entry if transaction fails
+    await supabase.from('feed_stock_entries').delete().eq('id', stockEntry.id);
+    return { success: false, error: txError.message };
   }
 
-  return { success: true, data: record, transaction: txResult.data };
+  // 3. Insert Nutritional Profile (if provided)
+  if (nutritional_data && Object.values(nutritional_data).some(v => v != null && v !== '')) {
+    await supabase.from('feed_nutritional_profiles').insert({
+      farm_id: farmId,
+      stock_entry_id: stockEntry.id,
+      ...nutritional_data
+    });
+  }
+
+  return { success: true, data: stockEntry, transaction };
 }
 
 // Update Feed Inventory
-export async function updateFeedInventory(farmId: string, feedTypeId: string, data: any) {
-  const supabase = await createServerSupabaseClient()
-  const authUser = (await supabase.auth.getUser()).data.user
+// export async function updateFeedInventory(farmId: string, feedTypeId: string, data: any) {
+//   const supabase = await createServerSupabaseClient()
+//   const authUser = (await supabase.auth.getUser()).data.user
 
-  const {
-    quantity_kg, source = 'purchased',
-    cost_per_kg, purchase_date, expiry_date,
-    supplier_id,
-    supplier,
-    batch_number, notes,
-    storage_location_id,
-    nutritional_data,
-    source_type,
-    yield_source,
-    record_id, // The specific record ID to update (from initialData)
-  } = data
+//   const {
+//     quantity_kg, source = 'purchased',
+//     cost_per_kg, purchase_date, expiry_date,
+//     supplier_id,
+//     supplier,
+//     batch_number, notes,
+//     storage_location_id,
+//     nutritional_data,
+//     source_type,
+//     yield_source,
+//     record_id, // The specific record ID to update (from initialData)
+//   } = data
 
 
 
-  try {
-    const isPurchased = source === 'purchased'
-    const tableName = isPurchased ? 'feed_purchases' : 'feed_harvests'
-    const dateField = isPurchased ? 'purchase_date' : 'harvest_date'
+//   try {
+//     const isPurchased = source === 'purchased'
+//     const tableName = isPurchased ? 'feed_purchases' : 'feed_harvests'
+//     const dateField = isPurchased ? 'purchase_date' : 'harvest_date'
 
-    // 1. Find the record to update
-    // ─────────────────────────────────────────────────────────────
-    let query = (supabase.from(tableName) as any)
-      .select('id, quantity_kg, cost_per_kg, total_cost')
-      .eq('farm_id', farmId)
-      .eq('feed_type_id', feedTypeId)
+//     // 1. Find the record to update
+//     // ─────────────────────────────────────────────────────────────
+//     let query = (supabase.from(tableName) as any)
+//       .select('id, quantity_kg, cost_per_kg, total_cost')
+//       .eq('farm_id', farmId)
+//       .eq('feed_type_id', feedTypeId)
 
-    // If a specific record ID is provided, use it. Otherwise, get the most recent one.
-    if (record_id) {
-      query = query.eq('id', record_id)
-    } else {
-      query = query.order(dateField, { ascending: false }).limit(1)
-    }
+//     // If a specific record ID is provided, use it. Otherwise, get the most recent one.
+//     if (record_id) {
+//       query = query.eq('id', record_id)
+//     } else {
+//       query = query.order(dateField, { ascending: false }).limit(1)
+//     }
 
-    const { data: existingRecords, error: fetchError } = await query
+//     const { data: existingRecords, error: fetchError } = await query
 
-    if (fetchError) {
-      console.error(`Error fetching existing ${tableName}:`, fetchError)
-      return { success: false, error: fetchError.message }
-    }
+//     if (fetchError) {
+//       console.error(`Error fetching existing ${tableName}:`, fetchError)
+//       return { success: false, error: fetchError.message }
+//     }
 
-    if (!existingRecords || existingRecords.length === 0) {
-      return { success: false, error: `No existing ${tableName} record found for this feed type` }
-    }
+//     if (!existingRecords || existingRecords.length === 0) {
+//       return { success: false, error: `No existing ${tableName} record found for this feed type` }
+//     }
 
-    const existingRecord = existingRecords[0]
-    const oldQuantity = existingRecord.quantity_kg
-    const quantityDifference = (quantity_kg || 0) - oldQuantity
+//     const existingRecord = existingRecords[0]
+//     const oldQuantity = existingRecord.quantity_kg
+//     const quantityDifference = (quantity_kg || 0) - oldQuantity
 
-    // Calculate total_cost
-    const totalCost = data.total_cost ??
-      (cost_per_kg && quantity_kg ? Number((cost_per_kg * quantity_kg).toFixed(2)) : null)
+//     // Calculate total_cost
+//     const totalCost = data.total_cost ??
+//       (cost_per_kg && quantity_kg ? Number((cost_per_kg * quantity_kg).toFixed(2)) : null)
 
-    // 2. Update the source record (feed_purchases or feed_harvests)
-    // ───────────────────────────────────────────────────────────────
-    const updateData: any = {
-      quantity_kg,
-      cost_per_kg: cost_per_kg ?? null,
-      total_cost: totalCost,
-      [dateField]: purchase_date ?? new Date().toISOString().split('T')[0],
-      expiry_date: expiry_date ?? null,
-      batch_number: batch_number ?? null,
-      notes: notes ?? null,
-      storage_location_id: storage_location_id ?? null,
-      updated_by: authUser?.id ?? null,
-      updated_at: new Date().toISOString(),
-    }
+//     // 2. Update the source record (feed_purchases or feed_harvests)
+//     // ───────────────────────────────────────────────────────────────
+//     const updateData: any = {
+//       quantity_kg,
+//       cost_per_kg: cost_per_kg ?? null,
+//       total_cost: totalCost,
+//       [dateField]: purchase_date ?? new Date().toISOString().split('T')[0],
+//       expiry_date: expiry_date ?? null,
+//       batch_number: batch_number ?? null,
+//       notes: notes ?? null,
+//       storage_location_id: storage_location_id ?? null,
+//       updated_by: authUser?.id ?? null,
+//       updated_at: new Date().toISOString(),
+//     }
 
-    // Add source-specific fields
-    if (isPurchased) {
-      updateData.supplier_id = supplier_id ?? null
-      updateData.supplier = supplier ?? null
-    } else {
-      updateData.source_type = source_type ?? null
-      updateData.yield_source = yield_source ?? null
-    }
+//     // Add source-specific fields
+//     if (isPurchased) {
+//       updateData.supplier_id = supplier_id ?? null
+//       updateData.supplier = supplier ?? null
+//     } else {
+//       updateData.source_type = source_type ?? null
+//       updateData.yield_source = yield_source ?? null
+//     }
 
-    const { data: updatedRecord, error: updateError } = await (supabase
-      .from(tableName) as any)
-      .update(updateData)
-      .eq('id', existingRecord.id)
-      .eq('farm_id', farmId)
-      .select()
-      .single()
+//     const { data: updatedRecord, error: updateError } = await (supabase
+//       .from(tableName) as any)
+//       .update(updateData)
+//       .eq('id', existingRecord.id)
+//       .eq('farm_id', farmId)
+//       .select()
+//       .single()
 
-    if (updateError) {
-      console.error(`Error updating ${tableName}:`, updateError)
-      return { success: false, error: updateError.message }
-    }
+//     if (updateError) {
+//       console.error(`Error updating ${tableName}:`, updateError)
+//       return { success: false, error: updateError.message }
+//     }
 
-    // 3. Update nutritional data if provided
-    // ──────────────────────────────────────
-    if (nutritional_data) {
-      const hasValues = Object.values(nutritional_data).some(v => v !== null && v !== undefined && v !== '')
-      if (hasValues) {
-        const nutritionTableName = 'feed_nutritional_records'
-        const referenceColumn = isPurchased ? 'feed_purchase_id' : 'feed_harvest_id'
+//     // 3. Update nutritional data if provided
+//     // ──────────────────────────────────────
+//     if (nutritional_data) {
+//       const hasValues = Object.values(nutritional_data).some(v => v !== null && v !== undefined && v !== '')
+//       if (hasValues) {
+//         const nutritionTableName = 'feed_nutritional_records'
+//         const referenceColumn = isPurchased ? 'feed_purchase_id' : 'feed_harvest_id'
 
-        // Delete existing nutritional data for this record
-        await supabase
-          .from(nutritionTableName)
-          .delete()
-          .eq(referenceColumn, existingRecord.id)
-          .eq('farm_id', farmId)
+//         // Delete existing nutritional data for this record
+//         await supabase
+//           .from(nutritionTableName)
+//           .delete()
+//           .eq(referenceColumn, existingRecord.id)
+//           .eq('farm_id', farmId)
 
-        // Insert new nutritional data
-        const { error: nutritionError } = await (supabase
-          .from(nutritionTableName) as any)
-          .insert({
-            farm_id: farmId,
-            [referenceColumn]: existingRecord.id,
-            feed_type_id: feedTypeId,
-            ...nutritional_data,
-          })
+//         // Insert new nutritional data
+//         const { error: nutritionError } = await (supabase
+//           .from(nutritionTableName) as any)
+//           .insert({
+//             farm_id: farmId,
+//             [referenceColumn]: existingRecord.id,
+//             feed_type_id: feedTypeId,
+//             ...nutritional_data,
+//           })
 
-        if (nutritionError) {
-          console.error('Error updating nutritional data:', nutritionError)
-          // Non-fatal error
-        }
-      }
-    }
+//         if (nutritionError) {
+//           console.error('Error updating nutritional data:', nutritionError)
+//           // Non-fatal error
+//         }
+//       }
+//     }
 
-    // 4. Update feed_inventory table if quantity changed
-    // ──────────────────────────────────────────────────
-    if (quantityDifference !== 0) {
-      const { data: currentInventory, error: inventoryCheckError } = await supabase
-        .from('feed_inventory')
-        .select('quantity_kg, total_cost')
-        .eq('farm_id', farmId)
-        .eq('feed_type_id', feedTypeId)
-        .single()
+//     // 4. Update feed_inventory table if quantity changed
+//     // ──────────────────────────────────────────────────
+//     if (quantityDifference !== 0) {
+//       const { data: currentInventory, error: inventoryCheckError } = await supabase
+//         .from('feed_inventory')
+//         .select('quantity_kg, total_cost')
+//         .eq('farm_id', farmId)
+//         .eq('feed_type_id', feedTypeId)
+//         .single()
 
-      if (!inventoryCheckError && currentInventory) {
-        const newQuantity = (currentInventory.quantity_kg || 0) + quantityDifference
-        const currentTotalCost = currentInventory.total_cost || 0
+//       if (!inventoryCheckError && currentInventory) {
+//         const newQuantity = (currentInventory.quantity_kg || 0) + quantityDifference
+//         const currentTotalCost = currentInventory.total_cost || 0
 
-        // Recalculate total cost based on new quantities
-        let newTotalCost = currentTotalCost
-        if (newQuantity > 0 && totalCost && quantity_kg > 0 && oldQuantity > 0) {
-          const costPerKgNew = totalCost / quantity_kg
-          const costPerKgOld = (existingRecord.total_cost || 0) / oldQuantity
-          newTotalCost = newQuantity * ((costPerKgOld * oldQuantity + costPerKgNew * quantity_kg) / (oldQuantity + quantity_kg))
-        }
+//         // Recalculate total cost based on new quantities
+//         let newTotalCost = currentTotalCost
+//         if (newQuantity > 0 && totalCost && quantity_kg > 0 && oldQuantity > 0) {
+//           const costPerKgNew = totalCost / quantity_kg
+//           const costPerKgOld = (existingRecord.total_cost || 0) / oldQuantity
+//           newTotalCost = newQuantity * ((costPerKgOld * oldQuantity + costPerKgNew * quantity_kg) / (oldQuantity + quantity_kg))
+//         }
 
-        const { error: inventoryUpdateError } = await supabase
-          .from('feed_inventory')
-          .update({
-            quantity_kg: Math.max(0, newQuantity),
-            total_cost: newTotalCost > 0 ? Number(newTotalCost.toFixed(2)) : null,
-            updated_by: authUser?.id ?? null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('farm_id', farmId)
-          .eq('feed_type_id', feedTypeId)
+//         const { error: inventoryUpdateError } = await supabase
+//           .from('feed_inventory')
+//           .update({
+//             quantity_kg: Math.max(0, newQuantity),
+//             total_cost: newTotalCost > 0 ? Number(newTotalCost.toFixed(2)) : null,
+//             updated_by: authUser?.id ?? null,
+//             updated_at: new Date().toISOString(),
+//           })
+//           .eq('farm_id', farmId)
+//           .eq('feed_type_id', feedTypeId)
 
-        if (inventoryUpdateError) {
-          console.error('Error updating feed_inventory:', inventoryUpdateError)
-          // Non-fatal error
-        }
-      }
-    }
+//         if (inventoryUpdateError) {
+//           console.error('Error updating feed_inventory:', inventoryUpdateError)
+//           // Non-fatal error
+//         }
+//       }
+//     }
 
-    return { success: true, data: updatedRecord }
-  } catch (error) {
-    console.error('Unexpected error in updateFeedInventory:', error)
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
-  }
-}
+//     return { success: true, data: updatedRecord }
+//   } catch (error) {
+//     console.error('Unexpected error in updateFeedInventory:', error)
+//     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+//   }
+// }
 
 // Get Feed Harvests
 export async function getFeedHarvests(farmId: string) {
-  const supabase = await createServerSupabaseClient()
+  const supabase = await createServerSupabaseClient();
 
   const { data, error } = await supabase
-    .from('feed_harvests')
+    .from('feed_stock_entries')
     .select(`
       *,
-      feed_types (
-        id,
-        name,
-        description,
-        typical_cost_per_kg,
-        unit_of_measure,
-        low_stock_threshold,
-        is_formulate_feed
-      )
+      feed_types ( id, name, unit_of_measure )
     `)
     .eq('farm_id', farmId)
-    .order('harvest_date', { ascending: false })
+    .eq('source', 'produced')
+    .order('entry_date', { ascending: false });
 
-  if (error) {
-    console.error('Error fetching feed harvests:', error)
-    return []
-  }
-
-  return data || []
+  if (error) return [];
+  
+  // Map back to the UI expectations (rename entry_date to harvest_date)
+  return data.map(h => ({
+    ...h,
+    harvest_date: h.entry_date,
+  }));
 }
 
 // Update Feed Harvest
@@ -626,256 +516,72 @@ export async function deleteFeedHarvest(farmId: string, harvestId: string) {
 }
 
 export async function getFeedInventory(farmId: string) {
-  const supabase = await createServerSupabaseClient()
+  const supabase = await createServerSupabaseClient();
 
-  // Get inventory data with feed type information
-  const { data: inventoryData, error: inventoryError } = await supabase
-    .from('feed_inventory')
+  // 1. Get balances from snapshot
+  const { data: snapshot, error: snapError } = await supabase
+    .from('feed_inventory_snapshot')
     .select(`
-    *,
-    storage_locations (
-      name
-    ),
-    feed_types (
-      id,
-      name,
-      description,
-      typical_cost_per_kg,
-      preferred_measurement_unit:unit_of_measure,
-      low_stock_threshold,
-      is_formulate_feed
-    )
-  `)
+      feed_type_id,
+      quantity_in_stock,
+      last_cost_per_kg,
+      last_restocked_date,
+      feed_types (
+        id, name, unit_of_measure, low_stock_threshold, is_formulate_feed,
+        category_id, feed_type_categories (category_name, color)
+      )
+    `)
+    .eq('farm_id', farmId);
+
+  if (snapError) throw snapError;
+
+  // 2. Get latest entry details from the new View
+  const { data: latestEntries, error: entryError } = await supabase
+    .from('v_feed_stock_entries')
+    .select('*')
     .eq('farm_id', farmId)
-    .order('updated_at', { ascending: false })
+    .order('entry_date', { ascending: false });
 
+  if (entryError) throw entryError;
 
-
-  if (inventoryError) {
-    console.error('Error fetching feed inventory:', inventoryError)
-    return []
-  }
-
-  if (!inventoryData || inventoryData.length === 0) {
-    return []
-  }
-
-  // Get the most recent purchase/harvest for each feed type (check both tables)
-  const feedTypeIds = inventoryData.map(item => item.feed_type_id)
-
-  const [
-    { data: purchasesData, error: purchasesError },
-    { data: harvestsData, error: harvestsError }
-  ] = await Promise.all([
-    supabase
-      .from('feed_purchases')
-      .select(`
-        id,
-        feed_type_id,
-        quantity_kg,
-        cost_per_kg,
-        purchase_date,
-        expiry_date,
-        supplier,
-        batch_number,
-        notes
-      `)
-      .in('feed_type_id', feedTypeIds)
-      .eq('farm_id', farmId)
-      .order('purchase_date', { ascending: false }),
-    supabase
-      .from('feed_harvests')
-      .select(`
-        id,
-        feed_type_id,
-        quantity_kg,
-        cost_per_kg,
-        harvest_date,
-        expiry_date,
-        batch_number,
-        notes,
-        source_type,
-        yield_source
-      `)
-      .in('feed_type_id', feedTypeIds)
-      .eq('farm_id', farmId)
-      .order('harvest_date', { ascending: false })
-  ])
-
-  if (purchasesError) {
-    console.error('Error fetching purchase data:', purchasesError)
-  }
-  if (harvestsError) {
-    console.error('Error fetching harvest data:', harvestsError)
-  }
-
-  // Get nutritional data for the most recent purchases
-  let nutritionalData: any[] = []
-  if (purchasesData && purchasesData.length > 0) {
-    const purchaseIds = purchasesData.map(p => p.id)
-    const { data: nutritionData, error: nutritionError } = await supabase
-      .from('feed_nutritional_records')
-      .select(`
-        feed_purchase_id,
-        feed_harvest_id,
-        protein_pct,
-        fat_pct,
-        fiber_pct,
-        moisture_pct,
-        ash_pct,
-        energy_mj_kg,
-        dry_matter_pct,
-        ndf_pct,
-        adf_pct,
-        notes
-      `)
-      .in('feed_purchase_id', purchaseIds)
-      .eq('farm_id', farmId)
-
-    if (!nutritionError) {
-      nutritionalData = nutritionData || []
-    }
-  }
-
-  // Get nutritional data for harvests
-  if (harvestsData && harvestsData.length > 0) {
-    const harvestIds = harvestsData.map(h => h.id)
-    const { data: harvestNutritionData, error: harvestNutritionError } = await supabase
-      .from('feed_nutritional_records')
-      .select(`
-        feed_purchase_id,
-        feed_harvest_id,
-        protein_pct,
-        fat_pct,
-        fiber_pct,
-        moisture_pct,
-        ash_pct,
-        energy_mj_kg,
-        dry_matter_pct,
-        ndf_pct,
-        adf_pct,
-        notes
-      `)
-      .in('feed_harvest_id', harvestIds)
-      .eq('farm_id', farmId)
-
-    if (!harvestNutritionError) {
-      nutritionalData = [...nutritionalData, ...(harvestNutritionData || [])]
-    }
-  }
-
-  // Create maps for efficient lookup and merge purchases + harvests
-  const latestPurchases = new Map()
-  const allRecords = [
-    ...(purchasesData || []).map(p => ({ ...p, _source: 'purchase' })),
-    ...(harvestsData || []).map(h => ({ ...h, purchase_date: h.harvest_date, _source: 'harvest' }))
-  ]
-
-  // Sort by date descending and keep the latest record per feed type
-  allRecords.sort((a, b) => {
-    const dateA = new Date(a.purchase_date).getTime()
-    const dateB = new Date(b.purchase_date).getTime()
-    return dateB - dateA
-  })
-
-  for (const record of allRecords) {
-    if (!latestPurchases.has(record.feed_type_id)) {
-      latestPurchases.set(record.feed_type_id, record)
-    }
-  }
-
-  const nutritionalMap = new Map()
-  nutritionalData.forEach(nutrition => {
-    // Map by feed_purchase_id for purchases, feed_harvest_id for harvests
-    const recordId = nutrition.feed_purchase_id || nutrition.feed_harvest_id
-    if (recordId) {
-      nutritionalMap.set(recordId, nutrition)
-    }
-  })
-
-  // ── Fetch formulation ingredient breakdown for formulated feeds ──────────
-  const formulatedFeedTypeIds = inventoryData
-    .filter((i: any) => i.source === 'formulate' || i.source === 'formulated')
-    .map((i: any) => i.feed_type_id)
-
-  const formulatedPurchaseIds = [...latestPurchases.values()]
-    .filter((p: any) => p._source === 'purchase' && formulatedFeedTypeIds.includes(p.feed_type_id))
-    .map((p: any) => p.id)
-
-  const formulationIngredientsMap = new Map<string, any[]>()
-
-  if (formulatedPurchaseIds.length > 0) {
-    const { data: txRows, error: txError } = await (supabase
-      .from('feed_inventory_transactions') as any)
-      .select(`
-        reference_id,
-        feed_type_id,
-        quantity_kg,
-        feed_types (
-          id,
-          name,
-          typical_cost_per_kg
-        )
-      `)
-      .eq('farm_id', farmId)
-      .eq('transaction_type', 'formulation_use')
-      .eq('reference_type', 'feed_formulation')
-      .in('reference_id', formulatedPurchaseIds)
-
-    if (txError) {
-      console.error('[FeedInventory] Error fetching formulation ingredient transactions:', txError);
-    }
-
-    if (txRows && Array.isArray(txRows)) {
-      txRows.forEach((tx: any) => {
-        if (!tx.reference_id) return;
-        if (!formulationIngredientsMap.has(tx.reference_id)) {
-          formulationIngredientsMap.set(tx.reference_id, [])
-        }
-        const usedKg = Math.abs(Number(tx.quantity_kg))
-        const costPerKg = tx.feed_types?.typical_cost_per_kg ?? 0
-        formulationIngredientsMap.get(tx.reference_id)!.push({
-          feed_type_id: tx.feed_type_id,
-          feed_name: tx.feed_types?.name ?? 'Unknown',
-          quantity_kg: usedKg,
-          cost_per_kg: costPerKg,
-          ingredient_cost: Number((usedKg * costPerKg).toFixed(2)),
-        })
-      })
-    }
-  }
-
-  // ── Merge all data ────────────────────────────────────────────────────────
-  const processedData = inventoryData.map(item => {
-    const latestPurchase = latestPurchases.get(item.feed_type_id)
-    const nutrition = latestPurchase ? nutritionalMap.get(latestPurchase.id) : null
-    const isFormulated = item.source === 'formulate' || item.source === 'formulated'
-    const formulationIngredients = (
-      latestPurchase?._source === 'harvest' ||
-      (latestPurchase?._source === 'purchase' && isFormulated)
-    ) ? (formulationIngredientsMap.get(latestPurchase.id) ?? null)
-      : null
+  // 3. Merge data
+  return snapshot.map((snap) => {
+    const feedTypeId = snap.feed_type_id;
+    const latest = latestEntries.find((e) => e.feed_type_id === feedTypeId);
 
     return {
-      ...item,
-      // Normalize field name: feed_inventory stores quantity as `quantity_kg`
-      // but FeedMixRecipeManager (and other callers) check `quantity_in_stock`.
-      quantity_in_stock: item.quantity_kg,
-      // Hoist cost_per_kg from the most recent purchase/harvest so callers
-      // don't have to reach into latest_purchase for recipe cost calculations.
-      cost_per_kg: latestPurchase?.cost_per_kg ?? null,
-      storage_location: (item as any).storage_locations?.name || null,
-      latest_purchase: latestPurchase
-        ? {
-          ...latestPurchase,
-          source: item.source,
-          formulation_ingredients: formulationIngredients
-        }
-        : null,
-      nutritional_data: nutrition || null,
-    }
-  })
-  return processedData
+      id: feedTypeId,
+      farm_id: farmId,
+      feed_type_id: feedTypeId,
+      quantity_kg: snap.quantity_in_stock,
+      last_restocked_date: snap.last_restocked_date,
+      feed_types: snap.feed_types,
+      latest_purchase: latest ? {
+        id: latest.id,
+        purchase_date: latest.entry_date,
+        expiry_date: latest.expiry_date,
+        supplier: latest.supplier_display,
+        batch_number: latest.batch_number,
+        notes: latest.notes,
+        cost_per_kg: latest.cost_per_kg,
+        quantity_kg: latest.quantity_kg,
+        source: latest.source,
+        source_type: latest.source_type,
+        yield_source: latest.yield_source
+      } : null,
+      nutritional_data: latest ? {
+        protein_pct: latest.protein_pct,
+        fat_pct: latest.fat_pct,
+        fiber_pct: latest.fiber_pct,
+        moisture_pct: latest.moisture_pct,
+        ash_pct: latest.ash_pct,
+        energy_mj_kg: latest.energy_mj_kg,
+        dry_matter_pct: latest.dry_matter_pct,
+        ndf_pct: latest.ndf_pct,
+        adf_pct: latest.adf_pct
+      } : null
+    };
+  });
 }
 
 export async function getCurrentFeedStock(farmId: string) {
@@ -1044,7 +750,7 @@ export async function getFeedStats(farmId: string, days: number = 30) {
       // Get current inventory snapshot with actual accumulated costs
       supabase
         .from('feed_inventory')
-        .select('feed_type_id, quantity_kg, total_cost, source')
+        .select('feed_type_id, quantity_in_stock, total_cost_invested, last_restocked_date')
         .eq('farm_id', farmId),
 
       // Get consumption for the period

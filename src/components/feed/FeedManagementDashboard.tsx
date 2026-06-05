@@ -283,13 +283,16 @@ export function FeedManagementDashboard({
   }
 
   const handleConsumptionAdded = useCallback((newConsumption: any) => {
+    // Normalize: ensure newConsumption is a single object (not an array)
+    const consumption = Array.isArray(newConsumption) ? newConsumption[0] : newConsumption
+    
     if (editingRecord) {
       setConsumptionRecords(prev => prev.map(record =>
-        record.id === editingRecord.id ? newConsumption[0] : record
+        record.id === editingRecord.id ? consumption : record
       ))
       setEditingRecord(null)
     } else {
-      setConsumptionRecords(prev => [...newConsumption, ...prev])
+      setConsumptionRecords(prev => [consumption, ...prev])
     }
     setShowConsumptionModal(false)
     window.location.reload()

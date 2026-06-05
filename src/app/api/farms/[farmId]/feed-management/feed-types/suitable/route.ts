@@ -95,20 +95,15 @@ export async function GET(
       const { data: inventoryData, error: inventoryError } = await supabase
         .from('feed_inventory')
         .select(`
-          id,
           feed_type_id,
-          quantity_kg,
-          cost_per_kg,
-          purchase_date,
-          expiry_date,
-          supplier,
-          batch_number,
-          notes
+          quantity_in_stock,
+          last_cost_per_kg,
+          last_restocked_date
         `)
         .eq('farm_id', farmId)
         .in('feed_type_id', feedTypeIds)
-        .gt('quantity_kg', 0) // Only include inventory with remaining stock
-        .order('expiry_date', { ascending: true, nullsFirst: false })
+        .gt('quantity_in_stock', 0) // Only include inventory with remaining stock
+        .order('last_restocked_date', { ascending: false })
 
       if (inventoryError) {
         console.error('Error fetching inventory:', inventoryError)
