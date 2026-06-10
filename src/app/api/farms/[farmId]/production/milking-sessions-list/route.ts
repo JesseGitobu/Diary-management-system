@@ -3,9 +3,11 @@ import { getCurrentUser } from '@/lib/supabase/server'
 import { getUserRole } from '@/lib/database/auth'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 
-export async function GET(request: NextRequest, context: any) {
-  const { params } = context
-  const farmId = (await params).farmId
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ farmId: string }> }
+) {
+  const { farmId } = await params
 
   try {
     const user = await getCurrentUser()
